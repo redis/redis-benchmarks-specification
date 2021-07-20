@@ -6,7 +6,7 @@ Members from both industry and academia, including organizations and individuals
 
 Currently, the following members actively support this project:
 
-- [Redis Labs](https://redislabs.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project with the company.
+- [Redis Labs](https://redislabs.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
 
 
 ## Scope 
