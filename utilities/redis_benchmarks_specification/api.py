@@ -109,6 +109,16 @@ def main():
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
     args = parser.parse_args()
+    print(
+        "Using redis available at: {}:{} for event store.".format(
+            GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
+        )
+    )
+    print(
+        "Using redis available at: {}:{} as auth server.".format(
+            REDIS_AUTH_SERVER_HOST, REDIS_AUTH_SERVER_PORT
+        )
+    )
 
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
