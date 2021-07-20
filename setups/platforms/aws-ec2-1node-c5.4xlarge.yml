@@ -1,0 +1,27 @@
+kind: VM
+
+infrastructure_as_code:
+  trigger_mode: "provision"
+  provisioning:
+    setup_teardown_required: true
+    definition_language: "hcl"
+    definition_contributor: redislabs
+    definition: https://github.com/RedisLabsModules/testing-infrastructure/tree/master/terraform/oss-1node-c5.4xlarge
+    units: 1
+  provider: "aws"
+  os: "ubuntu18.04"
+  os_arch: "linux/amd64"
+  user: "ubuntu"
+  pem: "benchmarks.redislabs.pem"
+
+metadata:
+  labels:
+    provider: "aws"
+    instance_type: "c5.4xlarge"
+    os: "ubuntu18.04"
+    os_arch: "linux/amd64"
+    definition_contributor: redislabs
+
+unit-specs:
+  cpu: 16
+  memory: 32

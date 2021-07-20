@@ -1,0 +1,98 @@
+spec:
+  setups:
+  - name: oss-standalone
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "10g"
+      limits:
+        cpu: "2000m"
+        memory: "10g"
+
+  - name: oss-standalone-1replica
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "2000m"
+        memory: "10g"
+      limits:
+        cpu: "3000m"
+        memory: "10g"
+
+  - name: oss-cluster-3-primaries
+    type: oss-cluster
+    redis_topology:
+      primaries: 3
+      replicas: 0
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "3000m"
+        memory: "30g"
+      limits:
+        cpu: "6000m"
+        memory: "30g"
+
+  - name: oss-cluster-5-primaries
+    type: oss-cluster
+    redis_topology:
+      primaries: 5
+      replicas: 0
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "5000m"
+        memory: "50g"
+      limits:
+        cpu: "7000m"
+        memory: "50g"
+
+  - name: oss-cluster-9-primaries
+    type: oss-cluster
+    redis_topology:
+      primaries: 9
+      replicas: 0
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "9000m"
+        memory: "90g"
+      limits:
+        cpu: "10000m"
+        memory: "90g"
+
+  - name: oss-cluster-15-primaries
+    type: oss-cluster
+    redis_topology:
+      primaries: 15
+      replicas: 0
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "15000m"
+        memory: "150g"
+      limits:
+        cpu: "17000m"
+        memory: "150g"
+
+  - name: oss-cluster-30-primaries
+    type: oss-cluster
+    redis_topology:
+      primaries: 30
+      replicas: 0
+      placement: "sparse"
+    resources:
+      requests:
+        cpu: "30000m"
+        memory: "300g"
+      limits:
+        cpu: "32000m"
+        memory: "300g"
