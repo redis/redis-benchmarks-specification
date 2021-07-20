@@ -73,9 +73,6 @@ class CommitSchema(Schema):
     git_hash = fields.String(required=True)
 
 
-app = Flask(__name__)
-
-
 @app.route("/api/gh/redis/redis/commits", methods=["POST"])
 @auth.login_required
 def base():
@@ -148,7 +145,7 @@ def main():
         password=GH_REDIS_SERVER_AUTH,
     )
 
-    app.run()
+    app.run(host="0.0.0.0")
 
 
 if __name__ == "__main__":
