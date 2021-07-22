@@ -3,6 +3,7 @@ name = "redis-benchmarks-specification"
 version = "0.1.0"
 description = ""
 authors = ["filipecosta90 <filipecosta.90@gmail.com>"]
+include = ["setups","test-suites"]
 
 [tool.poetry.dependencies]
 python = "^3.6"
@@ -25,4 +26,5 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-redis-benchmarks-specification-api = "redis_benchmarks_specification.api:main"
+redis-benchmarks-spec-api = "redis_benchmarks_specification.api.api:main"
+redis-benchmarks-spec-builder = "redis_benchmarks_specification.builder.builder:main"

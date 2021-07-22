@@ -15,28 +15,20 @@ import redis
 import argparse
 from flask_httpauth import HTTPBasicAuth
 
-auth = HTTPBasicAuth()
-
-VERBOSE = os.getenv("VERBOSE", "1") == "0"
-STREAM_KEYNAME_GH_EVENTS_COMMIT = os.getenv(
-    "STREAM_KEYNAME_GH_EVENTS_COMMIT", "oss:api:gh/redis/redis/commits"
+from redis_benchmarks_specification.common.env import (
+    VERBOSE,
+    STREAM_KEYNAME_GH_EVENTS_COMMIT,
+    GH_REDIS_SERVER_HOST,
+    GH_REDIS_SERVER_PORT,
+    GH_REDIS_SERVER_AUTH,
+    REDIS_AUTH_SERVER_HOST,
+    REDIS_AUTH_SERVER_PORT,
+    LOG_FORMAT,
+    LOG_DATEFMT,
+    LOG_LEVEL,
 )
 
-# host used to store the streams of events
-GH_REDIS_SERVER_HOST = os.getenv("GH_REDIS_SERVER_HOST", "localhost")
-GH_REDIS_SERVER_PORT = int(os.getenv("GH_REDIS_SERVER_PORT", "6379"))
-GH_REDIS_SERVER_AUTH = os.getenv("GH_REDIS_SERVER_AUTH", None)
-
-# DB used to authenticate ( read-only/non-dangerous access only )
-REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
-REDIS_AUTH_SERVER_PORT = int(os.getenv("REDIS_AUTH_SERVER_PORT", "6380"))
-
-LOG_LEVEL = logging.INFO
-if VERBOSE:
-    LOG_LEVEL = logging.WARN
-LOG_FORMAT = "%(asctime)s %(levelname)-4s %(message)s"
-LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
-
+auth = HTTPBasicAuth()
 
 app = Flask(__name__)
 conn = None

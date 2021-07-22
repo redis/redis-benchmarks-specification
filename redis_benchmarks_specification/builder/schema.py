@@ -6,6 +6,7 @@
 import os
 import yaml
 
+
 def get_build_config(usecase_filename):
     stream = os.path.dirname(os.path.abspath(usecase_filename))
     build_config = yaml.safe_load(stream)
