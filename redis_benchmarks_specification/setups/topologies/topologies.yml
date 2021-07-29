@@ -7,10 +7,7 @@ spec:
       replicas: 0
     resources:
       requests:
-        cpu: "1000m"
-        memory: "10g"
-      limits:
-        cpu: "2000m"
+        cpus: "1"
         memory: "10g"
 
   - name: oss-standalone-1replica
@@ -21,10 +18,7 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "2000m"
-        memory: "10g"
-      limits:
-        cpu: "3000m"
+        cpus: "2"
         memory: "10g"
 
   - name: oss-cluster-3-primaries
@@ -35,10 +29,7 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "3000m"
-        memory: "30g"
-      limits:
-        cpu: "6000m"
+        cpus: "3"
         memory: "30g"
 
   - name: oss-cluster-5-primaries
@@ -49,10 +40,7 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "5000m"
-        memory: "50g"
-      limits:
-        cpu: "7000m"
+        cpus: "5"
         memory: "50g"
 
   - name: oss-cluster-9-primaries
@@ -63,10 +51,7 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "9000m"
-        memory: "90g"
-      limits:
-        cpu: "10000m"
+        cpus: "10"
         memory: "90g"
 
   - name: oss-cluster-15-primaries
@@ -77,10 +62,7 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "15000m"
-        memory: "150g"
-      limits:
-        cpu: "17000m"
+        cpus: "15"
         memory: "150g"
 
   - name: oss-cluster-30-primaries
@@ -91,8 +73,5 @@ spec:
       placement: "sparse"
     resources:
       requests:
-        cpu: "30000m"
-        memory: "300g"
-      limits:
-        cpu: "32000m"
+        cpus: "30"
         memory: "300g"

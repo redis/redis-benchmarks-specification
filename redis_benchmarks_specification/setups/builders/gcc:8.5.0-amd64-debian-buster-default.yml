@@ -1,0 +1,18 @@
+version: 0.1
+id: gcc:8.5.0-amd64-debian-buster-default
+os: debian-buster
+arch: amd64
+compiler: "gcc"
+cpp_compiler: "g++"
+kind: docker
+build_image: gcc:8.5.0-buster
+description: "Using GNU Compiler Containers (https://hub.docker.com/_/gcc?tab=description)
+              pre-configured environment with all the tools required to build with gcc."
+metadata:
+  compiler: "gcc"
+  compiler_version: "8.5.0"
+  os: debian-buster
+  arch: amd64
+
+env:
+
