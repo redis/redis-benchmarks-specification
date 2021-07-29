@@ -5,6 +5,8 @@
 #
 
 import logging
+from urllib.request import urlopen
+from urllib.error import URLError
 import logging.handlers
 import os
 from flask import Flask, jsonify, request
@@ -15,7 +17,7 @@ import redis
 import argparse
 from flask_httpauth import HTTPBasicAuth
 
-from redis_benchmarks_specification.common.env import (
+from redis_benchmarks_specification.__common__.env import (
     VERBOSE,
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
@@ -55,9 +57,31 @@ def verify_password(username, password):
 def commit_schema_to_stream(json_str: str):
     """ uses to the provided JSON dict of fields and pushes that info to the corresponding stream  """
     fields = loads(json_str)
-    id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT, fields)
-    fields["id"] = id
-    return fields
+    reply_fields = loads(json_str)
+    result = False
+    error_msg = None
+    github_url = "https://github.com/redis/redis/archive/{}.zip".format(
+        fields["git_hash"]
+    )
+    try:
+        response = urlopen(github_url, timeout=5)
+        content = response.read()
+        fields["zip_archive"] = bytes(content)
+        fields["zip_archive_len"] = len(bytes(content))
+        reply_fields["archived_zip"] = True
+        result = True
+    except URLError as e:
+        error_msg = "Catched URLError while fetching {} content. Error {}".format(
+            github_url, e.__str__()
+        )
+        logging.error(error_msg)
+        result = False
+
+    if result is True:
+        id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT, fields)
+        reply_fields["id"] = id
+
+    return result, reply_fields, error_msg
 
 
 class CommitSchema(Schema):
@@ -81,7 +105,9 @@ def base():
     # Convert request body back to JSON str
     data_now_json_str = dumps(result)
 
-    response_data = commit_schema_to_stream(data_now_json_str)
+    result, response_data, err_message = commit_schema_to_stream(data_now_json_str)
+    if result is False:
+        return jsonify(err_message), 400
 
     # Send data back as JSON
     return jsonify(response_data), 200

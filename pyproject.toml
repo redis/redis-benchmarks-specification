@@ -3,10 +3,9 @@ name = "redis-benchmarks-specification"
 version = "0.1.0"
 description = ""
 authors = ["filipecosta90 <filipecosta.90@gmail.com>"]
-include = ["setups","test-suites"]
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.6.1"
 Flask = "^2.0.1"
 Werkzeug = "^2.0.1"
 flask-restx = "^0.5.0"
@@ -16,6 +15,8 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^5.4.1"
 docker = "^5.0.0"
+redisbench-admin = "0.3.3"
+psutil = "^5.8.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
@@ -26,5 +27,6 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-redis-benchmarks-spec-api = "redis_benchmarks_specification.api.api:main"
-redis-benchmarks-spec-builder = "redis_benchmarks_specification.builder.builder:main"
+redis-benchmarks-spec-api = "redis_benchmarks_specification.__api__.api:main"
+redis-benchmarks-spec-builder = "redis_benchmarks_specification.__builder__.builder:main"
+redis-benchmarks-spec-sc-coordinator = "redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator:main"

@@ -1,0 +1,56 @@
+name: Run Tests
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  pytest:
+    strategy:
+      matrix:
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+        os: [ ubuntu-latest, macos-latest ]
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+    runs-on: ${{ matrix.os }}
+    name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
+    steps:
+      - uses: actions/checkout@master
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: dschep/install-poetry-action@v1.3
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v1
+        id: cache
+        with:
+          path: ~/.virtualenvs
+          key: poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Set Poetry config
+        run: |
+          poetry config virtualenvs.in-project false
+          poetry config virtualenvs.path ~/.virtualenvs
+
+      - name: Install Dependencies
+        run: poetry install
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Check formatting compliance with black
+        run: poetry run black --check .
+
+      - name: Check PEP8 compliance with flake
+        run: poetry run flake8
+
+      - name: Test with pytest
+        run: poetry run pytest --cov redisbench_admin
+
+      - name: Upload coverage
+        run: poetry run codecov -t ${{ secrets.CODECOV_TOKEN }}

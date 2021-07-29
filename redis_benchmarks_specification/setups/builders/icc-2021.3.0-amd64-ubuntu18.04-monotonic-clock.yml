@@ -1,10 +1,11 @@
 version: 0.1
-id: icc-2021.3.0-amd64-ubuntu18.04-libc
+id: icc-2021.3.0-amd64-ubuntu18.04-monotonic-clock
 os: ubuntu18.04
 arch: amd64
 compiler: "icc"
+cpp_compiler: "icc"
 kind: docker
-build_container: intel/oneapi-hpckit:2021.3-devel-ubuntu18.04
+build_image: intel/oneapi-hpckit:2021.3-devel-ubuntu18.04
 description: "Using Intel® oneAPI Containers (https://github.com/intel/oneapi-containers)
               pre-configured environment with all the tools required to build with Intel related products
               and targeting Intel® environments and their instruction set extensions."
@@ -14,10 +15,6 @@ metadata:
   os: ubuntu18.04
   arch: amd64
 
-pre-steps:
-  - name: Install prerequisites
-     run: apt install git -y
-
 env:
-  CC="icc"
-  MALLOC=libc
+  CFLAGS: "-DUSE_PROCESSOR_CLOCK"
+
