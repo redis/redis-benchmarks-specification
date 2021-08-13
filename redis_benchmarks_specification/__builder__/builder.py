@@ -1,9 +1,7 @@
 import argparse
 import io
 import logging
-import os
 import tempfile
-import zipfile
 import shutil
 import redis
 import os
@@ -148,7 +146,7 @@ def main():
                 STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
             )
         )
-    except redis.exceptions.ResponseError as e:
+    except redis.exceptions.ResponseError:
         logging.info(
             "Consumer group named {} already existed.".format(
                 STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
@@ -171,10 +169,9 @@ def main():
             continue
         streamId, testDetails = newTestInfo[0][1][0]
         logging.info("Received work . Stream id {}.".format(streamId))
-        commit = None
-        commited_date = ""
-        tag = ""
-        benchmark_config = {}
+        # commit = None
+        # commited_date = ""
+        # tag = ""
         docker_client = docker.from_env()
         from pathlib import Path
 
@@ -237,7 +234,7 @@ def main():
                 logging.info(
                     "Using the following build command {}".format(build_command)
                 )
-                output = docker_client.containers.run(
+                docker_client.containers.run(
                     image=build_image,
                     volumes={
                         redis_temporary_dir: {"bind": "/mnt/redis/", "mode": "rw"},

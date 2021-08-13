@@ -6,20 +6,15 @@ import sys
 import tempfile
 import shutil
 import traceback
-import datetime
 import docker
 import redis
 import os
 from pathlib import Path
 
-from redisbench_admin.environments.oss_standalone import (
-    generate_standalone_redis_server_args,
-)
 from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,
 )
-from redisbench_admin.run.run import calculate_benchmark_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     extract_redis_dbconfig_parameters,
     get_final_benchmark_config,
@@ -38,7 +33,6 @@ from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_USER,
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
 )
-from redis_benchmarks_specification.__common__.package import PACKAGE_DIR
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
@@ -116,7 +110,7 @@ def main():
                 STREAM_GH_NEW_BUILD_RUNNERS_CG
             )
         )
-    except redis.exceptions.ResponseError as e:
+    except redis.exceptions.ResponseError:
         logging.info(
             "Consumer group named {} already existed.".format(
                 STREAM_GH_NEW_BUILD_RUNNERS_CG
@@ -125,7 +119,8 @@ def main():
     previous_id = None
     docker_client = docker.from_env()
     home = str(Path.home())
-    availabe_cpus = args.cpu_count
+    # TODO: confirm we do have enough cores to run the spec
+    # availabe_cpus = args.cpu_count
 
     while True:
         logging.info("Entering blocking read waiting for work.")
@@ -177,7 +172,6 @@ def main():
                                     temporary_dir
                                 )
                             )
-                            redis_server_path = None
                             benchmark_tool = "redis-benchmark"
                             for build_artifact in build_artifacts:
                                 buffer = testDetails[
@@ -189,8 +183,9 @@ def main():
                                 with open(artifact_fname, "wb") as fd:
                                     fd.write(buffer)
                                     os.chmod(artifact_fname, 755)
-                                if build_artifact == "redis-server":
-                                    redis_server_path = artifact_fname
+                                # TODO: re-enable
+                                # if build_artifact == "redis-server":
+                                #     redis_server_path = artifact_fname
 
                                 logging.info(
                                     "Successfully restored {} into {}".format(
@@ -287,7 +282,8 @@ def main():
                                 )
                             )
                             # run the benchmark
-                            benchmark_start_time = datetime.datetime.now()
+                            # TODO: re-enable
+                            # benchmark_start_time = datetime.datetime.now()
 
                             client_container_stdout = docker_client.containers.run(
                                 image=client_container_image,
@@ -305,12 +301,14 @@ def main():
                                 detach=False,
                                 cpuset_cpus=client_cpuset_cpus,
                             )
-                            benchmark_end_time = datetime.datetime.now()
-                            benchmark_duration_seconds = (
-                                calculate_benchmark_duration_and_check(
-                                    benchmark_end_time, benchmark_start_time
-                                )
-                            )
+
+                            # TODO: re-enable
+                            # benchmark_end_time = datetime.datetime.now()
+                            # benchmark_duration_seconds = (
+                            #     calculate_benchmark_duration_and_check(
+                            #         benchmark_end_time, benchmark_start_time
+                            #     )
+                            # )
                             logging.info("output {}".format(client_container_stdout))
                             r.shutdown(save=False)
                             post_process_benchmark_results(
@@ -326,6 +324,9 @@ def main():
                                 local_benchmark_output_filename, "r"
                             ) as json_file:
                                 results_dict = json.load(json_file)
+                                logging.info(
+                                    "Final JSON result {}".format(results_dict)
+                                )
 
                             if args.datasink_push_results_redistimeseries:
                                 logging.info("Pushing results to RedisTimeSeries.")

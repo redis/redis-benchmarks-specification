@@ -8,7 +8,6 @@ import logging
 from urllib.request import urlopen
 from urllib.error import URLError
 import logging.handlers
-import os
 from flask import Flask, jsonify, request
 from marshmallow import Schema, fields, ValidationError
 from redis_benchmarks_specification import __version__
@@ -18,7 +17,6 @@ import argparse
 from flask_httpauth import HTTPBasicAuth
 
 from redis_benchmarks_specification.__common__.env import (
-    VERBOSE,
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
     GH_REDIS_SERVER_PORT,
