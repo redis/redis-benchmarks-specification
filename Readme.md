@@ -1,9 +1,7 @@
 
-[![codecov](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification/branch/master/graph/badge.svg)](https://codecov.io/filipecosta90/redis-benchmarks-specification)
-![Actions](https://github.com/filipecosta90/redis-benchmarks-specification/workflows/Run%20Tests/badge.svg?branch=master)
-![Actions](https://badge.fury.io/py/redis-benchmarks-specification.svg)
-
-
+[![codecov](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification)
+[![CI tests](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/poetry-ci-test-lint.yml/badge.svg)](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/poetry-ci-test-lint.yml)
+[![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://badge.fury.io/py/redis-benchmarks-specification)
 ## Benchmark specifications goal
 
 The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. 
