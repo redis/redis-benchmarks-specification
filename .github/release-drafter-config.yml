@@ -18,11 +18,11 @@ categories:
     labels:
       - 'tool-api'
 
-  - title: 'Tooling changes: Artifacts builder'
+  - title: 'Tooling changes: Benchmark artifacts builder'
     labels:
       - 'tool-builder'
 
-  - title: 'Tooling changes: Self contained coordinator'
+  - title: 'Tooling changes: Self-contained coordinator'
     labels:
       - 'tool-self-coordinator'
 
@@ -36,5 +36,20 @@ exclude-labels:
   - 'skip-changelog'
 template: |
   ## Redis performance and observability spec change
+
+  ### Project status:
+
+  The following is a high level status report for currently available specs and tools.
+
+  - [*Benchmark platforms specification*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/setups/platforms/): *Experimental* components are released and available for beta testing.
+  - [*Benchmark topologies specification*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/setups/topologies/): *Experimental* components are released and available for beta testing.
+  - [*Benchmark artifacts builder specification*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/setups/builders/): *Experimental* components are released and available for beta testing.
+  - [*Test-suites specification*](https://github.com/filipecosta90/redis-benchmarks-specification/test-suites/): *Experimental* components are released and available for beta testing.
+  - [*Spec tool implementation: API*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/__api__/): *Experimental* components are released and available for beta testing.
+  - [*Spec tool implementation: Benchmark artifacts builder*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/__builder__/): *Experimental* components are released and available for beta testing.
+  - [*Spec tool implementation: Self-contained coordinator*](https://github.com/filipecosta90/redis-benchmarks-specification/redis_benchmarks_specification/__self_contained_coordinator__/): *Experimental* components are released and available for beta testing.
+  - [*Spec tool implementation: Large scale coordinator*](https://github.com/filipecosta90/redis-benchmarks-specification/): *Draft* components are under design, and have not been added to the specification.
+
+  ### Release changes:
 
   $CHANGES
