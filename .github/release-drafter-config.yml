@@ -31,7 +31,6 @@ categories:
       - 'tool-large-coordinator'
   - title: 'Maintenance'
     label: 'chore'
-
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 exclude-labels:
   - 'skip-changelog'
