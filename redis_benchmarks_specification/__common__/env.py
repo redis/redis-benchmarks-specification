@@ -2,10 +2,21 @@ import logging
 import os
 
 # default specification paths
+import pkg_resources
 import psutil
 
-SPECS_PATH_SETUPS = os.getenv("SPECS_PATH_SETUPS", "../setups")
-SPECS_PATH_TEST_SUITES = os.getenv("SPECS_PATH_TEST_SUITES", "../test-suites")
+SPECS_PATH_SETUPS_DEFAULT_PATH = pkg_resources.resource_filename(
+    "redis_benchmarks_specification", "setups"
+)
+
+SPECS_PATH_TEST_SUITES_DEFAULT_PATH = pkg_resources.resource_filename(
+    "redis_benchmarks_specification", "test-suites"
+)
+
+SPECS_PATH_SETUPS = os.getenv("SPECS_PATH_SETUPS", SPECS_PATH_SETUPS_DEFAULT_PATH)
+SPECS_PATH_TEST_SUITES = os.getenv(
+    "SPECS_PATH_TEST_SUITES", SPECS_PATH_TEST_SUITES_DEFAULT_PATH
+)
 
 # event stream from github
 STREAM_KEYNAME_GH_EVENTS_COMMIT = os.getenv(
@@ -34,6 +45,13 @@ GH_REDIS_SERVER_USER = os.getenv("GH_REDIS_SERVER_USER", None)
 # DB used to authenticate ( read-only/non-dangerous access only )
 REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
 REDIS_AUTH_SERVER_PORT = int(os.getenv("REDIS_AUTH_SERVER_PORT", "6380"))
+
+# environment variables
+DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
+DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
+DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
+DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")
+DATASINK_RTS_PORT = os.getenv("DATASINK_RTS_PORT", 6379)
 
 # logging related
 VERBOSE = os.getenv("VERBOSE", "1") == "0"

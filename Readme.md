@@ -1,3 +1,9 @@
+
+[![codecov](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification/branch/master/graph/badge.svg)](https://codecov.io/filipecosta90/redis-benchmarks-specification)
+![Actions](https://github.com/filipecosta90/redis-benchmarks-specification/workflows/Run%20Tests/badge.svg?branch=master)
+![Actions](https://badge.fury.io/py/redis-benchmarks-specification.svg)
+
+
 ## Benchmark specifications goal
 
 The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. 
@@ -6,7 +12,7 @@ Members from both industry and academia, including organizations and individuals
 
 Currently, the following members actively support this project:
 
-- [Redis Labs](https://redislabs.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
+- [Redis](https://redis.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
 
 
 ## Scope 
