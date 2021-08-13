@@ -1,8 +1,11 @@
-version: 0.3
+version: 0.4
 name: "redis-benchmark-full-suite-1Mkeys-100B"
 description: "Runs the default redis-benchmark test suite, for a keyspace length of 1M keys
               with a data size of 100 Bytes for each key. On total 50 concurrent connections 
               will be used, sending 5M requests."
+dbconfig:
+  - configuration-parameters:
+    - save: '""'
 tested-commands:
   - PING
   - SET
@@ -18,13 +21,19 @@ tested-commands:
   - ZPOPMIN
   - LRANGE
   - MSET
-redis-topology: oss-standalone
+redis-topologies:
+  - oss-standalone
 clientconfig:
-  - tool: redis-benchmark
-  - min-tool-version: "6.2.0"
-  - parameters:
+  run_image: redis:6.2.4
+  tool: redis-benchmark
+  min-tool-version: "6.2.0"
+  parameters:
     - clients: 50
-    - requests: 5000000
+    - requests: 100000
     - threads: 2
     - pipeline: 1
     - r: 1000000
+  resources:
+    requests:
+      cpus: "2"
+      memory: "2g"

@@ -8,9 +8,8 @@
 # so there is only one place to change it when the version number changes.
 import pkg_resources
 
+PKG_NAME = "redis-benchmarks-specification"
 try:
-    __version__ = pkg_resources.get_distribution(
-        "redis-benchmarks-specification"
-    ).version
+    __version__ = pkg_resources.get_distribution(PKG_NAME).version
 except (pkg_resources.DistributionNotFound, AttributeError):
     __version__ = "99.99.99"  # like redis

@@ -1,0 +1,41 @@
+name-template: 'Version $NEXT_PATCH_VERSION'
+tag-template: 'v$NEXT_PATCH_VERSION'
+categories:
+
+  - title: 'Spec changes: topologies'
+    labels:
+      - 'spec-topologies'
+
+  - title: 'Spec changes: test-suites'
+    labels:
+      - 'spec-test-suites'
+
+  - title: 'Spec changes: builders'
+    labels:
+      - 'spec-builders'
+
+  - title: 'Tooling changes: API'
+    labels:
+      - 'tool-api'
+
+  - title: 'Tooling changes: Artifacts builder'
+    labels:
+      - 'tool-builder'
+
+  - title: 'Tooling changes: Self contained coordinator'
+    labels:
+      - 'tool-self-coordinator'
+
+  - title: 'Tooling changes: Large scale coordinator'
+    labels:
+      - 'tool-large-coordinator'
+  - title: 'Maintenance'
+    label: 'chore'
+
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+exclude-labels:
+  - 'skip-changelog'
+template: |
+  ## Redis performance and observability spec change
+
+  $CHANGES
