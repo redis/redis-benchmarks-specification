@@ -1,0 +1,45 @@
+name: Run Tests using tox
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  pytest:
+    strategy:
+      matrix:
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+        os: [ ubuntu-latest ]
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+      USING_COVERAGE: "3.9"
+
+    runs-on: ${{ matrix.os }}
+    name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
+    steps:
+    - uses: actions/checkout@master
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - uses: docker-practice/actions-setup-docker@master
+
+    - name: Install Poetry
+      uses: dschep/install-poetry-action@v1.3
+
+    - name: Install Tox
+      run: |
+        pip3 install black coverage flake8 tox tox-docker tox-poetry
+
+    - name: Run tox
+      run: |
+        tox
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v1
+      if: contains(env.USING_COVERAGE, matrix.python-version)
+      with:
+        fail_ci_if_error: true

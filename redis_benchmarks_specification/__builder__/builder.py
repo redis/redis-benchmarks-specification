@@ -3,6 +3,8 @@ import io
 import logging
 import tempfile
 import shutil
+
+import docker
 import redis
 import os
 from zipfile import ZipFile, ZipInfo
@@ -20,7 +22,6 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
-from redis_benchmarks_specification.__common__.package import PACKAGE_DIR
 
 
 class ZipFileWithPermissions(ZipFile):
@@ -73,10 +74,9 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
-    logging.info("Using package dir {} for inner file paths".format(PACKAGE_DIR))
-    builders_folder = os.path.abspath(
-        PACKAGE_DIR + "/" + args.setups_folder + "/builders"
-    )
+
+    builders_folder = os.path.abspath(args.setups_folder + "/builders")
+    logging.info("Using package dir {} for inner file paths".format(builders_folder))
     different_build_specs = os.listdir(builders_folder)
     logging.info(
         "Using the following build specs folder {}, containing {} different specs.".format(
@@ -106,35 +106,18 @@ def main():
         logging.error("Error message {}".format(e.__str__()))
         exit(1)
 
-    logging.info("checking build spec requirements")
-    already_checked_images = []
-    for build_spec in different_build_specs:
-        build_config, id = get_build_config(builders_folder + "/" + build_spec)
-        if build_config["kind"] == "docker":
-            build_image = build_config["build_image"]
-            if build_image not in already_checked_images:
-                logging.info(
-                    "Build {} requirement: checking build image {} is available.".format(
-                        id, build_image
-                    )
-                )
-                import docker
+    build_spec_image_prefetch(builders_folder, different_build_specs)
 
-                client = docker.from_env()
-                image = client.images.pull(build_image)
-                logging.info(
-                    "Build {} requirement: build image {} is available with id: {}.".format(
-                        id, build_image, image.id
-                    )
-                )
-                already_checked_images.append(build_image)
-            else:
-                logging.info(
-                    "Build {} requirement: build image {} availability was already checked.".format(
-                        id, build_image
-                    )
-                )
+    builder_consumer_group_create(conn)
 
+    previous_id = args.consumer_start_id
+    while True:
+        previous_id = builder_process_stream(
+            builders_folder, conn, different_build_specs, previous_id
+        )
+
+
+def builder_consumer_group_create(conn):
     try:
         conn.xgroup_create(
             STREAM_KEYNAME_GH_EVENTS_COMMIT,
@@ -152,21 +135,20 @@ def main():
                 STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
             )
         )
-    previous_id = None
-    while True:
-        if previous_id is None:
-            previous_id = args.consumer_start_id
-        logging.info("Entering blocking read waiting for work.")
-        newTestInfo = conn.xreadgroup(
-            STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
-            "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1"),
-            {STREAM_KEYNAME_GH_EVENTS_COMMIT: previous_id},
-            count=1,
-            block=0,
-        )
-        if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
-            previous_id = ">"
-            continue
+
+
+def builder_process_stream(builders_folder, conn, different_build_specs, previous_id):
+    logging.info("Entering blocking read waiting for work.")
+    newTestInfo = conn.xreadgroup(
+        STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+        "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1"),
+        {STREAM_KEYNAME_GH_EVENTS_COMMIT: previous_id},
+        count=1,
+        block=0,
+    )
+    if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
+        previous_id = ">"
+    else:
         streamId, testDetails = newTestInfo[0][1][0]
         logging.info("Received work . Stream id {}.".format(streamId))
         # commit = None
@@ -276,7 +258,37 @@ def main():
                         )
                     )
                 shutil.rmtree(temporary_dir, ignore_errors=True)
-
         else:
             logging.error("Missing commit information within received message.")
-            continue
+    return previous_id
+
+
+def build_spec_image_prefetch(builders_folder, different_build_specs):
+    logging.info("checking build spec requirements")
+    already_checked_images = []
+    for build_spec in different_build_specs:
+        build_config, id = get_build_config(builders_folder + "/" + build_spec)
+        if build_config["kind"] == "docker":
+            build_image = build_config["build_image"]
+            if build_image not in already_checked_images:
+                logging.info(
+                    "Build {} requirement: checking build image {} is available.".format(
+                        id, build_image
+                    )
+                )
+                import docker
+
+                client = docker.from_env()
+                image = client.images.pull(build_image)
+                logging.info(
+                    "Build {} requirement: build image {} is available with id: {}.".format(
+                        id, build_image, image.id
+                    )
+                )
+                already_checked_images.append(build_image)
+            else:
+                logging.info(
+                    "Build {} requirement: build image {} availability was already checked.".format(
+                        id, build_image
+                    )
+                )

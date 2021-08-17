@@ -52,28 +52,31 @@ def verify_password(username, password):
     return result
 
 
-def commit_schema_to_stream(json_str: str):
+def commit_schema_to_stream(json_str: str, conn: redis.StrictRedis):
     """ uses to the provided JSON dict of fields and pushes that info to the corresponding stream  """
     fields = loads(json_str)
     reply_fields = loads(json_str)
     result = False
     error_msg = None
-    github_url = "https://github.com/redis/redis/archive/{}.zip".format(
-        fields["git_hash"]
-    )
-    try:
-        response = urlopen(github_url, timeout=5)
-        content = response.read()
-        fields["zip_archive"] = bytes(content)
-        fields["zip_archive_len"] = len(bytes(content))
-        reply_fields["archived_zip"] = True
-        result = True
-    except URLError as e:
-        error_msg = "Catched URLError while fetching {} content. Error {}".format(
-            github_url, e.__str__()
+    if "git_hash" not in fields:
+        error_msg = "Missing required 'git_hash' field"
+    else:
+        github_url = "https://github.com/redis/redis/archive/{}.zip".format(
+            fields["git_hash"]
         )
-        logging.error(error_msg)
-        result = False
+        try:
+            response = urlopen(github_url, timeout=5)
+            content = response.read()
+            fields["zip_archive"] = bytes(content)
+            fields["zip_archive_len"] = len(bytes(content))
+            reply_fields["archived_zip"] = True
+            result = True
+        except URLError as e:
+            error_msg = "Catched URLError while fetching {} content. Error {}".format(
+                github_url, e.__str__()
+            )
+            logging.error(error_msg)
+            result = False
 
     if result is True:
         id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT, fields)
@@ -84,6 +87,7 @@ def commit_schema_to_stream(json_str: str):
 
 class CommitSchema(Schema):
     git_branch = fields.String(required=False)
+    git_tag = fields.String(required=False)
     git_hash = fields.String(required=True)
 
 
@@ -103,7 +107,9 @@ def base():
     # Convert request body back to JSON str
     data_now_json_str = dumps(result)
 
-    result, response_data, err_message = commit_schema_to_stream(data_now_json_str)
+    result, response_data, err_message = commit_schema_to_stream(
+        data_now_json_str, conn
+    )
     if result is False:
         return jsonify(err_message), 400
 
