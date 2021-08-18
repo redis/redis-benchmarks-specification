@@ -15,22 +15,25 @@ from redis_benchmarks_specification.__builder__.builder import (
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
-    STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
 )
 
 
 def test_commit_schema_to_stream_then_build():
     try:
-        skip_builder = False
-        if skip_builder is not True:
-            conn = redis.StrictRedis()
+        run_builder = True
+        TST_BUILDER_X = os.getenv("TST_BUILDER_X", "1")
+        if TST_BUILDER_X == "0":
+            run_builder = False
+        if run_builder:
+            conn = redis.StrictRedis(port=16379)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn)
             assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 0
 
             result, reply_fields, error_msg = commit_schema_to_stream(
-                '{"git_hash":"0cf2df84d4b27af4bffd2bf3543838f09e10f874"}', conn
+                '{"git_hash":"0cf2df84d4b27af4bffd2bf3543838f09e10f874", "git_branch":"unstable"}',
+                conn,
             )
             assert result == True
             assert error_msg == None

@@ -11,6 +11,8 @@ import docker
 import redis
 import os
 from pathlib import Path
+import redistimeseries
+from docker.models.containers import Container
 
 from redisbench_admin.run.common import (
     get_start_time_vars,
@@ -79,6 +81,13 @@ def main():
     topologies_map = get_topologies(topologies_files[0])
     testsuites_folder = os.path.abspath(args.test_suites_folder)
     logging.info("Using test-suites folder dir {}".format(testsuites_folder))
+    testsuite_spec_files = get_benchmark_specs(testsuites_folder)
+    logging.info(
+        "There are a total of {} test-suites in folder {}".format(
+            len(testsuite_spec_files), testsuites_folder
+        )
+    )
+
     logging.info(
         "Using redis available at: {}:{} to read the event streams".format(
             GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
@@ -108,7 +117,7 @@ def main():
             )
         )
         try:
-            rts = redis.StrictRedis(
+            rts = redistimeseries.client.Client(
                 host=args.datasink_redistimeseries_host,
                 port=args.datasink_redistimeseries_port,
                 decode_responses=True,
@@ -127,11 +136,36 @@ def main():
             exit(1)
 
     logging.info("checking build spec requirements")
+    build_runners_consumer_group_create(conn)
+    stream_id = None
+    docker_client = docker.from_env()
+    home = str(Path.home())
+    # TODO: confirm we do have enough cores to run the spec
+    # availabe_cpus = args.cpu_count
+    datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
+    logging.info("Entering blocking read waiting for work.")
+    if stream_id is None:
+        stream_id = args.consumer_start_id
+    while True:
+        _, stream_id, _ = self_contained_coordinator_blocking_read(
+            conn,
+            datasink_push_results_redistimeseries,
+            docker_client,
+            home,
+            stream_id,
+            rts,
+            testsuite_spec_files,
+            topologies_map,
+        )
+
+
+def build_runners_consumer_group_create(conn, id="$"):
     try:
         conn.xgroup_create(
             STREAM_KEYNAME_NEW_BUILD_EVENTS,
             STREAM_GH_NEW_BUILD_RUNNERS_CG,
             mkstream=True,
+            id=id,
         )
         logging.info(
             "Created consumer group named {} to distribute work.".format(
@@ -144,36 +178,44 @@ def main():
                 STREAM_GH_NEW_BUILD_RUNNERS_CG
             )
         )
-    previous_id = None
-    docker_client = docker.from_env()
-    home = str(Path.home())
-    # TODO: confirm we do have enough cores to run the spec
-    # availabe_cpus = args.cpu_count
-    datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
 
-    while True:
-        logging.info("Entering blocking read waiting for work.")
-        if previous_id is None:
-            previous_id = args.consumer_start_id
-        newTestInfo = conn.xreadgroup(
-            STREAM_GH_NEW_BUILD_RUNNERS_CG,
-            "{}-self-contained-proc#{}".format(STREAM_GH_NEW_BUILD_RUNNERS_CG, "1"),
-            {STREAM_KEYNAME_NEW_BUILD_EVENTS: previous_id},
-            count=1,
-            block=0,
-        )
-        if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
-            previous_id = ">"
-            continue
-        previous_id = process_self_contained_coordinator_stream(
+
+def self_contained_coordinator_blocking_read(
+    conn,
+    datasink_push_results_redistimeseries,
+    docker_client,
+    home,
+    stream_id,
+    rts,
+    testsuite_spec_files,
+    topologies_map,
+):
+    num_process_streams = 0
+    overall_result = False
+    consumer_name = "{}-self-contained-proc#{}".format(
+        STREAM_GH_NEW_BUILD_RUNNERS_CG, "1"
+    )
+    newTestInfo = conn.xreadgroup(
+        STREAM_GH_NEW_BUILD_RUNNERS_CG,
+        consumer_name,
+        {STREAM_KEYNAME_NEW_BUILD_EVENTS: stream_id},
+        count=1,
+        block=0,
+    )
+    if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
+        stream_id = ">"
+    else:
+        stream_id, overall_result = process_self_contained_coordinator_stream(
             datasink_push_results_redistimeseries,
             docker_client,
             home,
             newTestInfo,
             rts,
-            testsuites_folder,
+            testsuite_spec_files,
             topologies_map,
         )
+        num_process_streams = num_process_streams + 1
+    return overall_result, stream_id, num_process_streams
 
 
 def process_self_contained_coordinator_stream(
@@ -182,12 +224,14 @@ def process_self_contained_coordinator_stream(
     home,
     newTestInfo,
     rts,
-    testsuites_folder,
+    testsuite_spec_files,
     topologies_map,
 ):
     stream_id, testDetails = newTestInfo[0][1][0]
     stream_id = stream_id.decode()
     logging.info("Received work . Stream id {}.".format(stream_id))
+    overall_result = False
+
     if b"git_hash" in testDetails:
         (
             build_artifacts,
@@ -197,9 +241,8 @@ def process_self_contained_coordinator_stream(
             run_image,
         ) = extract_build_info_from_streamdata(testDetails)
 
-        files = get_benchmark_specs(testsuites_folder)
-
-        for test_file in files:
+        overall_result = True
+        for test_file in testsuite_spec_files:
             redis_containers = []
             client_containers = []
 
@@ -213,6 +256,7 @@ def process_self_contained_coordinator_stream(
                     _,
                 ) = extract_redis_dbconfig_parameters(benchmark_config, "dbconfig")
                 for topology_spec_name in benchmark_config["redis-topologies"]:
+                    test_result = False
                     try:
                         current_cpu_pos = 0
                         ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -383,13 +427,13 @@ def process_self_contained_coordinator_stream(
                         with open(local_benchmark_output_filename, "r") as json_file:
                             results_dict = json.load(json_file)
                             logging.info("Final JSON result {}".format(results_dict))
-
+                        dataset_load_duration_seconds = 0
                         timeseries_test_sucess_flow(
                             datasink_push_results_redistimeseries,
                             git_version,
                             benchmark_config,
                             benchmark_duration_seconds,
-                            None,
+                            dataset_load_duration_seconds,
                             None,
                             topology_spec_name,
                             None,
@@ -404,6 +448,7 @@ def process_self_contained_coordinator_stream(
                             tf_triggering_env,
                             tsname_project_total_success,
                         )
+                        test_result = True
 
                     except:
                         logging.critical(
@@ -414,18 +459,38 @@ def process_self_contained_coordinator_stream(
                         print("-" * 60)
                         traceback.print_exc(file=sys.stdout)
                         print("-" * 60)
+                        test_result = False
                     # tear-down
                     logging.info("Tearing down setup")
                     for container in redis_containers:
-                        container.stop()
-                    for container in client_containers:
-                        if type(container) != bytes:
+                        try:
                             container.stop()
+                        except docker.errors.NotFound:
+                            logging.info(
+                                "When trying to stop DB container with id {} and image {} it was already stopped".format(
+                                    container.id, container.image
+                                )
+                            )
+                            pass
+
+                    for container in client_containers:
+                        if type(container) == Container:
+                            try:
+                                container.stop()
+                            except docker.errors.NotFound:
+                                logging.info(
+                                    "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                        container.id, container.image
+                                    )
+                                )
+                                pass
                     shutil.rmtree(temporary_dir, ignore_errors=True)
+
+                    overall_result &= test_result
 
     else:
         logging.error("Missing commit information within received message.")
-    return stream_id
+    return stream_id, overall_result
 
 
 def get_benchmark_specs(testsuites_folder):

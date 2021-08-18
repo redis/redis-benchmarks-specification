@@ -37,3 +37,17 @@ clientconfig:
     requests:
       cpus: "2"
       memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: "$.StartTime"
+    metrics:
+      - "$.Tests.*.rps"
+      - "$.Tests.*.avg_latency_ms"
+      - "$.Tests.*.p50_latency_ms"
+      - "$.Tests.*.p95_latency_ms"
+      - "$.Tests.*.p99_latency_ms"
+      - "$.Tests.*.max_latency_ms"
+      - "$.Tests.*.min_latency_ms"
