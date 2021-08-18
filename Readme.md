@@ -1,6 +1,6 @@
 
 [![codecov](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification)
-[![CI tests](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/poetry-ci-test-lint.yml/badge.svg)](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/poetry-ci-test-lint.yml)
+[![CI tests](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/tox.yml/badge.svg)](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/tox.yml)
 [![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://badge.fury.io/py/redis-benchmarks-specification)
 ## Benchmark specifications goal
 
