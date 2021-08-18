@@ -112,7 +112,7 @@ def main():
 
     previous_id = args.consumer_start_id
     while True:
-        previous_id = builder_process_stream(
+        previous_id, new_builds_count = builder_process_stream(
             builders_folder, conn, different_build_specs, previous_id
         )
 
@@ -138,14 +138,16 @@ def builder_consumer_group_create(conn):
 
 
 def builder_process_stream(builders_folder, conn, different_build_specs, previous_id):
+    new_builds_count = 0
     logging.info("Entering blocking read waiting for work.")
+    consumer_name = "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1")
     newTestInfo = conn.xreadgroup(
         STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
-        "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1"),
+        consumer_name,
         {STREAM_KEYNAME_GH_EVENTS_COMMIT: previous_id},
         count=1,
-        block=0,
     )
+
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
         previous_id = ">"
     else:
@@ -162,6 +164,9 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))
             buffer = testDetails[b"zip_archive"]
+            git_branch = None
+            if b"git_branch" in testDetails:
+                git_branch = testDetails[b"git_branch"]
 
             for build_spec in different_build_specs:
                 build_config, id = get_build_config(builders_folder + "/" + build_spec)
@@ -239,6 +244,8 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                     "build_command": build_command,
                     "build_artifacts": ",".join(build_artifacts),
                 }
+                if git_branch is not None:
+                    build_stream_fields["git_branch"] = git_branch
                 for artifact in build_artifacts:
                     bin_artifact = open(
                         "{}src/{}".format(redis_temporary_dir, artifact), "rb"
@@ -258,9 +265,15 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                         )
                     )
                 shutil.rmtree(temporary_dir, ignore_errors=True)
+                new_builds_count = new_builds_count + 1
+            conn.xack(
+                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                streamId,
+            )
         else:
             logging.error("Missing commit information within received message.")
-    return previous_id
+    return previous_id, new_builds_count
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):

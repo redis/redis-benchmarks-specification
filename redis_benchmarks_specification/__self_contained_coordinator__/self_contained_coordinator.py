@@ -443,8 +443,12 @@ def extract_build_info_from_streamdata(testDetails):
     git_hash = testDetails[b"git_hash"]
     if b"git_branch" in testDetails:
         git_branch = testDetails[b"git_branch"]
+        if type(git_branch) == bytes:
+            git_branch = git_branch.decode()
     if b"git_version" in testDetails:
         git_version = testDetails[b"git_version"]
+        if type(git_version) == bytes:
+            git_version = git_version.decode()
     if type(git_hash) == bytes:
         git_hash = git_hash.decode()
     logging.info("Received commit hash specifier {}.".format(git_hash))

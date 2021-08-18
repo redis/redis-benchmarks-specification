@@ -49,6 +49,8 @@ def verify_password(username, password):
         result = True
     except redis.exceptions.ResponseError:
         result = False
+    except redis.exceptions.AuthenticationError:
+        result = False
     return result
 
 
@@ -79,7 +81,7 @@ def commit_schema_to_stream(json_str: str, conn: redis.StrictRedis):
             result = False
 
     if result is True:
-        id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT, fields)
+        id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT.encode(), fields)
         reply_fields["id"] = id
 
     return result, reply_fields, error_msg
