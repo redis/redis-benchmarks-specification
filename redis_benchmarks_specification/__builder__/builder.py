@@ -1,15 +1,18 @@
 import argparse
 import io
+import json
 import logging
 import tempfile
 import shutil
-
 import docker
 import redis
 import os
 from zipfile import ZipFile, ZipInfo
 
-from redis_benchmarks_specification.__builder__.schema import get_build_config
+from redis_benchmarks_specification.__builder__.schema import (
+    get_build_config,
+    get_build_config_metadata,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
@@ -170,6 +173,8 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
 
             for build_spec in different_build_specs:
                 build_config, id = get_build_config(builders_folder + "/" + build_spec)
+                build_config_metadata = get_build_config_metadata(build_config)
+
                 build_image = build_config["build_image"]
                 run_image = build_image
                 if "run_image" in build_config:
@@ -242,6 +247,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                     "arch": build_arch,
                     "build_vars": build_vars_str,
                     "build_command": build_command,
+                    "metadata": json.dumps(build_config_metadata),
                     "build_artifacts": ",".join(build_artifacts),
                 }
                 if git_branch is not None:
@@ -266,11 +272,25 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                     )
                 shutil.rmtree(temporary_dir, ignore_errors=True)
                 new_builds_count = new_builds_count + 1
-            conn.xack(
-                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+            ack_reply = conn.xack(
                 STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
                 streamId,
             )
+            if type(ack_reply) == bytes:
+                ack_reply = ack_reply.decode()
+            if ack_reply == "1":
+                logging.info(
+                    "Sucessfully acknowledge build variation stream with id {}.".format(
+                        streamId
+                    )
+                )
+            else:
+                logging.error(
+                    "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
+                        streamId, ack_reply
+                    )
+                )
         else:
             logging.error("Missing commit information within received message.")
     return previous_id, new_builds_count
@@ -279,6 +299,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
 def build_spec_image_prefetch(builders_folder, different_build_specs):
     logging.info("checking build spec requirements")
     already_checked_images = []
+    client = docker.from_env()
     for build_spec in different_build_specs:
         build_config, id = get_build_config(builders_folder + "/" + build_spec)
         if build_config["kind"] == "docker":
@@ -289,15 +310,19 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
                         id, build_image
                     )
                 )
-                import docker
-
-                client = docker.from_env()
-                image = client.images.pull(build_image)
-                logging.info(
-                    "Build {} requirement: build image {} is available with id: {}.".format(
-                        id, build_image, image.id
+                if build_image not in client.images.list():
+                    logging.info(
+                        "Build {} requirement: build image {} is not available locally. Fetching it from hub".format(
+                            id, build_image
+                        )
                     )
-                )
+                    client.images.pull(build_image)
+                else:
+                    logging.info(
+                        "Build {} requirement: build image {} is available locally.".format(
+                            id, build_image
+                        )
+                    )
                 already_checked_images.append(build_image)
             else:
                 logging.info(
@@ -305,3 +330,4 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
                         id, build_image
                     )
                 )
+    return already_checked_images

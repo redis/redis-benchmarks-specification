@@ -62,3 +62,4 @@ if VERBOSE:
     LOG_LEVEL = logging.WARN
 
 MACHINE_CPU_COUNT = psutil.cpu_count()
+MACHINE_NAME = os.uname()[1]

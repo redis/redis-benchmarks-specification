@@ -37,7 +37,9 @@ def test_extract_client_cpu_limit():
     ) as yml_file:
         benchmark_config = yaml.safe_load(yml_file)
         client_cpu_limit = extract_client_cpu_limit(benchmark_config)
-        assert client_cpu_limit == 2
+        # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+        # and we need 1 core for DB and another for CLIENT
+        assert client_cpu_limit == 1
 
 
 def test_extract_client_container_image():
@@ -69,13 +71,14 @@ def test_self_contained_coordinator_blocking_read():
             conn.ping()
             use_rdb = True
             TST_RUNNER_USE_RDB = os.getenv("TST_RUNNER_USE_RDB", "1")
+            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             if TST_RUNNER_USE_RDB == "0":
                 use_rdb = False
             if use_rdb:
                 conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
             else:
                 conn.flushall()
-                flow_1_and_2_api_builder_checks(conn)
+                build_variant_name = flow_1_and_2_api_builder_checks(conn)
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
@@ -85,11 +88,14 @@ def test_self_contained_coordinator_blocking_read():
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
+            running_platform = "fco-ThinkPad-T490"
             topologies_map = get_topologies(
                 "./redis_benchmarks_specification/setups/topologies/topologies.yml"
             )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
             testsuite_spec_files = [
-                "./redis_benchmarks_specification/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml"
+                "./utils/tests/test_data/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml"
             ]
             (
                 result,
@@ -104,6 +110,7 @@ def test_self_contained_coordinator_blocking_read():
                 rts,
                 testsuite_spec_files,
                 topologies_map,
+                running_platform,
             )
             assert result == True
             assert number_processed_streams == 1
@@ -127,6 +134,8 @@ def test_self_contained_coordinator_blocking_read():
                 metric_name,
                 metric_context_path,
                 use_metric_context_path,
+                build_variant_name,
+                running_platform,
             )
 
             assert ts_key_name.encode() in conn.keys()
