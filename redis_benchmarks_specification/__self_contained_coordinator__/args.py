@@ -13,9 +13,9 @@ from redis_benchmarks_specification.__common__.env import (
 )
 
 
-def create_self_contained_coordinator_args():
+def create_self_contained_coordinator_args(project_name):
     parser = argparse.ArgumentParser(
-        description="redis-benchmarks-spec runner(self-contained)",
+        description=project_name,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

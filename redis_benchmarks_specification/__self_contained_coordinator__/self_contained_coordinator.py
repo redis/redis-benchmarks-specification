@@ -39,6 +39,10 @@ from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_USER,
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
 )
+from redis_benchmarks_specification.__common__.package import (
+    get_version_string,
+    populate_with_poetry_data,
+)
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
@@ -50,7 +54,11 @@ from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
 
 def main():
-    parser = create_self_contained_coordinator_args()
+    _, _, project_version = populate_with_poetry_data()
+    project_name = "redis-benchmarks-spec runner(self-contained)"
+    parser = create_self_contained_coordinator_args(
+        get_version_string(project_name, project_version)
+    )
     args = parser.parse_args()
 
     if args.logname is not None:
@@ -69,6 +77,7 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
+    logging.info(get_version_string(project_name, project_version))
     topologies_folder = os.path.abspath(args.setups_folder + "/topologies")
     logging.info("Using topologies folder dir {}".format(topologies_folder))
     topologies_files = pathlib.Path(topologies_folder).glob("*.yml")

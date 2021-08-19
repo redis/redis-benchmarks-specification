@@ -38,7 +38,7 @@ def test_commit_schema_to_stream_then_build():
             conn = redis.StrictRedis(port=16379)
             conn.ping()
             conn.flushall()
-            builder_consumer_group_create(conn)
+            builder_consumer_group_create(conn, "0")
             assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 0
 
             result, reply_fields, error_msg = commit_schema_to_stream(
