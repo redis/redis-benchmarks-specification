@@ -3,12 +3,21 @@
 #  Copyright (c) 2021., Redis Labs
 #  All rights reserved.
 #
-from redis_benchmarks_specification.__api__.api import commit_schema_to_stream
+import redis_benchmarks_specification
+from redis_benchmarks_specification.__api__.app import create_app
+
+from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
 import redis
 
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
 )
+
+import pytest
+
+import pytest
+
+# First party modules
 
 
 def test_commit_schema_to_stream():
@@ -18,7 +27,7 @@ def test_commit_schema_to_stream():
     assert result == False
     assert error_msg is not None
     try:
-        conn = redis.StrictRedis()
+        conn = redis.StrictRedis(port=16379)
         conn.ping()
         conn.flushall()
         result, reply_fields, error_msg = commit_schema_to_stream(
