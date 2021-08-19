@@ -110,6 +110,7 @@ def main():
         )
         logging.error("Error message {}".format(e.__str__()))
         exit(1)
+    rts = None
     if args.datasink_push_results_redistimeseries:
         logging.info(
             "Checking redistimeseries datasink connection is available at: {}:{} to push the timeseries data".format(
@@ -124,7 +125,7 @@ def main():
                 password=args.datasink_redistimeseries_pass,
                 username=args.datasink_redistimeseries_user,
             )
-            rts.ping()
+            rts.redis.ping()
         except redis.exceptions.ConnectionError as e:
             logging.error(
                 "Unable to connect to redis available at: {}:{}".format(
@@ -156,6 +157,7 @@ def main():
             rts,
             testsuite_spec_files,
             topologies_map,
+            args.platform_name,
         )
 
 
@@ -189,6 +191,7 @@ def self_contained_coordinator_blocking_read(
     rts,
     testsuite_spec_files,
     topologies_map,
+    platform_name,
 ):
     num_process_streams = 0
     overall_result = False
@@ -213,8 +216,29 @@ def self_contained_coordinator_blocking_read(
             rts,
             testsuite_spec_files,
             topologies_map,
+            platform_name,
         )
         num_process_streams = num_process_streams + 1
+        if overall_result is True:
+            ack_reply = conn.xack(
+                STREAM_KEYNAME_NEW_BUILD_EVENTS,
+                STREAM_GH_NEW_BUILD_RUNNERS_CG,
+                stream_id,
+            )
+            if type(ack_reply) == bytes:
+                ack_reply = ack_reply.decode()
+            if ack_reply == "1":
+                logging.info(
+                    "Sucessfully acknowledge build variation stream with id {}.".format(
+                        stream_id
+                    )
+                )
+            else:
+                logging.error(
+                    "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
+                        stream_id, ack_reply
+                    )
+                )
     return overall_result, stream_id, num_process_streams
 
 
@@ -226,6 +250,7 @@ def process_self_contained_coordinator_stream(
     rts,
     testsuite_spec_files,
     topologies_map,
+    running_platform,
 ):
     stream_id, testDetails = newTestInfo[0][1][0]
     stream_id = stream_id.decode()
@@ -234,6 +259,8 @@ def process_self_contained_coordinator_stream(
 
     if b"git_hash" in testDetails:
         (
+            build_variant_name,
+            metadata,
             build_artifacts,
             git_hash,
             git_branch,
@@ -276,8 +303,14 @@ def process_self_contained_coordinator_stream(
                             testcases_setname,
                             tsname_project_total_failures,
                             tsname_project_total_success,
+                            running_platforms_setname,
+                            testcases_build_variant_setname,
                         ) = get_overall_dashboard_keynames(
-                            tf_github_org, tf_github_repo, tf_triggering_env
+                            tf_github_org,
+                            tf_github_repo,
+                            tf_triggering_env,
+                            build_variant_name,
+                            running_platform,
                         )
 
                         benchmark_tool = "redis-benchmark"
@@ -447,6 +480,9 @@ def process_self_contained_coordinator_stream(
                             tf_github_repo,
                             tf_triggering_env,
                             tsname_project_total_success,
+                            metadata,
+                            build_variant_name,
+                            running_platform,
                         )
                         test_result = True
 
@@ -505,7 +541,13 @@ def get_benchmark_specs(testsuites_folder):
 def extract_build_info_from_streamdata(testDetails):
     git_version = None
     git_branch = None
+    metadata = None
+    build_variant_name = None
     git_hash = testDetails[b"git_hash"]
+    if b"id" in testDetails:
+        build_variant_name = testDetails[b"id"]
+        if type(build_variant_name) == bytes:
+            build_variant_name = build_variant_name.decode()
     if b"git_branch" in testDetails:
         git_branch = testDetails[b"git_branch"]
         if type(git_branch) == bytes:
@@ -525,7 +567,17 @@ def extract_build_info_from_streamdata(testDetails):
     if b"build_artifacts" in testDetails:
         build_artifacts_str = testDetails[b"build_artifacts"].decode()
     build_artifacts = build_artifacts_str.split(",")
-    return build_artifacts, git_hash, git_branch, git_version, run_image
+    if b"metadata" in testDetails:
+        metadata = json.loads(testDetails[b"metadata"].decode())
+    return (
+        build_variant_name,
+        metadata,
+        build_artifacts,
+        git_hash,
+        git_branch,
+        git_version,
+        run_image,
+    )
 
 
 def generate_cpuset_cpus(ceil_db_cpu_limit, current_cpu_pos):

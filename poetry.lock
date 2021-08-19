@@ -1119,7 +1119,7 @@ hiredis = ["hiredis (>=0.1.3)"]
 
 [[package]]
 name = "redisbench-admin"
-version = "0.4.11"
+version = "0.4.14"
 description = "Redis benchmark run helper. A wrapper around Redis and Redis Modules benchmark tools ( ftsb_redisearch, memtier_benchmark, redis-benchmark, aibench, etc... )."
 category = "main"
 optional = false
@@ -1516,7 +1516,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.6.1"
-content-hash = "1262f717978ccca8d0dd3c1fd8cb95ff1d00fe0b848e7ca8930a1ace2e5fa7c4"
+content-hash = "726e862a40fabc10fc82611a17997b6cc1392bfe13bc29cf9e18d5889d6f36c9"
 
 [metadata.files]
 aniso8601 = [
@@ -2218,8 +2218,8 @@ redis-py-cluster = [
     {file = "redis_py_cluster-2.1.3-py2.py3-none-any.whl", hash = "sha256:38f08850fde469ffd76bced7309721114acc487e52b76f374a0502c34c69b4ec"},
 ]
 redisbench-admin = [
-    {file = "redisbench-admin-0.4.11.tar.gz", hash = "sha256:e0fb68a27591a602b63af99f699f0033b47124049bd47837cef01479f4929456"},
-    {file = "redisbench_admin-0.4.11-py3-none-any.whl", hash = "sha256:68eff61f5e3b6c5c97aec853208326faba55beea63d8729ebcefb77d5e77a723"},
+    {file = "redisbench-admin-0.4.13.tar.gz", hash = "sha256:654e712bdafe2b4c14ca66b571fbc057abe0e7b52f1e1a43d4dd2a0cabaa0700"},
+    {file = "redisbench_admin-0.4.13-py3-none-any.whl", hash = "sha256:577e421a956500894a23f989aeaa3ebf182b0023ab7d2750649eda0389ff1e9f"},
 ]
 redistimeseries = [
     {file = "redistimeseries-1.4.3-py2-none-any.whl", hash = "sha256:f6a828acbdf440ca66caf8ac0193ed122bd5a2e0e936bb9989ccabefb3e5b509"},

@@ -9,6 +9,7 @@ from redis_benchmarks_specification.__common__.env import (
     DATASINK_RTS_AUTH,
     DATASINK_RTS_USER,
     DATASINK_RTS_PUSH,
+    MACHINE_NAME,
 )
 
 
@@ -22,6 +23,12 @@ def create_self_contained_coordinator_args():
         type=int,
         default=MACHINE_CPU_COUNT,
         help="Specify how much of the available CPU resources the coordinator can use.",
+    )
+    parser.add_argument(
+        "--platform-name",
+        type=str,
+        default=MACHINE_NAME,
+        help="Specify the running platform name. By default it will use the machine name.",
     )
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"
