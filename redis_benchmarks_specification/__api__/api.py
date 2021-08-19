@@ -27,6 +27,10 @@ from redis_benchmarks_specification.__common__.env import (
     LOG_DATEFMT,
     LOG_LEVEL,
 )
+from redis_benchmarks_specification.__common__.package import (
+    populate_with_poetry_data,
+    get_version_string,
+)
 
 auth = HTTPBasicAuth()
 
@@ -120,9 +124,11 @@ def base():
 
 
 def main():
+    _, _, project_version = populate_with_poetry_data()
+    project_name = "redis-benchmarks-specification API"
     global conn
     parser = argparse.ArgumentParser(
-        description="redis-benchmarks-specification API",
+        description=get_version_string(project_name, project_version),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     logging.info("redis-benchmarks-specification API. v{}".format(__version__))
@@ -157,6 +163,7 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
+    logging.info(get_version_string(project_name, project_version))
     logging.info(
         "Using redis available at: {}:{}".format(
             GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT

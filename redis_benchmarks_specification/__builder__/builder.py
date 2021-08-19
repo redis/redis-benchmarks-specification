@@ -25,6 +25,10 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
+from redis_benchmarks_specification.__common__.package import (
+    populate_with_poetry_data,
+    get_version_string,
+)
 
 
 class ZipFileWithPermissions(ZipFile):
@@ -41,8 +45,10 @@ class ZipFileWithPermissions(ZipFile):
 
 
 def main():
+    _, _, project_version = populate_with_poetry_data()
+    project_name = "redis-benchmarks-spec builder"
     parser = argparse.ArgumentParser(
-        description="redis-benchmarks-spec builder",
+        description=get_version_string(project_name, project_version),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -60,7 +66,6 @@ def main():
         default=">",
     )
     args = parser.parse_args()
-
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
         logging.basicConfig(
@@ -77,7 +82,7 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
-
+    logging.info(get_version_string(project_name, project_version))
     builders_folder = os.path.abspath(args.setups_folder + "/builders")
     logging.info("Using package dir {} for inner file paths".format(builders_folder))
     different_build_specs = os.listdir(builders_folder)
@@ -120,12 +125,13 @@ def main():
         )
 
 
-def builder_consumer_group_create(conn):
+def builder_consumer_group_create(conn, id="$"):
     try:
         conn.xgroup_create(
             STREAM_KEYNAME_GH_EVENTS_COMMIT,
             STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
             mkstream=True,
+            id=id,
         )
         logging.info(
             "Created consumer group named {} to distribute work.".format(
@@ -149,6 +155,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
         consumer_name,
         {STREAM_KEYNAME_GH_EVENTS_COMMIT: previous_id},
         count=1,
+        block=0,
     )
 
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
