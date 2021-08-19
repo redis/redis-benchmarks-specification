@@ -8,7 +8,7 @@ from pathlib import Path
 
 from redisbench_admin.utils.utils import get_ts_metric_name
 
-from redis_benchmarks_specification.__api__.api import commit_schema_to_stream
+from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
 from redis_benchmarks_specification.__builder__.builder import (
     builder_consumer_group_create,
     builder_process_stream,

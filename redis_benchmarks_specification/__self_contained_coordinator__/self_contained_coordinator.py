@@ -236,7 +236,7 @@ def self_contained_coordinator_blocking_read(
             )
             if type(ack_reply) == bytes:
                 ack_reply = ack_reply.decode()
-            if ack_reply == "1":
+            if ack_reply == "1" or ack_reply == 1:
                 logging.info(
                     "Sucessfully acknowledge build variation stream with id {}.".format(
                         stream_id

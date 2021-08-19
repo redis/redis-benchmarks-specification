@@ -286,7 +286,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
             )
             if type(ack_reply) == bytes:
                 ack_reply = ack_reply.decode()
-            if ack_reply == "1":
+            if ack_reply == "1" or ack_reply == 1:
                 logging.info(
                     "Sucessfully acknowledge build variation stream with id {}.".format(
                         streamId
