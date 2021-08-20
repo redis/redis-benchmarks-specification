@@ -51,7 +51,7 @@ DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
 DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")
-DATASINK_RTS_PORT = os.getenv("DATASINK_RTS_PORT", 6379)
+DATASINK_RTS_PORT = int(os.getenv("DATASINK_RTS_PORT", "6379"))
 
 # logging related
 VERBOSE = os.getenv("VERBOSE", "1") == "0"
