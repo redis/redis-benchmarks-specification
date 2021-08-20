@@ -150,12 +150,24 @@ def test_self_contained_coordinator_blocking_read():
                 build_variant_setname,
                 testcases_metric_context_path_setname,
                 testcases_and_metric_context_path_setname,
+                project_archs_setname,
+                project_oss_setname,
+                project_branches_setname,
+                project_versions_setname,
+                project_compilers_setname,
             ) = get_overall_dashboard_keynames(
-                tf_github_org, tf_github_repo, tf_triggering_env, test_name
+                tf_github_org,
+                tf_github_repo,
+                tf_triggering_env,
+                build_variant_name,
+                running_platform,
+                test_name,
             )
             assert rts.redis.exists(testcases_setname)
             assert rts.redis.exists(running_platforms_setname)
             assert rts.redis.exists(build_variant_setname)
+            assert rts.redis.exists(testcases_and_metric_context_path_setname)
+            assert rts.redis.exists(testcases_metric_context_path_setname)
             assert build_variant_name.encode() in rts.redis.smembers(
                 build_variant_setname
             )
@@ -178,6 +190,25 @@ def test_self_contained_coordinator_blocking_read():
             assert [x.decode() for x in rts.redis.smembers(testcases_setname)] == [
                 test_name
             ]
+
+            assert "amd64".encode() in rts.redis.smembers(project_archs_setname)
+            assert "debian-buster".encode() in rts.redis.smembers(project_oss_setname)
+            assert "gcc".encode() in rts.redis.smembers(project_compilers_setname)
+            assert build_variant_name.encode() in rts.redis.smembers(
+                build_variant_setname
+            )
+            assert running_platform.encode() in rts.redis.smembers(
+                running_platforms_setname
+            )
+
+            assert len(rts.redis.smembers(project_archs_setname)) == 1
+            assert len(rts.redis.smembers(project_oss_setname)) == 1
+            assert len(rts.redis.smembers(project_compilers_setname)) == 1
+            assert len(rts.redis.smembers(build_variant_setname)) == 1
+            assert len(rts.redis.smembers(running_platforms_setname)) == 1
+            assert len(rts.redis.smembers(testcases_setname)) == 1
+            assert len(rts.redis.smembers(project_branches_setname)) == 1
+            assert len(rts.redis.smembers(project_versions_setname)) == 0
 
     except redis.exceptions.ConnectionError:
         pass
