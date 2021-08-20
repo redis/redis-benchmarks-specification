@@ -6,6 +6,7 @@ import redistimeseries
 import yaml
 from pathlib import Path
 
+from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
 
 from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
@@ -82,13 +83,13 @@ def test_self_contained_coordinator_blocking_read():
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, "0")
+            build_runners_consumer_group_create(conn, running_platform, "0")
             rts = redistimeseries.client.Client(port=16379)
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
-            running_platform = "fco-ThinkPad-T490"
             topologies_map = get_topologies(
                 "./redis_benchmarks_specification/setups/topologies/topologies.yml"
             )
@@ -139,6 +140,44 @@ def test_self_contained_coordinator_blocking_read():
             )
 
             assert ts_key_name.encode() in conn.keys()
+
+            (
+                prefix,
+                testcases_setname,
+                tsname_project_total_failures,
+                tsname_project_total_success,
+                running_platforms_setname,
+                build_variant_setname,
+                testcases_metric_context_path_setname,
+                testcases_and_metric_context_path_setname,
+            ) = get_overall_dashboard_keynames(
+                tf_github_org, tf_github_repo, tf_triggering_env, test_name
+            )
+            assert rts.redis.exists(testcases_setname)
+            assert rts.redis.exists(running_platforms_setname)
+            assert rts.redis.exists(build_variant_setname)
+            assert build_variant_name.encode() in rts.redis.smembers(
+                build_variant_setname
+            )
+            assert test_name.encode() in rts.redis.smembers(testcases_setname)
+            assert running_platform.encode() in rts.redis.smembers(
+                running_platforms_setname
+            )
+            testcases_and_metric_context_path_members = [
+                x.decode()
+                for x in rts.redis.smembers(testcases_and_metric_context_path_setname)
+            ]
+            metric_context_path_members = [
+                x.decode()
+                for x in rts.redis.smembers(testcases_metric_context_path_setname)
+            ]
+            assert len(testcases_and_metric_context_path_members) == len(
+                metric_context_path_members
+            )
+
+            assert [x.decode() for x in rts.redis.smembers(testcases_setname)] == [
+                test_name
+            ]
 
     except redis.exceptions.ConnectionError:
         pass

@@ -25,7 +25,6 @@ from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
-from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
@@ -146,7 +145,8 @@ def main():
             exit(1)
 
     logging.info("checking build spec requirements")
-    build_runners_consumer_group_create(conn)
+    running_platform = args.platform_name
+    build_runners_consumer_group_create(conn, running_platform)
     stream_id = None
     docker_client = docker.from_env()
     home = str(Path.home())
@@ -166,29 +166,36 @@ def main():
             rts,
             testsuite_spec_files,
             topologies_map,
-            args.platform_name,
+            running_platform,
         )
 
 
-def build_runners_consumer_group_create(conn, id="$"):
+def build_runners_consumer_group_create(conn, running_platform, id="$"):
+    consumer_group_name = get_runners_consumer_group_name(running_platform)
+    logging.info("Will use consumer group named {}.".format(consumer_group_name))
     try:
         conn.xgroup_create(
             STREAM_KEYNAME_NEW_BUILD_EVENTS,
-            STREAM_GH_NEW_BUILD_RUNNERS_CG,
+            consumer_group_name,
             mkstream=True,
             id=id,
         )
         logging.info(
             "Created consumer group named {} to distribute work.".format(
-                STREAM_GH_NEW_BUILD_RUNNERS_CG
+                consumer_group_name
             )
         )
     except redis.exceptions.ResponseError:
         logging.info(
-            "Consumer group named {} already existed.".format(
-                STREAM_GH_NEW_BUILD_RUNNERS_CG
-            )
+            "Consumer group named {} already existed.".format(consumer_group_name)
         )
+
+
+def get_runners_consumer_group_name(running_platform):
+    consumer_group_name = "{}-{}".format(
+        STREAM_GH_NEW_BUILD_RUNNERS_CG, running_platform
+    )
+    return consumer_group_name
 
 
 def self_contained_coordinator_blocking_read(
@@ -205,10 +212,10 @@ def self_contained_coordinator_blocking_read(
     num_process_streams = 0
     overall_result = False
     consumer_name = "{}-self-contained-proc#{}".format(
-        STREAM_GH_NEW_BUILD_RUNNERS_CG, "1"
+        get_runners_consumer_group_name(platform_name), "1"
     )
     newTestInfo = conn.xreadgroup(
-        STREAM_GH_NEW_BUILD_RUNNERS_CG,
+        get_runners_consumer_group_name(platform_name),
         consumer_name,
         {STREAM_KEYNAME_NEW_BUILD_EVENTS: stream_id},
         count=1,
@@ -307,20 +314,6 @@ def process_self_contained_coordinator_stream(
                         tf_github_org = "redis"
                         tf_github_repo = "redis"
                         tf_triggering_env = "ci"
-                        (
-                            prefix,
-                            testcases_setname,
-                            tsname_project_total_failures,
-                            tsname_project_total_success,
-                            running_platforms_setname,
-                            testcases_build_variant_setname,
-                        ) = get_overall_dashboard_keynames(
-                            tf_github_org,
-                            tf_github_repo,
-                            tf_triggering_env,
-                            build_variant_name,
-                            running_platform,
-                        )
 
                         benchmark_tool = "redis-benchmark"
                         for build_artifact in build_artifacts:
@@ -483,12 +476,10 @@ def process_self_contained_coordinator_stream(
                             rts,
                             start_time_ms,
                             test_name,
-                            testcases_setname,
                             git_branch,
                             tf_github_org,
                             tf_github_repo,
                             tf_triggering_env,
-                            tsname_project_total_success,
                             metadata,
                             build_variant_name,
                             running_platform,
