@@ -10,7 +10,7 @@ Members from both industry and academia, including organizations and individuals
 
 Currently, the following members actively support this project:
 
-- [Redis](https://redis.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
+- [Redis Ltd.](https://redis.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
 
 
 ## Scope 
@@ -98,7 +98,7 @@ relevant git information.
 
 The HTTP request is then converted into an event ( tracked within redis ) that will trigger multiple build variants requests based upon the distinct platforms described in [`platforms`](redis_benchmarks_specification/setups/platforms/). 
 
-As soon as a new build variant request is received, the build agent ([`build_agent`](./build_agent/)) prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`benchmark_coordinator`](./benchmark_coordinator/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
+As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
 ## Directory layout
 
 ### Specifications 
