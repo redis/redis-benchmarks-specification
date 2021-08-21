@@ -6,11 +6,15 @@
 import redis_benchmarks_specification
 from redis_benchmarks_specification.__api__.app import create_app
 
-from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
+from redis_benchmarks_specification.__common__.builder_schema import (
+    commit_schema_to_stream,
+    get_commit_dict_from_sha,
+)
 import redis
 
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
+    GH_TOKEN,
 )
 
 import pytest
@@ -22,7 +26,10 @@ import pytest
 
 def test_commit_schema_to_stream():
     result, reply_fields, error_msg = commit_schema_to_stream(
-        '{"git_hashss":"0cf2df84d4b27af4bffd2bf3543838f09e10f874"}', None
+        '{"git_hashss":"0cf2df84d4b27af4bffd2bf3543838f09e10f874"}',
+        None,
+        "redis",
+        "redis",
     )
     assert result == False
     assert error_msg is not None
@@ -31,7 +38,10 @@ def test_commit_schema_to_stream():
         conn.ping()
         conn.flushall()
         result, reply_fields, error_msg = commit_schema_to_stream(
-            '{"git_hash":"0cf2df84d4b27af4bffd2bf3543838f09e10f874"}', conn
+            '{"git_hash":"0cf2df84d4b27af4bffd2bf3543838f09e10f874"}',
+            conn,
+            "redis",
+            "redis",
         )
         assert result == True
         assert error_msg == None
@@ -43,3 +53,11 @@ def test_commit_schema_to_stream():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_get_commit_dict_from_sha():
+    result, error_msg, commit_dict, _ = get_commit_dict_from_sha(
+        "492d8d09613cff88f15dcef98732392b8d509eb1", "redis", "redis", {}, True, GH_TOKEN
+    )
+    if GH_TOKEN is not None:
+        assert commit_dict["git_timestamp_ms"] == 1629441465000

@@ -9,7 +9,9 @@ from pathlib import Path
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
 
-from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
+from redis_benchmarks_specification.__common__.builder_schema import (
+    commit_schema_to_stream,
+)
 from redis_benchmarks_specification.__builder__.builder import (
     builder_consumer_group_create,
     builder_process_stream,
@@ -73,13 +75,15 @@ def test_self_contained_coordinator_blocking_read():
             use_rdb = True
             TST_RUNNER_USE_RDB = os.getenv("TST_RUNNER_USE_RDB", "1")
             build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            expected_datapoint_ts = None
             if TST_RUNNER_USE_RDB == "0":
                 use_rdb = False
             if use_rdb:
                 conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
             else:
                 conn.flushall()
-                build_variant_name = flow_1_and_2_api_builder_checks(conn)
+                build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
+                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
@@ -140,7 +144,9 @@ def test_self_contained_coordinator_blocking_read():
             )
 
             assert ts_key_name.encode() in conn.keys()
-
+            assert len(rts.range(ts_key_name, 0, -1)) == 1
+            if expected_datapoint_ts is not None:
+                assert rts.range(ts_key_name, 0, -1)[0][0] == expected_datapoint_ts
             (
                 prefix,
                 testcases_setname,
@@ -163,6 +169,7 @@ def test_self_contained_coordinator_blocking_read():
                 running_platform,
                 test_name,
             )
+
             assert rts.redis.exists(testcases_setname)
             assert rts.redis.exists(running_platforms_setname)
             assert rts.redis.exists(build_variant_setname)
