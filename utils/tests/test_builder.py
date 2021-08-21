@@ -5,7 +5,9 @@
 #
 import os
 
-from redis_benchmarks_specification.__api__.schema import commit_schema_to_stream
+from redis_benchmarks_specification.__common__.builder_schema import (
+    commit_schema_to_stream,
+)
 import redis
 
 from redis_benchmarks_specification.__builder__.builder import (

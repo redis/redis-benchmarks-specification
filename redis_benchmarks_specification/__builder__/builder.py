@@ -177,6 +177,12 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
             git_branch = None
             if b"git_branch" in testDetails:
                 git_branch = testDetails[b"git_branch"]
+            git_timestamp_ms = None
+            use_git_timestamp = False
+            if b"use_git_timestamp" in testDetails:
+                use_git_timestamp = bool(testDetails[b"use_git_timestamp"])
+            if b"git_timestamp_ms" in testDetails:
+                git_timestamp_ms = int(testDetails[b"git_timestamp_ms"].decode())
 
             for build_spec in different_build_specs:
                 build_config, id = get_build_config(builders_folder + "/" + build_spec)
@@ -246,6 +252,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 build_stream_fields = {
                     "id": id,
                     "git_hash": git_hash,
+                    "use_git_timestamp": str(use_git_timestamp),
                     "build_image": build_image,
                     "run_image": run_image,
                     "compiler": compiler,
@@ -259,6 +266,8 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 }
                 if git_branch is not None:
                     build_stream_fields["git_branch"] = git_branch
+                if git_timestamp_ms is not None:
+                    build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
                     bin_artifact = open(
                         "{}src/{}".format(redis_temporary_dir, artifact), "rb"

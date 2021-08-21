@@ -282,6 +282,8 @@ def process_self_contained_coordinator_stream(
             git_branch,
             git_version,
             run_image,
+            use_git_timestamp,
+            git_timestamp_ms,
         ) = extract_build_info_from_streamdata(testDetails)
 
         overall_result = True
@@ -450,10 +452,13 @@ def process_self_contained_coordinator_stream(
                         )
                         logging.info("output {}".format(client_container_stdout))
                         r.shutdown(save=False)
+                        datapoint_time_ms = start_time_ms
+                        if use_git_timestamp is True and git_timestamp_ms is not None:
+                            datapoint_time_ms = git_timestamp_ms
                         post_process_benchmark_results(
                             benchmark_tool,
                             local_benchmark_output_filename,
-                            start_time_ms,
+                            datapoint_time_ms,
                             start_time_str,
                             client_container_stdout,
                             None,
@@ -463,6 +468,7 @@ def process_self_contained_coordinator_stream(
                             results_dict = json.load(json_file)
                             logging.info("Final JSON result {}".format(results_dict))
                         dataset_load_duration_seconds = 0
+
                         timeseries_test_sucess_flow(
                             datasink_push_results_redistimeseries,
                             git_version,
@@ -474,7 +480,7 @@ def process_self_contained_coordinator_stream(
                             None,
                             results_dict,
                             rts,
-                            start_time_ms,
+                            datapoint_time_ms,
                             test_name,
                             git_branch,
                             tf_github_org,
@@ -539,11 +545,17 @@ def get_benchmark_specs(testsuites_folder):
 
 
 def extract_build_info_from_streamdata(testDetails):
+    use_git_timestamp = False
+    git_timestamp_ms = None
     git_version = None
     git_branch = None
     metadata = None
     build_variant_name = None
     git_hash = testDetails[b"git_hash"]
+    if b"use_git_timestamp" in testDetails:
+        use_git_timestamp = bool(testDetails[b"use_git_timestamp"].decode())
+    if b"git_timestamp_ms" in testDetails:
+        git_timestamp_ms = int(testDetails[b"git_timestamp_ms"].decode())
     if b"id" in testDetails:
         build_variant_name = testDetails[b"id"]
         if type(build_variant_name) == bytes:
@@ -577,6 +589,8 @@ def extract_build_info_from_streamdata(testDetails):
         git_branch,
         git_version,
         run_image,
+        use_git_timestamp,
+        git_timestamp_ms,
     )
 
 

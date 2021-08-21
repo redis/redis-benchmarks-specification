@@ -37,6 +37,7 @@ STREAM_GH_NEW_BUILD_RUNNERS_CG = os.getenv(
 )
 
 # host used to store the streams of events
+GH_TOKEN = os.getenv("GH_TOKEN", None)
 GH_REDIS_SERVER_HOST = os.getenv("GH_REDIS_SERVER_HOST", "localhost")
 GH_REDIS_SERVER_PORT = int(os.getenv("GH_REDIS_SERVER_PORT", "6379"))
 GH_REDIS_SERVER_AUTH = os.getenv("GH_REDIS_SERVER_AUTH", None)

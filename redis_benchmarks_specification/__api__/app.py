@@ -5,8 +5,10 @@ import redis
 from flask_httpauth import HTTPBasicAuth
 
 from redis_benchmarks_specification.__api__.schema import (
-    commit_schema_to_stream,
     CommitSchema,
+)
+from redis_benchmarks_specification.__common__.builder_schema import (
+    commit_schema_to_stream,
 )
 from redis_benchmarks_specification.__common__.env import (
     REDIS_AUTH_SERVER_HOST,
@@ -43,20 +45,21 @@ def create_app(conn, test_config=None):
     def base():
         # Get Request body from JSON
         request_data = request.json
+        gh_org = "redis"
+        gh_repo = "redis"
         schema = CommitSchema()
         try:
             # Validate request body against schema data types
             result = schema.load(request_data)
         except ValidationError as err:
-            # Return a nice message if validation fails
-            return jsonify(err.messages), 400
+            err_message = err.messages
+        if result is True:
+            # Convert request body back to JSON str
+            data_now_json_str = dumps(result)
 
-        # Convert request body back to JSON str
-        data_now_json_str = dumps(result)
-
-        result, response_data, err_message = commit_schema_to_stream(
-            data_now_json_str, conn
-        )
+            result, response_data, err_message = commit_schema_to_stream(
+                data_now_json_str, conn, gh_org, gh_repo
+            )
         if result is False:
             return jsonify(err_message), 400
 
