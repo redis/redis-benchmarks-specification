@@ -24,10 +24,16 @@ from redis_benchmarks_specification.__common__.env import (
 def test_build_spec_image_prefetch():
     builders_folder = "./redis_benchmarks_specification/setups/builders"
     different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
-    prefetched_images = build_spec_image_prefetch(
+    prefetched_images, total_fetched = build_spec_image_prefetch(
         builders_folder, different_build_specs
     )
+    assert total_fetched == 0 or total_fetched == 1
     assert "gcc:8.5.0-buster" in prefetched_images
+    for x in range(0, 100):
+        prefetched_images, total_fetched = build_spec_image_prefetch(
+            builders_folder, different_build_specs
+        )
+        assert total_fetched == 0
 
 
 def test_commit_schema_to_stream_then_build():

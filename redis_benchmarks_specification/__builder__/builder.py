@@ -320,6 +320,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
 def build_spec_image_prefetch(builders_folder, different_build_specs):
     logging.info("checking build spec requirements")
     already_checked_images = []
+    hub_pulled_images = 0
     client = docker.from_env()
     for build_spec in different_build_specs:
         build_config, id = get_build_config(builders_folder + "/" + build_spec)
@@ -331,13 +332,18 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
                         id, build_image
                     )
                 )
-                if build_image not in client.images.list():
+                local_images = [
+                    x.tags[0]
+                    for x in client.images.list(filters={"reference": build_image})
+                ]
+                if build_image not in local_images:
                     logging.info(
                         "Build {} requirement: build image {} is not available locally. Fetching it from hub".format(
                             id, build_image
                         )
                     )
                     client.images.pull(build_image)
+                    hub_pulled_images = hub_pulled_images + 1
                 else:
                     logging.info(
                         "Build {} requirement: build image {} is available locally.".format(
@@ -351,4 +357,4 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
                         id, build_image
                     )
                 )
-    return already_checked_images
+    return already_checked_images, hub_pulled_images
