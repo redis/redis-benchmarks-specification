@@ -46,6 +46,8 @@ GH_REDIS_SERVER_USER = os.getenv("GH_REDIS_SERVER_USER", None)
 # DB used to authenticate ( read-only/non-dangerous access only )
 REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
 REDIS_AUTH_SERVER_PORT = int(os.getenv("REDIS_AUTH_SERVER_PORT", "6380"))
+REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "15"))
+REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "300"))
 
 # environment variables
 DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
