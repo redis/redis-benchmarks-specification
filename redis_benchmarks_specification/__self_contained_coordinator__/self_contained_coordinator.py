@@ -37,6 +37,8 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
     GH_REDIS_SERVER_USER,
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
+    REDIS_HEALTH_CHECK_INTERVAL,
+    REDIS_SOCKET_TIMEOUT,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -108,6 +110,9 @@ def main():
             decode_responses=False,  # dont decode due to binary archives
             password=GH_REDIS_SERVER_AUTH,
             username=GH_REDIS_SERVER_USER,
+            health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+            socket_keepalive=True,
         )
         conn.ping()
     except redis.exceptions.ConnectionError as e:
@@ -132,6 +137,9 @@ def main():
                 decode_responses=True,
                 password=args.datasink_redistimeseries_pass,
                 username=args.datasink_redistimeseries_user,
+                health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+                socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+                socket_keepalive=True,
             )
             rts.redis.ping()
         except redis.exceptions.ConnectionError as e:

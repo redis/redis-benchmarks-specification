@@ -20,6 +20,8 @@ from redis_benchmarks_specification.__common__.env import (
     LOG_FORMAT,
     LOG_DATEFMT,
     LOG_LEVEL,
+    REDIS_HEALTH_CHECK_INTERVAL,
+    REDIS_SOCKET_TIMEOUT,
 )
 from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
@@ -55,6 +57,9 @@ def main():
         port=GH_REDIS_SERVER_PORT,
         decode_responses=True,
         password=GH_REDIS_SERVER_AUTH,
+        health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+        socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+        socket_keepalive=True,
     )
     app = create_app(conn)
     if args.logname is not None:
