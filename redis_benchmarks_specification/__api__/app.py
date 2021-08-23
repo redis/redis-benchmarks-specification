@@ -48,6 +48,8 @@ def create_app(conn, test_config=None):
         gh_org = "redis"
         gh_repo = "redis"
         schema = CommitSchema()
+        response_data = {}
+        err_message = ""
         try:
             # Validate request body against schema data types
             result = schema.load(request_data)
