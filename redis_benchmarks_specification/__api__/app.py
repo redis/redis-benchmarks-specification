@@ -48,24 +48,20 @@ def create_app(conn, test_config=None):
         gh_org = "redis"
         gh_repo = "redis"
         schema = CommitSchema()
-        response_data = {}
-        err_message = ""
         try:
             # Validate request body against schema data types
             result = schema.load(request_data)
-        except ValidationError as err:
-            err_message = err.messages
-        if result is True:
             # Convert request body back to JSON str
             data_now_json_str = dumps(result)
 
             result, response_data, err_message = commit_schema_to_stream(
                 data_now_json_str, conn, gh_org, gh_repo
             )
-        if result is False:
-            return jsonify(err_message), 400
+            # Send data back as JSON
+            return jsonify(response_data), 200
 
-        # Send data back as JSON
-        return jsonify(response_data), 200
+        except ValidationError as err:
+            err_message = err.messages
+            return jsonify(err_message), 400
 
     return app
