@@ -77,6 +77,7 @@ def get_commit_dict_from_sha(
     commit_dict={},
     use_git_timestamp=False,
     gh_token=None,
+    gh_branch=None,
 ):
     commit = None
     # using an access token
@@ -91,6 +92,8 @@ def get_commit_dict_from_sha(
         use_git_timestamp = False
     commit_dict["use_git_timestamp"] = str(use_git_timestamp)
     commit_dict["git_hash"] = git_hash
+    if gh_branch is not None:
+        commit_dict["git_branch"] = gh_branch
 
     result, error_msg = get_archive_zip_from_hash(
         gh_org, gh_repo, git_hash, commit_dict

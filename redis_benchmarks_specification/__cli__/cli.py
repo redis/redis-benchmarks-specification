@@ -64,7 +64,6 @@ def main():
         default=START_TIME_NOW_UTC,
     )
     parser.add_argument("--redis_repo", type=str, default=None)
-    parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
     parser.add_argument("--dry-run", type=bool, default=False)
     args = parser.parse_args()
     redisDirPath = args.redis_repo
@@ -103,7 +102,6 @@ def main():
             <= datetime.datetime.utcfromtimestamp(commit.committed_datetime.timestamp())
             <= args.to_date
         ):
-            print(commit.summary)
             Commits.append(commit)
     logging.info(
         "Will trigger {} distinct {} branch commit tests.".format(
@@ -112,6 +110,11 @@ def main():
     )
 
     if args.dry_run is False:
+        logging.info(
+            "Using redis available at: {}:{} to read the event streams".format(
+                args.redis_host, args.redis_port
+            )
+        )
         conn = redis.StrictRedis(
             host=args.redis_host,
             port=args.redis_port,
@@ -122,7 +125,13 @@ def main():
         for rep in range(0, 1):
             for commit in Commits:
                 result, error_msg, commit_dict, _ = get_commit_dict_from_sha(
-                    commit.hexsha, "redis", "redis", {}, True, args.gh_token
+                    commit.hexsha,
+                    "redis",
+                    "redis",
+                    {},
+                    True,
+                    args.gh_token,
+                    args.branch,
                 )
                 if result is True:
                     result, reply_fields, error_msg = request_build_from_commit_info(
