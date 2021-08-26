@@ -246,7 +246,7 @@ def self_contained_coordinator_blocking_read(
         if overall_result is True:
             ack_reply = conn.xack(
                 STREAM_KEYNAME_NEW_BUILD_EVENTS,
-                STREAM_GH_NEW_BUILD_RUNNERS_CG,
+                get_runners_consumer_group_name(platform_name),
                 stream_id,
             )
             if type(ack_reply) == bytes:
