@@ -10,7 +10,7 @@ Members from both industry and academia, including organizations and individuals
 
 Currently, the following members actively support this project:
 
-- [Redis Ltd.](https://redis.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
+- [Redis Ltd.](https://redis.com/) via the Redis Performance Group: providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
 
 
 ## Scope 
@@ -32,6 +32,17 @@ Current supported benchmark tools:
 - [redis-benchmark](https://github.com/redis/redis)
 - [SOON][memtier_benchmark](https://github.com/RedisLabs/memtier_benchmark)
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
+
+
+## Installing Redis benchmarks specification implementations
+
+The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.
+
+Installation is done using pip, the package installer for Python, in the following manner:
+
+```bash
+python3 -m pip install redis-benchmarks-specification
+```
 
 ## Architecture diagram
 
