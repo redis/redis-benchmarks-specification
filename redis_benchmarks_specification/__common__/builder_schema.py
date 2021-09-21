@@ -4,7 +4,6 @@
 #  All rights reserved.
 #
 import logging
-from json import loads
 from urllib.error import URLError
 from urllib.request import urlopen
 from github import Github
@@ -17,15 +16,15 @@ from redis_benchmarks_specification.__common__.env import (
 
 
 def commit_schema_to_stream(
-    json_str: str,
+    fields: dict,
     conn: redis.StrictRedis,
-    gh_org="redis",
-    gh_repo="redis",
+    gh_org,
+    gh_repo,
     gh_token=None,
 ):
     """ uses to the provided JSON dict of fields and pushes that info to the corresponding stream  """
-    fields = loads(json_str)
-    reply_fields = loads(json_str)
+    fields = fields
+    reply_fields = dict(fields)
     result = False
     error_msg = None
     use_git_timestamp = False
@@ -72,8 +71,8 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
 
 def get_commit_dict_from_sha(
     git_hash,
-    gh_org="redis",
-    gh_repo="redis",
+    gh_org,
+    gh_repo,
     commit_dict={},
     use_git_timestamp=False,
     gh_token=None,
@@ -119,6 +118,13 @@ def request_build_from_commit_info(conn, fields, reply_fields):
     """
     result = True
     error_msg = None
+    for k, v in fields.items():
+        if type(v) not in [str, int, float, bytes]:
+            raise Exception(
+                "Type of field {} is not bytes, string, int or float. Type ({}). Value={}".format(
+                    k, type(v), v
+                )
+            )
     id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT.encode(), fields)
     reply_fields["id"] = id
     return result, reply_fields, error_msg

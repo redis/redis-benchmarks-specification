@@ -15,13 +15,12 @@ from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_HOST,
     GH_REDIS_SERVER_PORT,
     GH_REDIS_SERVER_AUTH,
-    REDIS_AUTH_SERVER_HOST,
-    REDIS_AUTH_SERVER_PORT,
     LOG_FORMAT,
     LOG_DATEFMT,
     LOG_LEVEL,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
+    GH_REDIS_SERVER_USER,
 )
 from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
@@ -47,11 +46,6 @@ def main():
             GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
         )
     )
-    print(
-        "Using redis available at: {}:{} as auth server.".format(
-            REDIS_AUTH_SERVER_HOST, REDIS_AUTH_SERVER_PORT
-        )
-    )
     conn = redis.StrictRedis(
         host=GH_REDIS_SERVER_HOST,
         port=GH_REDIS_SERVER_PORT,
@@ -61,7 +55,7 @@ def main():
         socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
         socket_keepalive=True,
     )
-    app = create_app(conn)
+    app = create_app(conn, GH_REDIS_SERVER_USER)
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
         handler = logging.handlers.RotatingFileHandler(
