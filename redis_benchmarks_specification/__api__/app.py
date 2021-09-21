@@ -97,7 +97,13 @@ def create_app(conn, user, test_config=None):
                 event_type = "Git pushes to repo"
 
             if use_event is True:
-                fields = {"git_hash": sha, "ref_label": ref_label, "ref": ref}
+                fields = {
+                    "git_hash": sha,
+                    "ref_label": ref_label,
+                    "ref": ref,
+                    "gh_repo": gh_repo,
+                    "gh_org": gh_org,
+                }
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, fields

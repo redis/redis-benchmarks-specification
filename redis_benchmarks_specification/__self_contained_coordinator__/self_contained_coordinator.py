@@ -233,6 +233,7 @@ def self_contained_coordinator_blocking_read(
         stream_id = ">"
     else:
         stream_id, overall_result = process_self_contained_coordinator_stream(
+            conn,
             datasink_push_results_redistimeseries,
             docker_client,
             home,
@@ -267,6 +268,7 @@ def self_contained_coordinator_blocking_read(
 
 
 def process_self_contained_coordinator_stream(
+    conn,
     datasink_push_results_redistimeseries,
     docker_client,
     home,
@@ -327,9 +329,15 @@ def process_self_contained_coordinator_stream(
 
                         benchmark_tool = "redis-benchmark"
                         for build_artifact in build_artifacts:
-                            buffer = testDetails[
-                                bytes("{}".format(build_artifact).encode())
+                            buffer_key = testDetails[
+                                "{}".format(build_artifact).encode()
                             ]
+                            logging.info(
+                                "Reading artifact binary {} from key {}".format(
+                                    build_artifact, buffer_key
+                                )
+                            )
+                            buffer = bytes(conn.get(buffer_key))
                             artifact_fname = "{}/{}".format(
                                 temporary_dir, build_artifact
                             )

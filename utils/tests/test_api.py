@@ -54,7 +54,14 @@ def test_commit_schema_to_stream():
 
 
 def test_get_commit_dict_from_sha():
-    result, error_msg, commit_dict, _ = get_commit_dict_from_sha(
+    (
+        result,
+        error_msg,
+        commit_dict,
+        _,
+        binary_key,
+        binary_value,
+    ) = get_commit_dict_from_sha(
         "492d8d09613cff88f15dcef98732392b8d509eb1", "redis", "redis", {}, True, GH_TOKEN
     )
     if GH_TOKEN is not None:
