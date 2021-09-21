@@ -50,6 +50,9 @@ REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "15")
 REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "300"))
 
 # environment variables
+PULL_REQUEST_TRIGGER_LABEL = os.getenv(
+    "PULL_REQUEST_TRIGGER_LABEL", "trigger-benchmark"
+)
 DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)

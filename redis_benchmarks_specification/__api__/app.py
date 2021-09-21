@@ -1,5 +1,4 @@
 import json
-import logging
 
 from flask import jsonify
 import redis
@@ -10,6 +9,7 @@ from hashlib import sha1
 from redis_benchmarks_specification.__common__.builder_schema import (
     commit_schema_to_stream,
 )
+from redis_benchmarks_specification.__common__.env import PULL_REQUEST_TRIGGER_LABEL
 
 SIG_HEADER = "X-Hub-Signature"
 
@@ -60,7 +60,7 @@ def create_app(conn, user, test_config=None):
             event_type = "Ignored event from webhook"
             use_event = False
             # Pull request labeled
-            trigger_label = "trigger-benchmark"
+            trigger_label = PULL_REQUEST_TRIGGER_LABEL
             if "pull_request" in request_data:
                 action = request_data["action"]
                 if "labeled" == action:
@@ -98,7 +98,7 @@ def create_app(conn, user, test_config=None):
 
             if use_event is True:
                 fields = {"git_hash": sha, "ref_label": ref_label, "ref": ref}
-                logging.info(
+                app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, fields
                     )
@@ -106,14 +106,16 @@ def create_app(conn, user, test_config=None):
                 result, response_data, err_message = commit_schema_to_stream(
                     fields, conn, gh_org, gh_repo
                 )
-                logging.info(
+                app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, response_data
                     )
                 )
 
             else:
-                logging.info("{}. input json was: {}".format(event_type, request_data))
+                app.logger.info(
+                    "{}. input json was: {}".format(event_type, request_data)
+                )
                 response_data = {"message": event_type}
 
             # Send data back as JSON

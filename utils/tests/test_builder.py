@@ -56,7 +56,7 @@ def test_commit_schema_to_stream_then_build():
                 },
                 conn,
                 "redis",
-                "redis"
+                "redis",
             )
             assert result == True
             assert error_msg == None
