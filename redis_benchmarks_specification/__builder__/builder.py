@@ -178,10 +178,18 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
         if b"git_hash" in testDetails:
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))
-            buffer = testDetails[b"zip_archive"]
+            binary_zip_key = testDetails[b"zip_archive_key"]
+            logging.info(
+                "Retriving zipped source from key {}.".format(
+                    testDetails[b"zip_archive_key"]
+                )
+            )
+            buffer = conn.get(binary_zip_key)
             git_branch = None
             if b"git_branch" in testDetails:
                 git_branch = testDetails[b"git_branch"]
+            if b"ref_label" in testDetails:
+                git_branch = testDetails[b"ref_label"]
             git_timestamp_ms = None
             use_git_timestamp = False
             if b"use_git_timestamp" in testDetails:
@@ -274,10 +282,13 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 if git_timestamp_ms is not None:
                     build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
+                    bin_key = "zipped:artifacts:{}:{}.zip".format(id, artifact)
                     bin_artifact = open(
                         "{}src/{}".format(redis_temporary_dir, artifact), "rb"
                     ).read()
-                    build_stream_fields[artifact] = bytes(bin_artifact)
+                    ttl = 24 * 7 * 60 * 60
+                    conn.set(bin_key, bytes(bin_artifact), ex=ttl)
+                    build_stream_fields[artifact] = bin_key
                     build_stream_fields["{}_len_bytes".format(artifact)] = len(
                         bytes(bin_artifact)
                     )

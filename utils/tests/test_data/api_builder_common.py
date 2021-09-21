@@ -16,7 +16,11 @@ def flow_1_and_2_api_builder_checks(conn):
     builder_consumer_group_create(conn)
     assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 0
     result, reply_fields, error_msg = commit_schema_to_stream(
-        '{"git_hash":"0cf2df84d4b27af4bffd2bf3543838f09e10f874", "git_branch":"unstable", "use_git_timestamp":true }',
+        {
+            "git_hash": "0cf2df84d4b27af4bffd2bf3543838f09e10f874",
+            "git_branch": "unstable",
+            "use_git_timestamp": True,
+        },
         conn,
         "redis",
         "redis",

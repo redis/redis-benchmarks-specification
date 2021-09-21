@@ -121,12 +121,20 @@ def main():
         )
         for rep in range(0, 1):
             for commit in Commits:
-                result, error_msg, commit_dict, _ = get_commit_dict_from_sha(
+                (
+                    result,
+                    error_msg,
+                    commit_dict,
+                    _,
+                    binary_key,
+                    binary_value,
+                ) = get_commit_dict_from_sha(
                     commit.hexsha, "redis", "redis", {}, True, args.gh_token
                 )
+                binary_exp_secs = 24 * 7 * 60 * 60
                 if result is True:
                     result, reply_fields, error_msg = request_build_from_commit_info(
-                        conn, commit_dict, {}
+                        conn, commit_dict, {}, binary_key, binary_value, binary_exp_secs
                     )
                     logging.info(
                         "Successfully requested a build for commit: {}. Request stream id: {}. Commit summary: {}".format(
