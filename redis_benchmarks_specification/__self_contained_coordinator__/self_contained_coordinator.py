@@ -32,7 +32,6 @@ from redis_benchmarks_specification.__common__.env import (
     LOG_DATEFMT,
     LOG_LEVEL,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
-    GH_REDIS_SERVER_USER,
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
