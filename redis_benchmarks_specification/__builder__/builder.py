@@ -186,10 +186,13 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
             )
             buffer = conn.get(binary_zip_key)
             git_branch = None
+            git_version = None
             if b"git_branch" in testDetails:
                 git_branch = testDetails[b"git_branch"]
             if b"ref_label" in testDetails:
                 git_branch = testDetails[b"ref_label"]
+            if b"git_version" in testDetails:
+                git_version = testDetails[b"git_version"]
             git_timestamp_ms = None
             use_git_timestamp = False
             if b"use_git_timestamp" in testDetails:
@@ -279,6 +282,8 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 }
                 if git_branch is not None:
                     build_stream_fields["git_branch"] = git_branch
+                if git_version is not None:
+                    build_stream_fields["git_version"] = git_version
                 if git_timestamp_ms is not None:
                     build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
