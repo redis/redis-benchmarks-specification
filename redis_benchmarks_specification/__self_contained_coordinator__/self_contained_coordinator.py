@@ -28,9 +28,6 @@ from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
-    GH_REDIS_SERVER_HOST,
-    GH_REDIS_SERVER_PORT,
-    GH_REDIS_SERVER_AUTH,
     LOG_FORMAT,
     LOG_DATEFMT,
     LOG_LEVEL,
@@ -99,17 +96,17 @@ def main():
     )
 
     logging.info(
-        "Using redis available at: {}:{} to read the event streams".format(
-            GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
+        "Reading event streams from: {}:{} with user {}".format(
+            args.event_stream_host, args.event_stream_port, args.event_stream_user
         )
     )
     try:
         conn = redis.StrictRedis(
-            host=GH_REDIS_SERVER_HOST,
-            port=GH_REDIS_SERVER_PORT,
+            host=args.event_stream_host,
+            port=args.event_stream_port,
             decode_responses=False,  # dont decode due to binary archives
-            password=GH_REDIS_SERVER_AUTH,
-            username=GH_REDIS_SERVER_USER,
+            password=args.event_stream_pass,
+            username=args.event_stream_user,
             health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
             socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             socket_keepalive=True,
@@ -118,7 +115,7 @@ def main():
     except redis.exceptions.ConnectionError as e:
         logging.error(
             "Unable to connect to redis available at: {}:{} to read the event streams".format(
-                GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
+                args.event_stream_host, args.event_stream_port
             )
         )
         logging.error("Error message {}".format(e.__str__()))

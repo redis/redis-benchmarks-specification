@@ -10,6 +10,10 @@ from redis_benchmarks_specification.__common__.env import (
     DATASINK_RTS_USER,
     DATASINK_RTS_PUSH,
     MACHINE_NAME,
+    GH_REDIS_SERVER_HOST,
+    GH_REDIS_SERVER_PORT,
+    GH_REDIS_SERVER_AUTH,
+    GH_REDIS_SERVER_USER,
 )
 
 
@@ -18,6 +22,10 @@ def create_self_contained_coordinator_args(project_name):
         description=project_name,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument("--event_stream_host", type=str, default=GH_REDIS_SERVER_HOST)
+    parser.add_argument("--event_stream_port", type=int, default=GH_REDIS_SERVER_PORT)
+    parser.add_argument("--event_stream_pass", type=str, default=GH_REDIS_SERVER_AUTH)
+    parser.add_argument("--event_stream_user", type=str, default=GH_REDIS_SERVER_USER)
     parser.add_argument(
         "--cpu-count",
         type=int,
