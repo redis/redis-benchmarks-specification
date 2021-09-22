@@ -11,7 +11,9 @@ import shutil
 import subprocess
 import tempfile
 import git
+import packaging
 import redis
+from packaging import version
 
 # logging settings
 from redisbench_admin.cli import populate_with_poetry_data
@@ -65,7 +67,24 @@ def main():
     )
     parser.add_argument("--redis_repo", type=str, default=None)
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
-    parser.add_argument("--dry-run", type=bool, default=False)
+    parser.add_argument(
+        "--use-tags",
+        default=False,
+        action="store_true",
+        help="Iterate over the git tags.",
+    )
+    parser.add_argument(
+        "--use-commits",
+        default=False,
+        action="store_true",
+        help="Iterate over the git commits.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        default=False,
+        action="store_true",
+        help="Only check how many benchmarks we would trigger. Don't request benchmark runs at the end.",
+    )
     args = parser.parse_args()
     redisDirPath = args.redis_repo
     cleanUp = False
@@ -96,19 +115,57 @@ def main():
         )
     )
     repo = git.Repo(redisDirPath)
-    Commits = []
-    for commit in repo.iter_commits():
-        if (
-            args.from_date
-            <= datetime.datetime.utcfromtimestamp(commit.committed_datetime.timestamp())
-            <= args.to_date
-        ):
-            print(commit.summary)
-            Commits.append(commit)
+
+    commits = []
+    if args.use_commits:
+        for commit in repo.iter_commits():
+            if (
+                args.from_date
+                <= datetime.datetime.utcfromtimestamp(
+                    commit.committed_datetime.timestamp()
+                )
+                <= args.to_date
+            ):
+                print(commit.summary)
+                commits.append({"git_hash": commit.hexsha, "git_branch": args.branch})
+    if args.use_tags:
+        tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
+        for tag in tags:
+            if (
+                args.from_date
+                <= datetime.datetime.utcfromtimestamp(
+                    tag.commit.committed_datetime.timestamp()
+                )
+                <= args.to_date
+            ):
+
+                try:
+                    version.Version(tag.name)
+                    git_version = tag.name
+                    print(
+                        "Commit summary: {}. Extract semver: {}".format(
+                            tag.commit.summary, git_version
+                        )
+                    )
+                    # head = repo.lookup_reference(tag.commit).resolve()
+                    commits.append(
+                        {"git_hash": tag.commit.hexsha, "git_version": git_version}
+                    )
+                except packaging.version.InvalidVersion:
+                    logging.info(
+                        "Ignoring tag {} given we were not able to extract commit or version info from it.".format(
+                            tag.name
+                        )
+                    )
+                    pass
+
+    by_description = "n/a"
+    if args.use_commits:
+        by_description = "from branch {}".format(args.branch)
+    if args.use_tags:
+        by_description = "by tags"
     logging.info(
-        "Will trigger {} distinct {} branch commit tests.".format(
-            len(Commits), args.branch
-        )
+        "Will trigger {} distinct tests {}.".format(len(commits), by_description)
     )
 
     if args.dry_run is False:
@@ -120,7 +177,7 @@ def main():
             decode_responses=False,
         )
         for rep in range(0, 1):
-            for commit in Commits:
+            for cdict in commits:
                 (
                     result,
                     error_msg,
@@ -129,7 +186,7 @@ def main():
                     binary_key,
                     binary_value,
                 ) = get_commit_dict_from_sha(
-                    commit.hexsha, "redis", "redis", {}, True, args.gh_token
+                    cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
                 )
                 binary_exp_secs = 24 * 7 * 60 * 60
                 if result is True:
@@ -137,8 +194,8 @@ def main():
                         conn, commit_dict, {}, binary_key, binary_value, binary_exp_secs
                     )
                     logging.info(
-                        "Successfully requested a build for commit: {}. Request stream id: {}. Commit summary: {}".format(
-                            commit.hexsha, reply_fields["id"], commit.summary
+                        "Successfully requested a build for commit: {}. Request stream id: {}.".format(
+                            cdict["git_hash"], reply_fields["id"]
                         )
                     )
                 else:
