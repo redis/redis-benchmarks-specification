@@ -15,12 +15,6 @@ from redis_benchmarks_specification.__common__.env import (
     GH_TOKEN,
 )
 
-import pytest
-
-import pytest
-
-# First party modules
-
 
 def test_commit_schema_to_stream():
     result, reply_fields, error_msg = commit_schema_to_stream(

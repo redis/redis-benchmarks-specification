@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.14"
+version = "0.1.15"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
@@ -21,6 +21,7 @@ psutil = "^5.8.0"
 tox-docker = "^3.0.0"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
+redistimeseries = "1.4.3"
 
 [tool.poetry.dev-dependencies]
 black = "20.8b1"

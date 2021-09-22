@@ -11,7 +11,7 @@ import docker
 import redis
 import os
 from pathlib import Path
-import redistimeseries
+from redistimeseries.client import Client
 from docker.models.containers import Container
 
 from redisbench_admin.run.common import (
@@ -127,7 +127,7 @@ def main():
             )
         )
         try:
-            rts = redistimeseries.client.Client(
+            rts = Client(
                 host=args.datasink_redistimeseries_host,
                 port=args.datasink_redistimeseries_port,
                 decode_responses=True,

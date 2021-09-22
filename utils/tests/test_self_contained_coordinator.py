@@ -9,15 +9,7 @@ from pathlib import Path
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
 
-from redis_benchmarks_specification.__common__.builder_schema import (
-    commit_schema_to_stream,
-)
-from redis_benchmarks_specification.__builder__.builder import (
-    builder_consumer_group_create,
-    builder_process_stream,
-)
 from redis_benchmarks_specification.__common__.env import (
-    STREAM_KEYNAME_GH_EVENTS_COMMIT,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
 from redis_benchmarks_specification.__common__.spec import (
