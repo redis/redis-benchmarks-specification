@@ -7,8 +7,10 @@
 import argparse
 import datetime
 import logging
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import git
 import packaging
@@ -17,19 +19,13 @@ from packaging import version
 
 # logging settings
 from redisbench_admin.cli import populate_with_poetry_data
-from redisbench_admin.run.common import get_start_time_vars
 
+from redis_benchmarks_specification.__cli__.args import spec_cli_args
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
     request_build_from_commit_info,
 )
-from redis_benchmarks_specification.__common__.env import (
-    GH_REDIS_SERVER_HOST,
-    GH_REDIS_SERVER_AUTH,
-    GH_REDIS_SERVER_USER,
-    GH_REDIS_SERVER_PORT,
-    GH_TOKEN,
-)
+from redis_benchmarks_specification.__common__.env import REDIS_BINS_EXPIRE_SECS
 from redis_benchmarks_specification.__common__.package import get_version_string
 
 logging.basicConfig(
@@ -37,9 +33,6 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
-START_TIME_NOW_UTC, _, _ = get_start_time_vars()
-START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=7)
 
 
 def main():
@@ -49,43 +42,21 @@ def main():
         description=get_version_string(project_name, project_version),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--redis_host", type=str, default=GH_REDIS_SERVER_HOST)
-    parser.add_argument("--branch", type=str, default="unstable")
-    parser.add_argument("--gh_token", type=str, default=GH_TOKEN)
-    parser.add_argument("--redis_port", type=int, default=GH_REDIS_SERVER_PORT)
-    parser.add_argument("--redis_pass", type=str, default=GH_REDIS_SERVER_AUTH)
-    parser.add_argument("--redis_user", type=str, default=GH_REDIS_SERVER_USER)
-    parser.add_argument(
-        "--from-date",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d"),
-        default=START_TIME_LAST_YEAR_UTC,
-    )
-    parser.add_argument(
-        "--to-date",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d"),
-        default=START_TIME_NOW_UTC,
-    )
-    parser.add_argument("--redis_repo", type=str, default=None)
-    parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
-    parser.add_argument(
-        "--use-tags",
-        default=False,
-        action="store_true",
-        help="Iterate over the git tags.",
-    )
-    parser.add_argument(
-        "--use-commits",
-        default=False,
-        action="store_true",
-        help="Iterate over the git commits.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        default=False,
-        action="store_true",
-        help="Only check how many benchmarks we would trigger. Don't request benchmark runs at the end.",
-    )
+    parser = spec_cli_args(parser)
     args = parser.parse_args()
+
+    cli_command_logic(args, project_name, project_version)
+
+
+def cli_command_logic(args, project_name, project_version):
+    logging.info(
+        "Using: {project_name} {project_version}".format(
+            project_name=project_name, project_version=project_version
+        )
+    )
+    if args.use_branch is False and args.use_tags is False:
+        logging.error("You must specify either --use-tags or --use-branch flag")
+        sys.exit(1)
     redisDirPath = args.redis_repo
     cleanUp = False
     if redisDirPath is None:
@@ -115,9 +86,8 @@ def main():
         )
     )
     repo = git.Repo(redisDirPath)
-
     commits = []
-    if args.use_commits:
+    if args.use_branch:
         for commit in repo.iter_commits():
             if (
                 args.from_date
@@ -129,6 +99,17 @@ def main():
                 print(commit.summary)
                 commits.append({"git_hash": commit.hexsha, "git_branch": args.branch})
     if args.use_tags:
+        tags_regexp = args.tags_regexp
+        if tags_regexp == ".*":
+            logging.info(
+                "Acception all tags that follow semver between the timeframe. If you need further filter specify a regular expression via --tags-regexp"
+            )
+        else:
+            logging.info(
+                "Filtering all tags via a regular expression: {}".format(tags_regexp)
+            )
+        tags_regex_string = re.compile(tags_regexp)
+
         tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
         for tag in tags:
             if (
@@ -141,16 +122,23 @@ def main():
 
                 try:
                     version.Version(tag.name)
-                    git_version = tag.name
-                    print(
-                        "Commit summary: {}. Extract semver: {}".format(
-                            tag.commit.summary, git_version
+                    match_obj = re.search(tags_regex_string, tag.name)
+                    if match_obj is None:
+                        logging.info(
+                            "Skipping {} given it does not match regex {}".format(
+                                tag.name, tags_regexp
+                            )
                         )
-                    )
-                    # head = repo.lookup_reference(tag.commit).resolve()
-                    commits.append(
-                        {"git_hash": tag.commit.hexsha, "git_version": git_version}
-                    )
+                    else:
+                        git_version = tag.name
+                        print(
+                            "Commit summary: {}. Extract semver: {}".format(
+                                tag.commit.summary, git_version
+                            )
+                        )
+                        commits.append(
+                            {"git_hash": tag.commit.hexsha, "git_version": git_version}
+                        )
                 except packaging.version.InvalidVersion:
                     logging.info(
                         "Ignoring tag {} given we were not able to extract commit or version info from it.".format(
@@ -158,16 +146,14 @@ def main():
                         )
                     )
                     pass
-
     by_description = "n/a"
-    if args.use_commits:
+    if args.use_branch:
         by_description = "from branch {}".format(args.branch)
     if args.use_tags:
         by_description = "by tags"
     logging.info(
         "Will trigger {} distinct tests {}.".format(len(commits), by_description)
     )
-
     if args.dry_run is False:
         conn = redis.StrictRedis(
             host=args.redis_host,
@@ -188,10 +174,14 @@ def main():
                 ) = get_commit_dict_from_sha(
                     cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
                 )
-                binary_exp_secs = 24 * 7 * 60 * 60
                 if result is True:
                     result, reply_fields, error_msg = request_build_from_commit_info(
-                        conn, commit_dict, {}, binary_key, binary_value, binary_exp_secs
+                        conn,
+                        commit_dict,
+                        {},
+                        binary_key,
+                        binary_value,
+                        REDIS_BINS_EXPIRE_SECS,
                     )
                     logging.info(
                         "Successfully requested a build for commit: {}. Request stream id: {}.".format(
@@ -203,7 +193,6 @@ def main():
 
     else:
         logging.info("Skipping actual work trigger ( dry-run )")
-
     if cleanUp is True:
         logging.info("Removing temporary redis dir {}.".format(redisDirPath))
         shutil.rmtree(redisDirPath)
