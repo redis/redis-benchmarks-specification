@@ -17,8 +17,6 @@ import packaging
 import redis
 from packaging import version
 
-# logging settings
-from redisbench_admin.cli import populate_with_poetry_data
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
 from redis_benchmarks_specification.__common__.builder_schema import (
@@ -26,8 +24,12 @@ from redis_benchmarks_specification.__common__.builder_schema import (
     request_build_from_commit_info,
 )
 from redis_benchmarks_specification.__common__.env import REDIS_BINS_EXPIRE_SECS
-from redis_benchmarks_specification.__common__.package import get_version_string
+from redis_benchmarks_specification.__common__.package import (
+    get_version_string,
+    populate_with_poetry_data,
+)
 
+# logging settings
 logging.basicConfig(
     format="%(asctime)s %(levelname)-4s %(message)s",
     level=logging.INFO,
