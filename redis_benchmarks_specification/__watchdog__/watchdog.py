@@ -7,17 +7,9 @@
 import argparse
 import datetime
 import logging
-import re
-import shutil
-import subprocess
-import sys
-import tempfile
 import time
 
-import git
-import packaging
 import redis
-from packaging import version
 
 # logging settings
 from redisbench_admin.run.common import get_start_time_vars
