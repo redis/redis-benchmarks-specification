@@ -1,10 +1,9 @@
 ---
 name: Bug report
-about: Create a report to help us improve RedisAI
+about: Create a report to help us improve the benchmark SPEC implementation ( via redis-benchamrks-specification python package )
 title: "[BUG]: "
 labels: ["bug", "triage"]
 assignees: 'filipecosta90'
-
 ---
 
 **Describe the bug**
@@ -23,7 +22,7 @@ If applicable, add screenshots to help explain your problem.
 
 **Environment (please complete the following information):**
  - OS: [e.g. ubuntu 20.04]
- - Version [e.g. 1.2.2]
+ - PyPi version package [e.g. 0.5.9]
  - Platfrom [e.g. x86, Jetson, ARM]
 
 **Additional context**
