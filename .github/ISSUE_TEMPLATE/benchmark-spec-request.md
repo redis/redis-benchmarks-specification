@@ -1,14 +1,10 @@
+---
 name: Benchmark Specification Request
-
 description: File a benchmark SPEC request for improvement or addition
-
 title: "[SPEC]: "
-
 labels: ["spec", "triage"]
-
 assignees:
   - filipecosta90
-
 body:
   - type: markdown
     attributes:
@@ -26,7 +22,6 @@ body:
     
         Make sure to double check if this this benchmark specification request for improvement or addition hasn't 
         already been asked for at the [issues section](https://github.com/redis/redis-benchmarks-specification/labels/spec).
-        
 
   - type: dropdown
     id: type
@@ -49,3 +44,4 @@ body:
     validations:
       required: true
     
+---
