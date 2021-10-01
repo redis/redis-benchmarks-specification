@@ -1,6 +1,6 @@
 ---
 name: Benchmark Specification Request
-description: File a benchmark SPEC request for improvement or addition
+about: File a benchmark SPEC request for improvement or addition
 title: "[SPEC]: "
 labels: ["spec", "triage"]
 assignees:
