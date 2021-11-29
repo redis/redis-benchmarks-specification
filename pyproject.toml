@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.16"
+version = "0.1.17"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
@@ -43,3 +43,4 @@ redis-benchmarks-spec-api = "redis_benchmarks_specification.__api__.api:main"
 redis-benchmarks-spec-builder = "redis_benchmarks_specification.__builder__.builder:main"
 redis-benchmarks-spec-sc-coordinator = "redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator:main"
 redis-benchmarks-spec-cli = "redis_benchmarks_specification.__cli__.cli:main"
+redis-benchmarks-spec-watchdog = "redis_benchmarks_specification.__watchdog__.watchdog:main"
