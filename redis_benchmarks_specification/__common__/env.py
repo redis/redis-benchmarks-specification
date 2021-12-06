@@ -54,7 +54,7 @@ REDIS_BINS_EXPIRE_SECS = int(
 
 # environment variables
 PULL_REQUEST_TRIGGER_LABEL = os.getenv(
-    "PULL_REQUEST_TRIGGER_LABEL", "trigger-benchmark"
+    "PULL_REQUEST_TRIGGER_LABEL", "action:run-benchmark"
 )
 DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)

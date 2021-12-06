@@ -76,6 +76,7 @@ def create_app(conn, user, test_config=None):
                     html_url = repo_dict["html_url"].split("/")
                     gh_repo = html_url[-1]
                     gh_org = html_url[-2]
+                    detected_label = False
                     for label in labels:
                         label_name = label["name"]
                         if trigger_label == label_name:
@@ -83,6 +84,9 @@ def create_app(conn, user, test_config=None):
                             event_type = "Pull request labeled with '{}'".format(
                                 trigger_label
                             )
+                            detected_label = True
+                    if detected_label is False:
+                        app.logger.info("Unable to detected benchmark trigger label: {}".format(trigger_label))
 
             # Git pushes to repo
             if "ref" in request_data:
