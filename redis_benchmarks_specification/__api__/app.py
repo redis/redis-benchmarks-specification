@@ -86,7 +86,11 @@ def create_app(conn, user, test_config=None):
                             )
                             detected_label = True
                     if detected_label is False:
-                        app.logger.info("Unable to detected benchmark trigger label: {}".format(trigger_label))
+                        app.logger.info(
+                            "Unable to detected benchmark trigger label: {}".format(
+                                trigger_label
+                            )
+                        )
 
             # Git pushes to repo
             if "ref" in request_data:

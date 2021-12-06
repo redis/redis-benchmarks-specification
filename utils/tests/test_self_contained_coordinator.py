@@ -15,11 +15,13 @@ from redis_benchmarks_specification.__common__.env import (
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
+    extract_client_tool,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     generate_cpuset_cpus,
     self_contained_coordinator_blocking_read,
     build_runners_consumer_group_create,
+    prepare_memtier_benchmark_parameters,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
@@ -45,6 +47,32 @@ def test_extract_client_container_image():
         benchmark_config = yaml.safe_load(yml_file)
         client_container_image = extract_client_container_image(benchmark_config)
         assert client_container_image == "redis:6.2.4"
+
+    with open(
+        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_container_image = extract_client_container_image(benchmark_config)
+        assert client_container_image == "redislabs/memtier_benchmark:1.3.0"
+
+
+def test_extract_client_tool():
+    with open(
+        "./utils/tests/test_data/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_tool = extract_client_tool(benchmark_config)
+        assert client_tool == "redis-benchmark"
+
+    with open(
+        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_tool = extract_client_tool(benchmark_config)
+        assert client_tool == "memtier_benchmark"
 
 
 def test_generate_cpuset_cpus():
@@ -211,3 +239,27 @@ def test_self_contained_coordinator_blocking_read():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_prepare_memtier_benchmark_parameters():
+    with open(
+        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_tool = extract_client_tool(benchmark_config)
+        assert client_tool == "memtier_benchmark"
+        local_benchmark_output_filename = "1.json"
+        benchmark_tool_workdir = "."
+        (_, benchmark_command_str,) = prepare_memtier_benchmark_parameters(
+            benchmark_config["clientconfig"],
+            client_tool,
+            12000,
+            "localhost",
+            local_benchmark_output_filename,
+            benchmark_tool_workdir,
+        )
+        assert (
+            benchmark_command_str
+            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --cluster-mode --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+        )
