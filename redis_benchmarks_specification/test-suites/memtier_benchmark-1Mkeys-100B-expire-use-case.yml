@@ -8,7 +8,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:1.3.0
     tool: memtier_benchmark
-    arguments: '"--command" "SETEX __key__ 360 __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
+    arguments: '"--data-size" "100" "--command" "SET __key__ __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
 tested-commands:
   - SET
   - SETX
@@ -16,10 +16,14 @@ tested-commands:
   - DEL
 redis-topologies:
   - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
 clientconfig:
   run_image: redislabs/memtier_benchmark:1.3.0
   tool: memtier_benchmark
-  arguments: '--command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+  arguments: '"--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
   resources:
     requests:
       cpus: "3"

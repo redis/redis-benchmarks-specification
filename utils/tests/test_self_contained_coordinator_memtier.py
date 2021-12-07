@@ -68,6 +68,7 @@ def test_self_contained_coordinator_blocking_read():
                 result,
                 stream_id,
                 number_processed_streams,
+                _,
             ) = self_contained_coordinator_blocking_read(
                 conn,
                 True,
@@ -184,6 +185,69 @@ def test_self_contained_coordinator_blocking_read():
         pass
 
 
+def test_self_contained_coordinator_skip_build_variant():
+    try:
+        run_coordinator = True
+        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
+        if TST_RUNNER_X == "0":
+            run_coordinator = False
+        if run_coordinator:
+            conn = redis.StrictRedis(port=16379)
+            conn.ping()
+            use_rdb = True
+            TST_RUNNER_USE_RDB = os.getenv("TST_RUNNER_USE_RDB", "1")
+            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            expected_datapoint_ts = None
+            if TST_RUNNER_USE_RDB == "0":
+                use_rdb = False
+            if use_rdb:
+                conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
+            else:
+                conn.flushall()
+                build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
+                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(conn, running_platform, "0")
+            rts = redistimeseries.client.Client(port=16379)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case-with-variant.yml"
+            ]
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                rts,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+            )
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 0
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
 def test_prepare_memtier_benchmark_parameters():
     with open(
         "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
@@ -204,7 +268,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json "--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
         )
         oss_api_enabled = True
         (_, benchmark_command_str,) = prepare_memtier_benchmark_parameters(
@@ -217,5 +281,5 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --cluster-mode --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --cluster-mode "--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
         )

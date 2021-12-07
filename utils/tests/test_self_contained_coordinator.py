@@ -126,6 +126,7 @@ def test_self_contained_coordinator_blocking_read():
                 result,
                 stream_id,
                 number_processed_streams,
+                _,
             ) = self_contained_coordinator_blocking_read(
                 conn,
                 True,

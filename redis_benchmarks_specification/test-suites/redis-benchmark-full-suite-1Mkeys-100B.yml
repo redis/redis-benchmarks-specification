@@ -23,6 +23,10 @@ tested-commands:
   - MSET
 redis-topologies:
   - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
 clientconfig:
   run_image: redis:6.2.4
   tool: redis-benchmark
