@@ -22,7 +22,7 @@ clientconfig:
   arguments: '--command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 5 -t 1 --hide-histogram --test-time 10'
   resources:
     requests:
-      cpus: "3"
+      cpus: "1"
       memory: "2g"
 exporter:
   redistimeseries:
