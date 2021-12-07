@@ -149,7 +149,6 @@ def test_self_contained_coordinator_blocking_read():
                 )[0]["pending"]
                 == 0
             )
-            assert conn.xinfo_groups(STREAM_KEYNAME_NEW_BUILD_EVENTS) == []
             tf_github_org = "redis"
             tf_github_repo = "redis"
             test_name = "redis-benchmark-full-suite-1Mkeys-100B"

@@ -157,11 +157,6 @@ def cli_command_logic(args, project_name, project_version):
         "Will trigger {} distinct tests {}.".format(len(commits), by_description)
     )
     if args.dry_run is False:
-        logging.info(
-            "Using redis available at: {}:{} to read the event streams".format(
-                args.redis_host, args.redis_port
-            )
-        )
         conn = redis.StrictRedis(
             host=args.redis_host,
             port=args.redis_port,
