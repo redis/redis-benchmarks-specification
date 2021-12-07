@@ -4,7 +4,6 @@
 #  All rights reserved.
 #
 import logging
-from json import loads
 from urllib.error import URLError
 from urllib.request import urlopen
 from github import Github
@@ -17,15 +16,15 @@ from redis_benchmarks_specification.__common__.env import (
 
 
 def commit_schema_to_stream(
-    json_str: str,
+    fields: dict,
     conn: redis.StrictRedis,
-    gh_org="redis",
-    gh_repo="redis",
+    gh_org,
+    gh_repo,
     gh_token=None,
 ):
     """ uses to the provided JSON dict of fields and pushes that info to the corresponding stream  """
-    fields = loads(json_str)
-    reply_fields = loads(json_str)
+    fields = fields
+    reply_fields = dict(fields)
     result = False
     error_msg = None
     use_git_timestamp = False
@@ -34,7 +33,14 @@ def commit_schema_to_stream(
     if "git_hash" not in fields:
         error_msg = "Missing required 'git_hash' field"
     else:
-        result, error_msg, fields, _ = get_commit_dict_from_sha(
+        (
+            result,
+            error_msg,
+            fields,
+            _,
+            binary_key,
+            binary_value,
+        ) = get_commit_dict_from_sha(
             fields["git_hash"], gh_org, gh_repo, fields, use_git_timestamp, gh_token
         )
         reply_fields["use_git_timestamp"] = fields["use_git_timestamp"]
@@ -42,8 +48,10 @@ def commit_schema_to_stream(
             reply_fields["git_timestamp_ms"] = fields["git_timestamp_ms"]
         reply_fields["archived_zip"] = True
     if result is True:
+        # 7 days expire
+        binary_exp_secs = 24 * 60 * 60 * 7
         result, reply_fields, error_msg = request_build_from_commit_info(
-            conn, fields, reply_fields
+            conn, fields, reply_fields, binary_key, binary_value, binary_exp_secs
         )
 
     return result, reply_fields, error_msg
@@ -52,14 +60,17 @@ def commit_schema_to_stream(
 def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
     error_msg = None
     result = False
+    binary_value = None
+    bin_key = "zipped:source:{}/{}/archive/{}.zip".format(gh_org, gh_repo, git_hash)
     github_url = "https://github.com/{}/{}/archive/{}.zip".format(
         gh_org, gh_repo, git_hash
     )
     try:
         response = urlopen(github_url, timeout=5)
         content = response.read()
-        fields["zip_archive"] = bytes(content)
+        fields["zip_archive_key"] = bin_key
         fields["zip_archive_len"] = len(bytes(content))
+        binary_value = bytes(content)
         result = True
     except URLError as e:
         error_msg = "Catched URLError while fetching {} content. Error {}".format(
@@ -67,13 +78,13 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
         )
         logging.error(error_msg)
         result = False
-    return result, error_msg
+    return result, bin_key, binary_value, error_msg
 
 
 def get_commit_dict_from_sha(
     git_hash,
-    gh_org="redis",
-    gh_repo="redis",
+    gh_org,
+    gh_repo,
     commit_dict={},
     use_git_timestamp=False,
     gh_token=None,
@@ -95,13 +106,15 @@ def get_commit_dict_from_sha(
     if gh_branch is not None:
         commit_dict["git_branch"] = gh_branch
 
-    result, error_msg = get_archive_zip_from_hash(
+    result, binary_key, binary_value, error_msg = get_archive_zip_from_hash(
         gh_org, gh_repo, git_hash, commit_dict
     )
-    return result, error_msg, commit_dict, commit
+    return result, error_msg, commit_dict, commit, binary_key, binary_value
 
 
-def request_build_from_commit_info(conn, fields, reply_fields):
+def request_build_from_commit_info(
+    conn, fields, reply_fields, binary_key, binary_value, binary_exp_secs
+):
     """Generates a build event from the commit dictionary
     It expected the fields dictionary to contain at least the following keys:
         - "git_branch": reference to the branch that the commit refers to
@@ -122,6 +135,14 @@ def request_build_from_commit_info(conn, fields, reply_fields):
     """
     result = True
     error_msg = None
+    conn.set(binary_key, binary_value, ex=binary_exp_secs)
+    for k, v in fields.items():
+        if type(v) not in [str, int, float, bytes]:
+            raise Exception(
+                "Type of field {} is not bytes, string, int or float. Type ({}). Value={}".format(
+                    k, type(v), v
+                )
+            )
     id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT.encode(), fields)
     reply_fields["id"] = id
     return result, reply_fields, error_msg

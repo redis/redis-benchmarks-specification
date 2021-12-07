@@ -26,6 +26,7 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
+    REDIS_BINS_EXPIRE_SECS,
 )
 from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
@@ -178,10 +179,21 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
         if b"git_hash" in testDetails:
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))
-            buffer = testDetails[b"zip_archive"]
+            binary_zip_key = testDetails[b"zip_archive_key"]
+            logging.info(
+                "Retriving zipped source from key {}.".format(
+                    testDetails[b"zip_archive_key"]
+                )
+            )
+            buffer = conn.get(binary_zip_key)
             git_branch = None
+            git_version = None
             if b"git_branch" in testDetails:
                 git_branch = testDetails[b"git_branch"]
+            if b"ref_label" in testDetails:
+                git_branch = testDetails[b"ref_label"]
+            if b"git_version" in testDetails:
+                git_version = testDetails[b"git_version"]
             git_timestamp_ms = None
             use_git_timestamp = False
             if b"use_git_timestamp" in testDetails:
@@ -220,21 +232,22 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 z = ZipFileWithPermissions(io.BytesIO(buffer))
                 z.extractall(temporary_dir)
                 redis_dir = os.listdir(temporary_dir + "/")[0]
+                deps_dir = os.listdir(temporary_dir + "/" + redis_dir + "/deps")
+                deps_list = [
+                    "hiredis",
+                    "jemalloc",
+                    "linenoise",
+                    "lua",
+                ]
+                if "hdr_histogram" in deps_dir:
+                    deps_list.append("hdr_histogram")
                 redis_temporary_dir = temporary_dir + "/" + redis_dir + "/"
                 logging.info("Using redis temporary dir {}".format(redis_temporary_dir))
                 build_command = 'bash -c "make Makefile.dep {} && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j"'.format(
                     build_vars_str,
                     cpp_compiler,
                     compiler,
-                    " ".join(
-                        [
-                            "hdr_histogram",
-                            "hiredis",
-                            "jemalloc",
-                            "linenoise",
-                            "lua",
-                        ]
-                    ),
+                    " ".join(deps_list),
                     build_vars_str,
                     cpp_compiler,
                     compiler,
@@ -271,13 +284,17 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 }
                 if git_branch is not None:
                     build_stream_fields["git_branch"] = git_branch
+                if git_version is not None:
+                    build_stream_fields["git_version"] = git_version
                 if git_timestamp_ms is not None:
                     build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
+                    bin_key = "zipped:artifacts:{}:{}.zip".format(id, artifact)
                     bin_artifact = open(
                         "{}src/{}".format(redis_temporary_dir, artifact), "rb"
                     ).read()
-                    build_stream_fields[artifact] = bytes(bin_artifact)
+                    conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
+                    build_stream_fields[artifact] = bin_key
                     build_stream_fields["{}_len_bytes".format(artifact)] = len(
                         bytes(bin_artifact)
                     )

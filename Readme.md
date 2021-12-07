@@ -1,7 +1,19 @@
 
-[![codecov](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/filipecosta90/redis-benchmarks-specification)
-[![CI tests](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/tox.yml/badge.svg)](https://github.com/filipecosta90/redis-benchmarks-specification/actions/workflows/tox.yml)
-[![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://badge.fury.io/py/redis-benchmarks-specification)
+[![codecov](https://codecov.io/gh/redis/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/redis/redis-benchmarks-specification)
+[![CI tests](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml/badge.svg)](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml)
+[![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://pypi.org/project/redis-benchmarks-specification)
+
+## Installation
+
+To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.
+
+Installation is done using pip, the package installer for Python, in the following manner:
+
+```bash
+python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
+```
+
+
 ## Benchmark specifications goal
 
 The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. 
@@ -10,7 +22,7 @@ Members from both industry and academia, including organizations and individuals
 
 Currently, the following members actively support this project:
 
-- [Redis Ltd.](https://redis.com/): providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
+- [Redis Ltd.](https://redis.com/) via the Redis Performance Group: providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
 
 
 ## Scope 
@@ -32,6 +44,17 @@ Current supported benchmark tools:
 - [redis-benchmark](https://github.com/redis/redis)
 - [SOON][memtier_benchmark](https://github.com/RedisLabs/memtier_benchmark)
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
+
+
+## Installing Redis benchmarks specification implementations
+
+The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.
+
+Installation is done using pip, the package installer for Python, in the following manner:
+
+```bash
+python3 -m pip install redis-benchmarks-specification
+```
 
 ## Architecture diagram
 
@@ -98,7 +121,8 @@ relevant git information.
 
 The HTTP request is then converted into an event ( tracked within redis ) that will trigger multiple build variants requests based upon the distinct platforms described in [`platforms`](redis_benchmarks_specification/setups/platforms/). 
 
-As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
+As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) 
+prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
 ## Directory layout
 
 ### Specifications 
@@ -133,9 +157,169 @@ TBD
 
 TBD
 
-### Adding new test platforms
+### Joining the performance initiative and adding a continuous benchmark platform
 
-TBD
+#### Joining the performance initiative 
+In order to join the performance initiative the only requirement is that you provide a steady-stable infrastructure 
+platform to run the benchmark suites, and you reach out to one of the Redis Performance Initiative member via 
+`performance <at> redis <dot> com` so that we can provide you with the required secrets to actively listen for benchmark events.
+
+If you check the above "Architecture diagram", this means you only need to run the last moving part of the arch, meaning you will have
+one or more benchmark coordinator machines actively running benchmarks and pushing the results back to our datasink.
+
+#### Adding a continuous benchmark platform
+
+In order to be able to run the benchmarks on the platform you need pip installer for python3, and docker.
+Apart from it, we recommend you manage the `redis-benchmarks-spec-sc-coordinator` process(es) state via a process monitoring tool like 
+supervisorctl, lauchd, daemon tools, or other. 
+
+For this example we relly uppon `supervisorctl` for process managing.
+
+##### Installing package requirements
+
+```bash
+# install pip installer for python3
+sudo apt install python3-pip -y
+sudo pip3 install --upgrade pip
+
+# install docker
+sudo apt install docker.io -y
+
+# install supervisord 
+sudo apt install supervisor -y
+
+# install benchmark specs
+python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
+```
+
+
+##### Testing out redis-benchmarks-spec-sc-coordinator
+
+You should now be able to print the following installed benchmark runner help:
+
+```bash
+$ redis-benchmarks-spec-sc-coordinator -h
+usage: redis-benchmarks-spec-sc-coordinator [-h] --event_stream_host
+                                            EVENT_STREAM_HOST
+                                            --event_stream_port
+                                            EVENT_STREAM_PORT
+                                            --event_stream_pass
+                                            EVENT_STREAM_PASS
+                                            --event_stream_user
+                                            EVENT_STREAM_USER
+                                            [--cpu-count CPU_COUNT]
+                                            [--platform-name PLATFORM_NAME]
+                                            [--logname LOGNAME]
+                                            [--consumer-start-id CONSUMER_START_ID]
+                                            [--setups-folder SETUPS_FOLDER]
+                                            [--test-suites-folder TEST_SUITES_FOLDER]
+                                            [--datasink_redistimeseries_host DATASINK_REDISTIMESERIES_HOST]
+                                            [--datasink_redistimeseries_port DATASINK_REDISTIMESERIES_PORT]
+                                            [--datasink_redistimeseries_pass DATASINK_REDISTIMESERIES_PASS]
+                                            [--datasink_redistimeseries_user DATASINK_REDISTIMESERIES_USER]
+                                            [--datasink_push_results_redistimeseries]
+
+redis-benchmarks-spec runner(self-contained) 0.1.13
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --event_stream_host EVENT_STREAM_HOST
+  --event_stream_port EVENT_STREAM_PORT
+  --event_stream_pass EVENT_STREAM_PASS
+  --event_stream_user EVENT_STREAM_USER
+  --cpu-count CPU_COUNT
+                        Specify how much of the available CPU resources the
+                        coordinator can use. (default: 8)
+  --platform-name PLATFORM_NAME
+                        Specify the running platform name. By default it will
+                        use the machine name. (default: fco-ThinkPad-T490)
+  --logname LOGNAME     logname to write the logs to (default: None)
+  --consumer-start-id CONSUMER_START_ID
+  --setups-folder SETUPS_FOLDER
+                        Setups folder, containing the build environment
+                        variations sub-folder that we use to trigger different
+                        build artifacts (default: /home/fco/redislabs/redis-
+                        benchmarks-
+                        specification/redis_benchmarks_specification/setups)
+  --test-suites-folder TEST_SUITES_FOLDER
+                        Test suites folder, containing the different test
+                        variations (default: /home/fco/redislabs/redis-
+                        benchmarks-
+                        specification/redis_benchmarks_specification/test-
+                        suites)
+  --datasink_redistimeseries_host DATASINK_REDISTIMESERIES_HOST
+  --datasink_redistimeseries_port DATASINK_REDISTIMESERIES_PORT
+  --datasink_redistimeseries_pass DATASINK_REDISTIMESERIES_PASS
+  --datasink_redistimeseries_user DATASINK_REDISTIMESERIES_USER
+  --datasink_push_results_redistimeseries
+                        uploads the results to RedisTimeSeries. Proper
+                        credentials are required (default: False)
+```
+
+Note that the minimum arguments to run the benchmark coordinator are: `--event_stream_host`, `--event_stream_port`, `--event_stream_pass`, `--event_stream_user`
+You should use the provided credentials to be able to access the event streams.
+Apart from it, you will need to discuss with the Performance Group the unique platform name that will be used to showcase results, coordinate work, among other thigs.
+
+If all runs accordingly you should see the following sample log when you run the tool with the credentials:
+
+```bash
+$ poetry run redis-benchmarks-spec-sc-coordinator --platform-name example-platform \
+                                                  --event_stream_host <...> \
+                                                  --event_stream_port <...> \
+                                                  --event_stream_pass <...> \
+                                                  --event_stream_user <...>
+2021-09-22 10:47:12 INFO redis-benchmarks-spec runner(self-contained) 0.1.13
+2021-09-22 10:47:12 INFO Using topologies folder dir /home/fco/redislabs/redis-benchmarks-specification/redis_benchmarks_specification/setups/topologies
+2021-09-22 10:47:12 INFO Reading topologies specifications from: /home/fco/redislabs/redis-benchmarks-specification/redis_benchmarks_specification/setups/topologies/topologies.yml
+2021-09-22 10:47:12 INFO Using test-suites folder dir /home/fco/redislabs/redis-benchmarks-specification/redis_benchmarks_specification/test-suites
+2021-09-22 10:47:12 INFO Running all specified benchmarks: /home/fco/redislabs/redis-benchmarks-specification/redis_benchmarks_specification/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml
+2021-09-22 10:47:12 INFO There are a total of 1 test-suites in folder /home/fco/redislabs/redis-benchmarks-specification/redis_benchmarks_specification/test-suites
+2021-09-22 10:47:12 INFO Reading event streams from: <...>:<...> with user <...>
+2021-09-22 10:47:12 INFO checking build spec requirements
+2021-09-22 10:47:12 INFO Will use consumer group named runners-cg:redis/redis/commits-example-platform.
+2021-09-22 10:47:12 INFO Created consumer group named runners-cg:redis/redis/commits-example-platform to distribute work.
+2021-09-22 10:47:12 INFO Entering blocking read waiting for work.
+```
+
+You're now actively listening for benchmarks requests to Redis!
+
+##### Adding redis-benchmarks-spec-sc-coordinator to supervisord
+
+Let's add a supervisord entry as follow
+```
+vi /etc/supervisor/conf.d/redis-benchmarks-spec-sc-coordinator-1.conf
+```
+You can use the following template and update according to your credentials:
+
+```bash
+[supervisord]
+loglevel = debug
+
+[program:redis-benchmarks-spec-sc-coordinator]
+command = redis-benchmarks-spec-sc-coordinator --platform-name bicx02 \
+                                                  --event_stream_host <...> \
+                                                  --event_stream_port <...> \
+                                                  --event_stream_pass <...> \
+                                                  --event_stream_user <...> \
+                                                  --datasink_push_results_redistimeseries \
+                                                  --datasink_redistimeseries_host <...> \
+                                                  --datasink_redistimeseries_port <...> \
+                                                  --datasink_redistimeseries_pass <...> \
+                                                  --logname /var/opt/redis-benchmarks-spec-sc-coordinator-1.log
+startsecs = 0
+autorestart = true
+startretries = 1
+```
+
+After editing the conf, you just need to reload and confirm that the benchmark runner is active:
+
+```bash
+:~# supervisorctl reload
+Restarted supervisord
+:~# supervisorctl status
+redis-benchmarks-spec-sc-coordinator   RUNNING   pid 27842, uptime 0:00:00
+```
+
 
 ## License
 

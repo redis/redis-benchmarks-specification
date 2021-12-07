@@ -9,26 +9,20 @@ from pathlib import Path
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
 
-from redis_benchmarks_specification.__common__.builder_schema import (
-    commit_schema_to_stream,
-)
-from redis_benchmarks_specification.__builder__.builder import (
-    builder_consumer_group_create,
-    builder_process_stream,
-)
 from redis_benchmarks_specification.__common__.env import (
-    STREAM_KEYNAME_GH_EVENTS_COMMIT,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
+    extract_client_tool,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     generate_cpuset_cpus,
     self_contained_coordinator_blocking_read,
     build_runners_consumer_group_create,
     get_runners_consumer_group_name,
+    prepare_memtier_benchmark_parameters,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
@@ -54,6 +48,32 @@ def test_extract_client_container_image():
         benchmark_config = yaml.safe_load(yml_file)
         client_container_image = extract_client_container_image(benchmark_config)
         assert client_container_image == "redis:6.2.4"
+
+    with open(
+        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_container_image = extract_client_container_image(benchmark_config)
+        assert client_container_image == "redislabs/memtier_benchmark:1.3.0"
+
+
+def test_extract_client_tool():
+    with open(
+        "./utils/tests/test_data/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_tool = extract_client_tool(benchmark_config)
+        assert client_tool == "redis-benchmark"
+
+    with open(
+        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
+        "r",
+    ) as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+        client_tool = extract_client_tool(benchmark_config)
+        assert client_tool == "memtier_benchmark"
 
 
 def test_generate_cpuset_cpus():
@@ -107,6 +127,7 @@ def test_self_contained_coordinator_blocking_read():
                 result,
                 stream_id,
                 number_processed_streams,
+                _,
             ) = self_contained_coordinator_blocking_read(
                 conn,
                 True,
@@ -134,6 +155,7 @@ def test_self_contained_coordinator_blocking_read():
             test_name = "redis-benchmark-full-suite-1Mkeys-100B"
             tf_triggering_env = "ci"
             deployment_type = "oss-standalone"
+            deployment_name = "oss-standalone"
             metric_name = "rps"
             use_metric_context_path = True
             metric_context_path = "MSET"
@@ -143,6 +165,7 @@ def test_self_contained_coordinator_blocking_read():
                 "unstable",
                 tf_github_org,
                 tf_github_repo,
+                deployment_name,
                 deployment_type,
                 test_name,
                 tf_triggering_env,

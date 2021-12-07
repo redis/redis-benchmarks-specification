@@ -3,3 +3,5 @@ pytest-cov
 codecov
 black
 flake8
+tox-poetry-installer
+tox-docker

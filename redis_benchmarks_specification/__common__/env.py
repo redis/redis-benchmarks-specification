@@ -48,8 +48,14 @@ REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
 REDIS_AUTH_SERVER_PORT = int(os.getenv("REDIS_AUTH_SERVER_PORT", "6380"))
 REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "15"))
 REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "300"))
+REDIS_BINS_EXPIRE_SECS = int(
+    os.getenv("REDIS_BINS_EXPIRE_SECS", "{}".format(24 * 7 * 60 * 60))
+)
 
 # environment variables
+PULL_REQUEST_TRIGGER_LABEL = os.getenv(
+    "PULL_REQUEST_TRIGGER_LABEL", "action:run-benchmark"
+)
 DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
