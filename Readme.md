@@ -42,7 +42,7 @@ This repo aims to provide Redis related benchmark standards and methodologies fo
 Current supported benchmark tools:
 
 - [redis-benchmark](https://github.com/redis/redis)
-- [SOON][memtier_benchmark](https://github.com/RedisLabs/memtier_benchmark)
+- [memtier_benchmark](https://github.com/RedisLabs/memtier_benchmark)
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
 
 

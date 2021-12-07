@@ -21,6 +21,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.self_containe
     generate_cpuset_cpus,
     self_contained_coordinator_blocking_read,
     build_runners_consumer_group_create,
+    get_runners_consumer_group_name,
     prepare_memtier_benchmark_parameters,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
@@ -140,6 +141,14 @@ def test_self_contained_coordinator_blocking_read():
             )
             assert result == True
             assert number_processed_streams == 1
+            # ensure we're able to aknowledge the consumed message
+            assert (
+                conn.xinfo_consumers(
+                    STREAM_KEYNAME_NEW_BUILD_EVENTS,
+                    get_runners_consumer_group_name(running_platform),
+                )[0]["pending"]
+                == 0
+            )
             tf_github_org = "redis"
             tf_github_repo = "redis"
             test_name = "redis-benchmark-full-suite-1Mkeys-100B"
@@ -239,6 +248,8 @@ def test_self_contained_coordinator_blocking_read():
             assert len(rts.redis.smembers(testcases_setname)) == 1
             assert len(rts.redis.smembers(project_branches_setname)) == 1
             assert len(rts.redis.smembers(project_versions_setname)) == 0
+            # ensure we don't change state on the rdb
+            conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
 
     except redis.exceptions.ConnectionError:
         pass
