@@ -16,6 +16,8 @@ tested-commands:
   - DEL
 redis-topologies:
   - oss-standalone
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
 clientconfig:
   run_image: redislabs/memtier_benchmark:1.3.0
   tool: memtier_benchmark

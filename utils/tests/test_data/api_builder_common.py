@@ -12,7 +12,9 @@ from redis_benchmarks_specification.__common__.env import (
 )
 
 
-def flow_1_and_2_api_builder_checks(conn):
+def flow_1_and_2_api_builder_checks(
+    conn, build_spec_name="gcc:8.5.0-amd64-debian-buster-default"
+):
     builder_consumer_group_create(conn)
     assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 0
     result, reply_fields, error_msg = commit_schema_to_stream(
@@ -26,7 +28,7 @@ def flow_1_and_2_api_builder_checks(conn):
         "redis",
         GH_TOKEN,
     )
-    build_spec_name = "gcc:8.5.0-amd64-debian-buster-default"
+
     assert result == True
     assert error_msg == None
     assert STREAM_KEYNAME_GH_EVENTS_COMMIT.encode() in conn.keys()

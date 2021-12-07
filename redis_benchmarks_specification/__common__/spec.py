@@ -7,6 +7,13 @@ def extract_client_cpu_limit(benchmark_config):
     return ceil_db_cpu_limit
 
 
+def extract_build_variant_variations(benchmark_config, keyname="build-variants"):
+    result = None
+    if keyname in benchmark_config:
+        result = benchmark_config[keyname]
+    return result
+
+
 def extract_client_container_image(benchmark_config, keyname="clientconfig"):
     client_container_image = None
     if keyname in benchmark_config:
