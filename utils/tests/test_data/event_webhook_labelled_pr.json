@@ -48,7 +48,7 @@
                 "id": 3374931112,
                 "node_id": "LA_kwDOCs9mRs7JKVyo",
                 "url": "https://api.github.com/repos/filipecosta90/redis/labels/run-benchmark",
-                "name": "trigger-benchmark",
+                "name": "action:run-benchmark",
                 "color": "65D94A",
                 "default": false,
                 "description": ""
