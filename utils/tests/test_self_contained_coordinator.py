@@ -144,6 +144,7 @@ def test_self_contained_coordinator_blocking_read():
             test_name = "redis-benchmark-full-suite-1Mkeys-100B"
             tf_triggering_env = "ci"
             deployment_type = "oss-standalone"
+            deployment_name = "oss-standalone"
             metric_name = "rps"
             use_metric_context_path = True
             metric_context_path = "MSET"
@@ -153,6 +154,7 @@ def test_self_contained_coordinator_blocking_read():
                 "unstable",
                 tf_github_org,
                 tf_github_repo,
+                deployment_name,
                 deployment_type,
                 test_name,
                 tf_triggering_env,
