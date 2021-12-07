@@ -19,7 +19,7 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
 )
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
-from redisbench_admin.run.run import calculate_benchmark_duration_and_check
+from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     extract_redis_dbconfig_parameters,
     get_final_benchmark_config,
@@ -43,9 +43,13 @@ from redis_benchmarks_specification.__common__.package import (
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
+    extract_client_tool,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
+    restore_build_artifacts_from_test_details,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
@@ -263,6 +267,32 @@ def self_contained_coordinator_blocking_read(
     return overall_result, stream_id, num_process_streams
 
 
+def prepare_memtier_benchmark_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled,
+):
+    benchmark_command = [
+        full_benchmark_path,
+        "--port",
+        "{}".format(port),
+        "--server",
+        "{}".format(server),
+        "--json-out-file",
+        local_benchmark_output_filename,
+    ]
+    if oss_cluster_api_enabled is True:
+        benchmark_command.append("--cluster-mode")
+    benchmark_command_str = " ".join(benchmark_command)
+    if "arguments" in clientconfig:
+        benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
+
+    return None, benchmark_command_str
+
+
 def process_self_contained_coordinator_stream(
     conn,
     datasink_push_results_redistimeseries,
@@ -303,6 +333,8 @@ def process_self_contained_coordinator_stream(
                 )
 
                 (
+                    _,
+                    _,
                     redis_configuration_parameters,
                     _,
                 ) = extract_redis_dbconfig_parameters(benchmark_config, "dbconfig")
@@ -314,6 +346,7 @@ def process_self_contained_coordinator_stream(
                             topologies_map, topology_spec_name
                         )
                         temporary_dir = tempfile.mkdtemp(dir=home)
+                        temporary_dir_client = tempfile.mkdtemp(dir=home)
                         logging.info(
                             "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                 temporary_dir
@@ -323,32 +356,9 @@ def process_self_contained_coordinator_stream(
                         tf_github_repo = "redis"
                         tf_triggering_env = "ci"
 
-                        benchmark_tool = "redis-benchmark"
-                        for build_artifact in build_artifacts:
-                            buffer_key = testDetails[
-                                "{}".format(build_artifact).encode()
-                            ]
-                            logging.info(
-                                "Reading artifact binary {} from key {}".format(
-                                    build_artifact, buffer_key
-                                )
-                            )
-                            buffer = bytes(conn.get(buffer_key))
-                            artifact_fname = "{}/{}".format(
-                                temporary_dir, build_artifact
-                            )
-                            with open(artifact_fname, "wb") as fd:
-                                fd.write(buffer)
-                                os.chmod(artifact_fname, 755)
-                            # TODO: re-enable
-                            # if build_artifact == "redis-server":
-                            #     redis_server_path = artifact_fname
-
-                            logging.info(
-                                "Successfully restored {} into {}".format(
-                                    build_artifact, artifact_fname
-                                )
-                            )
+                        restore_build_artifacts_from_test_details(
+                            build_artifacts, conn, temporary_dir, testDetails
+                        )
                         port = 6379
                         mnt_point = "/mnt/redis/"
                         command = generate_standalone_redis_server_args(
@@ -380,10 +390,34 @@ def process_self_contained_coordinator_stream(
                             cpuset_cpus=db_cpuset_cpus,
                         )
                         redis_containers.append(container)
-
-                        full_benchmark_path = "/usr/local/bin/redis-benchmark"
+                        r = redis.StrictRedis(port=6379)
+                        r.ping()
+                        ceil_client_cpu_limit = extract_client_cpu_limit(
+                            benchmark_config
+                        )
+                        client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
+                            ceil_client_cpu_limit, current_cpu_pos
+                        )
                         client_mnt_point = "/mnt/client/"
                         benchmark_tool_workdir = client_mnt_point
+
+                        if "preload_tool" in benchmark_config["dbconfig"]:
+                            data_prepopulation_step(
+                                benchmark_config,
+                                benchmark_tool_workdir,
+                                client_cpuset_cpus,
+                                docker_client,
+                                git_hash,
+                                port,
+                                temporary_dir,
+                                test_name,
+                            )
+
+                        benchmark_tool = extract_client_tool(benchmark_config)
+                        # backwards compatible
+                        if benchmark_tool is None:
+                            benchmark_tool = "redis-benchmark"
+                        full_benchmark_path = "/usr/local/bin/{}".format(benchmark_tool)
 
                         # setup the benchmark
                         (
@@ -402,29 +436,33 @@ def process_self_contained_coordinator_stream(
                                 local_benchmark_output_filename
                             )
                         )
-
-                        # prepare the benchmark command
-                        (
-                            benchmark_command,
-                            benchmark_command_str,
-                        ) = prepare_benchmark_parameters(
-                            benchmark_config,
-                            full_benchmark_path,
-                            port,
-                            "localhost",
-                            local_benchmark_output_filename,
-                            False,
-                            benchmark_tool_workdir,
-                            False,
-                        )
-                        ceil_client_cpu_limit = extract_client_cpu_limit(
-                            benchmark_config
-                        )
-                        client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                            ceil_client_cpu_limit, current_cpu_pos
-                        )
-                        r = redis.StrictRedis(port=6379)
-                        r.ping()
+                        if "memtier_benchmark" not in benchmark_tool:
+                            # prepare the benchmark command
+                            (
+                                benchmark_command,
+                                benchmark_command_str,
+                            ) = prepare_benchmark_parameters(
+                                benchmark_config,
+                                full_benchmark_path,
+                                port,
+                                "localhost",
+                                local_benchmark_output_filename,
+                                False,
+                                benchmark_tool_workdir,
+                                False,
+                            )
+                        else:
+                            (
+                                _,
+                                benchmark_command_str,
+                            ) = prepare_memtier_benchmark_parameters(
+                                benchmark_config["clientconfig"],
+                                full_benchmark_path,
+                                port,
+                                "localhost",
+                                local_benchmark_output_filename,
+                                benchmark_tool_workdir,
+                            )
 
                         client_container_image = extract_client_container_image(
                             benchmark_config
@@ -442,12 +480,12 @@ def process_self_contained_coordinator_stream(
                         client_container_stdout = docker_client.containers.run(
                             image=client_container_image,
                             volumes={
-                                temporary_dir: {
+                                temporary_dir_client: {
                                     "bind": client_mnt_point,
                                     "mode": "rw",
                                 },
                             },
-                            auto_remove=True,
+                            auto_remove=False,
                             privileged=True,
                             working_dir=benchmark_tool_workdir,
                             command=benchmark_command_str,
@@ -458,7 +496,7 @@ def process_self_contained_coordinator_stream(
 
                         benchmark_end_time = datetime.datetime.now()
                         benchmark_duration_seconds = (
-                            calculate_benchmark_duration_and_check(
+                            calculate_client_tool_duration_and_check(
                                 benchmark_end_time, benchmark_start_time
                             )
                         )
@@ -475,11 +513,26 @@ def process_self_contained_coordinator_stream(
                             client_container_stdout,
                             None,
                         )
+                        full_result_path = local_benchmark_output_filename
+                        if "memtier_benchmark" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
+                        logging.critical(
+                            "Reading results json from {}".format(full_result_path)
+                        )
 
-                        with open(local_benchmark_output_filename, "r") as json_file:
+                        with open(
+                            full_result_path,
+                            "r",
+                        ) as json_file:
                             results_dict = json.load(json_file)
                             logging.info("Final JSON result {}".format(results_dict))
                         dataset_load_duration_seconds = 0
+
+                        logging.error(
+                            "Using datapoint_time_ms: {}".format(datapoint_time_ms)
+                        )
 
                         timeseries_test_sucess_flow(
                             datasink_push_results_redistimeseries,
@@ -489,6 +542,7 @@ def process_self_contained_coordinator_stream(
                             dataset_load_duration_seconds,
                             None,
                             topology_spec_name,
+                            "oss-standalone",
                             None,
                             results_dict,
                             rts,
@@ -545,6 +599,83 @@ def process_self_contained_coordinator_stream(
     else:
         logging.error("Missing commit information within received message.")
     return stream_id, overall_result
+
+
+def data_prepopulation_step(
+    benchmark_config,
+    benchmark_tool_workdir,
+    client_cpuset_cpus,
+    docker_client,
+    git_hash,
+    port,
+    temporary_dir,
+    test_name,
+):
+    # setup the benchmark
+    (
+        start_time,
+        start_time_ms,
+        start_time_str,
+    ) = get_start_time_vars()
+    local_benchmark_output_filename = get_local_run_full_filename(
+        start_time_str,
+        git_hash,
+        "preload__" + test_name,
+        "oss-standalone",
+    )
+    preload_image = extract_client_container_image(
+        benchmark_config["dbconfig"], "preload_tool"
+    )
+    preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
+    full_benchmark_path = "/usr/local/bin/{}".format(preload_tool)
+    client_mnt_point = "/mnt/client/"
+    if "memtier_benchmark" in preload_tool:
+        (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
+            benchmark_config["dbconfig"]["preload_tool"],
+            full_benchmark_path,
+            port,
+            "localhost",
+            local_benchmark_output_filename,
+            False,
+        )
+
+        logging.info(
+            "Using docker image {} as benchmark PRELOAD image (cpuset={}) with the following args: {}".format(
+                preload_image,
+                client_cpuset_cpus,
+                preload_command_str,
+            )
+        )
+        # run the benchmark
+        preload_start_time = datetime.datetime.now()
+
+        client_container_stdout = docker_client.containers.run(
+            image=preload_image,
+            volumes={
+                temporary_dir: {
+                    "bind": client_mnt_point,
+                    "mode": "rw",
+                },
+            },
+            auto_remove=True,
+            privileged=True,
+            working_dir=benchmark_tool_workdir,
+            command=preload_command_str,
+            network_mode="host",
+            detach=False,
+            cpuset_cpus=client_cpuset_cpus,
+        )
+
+        preload_end_time = datetime.datetime.now()
+        preload_duration_seconds = calculate_client_tool_duration_and_check(
+            preload_end_time, preload_start_time
+        )
+        logging.info(
+            "Tool {} seconds to load data. Output {}".format(
+                preload_duration_seconds,
+                client_container_stdout,
+            )
+        )
 
 
 def get_benchmark_specs(testsuites_folder):
