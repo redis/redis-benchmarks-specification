@@ -19,7 +19,7 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
 )
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
-from redisbench_admin.run.run import calculate_benchmark_duration_and_check
+from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     extract_redis_dbconfig_parameters,
     get_final_benchmark_config,
@@ -284,7 +284,7 @@ def prepare_memtier_benchmark_parameters(
         "--json-out-file",
         local_benchmark_output_filename,
     ]
-    if oss_cluster_api_enabled:
+    if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
     benchmark_command_str = " ".join(benchmark_command)
     if "arguments" in clientconfig:
@@ -333,6 +333,8 @@ def process_self_contained_coordinator_stream(
                 )
 
                 (
+                    _,
+                    _,
                     redis_configuration_parameters,
                     _,
                 ) = extract_redis_dbconfig_parameters(benchmark_config, "dbconfig")
@@ -344,6 +346,7 @@ def process_self_contained_coordinator_stream(
                             topologies_map, topology_spec_name
                         )
                         temporary_dir = tempfile.mkdtemp(dir=home)
+                        temporary_dir_client = tempfile.mkdtemp(dir=home)
                         logging.info(
                             "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                 temporary_dir
@@ -477,12 +480,12 @@ def process_self_contained_coordinator_stream(
                         client_container_stdout = docker_client.containers.run(
                             image=client_container_image,
                             volumes={
-                                temporary_dir: {
+                                temporary_dir_client: {
                                     "bind": client_mnt_point,
                                     "mode": "rw",
                                 },
                             },
-                            auto_remove=True,
+                            auto_remove=False,
                             privileged=True,
                             working_dir=benchmark_tool_workdir,
                             command=benchmark_command_str,
@@ -493,7 +496,7 @@ def process_self_contained_coordinator_stream(
 
                         benchmark_end_time = datetime.datetime.now()
                         benchmark_duration_seconds = (
-                            calculate_benchmark_duration_and_check(
+                            calculate_client_tool_duration_and_check(
                                 benchmark_end_time, benchmark_start_time
                             )
                         )
@@ -510,11 +513,26 @@ def process_self_contained_coordinator_stream(
                             client_container_stdout,
                             None,
                         )
+                        full_result_path = local_benchmark_output_filename
+                        if "memtier_benchmark" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
+                        logging.critical(
+                            "Reading results json from {}".format(full_result_path)
+                        )
 
-                        with open(local_benchmark_output_filename, "r") as json_file:
+                        with open(
+                            full_result_path,
+                            "r",
+                        ) as json_file:
                             results_dict = json.load(json_file)
                             logging.info("Final JSON result {}".format(results_dict))
                         dataset_load_duration_seconds = 0
+
+                        logging.error(
+                            "Using datapoint_time_ms: {}".format(datapoint_time_ms)
+                        )
 
                         timeseries_test_sucess_flow(
                             datasink_push_results_redistimeseries,
@@ -524,6 +542,7 @@ def process_self_contained_coordinator_stream(
                             dataset_load_duration_seconds,
                             None,
                             topology_spec_name,
+                            "oss-standalone",
                             None,
                             results_dict,
                             rts,
@@ -617,7 +636,7 @@ def data_prepopulation_step(
             port,
             "localhost",
             local_benchmark_output_filename,
-            benchmark_tool_workdir,
+            False,
         )
 
         logging.info(
@@ -648,7 +667,7 @@ def data_prepopulation_step(
         )
 
         preload_end_time = datetime.datetime.now()
-        preload_duration_seconds = calculate_benchmark_duration_and_check(
+        preload_duration_seconds = calculate_client_tool_duration_and_check(
             preload_end_time, preload_start_time
         )
         logging.info(

@@ -239,27 +239,3 @@ def test_self_contained_coordinator_blocking_read():
 
     except redis.exceptions.ConnectionError:
         pass
-
-
-def test_prepare_memtier_benchmark_parameters():
-    with open(
-        "./redis_benchmarks_specification/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml",
-        "r",
-    ) as yml_file:
-        benchmark_config = yaml.safe_load(yml_file)
-        client_tool = extract_client_tool(benchmark_config)
-        assert client_tool == "memtier_benchmark"
-        local_benchmark_output_filename = "1.json"
-        benchmark_tool_workdir = "."
-        (_, benchmark_command_str,) = prepare_memtier_benchmark_parameters(
-            benchmark_config["clientconfig"],
-            client_tool,
-            12000,
-            "localhost",
-            local_benchmark_output_filename,
-            benchmark_tool_workdir,
-        )
-        assert (
-            benchmark_command_str
-            == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --cluster-mode --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
-        )
