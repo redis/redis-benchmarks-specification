@@ -85,25 +85,100 @@ def test_self_contained_coordinator_blocking_read():
             tf_github_repo = "redis"
             test_name = "memtier_benchmark-1Mkeys-100B-expire-use-case"
             tf_triggering_env = "ci"
+            deployment_name = "oss-standalone"
             deployment_type = "oss-standalone"
-            metric_name = "rps"
             use_metric_context_path = True
-            metric_context_path = "SET"
+            metric_context_path = "Gets"
+            for metric_name in ["Latency", "Ops/sec"]:
+                ts_key_name = get_ts_metric_name(
+                    "by.branch",
+                    "unstable",
+                    tf_github_org,
+                    tf_github_repo,
+                    deployment_name,
+                    deployment_type,
+                    test_name,
+                    tf_triggering_env,
+                    metric_name,
+                    metric_context_path,
+                    use_metric_context_path,
+                    build_variant_name,
+                    running_platform,
+                )
 
-            ts_key_name = get_ts_metric_name(
-                "by.branch",
-                "unstable",
+                assert ts_key_name.encode() in conn.keys()
+                assert len(rts.range(ts_key_name, 0, -1)) == 1
+                if expected_datapoint_ts is not None:
+                    assert rts.range(ts_key_name, 0, -1)[0][0] == expected_datapoint_ts
+            (
+                prefix,
+                testcases_setname,
+                tsname_project_total_failures,
+                tsname_project_total_success,
+                running_platforms_setname,
+                build_variant_setname,
+                testcases_metric_context_path_setname,
+                testcases_and_metric_context_path_setname,
+                project_archs_setname,
+                project_oss_setname,
+                project_branches_setname,
+                project_versions_setname,
+                project_compilers_setname,
+            ) = get_overall_dashboard_keynames(
                 tf_github_org,
                 tf_github_repo,
-                deployment_type,
-                test_name,
                 tf_triggering_env,
-                metric_name,
-                metric_context_path,
-                use_metric_context_path,
                 build_variant_name,
                 running_platform,
+                test_name,
             )
+
+            assert rts.redis.exists(testcases_setname)
+            assert rts.redis.exists(running_platforms_setname)
+            assert rts.redis.exists(build_variant_setname)
+            assert rts.redis.exists(testcases_and_metric_context_path_setname)
+            assert rts.redis.exists(testcases_metric_context_path_setname)
+            assert build_variant_name.encode() in rts.redis.smembers(
+                build_variant_setname
+            )
+            assert test_name.encode() in rts.redis.smembers(testcases_setname)
+            assert running_platform.encode() in rts.redis.smembers(
+                running_platforms_setname
+            )
+            testcases_and_metric_context_path_members = [
+                x.decode()
+                for x in rts.redis.smembers(testcases_and_metric_context_path_setname)
+            ]
+            metric_context_path_members = [
+                x.decode()
+                for x in rts.redis.smembers(testcases_metric_context_path_setname)
+            ]
+            assert len(testcases_and_metric_context_path_members) == len(
+                metric_context_path_members
+            )
+
+            assert [x.decode() for x in rts.redis.smembers(testcases_setname)] == [
+                test_name
+            ]
+
+            assert "amd64".encode() in rts.redis.smembers(project_archs_setname)
+            assert "debian-buster".encode() in rts.redis.smembers(project_oss_setname)
+            assert "gcc".encode() in rts.redis.smembers(project_compilers_setname)
+            assert build_variant_name.encode() in rts.redis.smembers(
+                build_variant_setname
+            )
+            assert running_platform.encode() in rts.redis.smembers(
+                running_platforms_setname
+            )
+
+            assert len(rts.redis.smembers(project_archs_setname)) == 1
+            assert len(rts.redis.smembers(project_oss_setname)) == 1
+            assert len(rts.redis.smembers(project_compilers_setname)) == 1
+            assert len(rts.redis.smembers(build_variant_setname)) == 1
+            assert len(rts.redis.smembers(running_platforms_setname)) == 1
+            assert len(rts.redis.smembers(testcases_setname)) == 1
+            assert len(rts.redis.smembers(project_branches_setname)) == 1
+            assert len(rts.redis.smembers(project_versions_setname)) == 0
 
     except redis.exceptions.ConnectionError:
         pass
