@@ -43,6 +43,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 redis-benchmarks-spec-api = "redis_benchmarks_specification.__api__.api:main"
 redis-benchmarks-spec-builder = "redis_benchmarks_specification.__builder__.builder:main"
+redis-benchmarks-spec-client-runner = "redis_benchmarks_specification.__runner__.runner:main"
 redis-benchmarks-spec-sc-coordinator = "redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator:main"
 redis-benchmarks-spec-cli = "redis_benchmarks_specification.__cli__.cli:main"
 redis-benchmarks-spec-watchdog = "redis_benchmarks_specification.__watchdog__.watchdog:main"
