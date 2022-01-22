@@ -175,7 +175,7 @@ def process_self_contained_coordinator_stream(
             for topology_spec_name in benchmark_config["redis-topologies"]:
                 test_result = False
                 try:
-                    current_cpu_pos = 0
+                    current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)
 
                     tf_github_org = args.github_org
