@@ -36,8 +36,16 @@ def create_client_runner_args(project_name):
         default=SPECS_PATH_TEST_SUITES,
         help="Test suites folder, containing the different test variations",
     )
+    parser.add_argument(
+        "--test",
+        type=str,
+        default="",
+        help="specify a test to run. By default will run all the tests"
+        + " present in the folder specified in --test-suites-folder.",
+    )
     parser.add_argument("--db_server_host", type=str, default="localhost")
     parser.add_argument("--db_server_port", type=int, default=6379)
+    parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(
         "--datasink_redistimeseries_host", type=str, default=DATASINK_RTS_HOST
     )
