@@ -72,7 +72,7 @@ def main():
     logging.info(get_version_string(project_name, project_version))
     testsuites_folder = os.path.abspath(args.test_suites_folder)
     logging.info("Using test-suites folder dir {}".format(testsuites_folder))
-    testsuite_spec_files = get_benchmark_specs(testsuites_folder)
+    testsuite_spec_files = get_benchmark_specs(testsuites_folder, args.test)
     logging.info(
         "There are a total of {} test-suites in folder {}".format(
             len(testsuite_spec_files), testsuites_folder
@@ -318,7 +318,7 @@ def process_self_contained_coordinator_stream(
                         full_result_path = "{}/{}".format(
                             temporary_dir_client, local_benchmark_output_filename
                         )
-                    logging.critical(
+                    logging.info(
                         "Reading results json from {}".format(full_result_path)
                     )
 
@@ -330,7 +330,7 @@ def process_self_contained_coordinator_stream(
                         logging.info("Final JSON result {}".format(results_dict))
                     dataset_load_duration_seconds = 0
 
-                    logging.error(
+                    logging.info(
                         "Using datapoint_time_ms: {}".format(datapoint_time_ms)
                     )
 
@@ -464,12 +464,19 @@ def data_prepopulation_step(
         )
 
 
-def get_benchmark_specs(testsuites_folder):
-    files = pathlib.Path(testsuites_folder).glob("*.yml")
-    files = [str(x) for x in files]
-    logging.info(
-        "Running all specified benchmarks: {}".format(" ".join([str(x) for x in files]))
-    )
+def get_benchmark_specs(testsuites_folder, test):
+    if test == "":
+        files = pathlib.Path(testsuites_folder).glob("*.yml")
+        files = [str(x) for x in files]
+        logging.info(
+            "Running all specified benchmarks: {}".format(
+                " ".join([str(x) for x in files])
+            )
+        )
+    else:
+        files = test.split(",")
+        files = ["{}/{}".format(testsuites_folder, x) for x in files]
+        logging.info("Running specific benchmark in file: {}".format(files))
     return files
 
 

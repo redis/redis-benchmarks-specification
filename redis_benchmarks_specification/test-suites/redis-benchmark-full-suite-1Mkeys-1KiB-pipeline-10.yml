@@ -1,0 +1,58 @@
+version: 0.4
+name: "redis-benchmark-full-suite-1Mkeys-1KiB-pipeline-10"
+description: "Runs the default redis-benchmark test suite, for a keyspace length of 1M keys
+              with a data size of 1000 Bytes for each key. On total 50 concurrent connections
+              will be used, sending 1M requests."
+dbconfig:
+  - configuration-parameters:
+    - save: '""'
+tested-commands:
+  - PING
+  - SET
+  - GET
+  - INCR
+  - LPUSH
+  - RPUSH
+  - LPOP
+  - RPOP
+  - SADD
+  - SPOP
+  - ZADD
+  - ZPOPMIN
+  - LRANGE
+  - MSET
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redis:6.2.4
+  tool: redis-benchmark
+  min-tool-version: "6.2.0"
+  parameters:
+    - clients: 50
+    - requests: 1000000
+    - threads: 3
+    - pipeline: 10
+    - keyspacelen: 1000000
+    - size: 1000
+  resources:
+    requests:
+      cpus: "3"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: "$.StartTime"
+    metrics:
+      - "$.Tests.*.rps"
+      - "$.Tests.*.avg_latency_ms"
+      - "$.Tests.*.p50_latency_ms"
+      - "$.Tests.*.p95_latency_ms"
+      - "$.Tests.*.p99_latency_ms"
+      - "$.Tests.*.max_latency_ms"
+      - "$.Tests.*.min_latency_ms"
