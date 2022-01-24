@@ -65,8 +65,14 @@ def create_client_runner_args(project_name):
         help="uploads the results to RedisTimeSeries. Proper credentials are required",
     )
     parser.add_argument(
+        "--flushall_on_every_test_start",
+        default=False,
+        action="store_true",
+        help="At the start of every test send a FLUSHALL",
+    )
+    parser.add_argument(
         "--flushall_on_every_test_end",
-        default=True,
+        default=False,
         action="store_true",
         help="At the end of every test send a FLUSHALL",
     )

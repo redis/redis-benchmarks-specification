@@ -1,0 +1,33 @@
+version: 0.4
+name: "memtier_benchmark-10Mkeys-load-hash-5-fields-with-100B-values-pipeline-10"
+description: "Runs memtier_benchmark, for a keyspace length of 10M keys
+              loading HASHES with 5 fields each.
+              Each field value has a data size of 100 Bytes."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+tested-commands:
+  - HSET
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:1.3.0
+  tool: memtier_benchmark
+  arguments: '--pipeline=10 "--data-size" "100" --command "HSET __key__ field1 __data__ field2 __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000 -n 50000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: "4"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".*."Ops/sec"'
+      - '$."ALL STATS".*."Latency"'

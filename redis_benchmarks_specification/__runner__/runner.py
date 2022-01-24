@@ -195,6 +195,9 @@ def process_self_contained_coordinator_stream(
                     client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
                         ceil_client_cpu_limit, current_cpu_pos
                     )
+                    if args.flushall_on_every_test_start:
+                        logging.info("Sending FLUSHALL to the DB")
+                        r.flushall()
                     client_mnt_point = "/mnt/client/"
                     benchmark_tool_workdir = client_mnt_point
 
