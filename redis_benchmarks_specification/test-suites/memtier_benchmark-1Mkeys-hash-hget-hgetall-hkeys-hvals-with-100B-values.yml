@@ -1,0 +1,41 @@
+version: 0.4
+name: "memtier_benchmark-1Mkeys-hash-hget-hgetall-hkeys-hvals-with-100B-values"
+description: "Runs memtier_benchmark, for a keyspace length of 1M keys
+              pre-loading HASHes in which the value has a data size of 100 Bytes.
+              After pre-loading the data it issues HGETALL, HGET, HKEYS, and HVALS commands."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "HSET __key__ field1 __data__ field2 __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram'
+
+tested-commands:
+  - HGETALL
+  - HKEYS
+  - HVALS
+  - HGET
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "100" --command "HGETALL __key__" --command-key-pattern="R" --command "HKEYS __key__" --command-key-pattern="R" --command "HVALS __key__" --command-key-pattern="R" --command "HGET __key__ field1" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: "4"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".*."Ops/sec"'
+      - '$."ALL STATS".*."Latency"'

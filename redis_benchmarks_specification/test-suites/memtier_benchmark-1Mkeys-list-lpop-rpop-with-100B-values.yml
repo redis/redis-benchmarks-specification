@@ -1,30 +1,32 @@
 version: 0.4
-name: "memtier_benchmark-1Mkeys-100B-expire-use-case"
+name: "memtier_benchmark-1Mkeys-list-lpop-rpop-with-100B-values"
 description: "Runs memtier_benchmark, for a keyspace length of 1M keys
-              with a data size of 100 Bytes for each key, which 50% of the keys have expiration set during the benchmark."
+              pre-loading LISTs in which the value has a data size of 100 Bytes.
+              After pre-loading the data it issues LPOP and RPOP commands."
 dbconfig:
   configuration-parameters:
     save: '""'
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--command" "SETEX __key__ 360 __value__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram"'
+    arguments: '"--data-size" "100" --command "LPUSH __key__ __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --test-time 60 -c 50 -t 4 --hide-histogram'
+
 tested-commands:
-  - SET
-  - SETX
-  - GET
-  - DEL
+  - LPOP
+  - RPOP
 redis-topologies:
   - oss-standalone
+
 build-variants:
   - gcc:8.5.0-amd64-debian-buster-default
+
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 5 -t 1 --hide-histogram --test-time 10'
+  arguments: '"--data-size" "100" --command "LPOP __key__" --command-key-pattern="R" --command "RPOP __key__" --command-key-pattern="R"  --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
-      cpus: "1"
+      cpus: "4"
       memory: "2g"
 exporter:
   redistimeseries:
