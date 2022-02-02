@@ -58,6 +58,9 @@ def main():
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
     parser.add_argument(
+        "--arch", type=str, default="x86", help="arch to build artifacts"
+    )
+    parser.add_argument(
         "--setups-folder",
         type=str,
         default=SPECS_PATH_SETUPS,

@@ -55,7 +55,7 @@ def test_extract_client_container_image():
     ) as yml_file:
         benchmark_config = yaml.safe_load(yml_file)
         client_container_image = extract_client_container_image(benchmark_config)
-        assert client_container_image == "redislabs/memtier_benchmark:1.3.0"
+        assert client_container_image == "redislabs/memtier_benchmark:edge"
 
 
 def test_extract_client_tool():
