@@ -29,6 +29,11 @@ categories:
   - title: 'Tooling changes: Large scale coordinator'
     labels:
       - 'tool-large-coordinator'
+
+  - title: 'Tooling changes: Setup agnostic cli benchmark runner (solely client)'
+    labels:
+      - 'tool-client-runner'
+
   - title: 'Maintenance'
     label: 'chore'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
@@ -49,6 +54,7 @@ template: |
   - [*Spec tool implementation: Benchmark artifacts builder*](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/): **Experimental** components are released and available for beta testing.
   - [*Spec tool implementation: Self-contained coordinator*](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/): **Experimental** components are released and available for beta testing.
   - [*Spec tool implementation: Large scale coordinator*](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/): **Draft** components are under design, and have not been added to the specification.
+  - [*Spec tool implementation: Setup agnostic cli benchmark runner (solely client)](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__runner__/): contains the client utility that triggers the actual benchmarks against an endpoint provided. This tool is setup agnostic and expects the DB to be properly spinned beforehand.
 
   ### Release changes:
 
