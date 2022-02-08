@@ -8,6 +8,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+import shutil
 
 import docker
 import redis
@@ -110,6 +111,11 @@ def main():
             exit(1)
 
     running_platform = args.platform_name
+    tls_enabled = args.tls
+    tls_skip_verify = args.tls_skip_verify
+    tls_cert = args.cert
+    tls_key = args.key
+    tls_cacert = args.cacert
     docker_client = docker.from_env()
     home = str(Path.home())
     logging.info("Running the benchmark specs.")
@@ -124,6 +130,11 @@ def main():
         testsuite_spec_files,
         {},
         running_platform,
+        tls_enabled,
+        tls_skip_verify,
+        tls_cert,
+        tls_key,
+        tls_cacert,
     )
 
 
@@ -134,6 +145,11 @@ def prepare_memtier_benchmark_parameters(
     server,
     local_benchmark_output_filename,
     oss_cluster_api_enabled,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -144,6 +160,17 @@ def prepare_memtier_benchmark_parameters(
         "--json-out-file",
         local_benchmark_output_filename,
     ]
+    if tls_enabled:
+        benchmark_command.append("--tls")
+        if tls_cert is not None and tls_cert != "":
+            benchmark_command.extend(["--cert", tls_cert])
+        if tls_key is not None and tls_key != "":
+            benchmark_command.extend(["--key", tls_key])
+        if tls_cacert is not None and tls_cacert != "":
+            benchmark_command.extend(["--cacert", tls_cacert])
+        if tls_skip_verify:
+            benchmark_command.append("--tls-skip-verify")
+
     if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
     benchmark_command_str = " ".join(benchmark_command)
@@ -163,6 +190,11 @@ def process_self_contained_coordinator_stream(
     testsuite_spec_files,
     topologies_map,
     running_platform,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
 ):
     overall_result = True
     total_test_suite_runs = 0
@@ -170,7 +202,17 @@ def process_self_contained_coordinator_stream(
         client_containers = []
 
         with open(test_file, "r") as stream:
-            benchmark_config, test_name = get_final_benchmark_config(None, stream, "")
+            _, benchmark_config, test_name = get_final_benchmark_config(
+                None, stream, ""
+            )
+
+            if tls_enabled:
+                test_name = test_name + "-tls"
+                logging.info(
+                    "Given that TLS is enabled, appending -tls to the testname: {}.".format(
+                        test_name
+                    )
+                )
 
             for topology_spec_name in benchmark_config["redis-topologies"]:
                 test_result = False
@@ -189,8 +231,22 @@ def process_self_contained_coordinator_stream(
 
                     port = args.db_server_port
                     host = args.db_server_host
-                    r = redis.StrictRedis(host=host, port=port)
+
+                    ssl_cert_reqs = "required"
+                    if tls_skip_verify:
+                        ssl_cert_reqs = None
+                    r = redis.StrictRedis(
+                        host=host,
+                        port=port,
+                        ssl=tls_enabled,
+                        ssl_cert_reqs=ssl_cert_reqs,
+                        ssl_keyfile=tls_key,
+                        ssl_certfile=tls_cert,
+                        ssl_ca_certs=tls_cacert,
+                        ssl_check_hostname=False,
+                    )
                     r.ping()
+
                     ceil_client_cpu_limit = extract_client_cpu_limit(benchmark_config)
                     client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
                         ceil_client_cpu_limit, current_cpu_pos
@@ -202,6 +258,17 @@ def process_self_contained_coordinator_stream(
                     benchmark_tool_workdir = client_mnt_point
 
                     metadata = {}
+                    if tls_enabled:
+                        metadata["tls"] = "true"
+                        if tls_cert is not None and tls_cert != "":
+                            _, tls_cert = cp_to_workdir(temporary_dir_client, tls_cert)
+                        if tls_cacert is not None and tls_cacert != "":
+                            _, tls_cacert = cp_to_workdir(
+                                temporary_dir_client, tls_cacert
+                            )
+                        if tls_key is not None and tls_key != "":
+                            _, tls_key = cp_to_workdir(temporary_dir_client, tls_key)
+
                     if "preload_tool" in benchmark_config["dbconfig"]:
                         data_prepopulation_step(
                             benchmark_config,
@@ -213,6 +280,11 @@ def process_self_contained_coordinator_stream(
                             temporary_dir_client,
                             test_name,
                             host,
+                            tls_enabled,
+                            tls_skip_verify,
+                            tls_cert,
+                            tls_key,
+                            tls_cacert,
                         )
 
                     benchmark_tool = extract_client_tool(benchmark_config)
@@ -263,7 +335,12 @@ def process_self_contained_coordinator_stream(
                             port,
                             host,
                             local_benchmark_output_filename,
-                            benchmark_tool_workdir,
+                            False,
+                            tls_enabled,
+                            tls_skip_verify,
+                            tls_cert,
+                            tls_key,
+                            tls_cacert,
                         )
 
                     client_container_image = extract_client_container_image(
@@ -389,6 +466,18 @@ def process_self_contained_coordinator_stream(
                 overall_result &= test_result
 
 
+def cp_to_workdir(benchmark_tool_workdir, srcfile):
+    head, filename = os.path.split(srcfile)
+    dstfile = "{}/{}".format(benchmark_tool_workdir, filename)
+    shutil.copyfile(srcfile, dstfile)
+    logging.info(
+        "Copying to workdir the following file {}. Final workdir file {}".format(
+            srcfile, dstfile
+        )
+    )
+    return dstfile, filename
+
+
 def data_prepopulation_step(
     benchmark_config,
     benchmark_tool_workdir,
@@ -399,6 +488,11 @@ def data_prepopulation_step(
     temporary_dir,
     test_name,
     host,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
 ):
     # setup the benchmark
     (
@@ -426,6 +520,11 @@ def data_prepopulation_step(
             host,
             local_benchmark_output_filename,
             False,
+            tls_enabled,
+            tls_skip_verify,
+            tls_cert,
+            tls_key,
+            tls_cacert,
         )
 
         logging.info(
