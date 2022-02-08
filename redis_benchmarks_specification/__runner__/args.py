@@ -76,4 +76,31 @@ def create_client_runner_args(project_name):
         action="store_true",
         help="At the end of every test send a FLUSHALL",
     )
+    parser.add_argument(
+        "--tls",
+        default=False,
+        action="store_true",
+        help="Enable SSL/TLS transport security",
+    )
+    parser.add_argument(
+        "--tls-skip-verify",
+        default=False,
+        action="store_true",
+        help="Skip verification of server certificate",
+    )
+    parser.add_argument(
+        "--cert",
+        default="",
+        help="Use specified client certificate for TLS",
+    )
+    parser.add_argument(
+        "--key",
+        default="",
+        help="Use specified private key for TLS",
+    )
+    parser.add_argument(
+        "--cacert",
+        default="",
+        help="Use specified CA certs bundle for TLS",
+    )
     return parser
