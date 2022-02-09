@@ -260,13 +260,17 @@ def process_self_contained_coordinator_stream(
                     if tls_enabled:
                         metadata["tls"] = "true"
                         if tls_cert is not None and tls_cert != "":
-                            _, tls_cert = cp_to_workdir(temporary_dir_client, tls_cert)
+                            _, test_tls_cert = cp_to_workdir(
+                                temporary_dir_client, tls_cert
+                            )
                         if tls_cacert is not None and tls_cacert != "":
-                            _, tls_cacert = cp_to_workdir(
+                            _, test_tls_cacert = cp_to_workdir(
                                 temporary_dir_client, tls_cacert
                             )
                         if tls_key is not None and tls_key != "":
-                            _, tls_key = cp_to_workdir(temporary_dir_client, tls_key)
+                            _, test_tls_key = cp_to_workdir(
+                                temporary_dir_client, tls_key
+                            )
 
                     if "preload_tool" in benchmark_config["dbconfig"]:
                         data_prepopulation_step(
@@ -281,9 +285,9 @@ def process_self_contained_coordinator_stream(
                             host,
                             tls_enabled,
                             tls_skip_verify,
-                            tls_cert,
-                            tls_key,
-                            tls_cacert,
+                            test_tls_cert,
+                            test_tls_key,
+                            test_tls_cacert,
                         )
 
                     benchmark_tool = extract_client_tool(benchmark_config)
@@ -337,9 +341,9 @@ def process_self_contained_coordinator_stream(
                             False,
                             tls_enabled,
                             tls_skip_verify,
-                            tls_cert,
-                            tls_key,
-                            tls_cacert,
+                            test_tls_cert,
+                            test_tls_key,
+                            test_tls_cacert,
                         )
 
                     client_container_image = extract_client_container_image(
