@@ -257,6 +257,9 @@ def process_self_contained_coordinator_stream(
                     benchmark_tool_workdir = client_mnt_point
 
                     metadata = {}
+                    test_tls_cacert = None
+                    test_tls_cert = None
+                    test_tls_key = None
                     if tls_enabled:
                         metadata["tls"] = "true"
                         if tls_cert is not None and tls_cert != "":
