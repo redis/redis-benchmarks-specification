@@ -18,11 +18,13 @@ from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,
 )
+from redisbench_admin.utils.benchmark_config import (
+    get_final_benchmark_config,
+)
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     extract_redis_dbconfig_parameters,
-    get_final_benchmark_config,
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
