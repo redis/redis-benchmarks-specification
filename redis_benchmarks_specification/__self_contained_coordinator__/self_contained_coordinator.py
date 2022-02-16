@@ -355,6 +355,7 @@ def process_self_contained_coordinator_stream(
                         _,
                         redis_configuration_parameters,
                         _,
+                        _,
                     ) = extract_redis_dbconfig_parameters(benchmark_config, "dbconfig")
                     build_variants = extract_build_variant_variations(benchmark_config)
                     if build_variants is not None:
