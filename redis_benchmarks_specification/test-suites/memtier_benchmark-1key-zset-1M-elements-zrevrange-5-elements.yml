@@ -1,0 +1,38 @@
+version: 0.4
+name: "memtier_benchmark-1key-zset-1M-elements-zrevrange-5-elements"
+description: "Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
+              The SORTED SET contains 1M elements in it and we query it using ZREVRANGE with a range of 5 elements.
+              This benchmarks helps assessing: https://github.com/redis/redis/issues/10310"
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern P --hide-histogram -t 4 -c 100'
+tested-commands:
+  - ZREVRANGE
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command="ZREVRANGE lb 5 10"  --hide-histogram --test-time 180'
+  resources:
+    requests:
+      cpus: "4"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".*."Ops/sec"'
+      - '$."ALL STATS".*."Latency"'
