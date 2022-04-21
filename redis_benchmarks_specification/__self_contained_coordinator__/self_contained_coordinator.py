@@ -411,9 +411,9 @@ def process_self_contained_coordinator_stream(
                                     run_image, db_cpuset_cpus, command_str
                                 )
                             )
-                            profiler_enabled = False
-                            if "profile" in metadata:
-                                profiler_enabled = bool(metadata["profile"])
+                            # profiler_enabled = False
+                            # if "profile" in metadata:
+                            #     profiler_enabled = bool(metadata["profile"])
                             container = docker_client.containers.run(
                                 image=run_image,
                                 volumes={
