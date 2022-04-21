@@ -24,8 +24,8 @@ def create_client_runner_args(project_name):
     )
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--setup_type", type=str, default="oss-standalone")
-    parser.add_argument("--github_repo", type=str, required=True)
-    parser.add_argument("--github_org", type=str, required=True)
+    parser.add_argument("--github_repo", type=str, default="redis")
+    parser.add_argument("--github_org", type=str, default="redis")
     parser.add_argument("--github_version", type=str, default="NA")
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"

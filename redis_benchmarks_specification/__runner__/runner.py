@@ -15,6 +15,7 @@ from docker.models.containers import Container
 from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,
+    execute_init_commands,
 )
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
@@ -292,6 +293,10 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                         )
+
+                    execute_init_commands(
+                        benchmark_config, r, dbconfig_keyname="dbconfig"
+                    )
 
                     benchmark_tool = extract_client_tool(benchmark_config)
                     # backwards compatible
