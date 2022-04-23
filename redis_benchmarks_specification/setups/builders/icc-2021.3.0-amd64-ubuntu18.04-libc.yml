@@ -17,4 +17,4 @@ metadata:
 
 env:
   MALLOC: "libc"
-
+  REDIS_CFLAGS: "-g -fno-omit-frame-pointer"

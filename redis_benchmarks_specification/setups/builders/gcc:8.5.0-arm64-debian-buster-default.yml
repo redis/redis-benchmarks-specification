@@ -15,4 +15,5 @@ metadata:
   arch: arm64
 
 env:
+  REDIS_CFLAGS: "-g -fno-omit-frame-pointer"
 
