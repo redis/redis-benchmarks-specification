@@ -24,7 +24,6 @@ from redisbench_admin.utils.benchmark_config import (
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
-from redistimeseries.client import Client
 
 from redis_benchmarks_specification.__common__.env import (
     LOG_FORMAT,
@@ -80,7 +79,7 @@ def main():
         )
     )
 
-    rts = None
+    datasink_conn = None
     if args.datasink_push_results_redistimeseries:
         logging.info(
             "Checking redistimeseries datasink connection is available at: {}:{} to push the timeseries data".format(
@@ -88,7 +87,7 @@ def main():
             )
         )
         try:
-            rts = Client(
+            datasink_conn = redis.StrictRedis(
                 host=args.datasink_redistimeseries_host,
                 port=args.datasink_redistimeseries_port,
                 decode_responses=True,
@@ -98,8 +97,8 @@ def main():
                 socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
                 socket_keepalive=True,
             )
-            rts.redis.ping()
-            rts.redis.client_setname(project_name_suffix)
+            datasink_conn.ping()
+            datasink_conn.client_setname(project_name_suffix)
         except redis.exceptions.ConnectionError as e:
             logging.error(
                 "Unable to connect to redis available at: {}:{}".format(
@@ -126,7 +125,7 @@ def main():
         docker_client,
         home,
         None,
-        rts,
+        datasink_conn,
         testsuite_spec_files,
         {},
         running_platform,
@@ -186,7 +185,7 @@ def process_self_contained_coordinator_stream(
     docker_client,
     home,
     newTestInfo,
-    rts,
+    datasink_conn,
     testsuite_spec_files,
     topologies_map,
     running_platform,
@@ -436,7 +435,7 @@ def process_self_contained_coordinator_stream(
                         setup_type,
                         None,
                         results_dict,
-                        rts,
+                        datasink_conn,
                         datapoint_time_ms,
                         test_name,
                         git_branch,

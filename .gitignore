@@ -222,3 +222,6 @@ fabric.properties
 
 # Json result files
 *.json
+
+# perf related
+*.out

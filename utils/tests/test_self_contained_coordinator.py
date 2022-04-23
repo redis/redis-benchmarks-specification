@@ -2,7 +2,6 @@ import os
 
 import docker
 import redis
-import redistimeseries
 import yaml
 from pathlib import Path
 
@@ -111,7 +110,8 @@ def test_self_contained_coordinator_blocking_read():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            rts = redistimeseries.client.Client(port=16379)
+            datasink_conn = redis.StrictRedis(port=16379)
+            rts = datasink_conn.ts()
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
@@ -134,10 +134,12 @@ def test_self_contained_coordinator_blocking_read():
                 docker_client,
                 home,
                 stream_id,
-                rts,
+                datasink_conn,
                 testsuite_spec_files,
                 topologies_map,
                 running_platform,
+                False,
+                [],
             )
             assert result == True
             assert number_processed_streams == 1
@@ -182,6 +184,7 @@ def test_self_contained_coordinator_blocking_read():
             (
                 prefix,
                 testcases_setname,
+                deployment_name_setname,
                 tsname_project_total_failures,
                 tsname_project_total_success,
                 running_platforms_setname,
@@ -202,52 +205,56 @@ def test_self_contained_coordinator_blocking_read():
                 test_name,
             )
 
-            assert rts.redis.exists(testcases_setname)
-            assert rts.redis.exists(running_platforms_setname)
-            assert rts.redis.exists(build_variant_setname)
-            assert rts.redis.exists(testcases_and_metric_context_path_setname)
-            assert rts.redis.exists(testcases_metric_context_path_setname)
-            assert build_variant_name.encode() in rts.redis.smembers(
+            assert datasink_conn.exists(testcases_setname)
+            assert datasink_conn.exists(running_platforms_setname)
+            assert datasink_conn.exists(build_variant_setname)
+            assert datasink_conn.exists(testcases_and_metric_context_path_setname)
+            assert datasink_conn.exists(testcases_metric_context_path_setname)
+            assert build_variant_name.encode() in datasink_conn.smembers(
                 build_variant_setname
             )
-            assert test_name.encode() in rts.redis.smembers(testcases_setname)
-            assert running_platform.encode() in rts.redis.smembers(
+            assert test_name.encode() in datasink_conn.smembers(testcases_setname)
+            assert running_platform.encode() in datasink_conn.smembers(
                 running_platforms_setname
             )
             testcases_and_metric_context_path_members = [
                 x.decode()
-                for x in rts.redis.smembers(testcases_and_metric_context_path_setname)
+                for x in datasink_conn.smembers(
+                    testcases_and_metric_context_path_setname
+                )
             ]
             metric_context_path_members = [
                 x.decode()
-                for x in rts.redis.smembers(testcases_metric_context_path_setname)
+                for x in datasink_conn.smembers(testcases_metric_context_path_setname)
             ]
             assert len(testcases_and_metric_context_path_members) == len(
                 metric_context_path_members
             )
 
-            assert [x.decode() for x in rts.redis.smembers(testcases_setname)] == [
+            assert [x.decode() for x in datasink_conn.smembers(testcases_setname)] == [
                 test_name
             ]
 
-            assert "amd64".encode() in rts.redis.smembers(project_archs_setname)
-            assert "debian-buster".encode() in rts.redis.smembers(project_oss_setname)
-            assert "gcc".encode() in rts.redis.smembers(project_compilers_setname)
-            assert build_variant_name.encode() in rts.redis.smembers(
+            assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
+            assert "debian-buster".encode() in datasink_conn.smembers(
+                project_oss_setname
+            )
+            assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)
+            assert build_variant_name.encode() in datasink_conn.smembers(
                 build_variant_setname
             )
-            assert running_platform.encode() in rts.redis.smembers(
+            assert running_platform.encode() in datasink_conn.smembers(
                 running_platforms_setname
             )
 
-            assert len(rts.redis.smembers(project_archs_setname)) == 1
-            assert len(rts.redis.smembers(project_oss_setname)) == 1
-            assert len(rts.redis.smembers(project_compilers_setname)) == 1
-            assert len(rts.redis.smembers(build_variant_setname)) == 1
-            assert len(rts.redis.smembers(running_platforms_setname)) == 1
-            assert len(rts.redis.smembers(testcases_setname)) == 1
-            assert len(rts.redis.smembers(project_branches_setname)) == 1
-            assert len(rts.redis.smembers(project_versions_setname)) == 0
+            assert len(datasink_conn.smembers(project_archs_setname)) == 1
+            assert len(datasink_conn.smembers(project_oss_setname)) == 1
+            assert len(datasink_conn.smembers(project_compilers_setname)) == 1
+            assert len(datasink_conn.smembers(build_variant_setname)) == 1
+            assert len(datasink_conn.smembers(running_platforms_setname)) == 1
+            assert len(datasink_conn.smembers(testcases_setname)) == 1
+            assert len(datasink_conn.smembers(project_branches_setname)) == 1
+            assert len(datasink_conn.smembers(project_versions_setname)) == 0
             # ensure we don't change state on the rdb
             conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
 
