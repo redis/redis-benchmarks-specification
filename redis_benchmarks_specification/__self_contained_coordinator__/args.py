@@ -14,6 +14,10 @@ from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_PORT,
     GH_REDIS_SERVER_AUTH,
     GH_REDIS_SERVER_USER,
+    PROFILERS_ENABLED,
+    PROFILERS,
+    PROFILERS_DEFAULT,
+    ALLOWED_PROFILERS,
 )
 
 
@@ -75,5 +79,20 @@ def create_self_contained_coordinator_args(project_name):
         default=DATASINK_RTS_PUSH,
         action="store_true",
         help="uploads the results to RedisTimeSeries. Proper credentials are required",
+    )
+    parser.add_argument("--profilers", type=str, default=PROFILERS)
+    parser.add_argument(
+        "--enable-profilers",
+        default=PROFILERS_ENABLED,
+        action="store_true",
+        help="Enable Identifying On-CPU and Off-CPU Time using perf/ebpf/vtune tooling. "
+        + "By default the chosen profilers are {}".format(PROFILERS_DEFAULT)
+        + "Full list of profilers: {}".format(ALLOWED_PROFILERS)
+        + "Only available on x86 Linux platform and kernel version >= 4.9",
+    )
+    parser.add_argument(
+        "--grafana-profile-dashboard",
+        type=str,
+        default="https://benchmarksredisio.grafana.net/d/uRPZar57k/ci-profiler-viewer",
     )
     return parser

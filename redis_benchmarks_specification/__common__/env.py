@@ -61,7 +61,15 @@ DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
 DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")
 DATASINK_RTS_PORT = int(os.getenv("DATASINK_RTS_PORT", "6379"))
-
+ALLOWED_PROFILERS = "perf:record,vtune"
+PROFILERS_DEFAULT = "perf:record"
+PROFILE_FREQ_DEFAULT = "99"
+PROFILERS_DSO = os.getenv("PROFILERS_DSO", None)
+PROFILERS_ENABLED = bool(int(os.getenv("PROFILE", 0)))
+PROFILERS = os.getenv("PROFILERS", PROFILERS_DEFAULT)
+MAX_PROFILERS_PER_TYPE = int(os.getenv("MAX_PROFILERS", 1))
+PROFILE_FREQ = os.getenv("PROFILE_FREQ", PROFILE_FREQ_DEFAULT)
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "redis.benchmarks.spec")
 # logging related
 VERBOSE = os.getenv("VERBOSE", "1") == "0"
 LOG_FORMAT = "%(asctime)s %(levelname)-4s %(message)s"

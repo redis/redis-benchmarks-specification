@@ -246,8 +246,7 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                     deps_list.append("hdr_histogram")
                 redis_temporary_dir = temporary_dir + "/" + redis_dir + "/"
                 logging.info("Using redis temporary dir {}".format(redis_temporary_dir))
-                build_command = 'bash -c "make Makefile.dep {} && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j"'.format(
-                    build_vars_str,
+                build_command = "bash -c 'make Makefile.dep && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j'".format(
                     cpp_compiler,
                     compiler,
                     " ".join(deps_list),
