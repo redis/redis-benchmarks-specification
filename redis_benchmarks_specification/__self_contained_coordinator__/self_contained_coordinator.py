@@ -172,6 +172,9 @@ def main():
     stream_id = None
     docker_client = docker.from_env()
     home = str(Path.home())
+    cpuset_start_pos = args.cpuset_start_pos
+    logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
+
     # TODO: confirm we do have enough cores to run the spec
     # availabe_cpus = args.cpu_count
     datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
@@ -207,6 +210,7 @@ def main():
             profilers_enabled,
             profilers_list,
             grafana_profile_dashboard,
+            cpuset_start_pos,
         )
 
 
@@ -251,6 +255,7 @@ def self_contained_coordinator_blocking_read(
     profilers_enabled,
     profilers_list,
     grafana_profile_dashboard="",
+    cpuset_start_pos=0,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -285,6 +290,7 @@ def self_contained_coordinator_blocking_read(
             profilers_enabled,
             profilers_list,
             grafana_profile_dashboard,
+            cpuset_start_pos,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -350,6 +356,7 @@ def process_self_contained_coordinator_stream(
     profilers_enabled=False,
     profilers_list=[],
     grafana_profile_dashboard="",
+    cpuset_start_pos=0,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -416,7 +423,7 @@ def process_self_contained_coordinator_stream(
                     for topology_spec_name in benchmark_config["redis-topologies"]:
                         test_result = False
                         try:
-                            current_cpu_pos = 0
+                            current_cpu_pos = cpuset_start_pos
                             ceil_db_cpu_limit = extract_db_cpu_limit(
                                 topologies_map, topology_spec_name
                             )
