@@ -1,0 +1,36 @@
+version: 0.4
+name: "memtier_benchmark-1key-set-10-elements-smembers"
+description: "Runs memtier_benchmark, for a keyspace length of 1 SET key.
+              The SET contains 10 elements in it and we query it using SMEMBERS that returns all elements.
+              "
+
+dbconfig:
+  - configuration-parameters:
+    save: '""'
+  - init_commands:
+    - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+tested-commands:
+  - SMEMBERS
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command="SMEMBERS set:10"  --hide-histogram --test-time 180'
+  resources:
+    requests:
+      cpus: "4"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".*."Ops/sec"'
+      - '$."ALL STATS".*."Latency"'
