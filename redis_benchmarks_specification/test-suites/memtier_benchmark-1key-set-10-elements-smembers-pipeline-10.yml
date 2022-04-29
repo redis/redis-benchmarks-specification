@@ -1,5 +1,5 @@
 version: 0.4
-name: "memtier_benchmark-1key-set-10-elements-smembers"
+name: "memtier_benchmark-1key-set-10-elements-smembers-pipeline-10"
 description: "Runs memtier_benchmark, for a keyspace length of 1 SET key.
               The SET contains 10 elements in it and we query it using SMEMBERS that returns all elements.
               "
@@ -20,7 +20,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command="SMEMBERS set:10"  --hide-histogram --test-time 180'
+  arguments: '--pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time 180'
   resources:
     requests:
       cpus: "4"
