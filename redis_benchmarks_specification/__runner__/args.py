@@ -77,6 +77,18 @@ def create_client_runner_args(project_name):
         help="At the end of every test send a FLUSHALL",
     )
     parser.add_argument(
+        "--preserve_temporary_client_dirs",
+        default=False,
+        action="store_true",
+        help="Preserve the temporary client dirs",
+    )
+    parser.add_argument(
+        "--client_aggregated_results_folder",
+        type=str,
+        default="",
+        help="Client tool aggregated results folder ( contains all results from all runs ). If specified then all results will be copied there at the end of each run.",
+    )
+    parser.add_argument(
         "--tls",
         default=False,
         action="store_true",
