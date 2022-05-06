@@ -12,11 +12,16 @@ import shutil
 import docker
 import redis
 from docker.models.containers import Container
+from pytablewriter import MarkdownTableWriter
+from pytablewriter import CsvTableWriter
+
 from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,
     execute_init_commands,
+    merge_default_and_config_metrics,
 )
+from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -115,6 +120,8 @@ def main():
     tls_cert = args.cert
     tls_key = args.key
     tls_cacert = args.cacert
+    client_aggregated_results_folder = args.client_aggregated_results_folder
+    preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
     docker_client = docker.from_env()
     home = str(Path.home())
     logging.info("Running the benchmark specs.")
@@ -134,6 +141,8 @@ def main():
         tls_cert,
         tls_key,
         tls_cacert,
+        client_aggregated_results_folder,
+        preserve_temporary_client_dirs,
     )
 
 
@@ -194,8 +203,11 @@ def process_self_contained_coordinator_stream(
     tls_cert=None,
     tls_key=None,
     tls_cacert=None,
+    client_aggregated_results_folder="",
+    preserve_temporary_client_dirs=False,
 ):
     overall_result = True
+    results_matrix = []
     total_test_suite_runs = 0
     for test_file in testsuite_spec_files:
         client_containers = []
@@ -204,6 +216,7 @@ def process_self_contained_coordinator_stream(
             _, benchmark_config, test_name = get_final_benchmark_config(
                 None, stream, ""
             )
+            default_metrics = []
 
             if tls_enabled:
                 test_name = test_name + "-tls"
@@ -374,7 +387,7 @@ def process_self_contained_coordinator_stream(
                                 "mode": "rw",
                             },
                         },
-                        auto_remove=False,
+                        auto_remove=True,
                         privileged=True,
                         working_dir=benchmark_tool_workdir,
                         command=benchmark_command_str,
@@ -389,7 +402,12 @@ def process_self_contained_coordinator_stream(
                             benchmark_end_time, benchmark_start_time
                         )
                     )
-                    logging.info("output {}".format(client_container_stdout))
+                    logging.info(
+                        "Printing client tool stdout output".format(
+                            client_container_stdout
+                        )
+                    )
+                    print()
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
@@ -417,7 +435,22 @@ def process_self_contained_coordinator_stream(
                         "r",
                     ) as json_file:
                         results_dict = json.load(json_file)
-                        logging.info("Final JSON result {}".format(results_dict))
+                        print_results_table_stdout(
+                            benchmark_config,
+                            default_metrics,
+                            results_dict,
+                            setup_type,
+                            test_name,
+                            None,
+                        )
+                        prepare_overall_total_test_results(
+                            benchmark_config,
+                            default_metrics,
+                            results_dict,
+                            test_name,
+                            results_matrix,
+                        )
+
                     dataset_load_duration_seconds = 0
 
                     logging.info(
@@ -472,8 +505,63 @@ def process_self_contained_coordinator_stream(
                                 )
                             )
                             pass
-                shutil.rmtree(temporary_dir_client, ignore_errors=True)
+
+                if preserve_temporary_client_dirs is True:
+                    logging.info(
+                        "Preserving temporary client dir {}".format(
+                            temporary_dir_client
+                        )
+                    )
+                else:
+                    logging.info(
+                        "Removing temporary client dir {}".format(temporary_dir_client)
+                    )
+                    shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                if client_aggregated_results_folder != "":
+                    os.makedirs(client_aggregated_results_folder, exist_ok=True)
+                    dest_fpath = "{}/{}".format(
+                        client_aggregated_results_folder,
+                        local_benchmark_output_filename,
+                    )
+                    logging.info(
+                        "Preserving local results file {} into {}".format(
+                            full_result_path, dest_fpath
+                        )
+                    )
+                    shutil.copy(full_result_path, dest_fpath)
                 overall_result &= test_result
+
+    table_name = "Results for entire test-suite".format(test_name)
+    results_matrix_headers = [
+        "Test Name",
+        "Metric JSON Path",
+        "Metric Value",
+    ]
+    writer = MarkdownTableWriter(
+        table_name=table_name,
+        headers=results_matrix_headers,
+        value_matrix=results_matrix,
+    )
+    writer.write_table()
+
+    if client_aggregated_results_folder != "":
+        os.makedirs(client_aggregated_results_folder, exist_ok=True)
+        dest_fpath = "{}/{}".format(
+            client_aggregated_results_folder,
+            "aggregate-results.csv",
+        )
+        logging.info(
+            "Storing an aggregated results CSV into {}".format(
+                full_result_path, dest_fpath
+            )
+        )
+
+        csv_writer = CsvTableWriter(
+            table_name=table_name,
+            headers=results_matrix_headers,
+            value_matrix=results_matrix,
+        )
+        csv_writer.dump(dest_fpath)
 
 
 def cp_to_workdir(benchmark_tool_workdir, srcfile):
@@ -486,6 +574,52 @@ def cp_to_workdir(benchmark_tool_workdir, srcfile):
         )
     )
     return dstfile, filename
+
+
+def print_results_table_stdout(
+    benchmark_config,
+    default_metrics,
+    results_dict,
+    setup_name,
+    test_name,
+    cpu_usage=None,
+):
+    # check which metrics to extract
+    (_, metrics,) = merge_default_and_config_metrics(
+        benchmark_config,
+        default_metrics,
+        None,
+    )
+    table_name = "Results for {} test-case on {} topology".format(test_name, setup_name)
+    results_matrix_headers = [
+        "Metric JSON Path",
+        "Metric Value",
+    ]
+    results_matrix = extract_results_table(metrics, results_dict)
+
+    results_matrix = [[x[0], "{:.3f}".format(x[3])] for x in results_matrix]
+    writer = MarkdownTableWriter(
+        table_name=table_name,
+        headers=results_matrix_headers,
+        value_matrix=results_matrix,
+    )
+    writer.write_table()
+
+
+def prepare_overall_total_test_results(
+    benchmark_config, default_metrics, results_dict, test_name, overall_results_matrix
+):
+    # check which metrics to extract
+    (_, metrics,) = merge_default_and_config_metrics(
+        benchmark_config,
+        default_metrics,
+        None,
+    )
+    current_test_results_matrix = extract_results_table(metrics, results_dict)
+    current_test_results_matrix = [
+        [test_name, x[0], "{:.3f}".format(x[3])] for x in current_test_results_matrix
+    ]
+    overall_results_matrix.extend(current_test_results_matrix)
 
 
 def data_prepopulation_step(
