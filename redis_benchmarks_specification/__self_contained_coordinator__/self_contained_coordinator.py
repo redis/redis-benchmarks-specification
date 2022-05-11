@@ -616,7 +616,7 @@ def process_self_contained_coordinator_stream(
                                         "mode": "rw",
                                     },
                                 },
-                                auto_remove=False,
+                                auto_remove=True,
                                 privileged=True,
                                 working_dir=benchmark_tool_workdir,
                                 command=benchmark_command_str,
