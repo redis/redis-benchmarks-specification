@@ -506,17 +506,6 @@ def process_self_contained_coordinator_stream(
                             )
                             pass
 
-                if preserve_temporary_client_dirs is True:
-                    logging.info(
-                        "Preserving temporary client dir {}".format(
-                            temporary_dir_client
-                        )
-                    )
-                else:
-                    logging.info(
-                        "Removing temporary client dir {}".format(temporary_dir_client)
-                    )
-                    shutil.rmtree(temporary_dir_client, ignore_errors=True)
                 if client_aggregated_results_folder != "":
                     os.makedirs(client_aggregated_results_folder, exist_ok=True)
                     dest_fpath = "{}/{}".format(
@@ -530,6 +519,23 @@ def process_self_contained_coordinator_stream(
                     )
                     shutil.copy(full_result_path, dest_fpath)
                 overall_result &= test_result
+
+                if preserve_temporary_client_dirs is True:
+                    logging.info(
+                        "Preserving temporary client dir {}".format(
+                            temporary_dir_client
+                        )
+                    )
+                else:
+                    if "redis-benchmark" in benchmark_tool:
+                        os.remove(full_result_path)
+                        logging.info(
+                            "Removing temporary JSON file".format(full_result_path)
+                        )
+                    shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                    logging.info(
+                        "Removing temporary client dir {}".format(temporary_dir_client)
+                    )
 
     table_name = "Results for entire test-suite".format(test_name)
     results_matrix_headers = [
