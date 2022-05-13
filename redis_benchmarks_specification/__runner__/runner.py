@@ -424,6 +424,7 @@ def process_self_contained_coordinator_stream(
                     )
                     profiler_call_graph_mode = "dwarf"
                     profiler_frequency = 99
+
                     # start the profile
                     (
                         profiler_name,
@@ -438,7 +439,6 @@ def process_self_contained_coordinator_stream(
                         profiler_frequency,
                         profiler_call_graph_mode,
                     )
-
                     logging.info(
                         "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
                             client_container_image,
@@ -477,6 +477,7 @@ def process_self_contained_coordinator_stream(
                             client_container_stdout
                         )
                     )
+
                     (_, overall_tabular_data_map,) = profilers_stop_if_required(
                         datasink_push_results_redistimeseries,
                         benchmark_duration_seconds,
@@ -492,8 +493,6 @@ def process_self_contained_coordinator_stream(
                         S3_BUCKET_NAME,
                         test_name,
                     )
-
-
 
                     print()
                     if args.flushall_on_every_test_end:
