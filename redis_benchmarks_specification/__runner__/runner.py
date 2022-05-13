@@ -9,6 +9,12 @@ import traceback
 from pathlib import Path
 import shutil
 
+from redisbench_admin.profilers.profilers_local import (
+    check_compatible_system_and_kernel_and_prepare_profile,
+    profilers_start_if_required,
+    local_profilers_platform_checks,
+    profilers_stop_if_required,
+)
 import docker
 import redis
 from docker.models.containers import Container
@@ -36,6 +42,7 @@ from redis_benchmarks_specification.__common__.env import (
     LOG_LEVEL,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
+    S3_BUCKET_NAME,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -124,6 +131,20 @@ def main():
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
     docker_client = docker.from_env()
     home = str(Path.home())
+
+    profilers_list = []
+    profilers_enabled = args.enable_profilers
+    if profilers_enabled:
+        profilers_list = args.profilers.split(",")
+        res = check_compatible_system_and_kernel_and_prepare_profile(args)
+        if res is False:
+            logging.error(
+                "Requested for the following profilers to be enabled but something went wrong: {}.".format(
+                    " ".join(profilers_list)
+                )
+            )
+            exit(1)
+
     logging.info("Running the benchmark specs.")
 
     process_self_contained_coordinator_stream(
@@ -136,6 +157,8 @@ def main():
         testsuite_spec_files,
         {},
         running_platform,
+        profilers_enabled,
+        profilers_list,
         tls_enabled,
         tls_skip_verify,
         tls_cert,
@@ -198,6 +221,8 @@ def process_self_contained_coordinator_stream(
     testsuite_spec_files,
     topologies_map,
     running_platform,
+    profilers_enabled=False,
+    profilers_list=[],
     tls_enabled=False,
     tls_skip_verify=False,
     tls_cert=None,
@@ -258,6 +283,34 @@ def process_self_contained_coordinator_stream(
                         ssl_check_hostname=False,
                     )
                     r.ping()
+                    redis_pids = []
+                    first_redis_pid = r.info()["process_id"]
+                    redis_pids.append(first_redis_pid)
+
+                    setup_name = "oss-standalone"
+                    github_actor = "{}-{}".format(
+                        tf_triggering_env, running_platform
+                    )
+                    dso = "redis-server"
+                    profilers_artifacts_matrix = []
+
+                    collection_summary_str = ""
+                    if profilers_enabled:
+                        collection_summary_str = (
+                            local_profilers_platform_checks(
+                                dso,
+                                github_actor,
+                                git_branch,
+                                tf_github_repo,
+                                git_hash,
+                             )
+                        )
+                        logging.info(
+                            "Using the following collection summary string for profiler description: {}".format(
+                                collection_summary_str
+                            )
+                        )
+
 
                     ceil_client_cpu_limit = extract_client_cpu_limit(benchmark_config)
                     client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -369,6 +422,23 @@ def process_self_contained_coordinator_stream(
                     client_container_image = extract_client_container_image(
                         benchmark_config
                     )
+                    profiler_call_graph_mode = "dwarf"
+                    profiler_frequency = 99
+                    # start the profile
+                    (
+                        profiler_name,
+                        profilers_map,
+                    ) = profilers_start_if_required(
+                        profilers_enabled,
+                        profilers_list,
+                        redis_pids,
+                        setup_name,
+                        start_time_str,
+                        test_name,
+                        profiler_frequency,
+                        profiler_call_graph_mode,
+                    )
+
                     logging.info(
                         "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
                             client_container_image,
@@ -407,6 +477,24 @@ def process_self_contained_coordinator_stream(
                             client_container_stdout
                         )
                     )
+                    (_, overall_tabular_data_map,) = profilers_stop_if_required(
+                        datasink_push_results_redistimeseries,
+                        benchmark_duration_seconds,
+                        collection_summary_str,
+                        dso,
+                        tf_github_org,
+                        tf_github_repo,
+                        profiler_name,
+                        profilers_artifacts_matrix,
+                        profilers_enabled,
+                        profilers_map,
+                        redis_pids,
+                        S3_BUCKET_NAME,
+                        test_name,
+                    )
+
+
+
                     print()
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
