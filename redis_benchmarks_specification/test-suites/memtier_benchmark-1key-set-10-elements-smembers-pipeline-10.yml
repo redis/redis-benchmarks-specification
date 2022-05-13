@@ -6,7 +6,7 @@ description: "Runs memtier_benchmark, for a keyspace length of 1 SET key.
 
 dbconfig:
   - configuration-parameters:
-    save: '""'
+    - save: '""'
   - init_commands:
     - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
 tested-commands:
