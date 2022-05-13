@@ -6,7 +6,7 @@ description: "Runs memtier_benchmark, for a keyspace length of 2 STREAM keys wit
 
 dbconfig:
   - configuration-parameters:
-    save: '""'
+    - save: '""'
   - init_commands:
       - 'xadd key-1 * field value'
       - 'xadd key-1 * field value'
