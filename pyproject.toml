@@ -16,7 +16,7 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^5.4.1"
 docker = "^5.0.0"
-redisbench-admin = "^0.8.6"
+redisbench-admin = "^0.9.3"
 #redisbench-admin = {path = "../redisbench-admin", develop = true}
 psutil = "^5.8.0"
 tox-docker = "^3.1.0"

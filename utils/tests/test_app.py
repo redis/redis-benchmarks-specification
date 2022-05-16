@@ -9,7 +9,11 @@ from hmac import HMAC
 
 import redis
 
-from redis_benchmarks_specification.__api__.app import create_app, SIG_HEADER
+from redis_benchmarks_specification.__api__.app import (
+    create_app,
+    SIG_HEADER,
+    should_action,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
 )
@@ -121,3 +125,12 @@ def test_create_app():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_should_action():
+    assert should_action("labeled") == True
+    assert should_action("opened") == True
+    assert should_action("closed") == False
+    assert should_action("na") == False
+    assert should_action("reopened") == True
+    assert should_action("synchronize") == True
