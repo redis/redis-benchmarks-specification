@@ -182,6 +182,10 @@ def main():
     datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
     grafana_profile_dashboard = args.grafana_profile_dashboard
 
+    # Consumer id
+    consumer_pos = args.consumer_pos
+    logging.info("Consumer pos {}".format(consumer_pos))
+
     profilers_list = []
     profilers_enabled = args.enable_profilers
     if profilers_enabled:
@@ -214,6 +218,7 @@ def main():
             grafana_profile_dashboard,
             cpuset_start_pos,
             redis_proc_start_port,
+            consumer_pos,
         )
 
 
@@ -260,12 +265,18 @@ def self_contained_coordinator_blocking_read(
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
+    consumer_pos=1,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
     overall_result = False
     consumer_name = "{}-self-contained-proc#{}".format(
-        get_runners_consumer_group_name(platform_name), "1"
+        get_runners_consumer_group_name(platform_name), consumer_pos
+    )
+    logging.info(
+        "Consuming from group {}. Consumer id {}".format(
+            get_runners_consumer_group_name(platform_name), consumer_name
+        )
     )
     newTestInfo = conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
