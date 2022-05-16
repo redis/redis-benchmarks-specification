@@ -742,7 +742,7 @@ def process_self_contained_coordinator_stream(
                                 results_dict = json.load(json_file)
                             dataset_load_duration_seconds = 0
 
-                            logging.error(
+                            logging.info(
                                 "Using datapoint_time_ms: {}".format(datapoint_time_ms)
                             )
 
