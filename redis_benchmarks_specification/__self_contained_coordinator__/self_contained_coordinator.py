@@ -523,7 +523,7 @@ def process_self_contained_coordinator_stream(
                                     client_cpuset_cpus,
                                     docker_client,
                                     git_hash,
-                                    port,
+                                    redis_proc_start_port,
                                     temporary_dir,
                                     test_name,
                                 )
@@ -563,7 +563,7 @@ def process_self_contained_coordinator_stream(
                                 ) = prepare_benchmark_parameters(
                                     benchmark_config,
                                     full_benchmark_path,
-                                    port,
+                                    redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
                                     False,
@@ -577,7 +577,7 @@ def process_self_contained_coordinator_stream(
                                 ) = prepare_memtier_benchmark_parameters(
                                     benchmark_config["clientconfig"],
                                     full_benchmark_path,
-                                    port,
+                                    redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
                                     benchmark_tool_workdir,
