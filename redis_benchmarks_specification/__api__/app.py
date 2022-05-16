@@ -102,6 +102,7 @@ def create_app(conn, user, test_config=None):
                         )
 
             # Git pushes to repo
+            before_sha = None
             if "ref" in request_data:
                 repo_dict = request_data["repository"]
                 html_url = repo_dict["html_url"].split("/")
@@ -110,11 +111,33 @@ def create_app(conn, user, test_config=None):
                 ref = request_data["ref"].split("/")[-1]
                 ref_label = request_data["ref"]
                 sha = request_data["after"]
+                before_sha = request_data["before"]
                 use_event = True
                 event_type = "Git pushes to repo"
 
             if use_event is True:
-                fields = {
+                if before_sha is not None:
+                    fields_before = {
+                        "git_hash": sha,
+                        "ref_label": ref_label,
+                        "ref": ref,
+                        "gh_repo": gh_repo,
+                        "gh_org": gh_org,
+                    }
+                    app.logger.info(
+                        "Using event {} to trigger merge-base commit benchmark. final fields: {}".format(
+                            event_type, fields_before
+                        )
+                    )
+                    result, response_data, err_message = commit_schema_to_stream(
+                        fields_before, conn, gh_org, gh_repo
+                    )
+                    app.logger.info(
+                        "Using event {} to trigger merge-base commit benchmark. final fields: {}".format(
+                            event_type, response_data
+                        )
+                    )
+                fields_after = {
                     "git_hash": sha,
                     "ref_label": ref_label,
                     "ref": ref,
@@ -123,11 +146,11 @@ def create_app(conn, user, test_config=None):
                 }
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
-                        event_type, fields
+                        event_type, fields_after
                     )
                 )
                 result, response_data, err_message = commit_schema_to_stream(
-                    fields, conn, gh_org, gh_repo
+                    fields_after, conn, gh_org, gh_repo
                 )
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
