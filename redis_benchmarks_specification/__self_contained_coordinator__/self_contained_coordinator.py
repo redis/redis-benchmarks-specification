@@ -502,7 +502,7 @@ def process_self_contained_coordinator_stream(
                             )
                             redis_containers.append(container)
 
-                            r = redis.StrictRedis(port=6379)
+                            r = redis.StrictRedis(port=redis_proc_start_port)
                             r.ping()
                             redis_pids = []
                             first_redis_pid = r.info()["process_id"]
