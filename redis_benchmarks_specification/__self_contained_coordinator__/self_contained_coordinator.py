@@ -174,6 +174,8 @@ def main():
     home = str(Path.home())
     cpuset_start_pos = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
+    redis_proc_start_port = args.redis_proc_start_port
+    logging.info("Redis Processes start port: {}".format(redis_proc_start_port))
 
     # TODO: confirm we do have enough cores to run the spec
     # availabe_cpus = args.cpu_count
@@ -211,6 +213,7 @@ def main():
             profilers_list,
             grafana_profile_dashboard,
             cpuset_start_pos,
+            redis_proc_start_port,
         )
 
 
@@ -256,6 +259,7 @@ def self_contained_coordinator_blocking_read(
     profilers_list,
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
+    redis_proc_start_port=6379,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -291,6 +295,7 @@ def self_contained_coordinator_blocking_read(
             profilers_list,
             grafana_profile_dashboard,
             cpuset_start_pos,
+            redis_proc_start_port,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -357,6 +362,7 @@ def process_self_contained_coordinator_stream(
     profilers_list=[],
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
+    redis_proc_start_port=6379,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -464,11 +470,10 @@ def process_self_contained_coordinator_stream(
                             restore_build_artifacts_from_test_details(
                                 build_artifacts, conn, temporary_dir, testDetails
                             )
-                            port = 6379
                             mnt_point = "/mnt/redis/"
                             command = generate_standalone_redis_server_args(
                                 "{}redis-server".format(mnt_point),
-                                port,
+                                redis_proc_start_port,
                                 mnt_point,
                                 redis_configuration_parameters,
                             )
@@ -735,9 +740,6 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
-                                logging.info(
-                                    "Final JSON result {}".format(results_dict)
-                                )
                             dataset_load_duration_seconds = 0
 
                             logging.error(

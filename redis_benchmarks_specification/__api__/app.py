@@ -14,6 +14,15 @@ from redis_benchmarks_specification.__common__.env import PULL_REQUEST_TRIGGER_L
 SIG_HEADER = "X-Hub-Signature"
 
 
+def should_action(action):
+    res = False
+    types = ["synchronize", "opened", "reopened", "labeled"]
+    for tt in types:
+        if action in tt:
+            res = True
+    return res
+
+
 def create_app(conn, user, test_config=None):
     app = Flask(__name__)
 
@@ -63,7 +72,7 @@ def create_app(conn, user, test_config=None):
             trigger_label = PULL_REQUEST_TRIGGER_LABEL
             if "pull_request" in request_data:
                 action = request_data["action"]
-                if "labeled" == action:
+                if should_action(action):
                     pull_request_dict = request_data["pull_request"]
                     head_dict = pull_request_dict["head"]
                     repo_dict = head_dict["repo"]
