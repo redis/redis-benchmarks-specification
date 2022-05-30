@@ -91,15 +91,24 @@ def cli_command_logic(args, project_name, project_version):
     commits = []
     if args.use_branch:
         for commit in repo.iter_commits():
+            committed_datetime = commit.committed_datetime
+            timestamp = committed_datetime.timestamp()
             if (
                 args.from_date
-                <= datetime.datetime.utcfromtimestamp(
-                    commit.committed_datetime.timestamp()
-                )
+                <= datetime.datetime.utcfromtimestamp(timestamp)
                 <= args.to_date
             ):
                 print(commit.summary)
-                commits.append({"git_hash": commit.hexsha, "git_branch": args.branch})
+                commits.append(
+                    {
+                        "git_hash": commit.hexsha,
+                        "git_branch": args.branch,
+                        "timestamp": timestamp,
+                        "committed_datetime": committed_datetime.strftime(
+                            "%m/%d/%Y, %H:%M:%S"
+                        ),
+                    }
+                )
     if args.use_tags:
         tags_regexp = args.tags_regexp
         if tags_regexp == ".*":
@@ -114,11 +123,11 @@ def cli_command_logic(args, project_name, project_version):
 
         tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
         for tag in tags:
+            committed_datetime = tag.commit.committed_datetime
+            timestamp = committed_datetime.timestamp()
             if (
                 args.from_date
-                <= datetime.datetime.utcfromtimestamp(
-                    tag.commit.committed_datetime.timestamp()
-                )
+                <= datetime.datetime.utcfromtimestamp(timestamp)
                 <= args.to_date
             ):
 
@@ -139,7 +148,14 @@ def cli_command_logic(args, project_name, project_version):
                             )
                         )
                         commits.append(
-                            {"git_hash": tag.commit.hexsha, "git_version": git_version}
+                            {
+                                "git_hash": tag.commit.hexsha,
+                                "git_version": git_version,
+                                "timestamp": timestamp,
+                                "committed_datetime": committed_datetime.strftime(
+                                    "%m/%d/%Y, %H:%M:%S"
+                                ),
+                            }
                         )
                 except packaging.version.InvalidVersion:
                     logging.info(
@@ -166,6 +182,7 @@ def cli_command_logic(args, project_name, project_version):
         )
         for rep in range(0, 1):
             for cdict in commits:
+                committed_datetime = cdict["committed_datetime"]
                 (
                     result,
                     error_msg,
@@ -186,8 +203,10 @@ def cli_command_logic(args, project_name, project_version):
                         REDIS_BINS_EXPIRE_SECS,
                     )
                     logging.info(
-                        "Successfully requested a build for commit: {}. Request stream id: {}.".format(
-                            cdict["git_hash"], reply_fields["id"]
+                        "Successfully requested a build for commit: {}. committed_datetime: {}. Request stream id: {}.".format(
+                            cdict["git_hash"],
+                            committed_datetime,
+                            reply_fields["id"],
                         )
                     )
                 else:

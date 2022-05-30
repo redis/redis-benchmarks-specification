@@ -183,7 +183,7 @@ def main():
     grafana_profile_dashboard = args.grafana_profile_dashboard
 
     # Consumer id
-    consumer_pos = args.consumer_pos
+    consumer_pos = args.consumer_id
     logging.info("Consumer pos {}".format(consumer_pos))
 
     profilers_list = []
