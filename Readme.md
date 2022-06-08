@@ -323,6 +323,46 @@ redis-benchmarks-spec-sc-coordinator   RUNNING   pid 27842, uptime 0:00:00
 ```
 
 
+## Development
+
+1. Install [pypoetry](https://python-poetry.org/) to manage your dependencies and trigger tooling.
+```sh
+pip install poetry
+```
+
+2. Installing dependencies from lock file
+
+```
+poetry install
+```
+
+### Running formaters
+
+```sh
+poetry run black .
+```
+
+
+### Running linters
+
+```sh
+poetry run flake8
+```
+
+
+### Running tests
+
+A test suite is provided, and can be run with:
+
+```sh
+$ tox
+```
+
+To run a specific test:
+```sh
+$ tox -- utils/tests/test_runner.py
+```
+
 ## License
 
-redis-benchmark-specifications is distributed under the Apache 2 license - see [LICENSE](LICENSE)
+redisbench-admin is distributed under the BSD3 license - see [LICENSE](LICENSE)

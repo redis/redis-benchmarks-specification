@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.30"
+version = "0.1.35"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
@@ -16,7 +16,7 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^5.4.1"
 docker = "^5.0.0"
-redisbench-admin = "^0.8.6"
+redisbench-admin = "^0.9.3"
 #redisbench-admin = {path = "../redisbench-admin", develop = true}
 psutil = "^5.8.0"
 tox-docker = "^3.1.0"

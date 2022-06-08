@@ -89,9 +89,9 @@ def test_self_contained_coordinator_blocking_read():
             tf_triggering_env = "ci"
             deployment_name = "oss-standalone"
             deployment_type = "oss-standalone"
-            use_metric_context_path = True
-            metric_context_path = "Gets"
-            for metric_name in ["Latency", "Ops/sec"]:
+            use_metric_context_path = False
+            metric_context_path = None
+            for metric_name in ["ALL_STATS.Totals.Latency", "ALL_STATS.Totals.Ops/sec"]:
                 ts_key_name = get_ts_metric_name(
                     "by.branch",
                     "unstable",

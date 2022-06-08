@@ -36,6 +36,7 @@ def create_self_contained_coordinator_args(project_name):
         default=MACHINE_CPU_COUNT,
         help="Specify how much of the available CPU resources the coordinator can use.",
     )
+    parser.add_argument("--redis_proc_start_port", type=int, default=6379)
     parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(
         "--platform-name",
@@ -51,6 +52,13 @@ def create_self_contained_coordinator_args(project_name):
         type=str,
         default=">",
     )
+    parser.add_argument(
+        "--consumer-id",
+        type=int,
+        default=1,
+        help="Consumer id for consumer group for platform",
+    )
+
     parser.add_argument(
         "--setups-folder",
         type=str,
