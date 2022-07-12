@@ -55,6 +55,11 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
+from redis_benchmarks_specification.__setups__.tools import (
+    get_tools,
+    start_tools_if_required,
+)
+
 
 def main():
     _, _, project_version = populate_with_poetry_data()
@@ -88,6 +93,15 @@ def main():
     logging.info(
         "There are a total of {} test-suites in folder {}".format(
             len(testsuite_spec_files), testsuites_folder
+        )
+    )
+
+    tools_folder = os.path.abspath(args.setups_folder + "/tools")
+    logging.info("Using tools folder dir {}".format(tools_folder))
+    tools_files = get_tools(tools_folder)
+    logging.info(
+        "There are a total of {} tools in folder {}".format(
+            len(tools_files), tools_folder
         )
     )
 
@@ -157,8 +171,9 @@ def main():
         testsuite_spec_files,
         {},
         running_platform,
+        tools_files,
         profilers_enabled,
-        profilers_list,
+        profilers_list, 
         tls_enabled,
         tls_skip_verify,
         tls_cert,
@@ -221,6 +236,7 @@ def process_self_contained_coordinator_stream(
     testsuite_spec_files,
     topologies_map,
     running_platform,
+    tools_files, 
     profilers_enabled=False,
     profilers_list=[],
     tls_enabled=False,
@@ -439,6 +455,12 @@ def process_self_contained_coordinator_stream(
                         profiler_frequency,
                         profiler_call_graph_mode,
                     )
+
+                    #start the data collection tools
+                    start_tools_if_required(
+                        tools_files
+                    )
+
                     logging.info(
                         "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
                             client_container_image,
