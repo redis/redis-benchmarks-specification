@@ -902,7 +902,7 @@ def data_prepopulation_step(
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(
-            preload_end_time, preload_start_time
+            preload_end_time, preload_start_time, "Preload", False
         )
         logging.info(
             "Tool {} seconds to load data. Output {}".format(
