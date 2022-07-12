@@ -55,7 +55,7 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
-from redis_benchmarks_specification.__setups__.tools import (
+from redis_benchmarks_specification.__setups__.data_collection_tools import (
     get_tools,
     start_tools_if_required,
 )
@@ -96,7 +96,7 @@ def main():
         )
     )
 
-    tools_folder = os.path.abspath(args.setups_folder + "/tools")
+    tools_folder = os.path.abspath(args.setups_folder + "/data-collection-tools")
     logging.info("Using tools folder dir {}".format(tools_folder))
     tools_files = get_tools(tools_folder)
     logging.info(
@@ -456,7 +456,7 @@ def process_self_contained_coordinator_stream(
                         profiler_call_graph_mode,
                     )
 
-                    #start the data collection tools
+                    # start data collection tools
                     start_tools_if_required(
                         tools_files
                     )
