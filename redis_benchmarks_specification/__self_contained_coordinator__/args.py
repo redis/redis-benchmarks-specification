@@ -110,4 +110,10 @@ def create_self_contained_coordinator_args(project_name):
         type=str,
         default="https://benchmarksredisio.grafana.net/d/uRPZar57k/ci-profiler-viewer",
     )
+    parser.add_argument(
+        "--docker-air-gap",
+        default=False,
+        action="store_true",
+        help="Read the docker images from redis keys.",
+    )
     return parser
