@@ -472,12 +472,6 @@ def process_self_contained_coordinator_stream(
                             benchmark_end_time, benchmark_start_time
                         )
                     )
-                    logging.info(
-                        "Printing client tool stdout output".format(
-                            client_container_stdout
-                        )
-                    )
-
                     (_, overall_tabular_data_map,) = profilers_stop_if_required(
                         datasink_push_results_redistimeseries,
                         benchmark_duration_seconds,
@@ -494,7 +488,7 @@ def process_self_contained_coordinator_stream(
                         test_name,
                     )
 
-                    print()
+                    logging.info("Printing client tool stdout output")
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
@@ -616,15 +610,13 @@ def process_self_contained_coordinator_stream(
                 else:
                     if "redis-benchmark" in benchmark_tool:
                         os.remove(full_result_path)
-                        logging.info(
-                            "Removing temporary JSON file".format(full_result_path)
-                        )
+                        logging.info("Removing temporary JSON file")
                     shutil.rmtree(temporary_dir_client, ignore_errors=True)
                     logging.info(
                         "Removing temporary client dir {}".format(temporary_dir_client)
                     )
 
-    table_name = "Results for entire test-suite".format(test_name)
+    table_name = "Results for entire test-suite"
     results_matrix_headers = [
         "Test Name",
         "Metric JSON Path",
@@ -644,9 +636,7 @@ def process_self_contained_coordinator_stream(
             "aggregate-results.csv",
         )
         logging.info(
-            "Storing an aggregated results CSV into {}".format(
-                full_result_path, dest_fpath
-            )
+            "Storing an aggregated results CSV into {}".format(full_result_path)
         )
 
         csv_writer = CsvTableWriter(
@@ -793,7 +783,7 @@ def data_prepopulation_step(
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(
-            preload_end_time, preload_start_time
+            preload_end_time, preload_start_time, "Preload", False
         )
         logging.info(
             "Tool {} seconds to load data. Output {}".format(

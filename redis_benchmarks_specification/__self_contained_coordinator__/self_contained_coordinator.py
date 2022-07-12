@@ -174,11 +174,17 @@ def main():
     home = str(Path.home())
     cpuset_start_pos = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
+    redis_proc_start_port = args.redis_proc_start_port
+    logging.info("Redis Processes start port: {}".format(redis_proc_start_port))
 
     # TODO: confirm we do have enough cores to run the spec
     # availabe_cpus = args.cpu_count
     datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
     grafana_profile_dashboard = args.grafana_profile_dashboard
+
+    # Consumer id
+    consumer_pos = args.consumer_pos
+    logging.info("Consumer pos {}".format(consumer_pos))
 
     profilers_list = []
     profilers_enabled = args.enable_profilers
@@ -211,6 +217,8 @@ def main():
             profilers_list,
             grafana_profile_dashboard,
             cpuset_start_pos,
+            redis_proc_start_port,
+            consumer_pos,
         )
 
 
@@ -256,12 +264,19 @@ def self_contained_coordinator_blocking_read(
     profilers_list,
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
+    redis_proc_start_port=6379,
+    consumer_pos=1,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
     overall_result = False
     consumer_name = "{}-self-contained-proc#{}".format(
-        get_runners_consumer_group_name(platform_name), "1"
+        get_runners_consumer_group_name(platform_name), consumer_pos
+    )
+    logging.info(
+        "Consuming from group {}. Consumer id {}".format(
+            get_runners_consumer_group_name(platform_name), consumer_name
+        )
     )
     newTestInfo = conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
@@ -291,6 +306,7 @@ def self_contained_coordinator_blocking_read(
             profilers_list,
             grafana_profile_dashboard,
             cpuset_start_pos,
+            redis_proc_start_port,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -357,6 +373,7 @@ def process_self_contained_coordinator_stream(
     profilers_list=[],
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
+    redis_proc_start_port=6379,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -464,11 +481,10 @@ def process_self_contained_coordinator_stream(
                             restore_build_artifacts_from_test_details(
                                 build_artifacts, conn, temporary_dir, testDetails
                             )
-                            port = 6379
                             mnt_point = "/mnt/redis/"
                             command = generate_standalone_redis_server_args(
                                 "{}redis-server".format(mnt_point),
-                                port,
+                                redis_proc_start_port,
                                 mnt_point,
                                 redis_configuration_parameters,
                             )
@@ -497,7 +513,7 @@ def process_self_contained_coordinator_stream(
                             )
                             redis_containers.append(container)
 
-                            r = redis.StrictRedis(port=6379)
+                            r = redis.StrictRedis(port=redis_proc_start_port)
                             r.ping()
                             redis_pids = []
                             first_redis_pid = r.info()["process_id"]
@@ -518,7 +534,7 @@ def process_self_contained_coordinator_stream(
                                     client_cpuset_cpus,
                                     docker_client,
                                     git_hash,
-                                    port,
+                                    redis_proc_start_port,
                                     temporary_dir,
                                     test_name,
                                 )
@@ -558,7 +574,7 @@ def process_self_contained_coordinator_stream(
                                 ) = prepare_benchmark_parameters(
                                     benchmark_config,
                                     full_benchmark_path,
-                                    port,
+                                    redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
                                     False,
@@ -572,7 +588,7 @@ def process_self_contained_coordinator_stream(
                                 ) = prepare_memtier_benchmark_parameters(
                                     benchmark_config["clientconfig"],
                                     full_benchmark_path,
-                                    port,
+                                    redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
                                     benchmark_tool_workdir,
@@ -735,12 +751,9 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
-                                logging.info(
-                                    "Final JSON result {}".format(results_dict)
-                                )
                             dataset_load_duration_seconds = 0
 
-                            logging.error(
+                            logging.info(
                                 "Using datapoint_time_ms: {}".format(datapoint_time_ms)
                             )
 
@@ -889,7 +902,7 @@ def data_prepopulation_step(
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(
-            preload_end_time, preload_start_time
+            preload_end_time, preload_start_time, "Preload", False
         )
         logging.info(
             "Tool {} seconds to load data. Output {}".format(
