@@ -58,6 +58,12 @@ def create_self_contained_coordinator_args(project_name):
         default=1,
         help="Consumer id for consumer group for platform",
     )
+    parser.add_argument(
+        "--consumer-pos",
+        type=int,
+        default=1,
+        help="Consumer pos for consumer group for platform",
+    )
 
     parser.add_argument(
         "--setups-folder",

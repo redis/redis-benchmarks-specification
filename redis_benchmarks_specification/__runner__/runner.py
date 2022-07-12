@@ -288,29 +288,24 @@ def process_self_contained_coordinator_stream(
                     redis_pids.append(first_redis_pid)
 
                     setup_name = "oss-standalone"
-                    github_actor = "{}-{}".format(
-                        tf_triggering_env, running_platform
-                    )
+                    github_actor = "{}-{}".format(tf_triggering_env, running_platform)
                     dso = "redis-server"
                     profilers_artifacts_matrix = []
 
                     collection_summary_str = ""
                     if profilers_enabled:
-                        collection_summary_str = (
-                            local_profilers_platform_checks(
-                                dso,
-                                github_actor,
-                                git_branch,
-                                tf_github_repo,
-                                git_hash,
-                             )
+                        collection_summary_str = local_profilers_platform_checks(
+                            dso,
+                            github_actor,
+                            git_branch,
+                            tf_github_repo,
+                            git_hash,
                         )
                         logging.info(
                             "Using the following collection summary string for profiler description: {}".format(
                                 collection_summary_str
                             )
                         )
-
 
                     ceil_client_cpu_limit = extract_client_cpu_limit(benchmark_config)
                     client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -426,10 +421,7 @@ def process_self_contained_coordinator_stream(
                     profiler_frequency = 99
 
                     # start the profile
-                    (
-                        profiler_name,
-                        profilers_map,
-                    ) = profilers_start_if_required(
+                    (profiler_name, profilers_map,) = profilers_start_if_required(
                         profilers_enabled,
                         profilers_list,
                         redis_pids,
