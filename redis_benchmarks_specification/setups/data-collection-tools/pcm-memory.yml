@@ -1,0 +1,6 @@
+version: 0.1
+name: pcm-memory 
+description: "Memory latency and bandwidth monitoring"
+command: "pcm-memory"
+env:
+  PCM_IGNORE_ARCH_PERFMON: "1"
