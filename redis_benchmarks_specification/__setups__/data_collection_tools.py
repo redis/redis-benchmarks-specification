@@ -1,7 +1,8 @@
 import logging
-import os
 import pathlib
 import yaml
+import subprocess
+import os
 
 
 def get_tools(tools_folder):
@@ -24,6 +25,10 @@ def start_tools_if_required(tools_files):
         with open(tool_file) as stream:
             tool_config = yaml.safe_load(stream)
             command = tool_config["command"]
-            tool_stream = os.popen(command)
-            output = tool_stream.read()
-            logging.info(output)
+
+            # Launch the tool in a background process
+            tool_output = subprocess.Popen(command)
+
+            #tool_output = os.popen(command)
+            # output = tool_output.read()
+            logging.info(tool_output)

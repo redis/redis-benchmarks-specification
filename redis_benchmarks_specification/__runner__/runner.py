@@ -456,7 +456,7 @@ def process_self_contained_coordinator_stream(
                         profiler_call_graph_mode,
                     )
 
-                    # start data collection tools
+                    # start data collection
                     start_tools_if_required(
                         tools_files
                     )
