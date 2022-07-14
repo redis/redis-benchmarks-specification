@@ -71,6 +71,12 @@ def main():
         type=str,
         default=">",
     )
+    parser.add_argument(
+        "--docker-air-gap",
+        default=False,
+        action="store_true",
+        help="Store the docker images in redis keys.",
+    )
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -130,7 +136,11 @@ def main():
     previous_id = args.consumer_start_id
     while True:
         previous_id, new_builds_count = builder_process_stream(
-            builders_folder, conn, different_build_specs, previous_id
+            builders_folder,
+            conn,
+            different_build_specs,
+            previous_id,
+            args.docker_air_gap,
         )
 
 
@@ -155,7 +165,9 @@ def builder_consumer_group_create(conn, id="$"):
         )
 
 
-def builder_process_stream(builders_folder, conn, different_build_specs, previous_id):
+def builder_process_stream(
+    builders_folder, conn, different_build_specs, previous_id, docker_air_gap=False
+):
     new_builds_count = 0
     logging.info("Entering blocking read waiting for work.")
     consumer_name = "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1")
@@ -212,6 +224,30 @@ def builder_process_stream(builders_folder, conn, different_build_specs, previou
                 run_image = build_image
                 if "run_image" in build_config:
                     run_image = build_config["run_image"]
+                if docker_air_gap:
+                    airgap_key = "docker:air-gap:{}".format(run_image)
+                    logging.info(
+                        "DOCKER AIR GAP: storing run image named: {} in redis key {}".format(
+                            run_image, airgap_key
+                        )
+                    )
+                    run_image_binary_stream = io.BytesIO()
+                    run_image_docker = docker_client.images.get(run_image)
+                    for chunk in run_image_docker.save():
+                        run_image_binary_stream.write(chunk)
+                    # 7 days expire
+                    binary_exp_secs = 24 * 60 * 60 * 7
+                    res_airgap = conn.set(
+                        airgap_key,
+                        run_image_binary_stream.getbuffer(),
+                        ex=binary_exp_secs,
+                    )
+                    logging.info(
+                        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
+                            airgap_key, res_airgap
+                        )
+                    )
+
                 compiler = build_config["compiler"]
                 cpp_compiler = build_config["cpp_compiler"]
                 build_os = build_config["os"]

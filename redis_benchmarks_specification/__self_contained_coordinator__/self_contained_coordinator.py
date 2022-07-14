@@ -186,6 +186,13 @@ def main():
     consumer_pos = args.consumer_pos
     logging.info("Consumer pos {}".format(consumer_pos))
 
+    # Docker air gap usage
+    docker_air_gap = args.docker_air_gap
+    if docker_air_gap:
+        logging.info(
+            "Using docker in an air-gapped way. Restoring running images from redis keys."
+        )
+
     profilers_list = []
     profilers_enabled = args.enable_profilers
     if profilers_enabled:
@@ -219,6 +226,7 @@ def main():
             cpuset_start_pos,
             redis_proc_start_port,
             consumer_pos,
+            docker_air_gap,
         )
 
 
@@ -266,6 +274,7 @@ def self_contained_coordinator_blocking_read(
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
     consumer_pos=1,
+    docker_air_gap=False,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -307,6 +316,7 @@ def self_contained_coordinator_blocking_read(
             grafana_profile_dashboard,
             cpuset_start_pos,
             redis_proc_start_port,
+            docker_air_gap,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -374,6 +384,7 @@ def process_self_contained_coordinator_stream(
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
+    docker_air_gap=False,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -398,6 +409,14 @@ def process_self_contained_coordinator_stream(
 
             overall_result = True
             profiler_dashboard_links = []
+            if docker_air_gap:
+                airgap_key = "docker:air-gap:{}".format(run_image)
+                logging.info(
+                    "Restoring docker image: {} from {}".format(run_image, airgap_key)
+                )
+                airgap_docker_image_bin = conn.get(airgap_key)
+                images_loaded = docker_client.images.load(airgap_docker_image_bin)
+                logging.info("Successfully loaded images {}".format(images_loaded))
 
             for test_file in testsuite_spec_files:
                 redis_containers = []

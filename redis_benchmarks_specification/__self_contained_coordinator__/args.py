@@ -58,6 +58,12 @@ def create_self_contained_coordinator_args(project_name):
         default=1,
         help="Consumer id for consumer group for platform",
     )
+    parser.add_argument(
+        "--consumer-pos",
+        type=int,
+        default=1,
+        help="Consumer pos for consumer group for platform",
+    )
 
     parser.add_argument(
         "--setups-folder",
@@ -103,5 +109,11 @@ def create_self_contained_coordinator_args(project_name):
         "--grafana-profile-dashboard",
         type=str,
         default="https://benchmarksredisio.grafana.net/d/uRPZar57k/ci-profiler-viewer",
+    )
+    parser.add_argument(
+        "--docker-air-gap",
+        default=False,
+        action="store_true",
+        help="Read the docker images from redis keys.",
     )
     return parser
