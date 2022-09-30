@@ -381,35 +381,48 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
         build_config, id = get_build_config(builders_folder + "/" + build_spec)
         if build_config["kind"] == "docker":
             build_image = build_config["build_image"]
-            if build_image not in already_checked_images:
-                logging.info(
-                    "Build {} requirement: checking build image {} is available.".format(
-                        id, build_image
-                    )
-                )
-                local_images = [
-                    x.tags[0]
-                    for x in client.images.list(filters={"reference": build_image})
-                ]
-                if build_image not in local_images:
-                    logging.info(
-                        "Build {} requirement: build image {} is not available locally. Fetching it from hub".format(
-                            id, build_image
-                        )
-                    )
-                    client.images.pull(build_image)
-                    hub_pulled_images = hub_pulled_images + 1
-                else:
-                    logging.info(
-                        "Build {} requirement: build image {} is available locally.".format(
-                            id, build_image
-                        )
-                    )
-                already_checked_images.append(build_image)
-            else:
-                logging.info(
-                    "Build {} requirement: build image {} availability was already checked.".format(
-                        id, build_image
-                    )
+            hub_pulled_images = check_docker_image_available(
+                already_checked_images, build_image, client, hub_pulled_images, id
+            )
+            if "run_image" in build_config:
+                run_image = build_config["run_image"]
+                hub_pulled_images = check_docker_image_available(
+                    already_checked_images, run_image, client, hub_pulled_images, id
                 )
     return already_checked_images, hub_pulled_images
+
+
+def check_docker_image_available(
+    already_checked_images, build_image, client, hub_pulled_images, id
+):
+    if build_image not in already_checked_images:
+        logging.info(
+            "Build {} requirement: checking docker image {} is available.".format(
+                id, build_image
+            )
+        )
+        local_images = [
+            x.tags[0] for x in client.images.list(filters={"reference": build_image})
+        ]
+        if build_image not in local_images:
+            logging.info(
+                "Build {} requirement: docker image {} is not available locally. Fetching it from hub".format(
+                    id, build_image
+                )
+            )
+            client.images.pull(build_image)
+            hub_pulled_images = hub_pulled_images + 1
+        else:
+            logging.info(
+                "Build {} requirement: docker image {} is available locally.".format(
+                    id, build_image
+                )
+            )
+        already_checked_images.append(build_image)
+    else:
+        logging.info(
+            "Build {} requirement: docker image {} availability was already checked.".format(
+                id, build_image
+            )
+        )
+    return hub_pulled_images

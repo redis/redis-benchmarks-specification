@@ -116,4 +116,10 @@ def create_self_contained_coordinator_args(project_name):
         action="store_true",
         help="Read the docker images from redis keys.",
     )
+    parser.add_argument(
+        "--verbose",
+        default=False,
+        action="store_true",
+        help="Run in verbose mode.",
+    )
     return parser

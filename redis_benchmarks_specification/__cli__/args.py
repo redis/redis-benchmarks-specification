@@ -63,4 +63,10 @@ def spec_cli_args(parser):
         action="store_true",
         help="Only check how many benchmarks we would trigger. Don't request benchmark runs at the end.",
     )
+    parser.add_argument(
+        "--last_n",
+        type=int,
+        default=-1,
+        help="Use the last N samples. by default will use all available values",
+    )
     return parser

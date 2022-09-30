@@ -89,6 +89,7 @@ def cli_command_logic(args, project_name, project_version):
     )
     repo = git.Repo(redisDirPath)
     commits = []
+    total_commits = 0
     if args.use_branch:
         for commit in repo.iter_commits():
             if (
@@ -98,8 +99,17 @@ def cli_command_logic(args, project_name, project_version):
                 )
                 <= args.to_date
             ):
-                print(commit.summary)
-                commits.append({"git_hash": commit.hexsha, "git_branch": args.branch})
+                if (
+                    args.last_n > 0 and total_commits < args.last_n
+                ) or args.last_n == -1:
+                    total_commits = total_commits + 1
+                    print(commit.summary)
+                    commits.append(
+                        {
+                            "git_hash": commit.hexsha,
+                            "git_branch": repo.active_branch.name,
+                        }
+                    )
     if args.use_tags:
         tags_regexp = args.tags_regexp
         if tags_regexp == ".*":
@@ -150,7 +160,7 @@ def cli_command_logic(args, project_name, project_version):
                     pass
     by_description = "n/a"
     if args.use_branch:
-        by_description = "from branch {}".format(args.branch)
+        by_description = "from branch {}".format(repo.active_branch.name)
     if args.use_tags:
         by_description = "by tags"
     logging.info(
