@@ -5,9 +5,32 @@ import docker
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     generate_cpuset_cpus,
 )
-from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
-    generate_standalone_redis_server_args,
-)
+
+
+def generate_standalone_redis_server_args(
+    binary, port, dbdir, configuration_parameters=None
+):
+    added_params = ["port", "protected-mode", "dir"]
+    # start redis-server
+    command = [
+        binary,
+        "--protected-mode",
+        "no",
+        "--port",
+        "{}".format(port),
+        "--dir",
+        dbdir,
+    ]
+    if configuration_parameters is not None:
+        for parameter, parameter_value in configuration_parameters.items():
+            if parameter not in added_params:
+                command.extend(
+                    [
+                        "--{}".format(parameter),
+                        parameter_value,
+                    ]
+                )
+    return command
 
 
 def teardown_containers(redis_containers, container_type):
