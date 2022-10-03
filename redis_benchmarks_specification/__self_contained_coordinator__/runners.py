@@ -1,308 +1,94 @@
+import datetime
+import json
 import logging
-import pathlib
-import docker
-import redis
-import os
-from pathlib import Path
+import shutil
+import sys
+import tempfile
+import traceback
 
+import redis
+from redisbench_admin.environments.oss_cluster import generate_cluster_redis_server_args
 from redisbench_admin.profilers.profilers_local import (
-    check_compatible_system_and_kernel_and_prepare_profile,
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
 )
+from redisbench_admin.run.common import (
+    get_start_time_vars,
+    prepare_benchmark_parameters,
+)
+from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
+from redisbench_admin.run.redistimeseries import (
+    datasink_profile_tabular_data,
+    timeseries_test_sucess_flow,
+)
+from redisbench_admin.run.run import calculate_client_tool_duration_and_check
+from redisbench_admin.utils.benchmark_config import (
+    get_final_benchmark_config,
+    extract_redis_dbconfig_parameters,
+)
+from redisbench_admin.utils.local import get_local_run_full_filename
+from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
-    LOG_FORMAT,
-    LOG_DATEFMT,
-    LOG_LEVEL,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
-    REDIS_HEALTH_CHECK_INTERVAL,
-    REDIS_SOCKET_TIMEOUT,
+    STREAM_GH_NEW_BUILD_RUNNERS_CG,
+    S3_BUCKET_NAME,
 )
-from redis_benchmarks_specification.__common__.package import (
-    get_version_string,
-    populate_with_poetry_data,
+from redis_benchmarks_specification.__common__.spec import (
+    extract_build_variant_variations,
+    extract_client_cpu_limit,
+    extract_client_tool,
+    extract_client_container_image,
 )
-from redis_benchmarks_specification.__self_contained_coordinator__.args import (
-    create_self_contained_coordinator_args,
+from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
+    restore_build_artifacts_from_test_details,
 )
-from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
-    build_runners_consumer_group_create,
-    get_runners_consumer_group_name,
-    process_self_contained_coordinator_stream,
+from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
+    extract_build_info_from_streamdata,
 )
-from redis_benchmarks_specification.__setups__.topologies import get_topologies
+from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+    prepare_memtier_benchmark_parameters,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
+    extract_db_cpu_limit,
+    generate_cpuset_cpus,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    spin_docker_standalone_redis,
+    teardown_containers,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation import (
+    data_prepopulation_step,
+)
 
 
-def main():
-    _, _, project_version = populate_with_poetry_data()
-    project_name = "redis-benchmarks-spec runner(self-contained)"
-    parser = create_self_contained_coordinator_args(
-        get_version_string(project_name, project_version)
-    )
-    args = parser.parse_args()
-
-    if args.logname is not None:
-        print("Writting log to {}".format(args.logname))
-        logging.basicConfig(
-            filename=args.logname,
-            filemode="a",
-            format=LOG_FORMAT,
-            datefmt=LOG_DATEFMT,
-            level=LOG_LEVEL,
-        )
-    else:
-        # logging settings
-        logging.basicConfig(
-            format=LOG_FORMAT,
-            level=LOG_LEVEL,
-            datefmt=LOG_DATEFMT,
-        )
-    logging.info(get_version_string(project_name, project_version))
-    topologies_folder = os.path.abspath(args.setups_folder + "/topologies")
-    logging.info("Using topologies folder dir {}".format(topologies_folder))
-    topologies_files = pathlib.Path(topologies_folder).glob("*.yml")
-    topologies_files = [str(x) for x in topologies_files]
-    logging.info(
-        "Reading topologies specifications from: {}".format(
-            " ".join([str(x) for x in topologies_files])
-        )
-    )
-    topologies_map = get_topologies(topologies_files[0])
-    testsuites_folder = os.path.abspath(args.test_suites_folder)
-    logging.info("Using test-suites folder dir {}".format(testsuites_folder))
-    testsuite_spec_files = get_benchmark_specs(testsuites_folder)
-    logging.info(
-        "There are a total of {} test-suites in folder {}".format(
-            len(testsuite_spec_files), testsuites_folder
-        )
-    )
-
-    logging.info(
-        "Reading event streams from: {}:{} with user {}".format(
-            args.event_stream_host, args.event_stream_port, args.event_stream_user
-        )
-    )
+def build_runners_consumer_group_create(conn, running_platform, id="$"):
+    consumer_group_name = get_runners_consumer_group_name(running_platform)
+    logging.info("Will use consumer group named {}.".format(consumer_group_name))
     try:
-        conn = redis.StrictRedis(
-            host=args.event_stream_host,
-            port=args.event_stream_port,
-            decode_responses=False,  # dont decode due to binary archives
-            password=args.event_stream_pass,
-            username=args.event_stream_user,
-            health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
-            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
-            socket_keepalive=True,
+        conn.xgroup_create(
+            STREAM_KEYNAME_NEW_BUILD_EVENTS,
+            consumer_group_name,
+            mkstream=True,
+            id=id,
         )
-        conn.ping()
-    except redis.exceptions.ConnectionError as e:
-        logging.error(
-            "Unable to connect to redis available at: {}:{} to read the event streams".format(
-                args.event_stream_host, args.event_stream_port
-            )
-        )
-        logging.error("Error message {}".format(e.__str__()))
-        exit(1)
-    datasink_conn = None
-    if args.datasink_push_results_redistimeseries:
         logging.info(
-            "Checking redistimeseries datasink connection is available at: {}:{} to push the timeseries data".format(
-                args.datasink_redistimeseries_host, args.datasink_redistimeseries_port
+            "Created consumer group named {} to distribute work.".format(
+                consumer_group_name
             )
         )
-        try:
-            datasink_conn = redis.StrictRedis(
-                host=args.datasink_redistimeseries_host,
-                port=args.datasink_redistimeseries_port,
-                decode_responses=True,
-                password=args.datasink_redistimeseries_pass,
-                username=args.datasink_redistimeseries_user,
-                health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
-                socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
-                socket_keepalive=True,
-            )
-            datasink_conn.ping()
-        except redis.exceptions.ConnectionError as e:
-            logging.error(
-                "Unable to connect to redis available at: {}:{}".format(
-                    args.datasink_redistimeseries_host,
-                    args.datasink_redistimeseries_port,
-                )
-            )
-            logging.error("Error message {}".format(e.__str__()))
-            exit(1)
-
-    logging.info("checking build spec requirements")
-    running_platform = args.platform_name
-    build_runners_consumer_group_create(conn, running_platform)
-    stream_id = None
-    docker_client = docker.from_env()
-    home = str(Path.home())
-    cpuset_start_pos = args.cpuset_start_pos
-    logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
-    redis_proc_start_port = args.redis_proc_start_port
-    logging.info("Redis Processes start port: {}".format(redis_proc_start_port))
-
-    # TODO: confirm we do have enough cores to run the spec
-    # availabe_cpus = args.cpu_count
-    datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
-    grafana_profile_dashboard = args.grafana_profile_dashboard
-
-    # Consumer id
-    consumer_pos = args.consumer_pos
-    logging.info("Consumer pos {}".format(consumer_pos))
-
-    # Docker air gap usage
-    docker_air_gap = args.docker_air_gap
-    if docker_air_gap:
+    except redis.exceptions.ResponseError:
         logging.info(
-            "Using docker in an air-gapped way. Restoring running images from redis keys."
-        )
-
-    profilers_list = []
-    profilers_enabled = args.enable_profilers
-    if profilers_enabled:
-        profilers_list = args.profilers.split(",")
-        res = check_compatible_system_and_kernel_and_prepare_profile(args)
-        if res is False:
-            logging.error(
-                "Requested for the following profilers to be enabled but something went wrong: {}.".format(
-                    " ".join(profilers_list)
-                )
-            )
-            exit(1)
-
-    logging.info("Entering blocking read waiting for work.")
-    if stream_id is None:
-        stream_id = args.consumer_start_id
-    while True:
-        _, stream_id, _, _ = self_contained_coordinator_blocking_read(
-            conn,
-            datasink_push_results_redistimeseries,
-            docker_client,
-            home,
-            stream_id,
-            datasink_conn,
-            testsuite_spec_files,
-            topologies_map,
-            running_platform,
-            profilers_enabled,
-            profilers_list,
-            grafana_profile_dashboard,
-            cpuset_start_pos,
-            redis_proc_start_port,
-            consumer_pos,
-            docker_air_gap,
+            "Consumer group named {} already existed.".format(consumer_group_name)
         )
 
 
-def self_contained_coordinator_blocking_read(
-    conn,
-    datasink_push_results_redistimeseries,
-    docker_client,
-    home,
-    stream_id,
-    datasink_conn,
-    testsuite_spec_files,
-    topologies_map,
-    platform_name,
-    profilers_enabled,
-    profilers_list,
-    grafana_profile_dashboard="",
-    cpuset_start_pos=0,
-    redis_proc_start_port=6379,
-    consumer_pos=1,
-    docker_air_gap=False,
-):
-    num_process_streams = 0
-    num_process_test_suites = 0
-    overall_result = False
-    consumer_name = "{}-self-contained-proc#{}".format(
-        get_runners_consumer_group_name(platform_name), consumer_pos
+def get_runners_consumer_group_name(running_platform):
+    consumer_group_name = "{}-{}".format(
+        STREAM_GH_NEW_BUILD_RUNNERS_CG, running_platform
     )
-    logging.info(
-        "Consuming from group {}. Consumer id {}".format(
-            get_runners_consumer_group_name(platform_name), consumer_name
-        )
-    )
-    newTestInfo = conn.xreadgroup(
-        get_runners_consumer_group_name(platform_name),
-        consumer_name,
-        {STREAM_KEYNAME_NEW_BUILD_EVENTS: stream_id},
-        count=1,
-        block=0,
-    )
-    if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
-        stream_id = ">"
-    else:
-        (
-            stream_id,
-            overall_result,
-            total_test_suite_runs,
-        ) = process_self_contained_coordinator_stream(
-            conn,
-            datasink_push_results_redistimeseries,
-            docker_client,
-            home,
-            newTestInfo,
-            datasink_conn,
-            testsuite_spec_files,
-            topologies_map,
-            platform_name,
-            profilers_enabled,
-            profilers_list,
-            grafana_profile_dashboard,
-            cpuset_start_pos,
-            redis_proc_start_port,
-            docker_air_gap,
-        )
-        num_process_streams = num_process_streams + 1
-        num_process_test_suites = num_process_test_suites + total_test_suite_runs
-        if overall_result is True:
-            ack_reply = conn.xack(
-                STREAM_KEYNAME_NEW_BUILD_EVENTS,
-                get_runners_consumer_group_name(platform_name),
-                stream_id,
-            )
-            if type(ack_reply) == bytes:
-                ack_reply = ack_reply.decode()
-            if ack_reply == "1" or ack_reply == 1:
-                logging.info(
-                    "Sucessfully acknowledge build variation stream with id {}.".format(
-                        stream_id
-                    )
-                )
-            else:
-                logging.error(
-                    "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
-                        stream_id, ack_reply
-                    )
-                )
-    return overall_result, stream_id, num_process_streams, num_process_test_suites
-
-
-def prepare_memtier_benchmark_parameters(
-    clientconfig,
-    full_benchmark_path,
-    port,
-    server,
-    local_benchmark_output_filename,
-    oss_cluster_api_enabled,
-):
-    benchmark_command = [
-        full_benchmark_path,
-        "--port",
-        "{}".format(port),
-        "--server",
-        "{}".format(server),
-        "--json-out-file",
-        local_benchmark_output_filename,
-    ]
-    if oss_cluster_api_enabled is True:
-        benchmark_command.append("--cluster-mode")
-    benchmark_command_str = " ".join(benchmark_command)
-    if "arguments" in clientconfig:
-        benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
-
-    return None, benchmark_command_str
+    return consumer_group_name
 
 
 def process_self_contained_coordinator_stream(
@@ -321,6 +107,7 @@ def process_self_contained_coordinator_stream(
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
     docker_air_gap=False,
+    verbose=False,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -350,9 +137,16 @@ def process_self_contained_coordinator_stream(
                 logging.info(
                     "Restoring docker image: {} from {}".format(run_image, airgap_key)
                 )
-                airgap_docker_image_bin = conn.get(airgap_key)
-                images_loaded = docker_client.images.load(airgap_docker_image_bin)
-                logging.info("Successfully loaded images {}".format(images_loaded))
+                if conn.exists(airgap_key):
+                    airgap_docker_image_bin = conn.get(airgap_key)
+                    images_loaded = docker_client.images.load(airgap_docker_image_bin)
+                    logging.info("Successfully loaded images {}".format(images_loaded))
+                else:
+                    logging.error(
+                        "docker image {} was not present on key {}".format(
+                            run_image, airgap_key
+                        )
+                    )
 
             for test_file in testsuite_spec_files:
                 redis_containers = []
@@ -399,8 +193,9 @@ def process_self_contained_coordinator_stream(
                             ceil_db_cpu_limit = extract_db_cpu_limit(
                                 topologies_map, topology_spec_name
                             )
-                            temporary_dir = tempfile.mkdtemp(dir=home)
+
                             temporary_dir_client = tempfile.mkdtemp(dir=home)
+                            temporary_dir = tempfile.mkdtemp(dir=home)
                             logging.info(
                                 "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                     temporary_dir
@@ -408,10 +203,13 @@ def process_self_contained_coordinator_stream(
                             )
                             tf_github_org = "redis"
                             tf_github_repo = "redis"
-                            setup_name = "oss-standalone"
+                            setup_name = topology_spec_name
                             tf_triggering_env = "ci"
                             github_actor = "{}-{}".format(
                                 tf_triggering_env, running_platform
+                            )
+                            restore_build_artifacts_from_test_details(
+                                build_artifacts, conn, temporary_dir, testDetails
                             )
                             dso = "redis-server"
                             profilers_artifacts_matrix = []
@@ -432,41 +230,42 @@ def process_self_contained_coordinator_stream(
                                         collection_summary_str
                                     )
                                 )
-
-                            restore_build_artifacts_from_test_details(
-                                build_artifacts, conn, temporary_dir, testDetails
-                            )
-                            mnt_point = "/mnt/redis/"
-                            command = generate_standalone_redis_server_args(
-                                "{}redis-server".format(mnt_point),
-                                redis_proc_start_port,
-                                mnt_point,
-                                redis_configuration_parameters,
-                            )
-                            command_str = " ".join(command)
-                            db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                                ceil_db_cpu_limit, current_cpu_pos
-                            )
-                            logging.info(
-                                "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
-                                    run_image, db_cpuset_cpus, command_str
+                            if setup_name == "oss-standalone":
+                                current_cpu_pos = spin_docker_standalone_redis(
+                                    ceil_db_cpu_limit,
+                                    current_cpu_pos,
+                                    docker_client,
+                                    redis_configuration_parameters,
+                                    redis_containers,
+                                    redis_proc_start_port,
+                                    run_image,
+                                    temporary_dir,
                                 )
-                            )
-                            container = docker_client.containers.run(
-                                image=run_image,
-                                volumes={
-                                    temporary_dir: {"bind": mnt_point, "mode": "rw"},
-                                },
-                                auto_remove=True,
-                                privileged=True,
-                                working_dir=mnt_point,
-                                command=command_str,
-                                network_mode="host",
-                                detach=True,
-                                cpuset_cpus=db_cpuset_cpus,
-                                pid_mode="host",
-                            )
-                            redis_containers.append(container)
+                            else:
+                                for master_shard_id in range(1, shard_count + 1):
+                                    shard_port = master_shard_id + start_port - 1
+
+                                    (
+                                        command,
+                                        logfile,
+                                    ) = generate_cluster_redis_server_args(
+                                        "redis-server",
+                                        dbdir_folder,
+                                        remote_module_files,
+                                        server_private_ip,
+                                        shard_port,
+                                        redis_configuration_parameters,
+                                        "yes",
+                                        modules_configuration_parameters_map,
+                                        logname_prefix,
+                                        "yes",
+                                        redis_7,
+                                    )
+                                    logging.error(
+                                        "Remote primary shard {} command: {}".format(
+                                            master_shard_id, " ".join(command)
+                                        )
+                                    )
 
                             r = redis.StrictRedis(port=redis_proc_start_port)
                             r.ping()
@@ -513,7 +312,7 @@ def process_self_contained_coordinator_stream(
                                     start_time_str,
                                     git_hash,
                                     test_name,
-                                    "oss-standalone",
+                                    topology_spec_name,
                                 )
                             )
                             logging.info(
@@ -602,7 +401,10 @@ def process_self_contained_coordinator_stream(
                                     benchmark_end_time, benchmark_start_time
                                 )
                             )
-                            logging.info("output {}".format(client_container_stdout))
+                            if verbose:
+                                logging.info(
+                                    "output {}".format(client_container_stdout)
+                                )
                             r.shutdown(save=False)
 
                             (_, overall_tabular_data_map,) = profilers_stop_if_required(
@@ -749,28 +551,8 @@ def process_self_contained_coordinator_stream(
                             test_result = False
                         # tear-down
                         logging.info("Tearing down setup")
-                        for container in redis_containers:
-                            try:
-                                container.stop()
-                            except docker.errors.NotFound:
-                                logging.info(
-                                    "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                        container.id, container.image
-                                    )
-                                )
-                                pass
-
-                        for container in client_containers:
-                            if type(container) == Container:
-                                try:
-                                    container.stop()
-                                except docker.errors.NotFound:
-                                    logging.info(
-                                        "When trying to stop Client container with id {} and image {} it was already stopped".format(
-                                            container.id, container.image
-                                        )
-                                    )
-                                    pass
+                        teardown_containers(redis_containers, "DB")
+                        teardown_containers(client_containers, "CLIENT")
                         shutil.rmtree(temporary_dir, ignore_errors=True)
 
                         overall_result &= test_result
@@ -788,89 +570,3 @@ def process_self_contained_coordinator_stream(
         print("-" * 60)
         overall_result = False
     return stream_id, overall_result, total_test_suite_runs
-
-
-def data_prepopulation_step(
-    benchmark_config,
-    benchmark_tool_workdir,
-    client_cpuset_cpus,
-    docker_client,
-    git_hash,
-    port,
-    temporary_dir,
-    test_name,
-):
-    # setup the benchmark
-    (
-        start_time,
-        start_time_ms,
-        start_time_str,
-    ) = get_start_time_vars()
-    local_benchmark_output_filename = get_local_run_full_filename(
-        start_time_str,
-        git_hash,
-        "preload__" + test_name,
-        "oss-standalone",
-    )
-    preload_image = extract_client_container_image(
-        benchmark_config["dbconfig"], "preload_tool"
-    )
-    preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
-    full_benchmark_path = "/usr/local/bin/{}".format(preload_tool)
-    client_mnt_point = "/mnt/client/"
-    if "memtier_benchmark" in preload_tool:
-        (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
-            benchmark_config["dbconfig"]["preload_tool"],
-            full_benchmark_path,
-            port,
-            "localhost",
-            local_benchmark_output_filename,
-            False,
-        )
-
-        logging.info(
-            "Using docker image {} as benchmark PRELOAD image (cpuset={}) with the following args: {}".format(
-                preload_image,
-                client_cpuset_cpus,
-                preload_command_str,
-            )
-        )
-        # run the benchmark
-        preload_start_time = datetime.datetime.now()
-
-        client_container_stdout = docker_client.containers.run(
-            image=preload_image,
-            volumes={
-                temporary_dir: {
-                    "bind": client_mnt_point,
-                    "mode": "rw",
-                },
-            },
-            auto_remove=True,
-            privileged=True,
-            working_dir=benchmark_tool_workdir,
-            command=preload_command_str,
-            network_mode="host",
-            detach=False,
-            cpuset_cpus=client_cpuset_cpus,
-        )
-
-        preload_end_time = datetime.datetime.now()
-        preload_duration_seconds = calculate_client_tool_duration_and_check(
-            preload_end_time, preload_start_time, "Preload", False
-        )
-        logging.info(
-            "Tool {} seconds to load data. Output {}".format(
-                preload_duration_seconds,
-                client_container_stdout,
-            )
-        )
-
-
-def get_benchmark_specs(testsuites_folder):
-    files = pathlib.Path(testsuites_folder).glob("*.yml")
-    files = [str(x) for x in files]
-    logging.info(
-        "Running all specified benchmarks: {}".format(" ".join([str(x) for x in files]))
-    )
-    return files

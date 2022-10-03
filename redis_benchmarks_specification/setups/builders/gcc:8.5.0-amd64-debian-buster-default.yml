@@ -6,6 +6,7 @@ compiler: "gcc"
 cpp_compiler: "g++"
 kind: docker
 build_image: gcc:8.5.0-buster
+run_image: debian:buster
 description: "Using GNU Compiler Containers (https://hub.docker.com/_/gcc?tab=description)
               pre-configured environment with all the tools required to build with gcc."
 metadata:
@@ -14,6 +15,4 @@ metadata:
   os: debian-buster
   arch: amd64
 
-env:
-  REDIS_CFLAGS: "-g -fno-omit-frame-pointer"
 

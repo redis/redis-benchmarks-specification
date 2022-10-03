@@ -17,11 +17,17 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
-    generate_cpuset_cpus,
     self_contained_coordinator_blocking_read,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+    prepare_memtier_benchmark_parameters,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
     build_runners_consumer_group_create,
     get_runners_consumer_group_name,
-    prepare_memtier_benchmark_parameters,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
+    generate_cpuset_cpus,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
