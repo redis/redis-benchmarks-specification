@@ -9,6 +9,11 @@ tested-commands:
   - SET
 redis-topologies:
   - oss-standalone
+  - oss-cluster-03-primaries
+  - oss-cluster-05-primaries
+  - oss-cluster-09-primaries
+  - oss-cluster-15-primaries
+  - oss-cluster-21-primaries
 
 build-variants:
   - gcc:8.5.0-amd64-debian-buster-default
@@ -21,6 +26,9 @@ clientconfig:
     requests:
       cpus: "4"
       memory: "2g"
+  scalability:
+    mode: "1:1"
+    max_processes: 21
 exporter:
   redistimeseries:
     break_by:
