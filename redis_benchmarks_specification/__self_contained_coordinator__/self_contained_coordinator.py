@@ -30,6 +30,10 @@ from redis_benchmarks_specification.__self_contained_coordinator__.runners impor
     process_self_contained_coordinator_stream,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
+from redis_benchmarks_specification.__setups__.data_collection_tools import (
+    get_tools,
+    start_tools_if_required,
+)
 
 
 def main():
@@ -73,6 +77,15 @@ def main():
     logging.info(
         "There are a total of {} test-suites in folder {}".format(
             len(testsuite_spec_files), testsuites_folder
+        )
+    )
+
+    tools_folder = os.path.abspath(args.setups_folder + "/data-collection-tools")
+    logging.info("Using tools folder dir {}".format(tools_folder))
+    tools_files = get_tools(tools_folder)
+    logging.info(
+        "There are a total of {} tools in folder {}".format(
+            len(tools_files), tools_folder
         )
     )
 
@@ -184,6 +197,7 @@ def main():
             testsuite_spec_files,
             topologies_map,
             running_platform,
+            tools_files,
             profilers_enabled,
             profilers_list,
             grafana_profile_dashboard,
@@ -204,6 +218,7 @@ def self_contained_coordinator_blocking_read(
     testsuite_spec_files,
     topologies_map,
     platform_name,
+    tools_files,
     profilers_enabled,
     profilers_list,
     grafana_profile_dashboard="",
@@ -247,6 +262,7 @@ def self_contained_coordinator_blocking_read(
             testsuite_spec_files,
             topologies_map,
             platform_name,
+            tools_files,
             profilers_enabled,
             profilers_list,
             grafana_profile_dashboard,
@@ -315,6 +331,7 @@ def process_self_contained_coordinator_stream(
     testsuite_spec_files,
     topologies_map,
     running_platform,
+    tools_files,
     profilers_enabled=False,
     profilers_list=[],
     grafana_profile_dashboard="",
@@ -567,6 +584,11 @@ def process_self_contained_coordinator_stream(
                                 test_name,
                                 profiler_frequency,
                                 profiler_call_graph_mode,
+                            )
+
+                            # start data collection tools
+                            start_tools_if_required(
+                                tools_files
                             )
 
                             logging.info(

@@ -1,6 +1,7 @@
 import argparse
 
 from redis_benchmarks_specification.__common__.env import (
+    SPECS_PATH_SETUPS,
     SPECS_PATH_TEST_SUITES,
     DATASINK_RTS_HOST,
     DATASINK_RTS_PORT,
@@ -39,6 +40,12 @@ def create_client_runner_args(project_name):
         type=str,
         default=SPECS_PATH_TEST_SUITES,
         help="Test suites folder, containing the different test variations",
+    )
+    parser.add_argument(
+        "--setups-folder",
+        type=str,
+        default=SPECS_PATH_SETUPS,
+        help="Setups folder, containing the build environment variations sub-folder that we use to trigger different build artifacts",
     )
     parser.add_argument(
         "--test",
