@@ -7,7 +7,9 @@ from pathlib import Path
 
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
+    profilers_stop_if_required,
 )
+from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 
 from redis_benchmarks_specification.__common__.env import (
     LOG_FORMAT,
