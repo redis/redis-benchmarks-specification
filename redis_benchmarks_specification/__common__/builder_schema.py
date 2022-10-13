@@ -22,7 +22,7 @@ def commit_schema_to_stream(
     gh_repo,
     gh_token=None,
 ):
-    """ uses to the provided JSON dict of fields and pushes that info to the corresponding stream  """
+    """uses to the provided JSON dict of fields and pushes that info to the corresponding stream"""
     fields = fields
     reply_fields = dict(fields)
     result = False
