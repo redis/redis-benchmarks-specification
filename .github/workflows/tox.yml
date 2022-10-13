@@ -9,7 +9,7 @@ jobs:
   pytest:
     strategy:
       matrix:
-        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+        python-version: [ 3.7, 3.8, 3.9, 3.10 ]
         os: [ ubuntu-latest ]
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
@@ -32,7 +32,7 @@ jobs:
 
     - name: Install Tox
       run: |
-        pip3 install black coverage flake8 tox tox-docker tox-poetry
+        pip3 install -r ./utils/test-requirements.txt
 
     - name: Run tox
       run: |
