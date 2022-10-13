@@ -352,7 +352,7 @@ dev = ["PyTest", "PyTest (<5)", "PyTest-Cov", "PyTest-Cov (<2.6)", "bump2version
 name = "distlib"
 version = "0.3.6"
 description = "Distribution utilities"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 
@@ -385,7 +385,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 name = "filelock"
 version = "3.8.0"
 description = "A platform independent file lock."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 
@@ -911,7 +911,7 @@ python-versions = ">=3.6"
 name = "platformdirs"
 version = "2.5.2"
 description = "A small Python module for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 
@@ -923,7 +923,7 @@ test = ["appdirs (==1.4.4)", "pytest (>=6)", "pytest-cov (>=2.7)", "pytest-mock 
 name = "pluggy"
 version = "0.13.1"
 description = "plugin and hook calling mechanisms for python"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
@@ -1002,7 +1002,7 @@ python-versions = "*"
 name = "py"
 version = "1.11.0"
 description = "library with cross-python path, ini-parsing, io, code, log facilities"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
@@ -1274,18 +1274,18 @@ ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==20.0.1)", "requests (>=2.26.0)"
 
 [[package]]
 name = "redisbench-admin"
-version = "0.9.23"
+version = "0.9.25"
 description = "Redis benchmark run helper. A wrapper around Redis and Redis Modules benchmark tools ( ftsb_redisearch, memtier_benchmark, redis-benchmark, aibench, etc... )."
 category = "main"
 optional = false
-python-versions = ">=3.6.9,<4.0.0"
+python-versions = ">=3.7.0,<4.0.0"
 
 [package.dependencies]
 ansicolors = ">=1.1.8,<2.0.0"
 boto3 = ">=1.13.24,<2.0.0"
 certifi = ">=2021.10.8,<2022.0.0"
 daemonize = ">=2.5.0,<3.0.0"
-docker = ">=5.0.2,<6.0.0"
+docker = ">=5.0.0,<6.0.0"
 Flask = ">=2.0.1,<3.0.0"
 Flask-HTTPAuth = ">=4.4.0,<5.0.0"
 flask-restx = ">=0.5.1,<0.6.0"
@@ -1309,7 +1309,6 @@ slack-bolt = ">=1.13.0,<2.0.0"
 slack-sdk = ">=3.15.2,<4.0.0"
 sshtunnel = ">=0.4.0,<0.5.0"
 toml = ">=0.10.1,<0.11.0"
-tox-docker = ">=3.1.0,<4.0.0"
 tqdm = ">=4.46.1,<5.0.0"
 watchdog = ">=2.1.6,<3.0.0"
 wget = ">=3.2,<4.0"
@@ -1540,7 +1539,7 @@ python-versions = ">=3.6,<4.0"
 name = "tox"
 version = "3.26.0"
 description = "tox is a generic virtualenv management and test command line tool"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
 
@@ -1563,7 +1562,7 @@ testing = ["flaky (>=3.4.0)", "freezegun (>=0.3.11)", "pathlib2 (>=2.3.3)", "psu
 name = "tox-docker"
 version = "3.1.0"
 description = "Launch a docker instance around test runs"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 
@@ -1655,7 +1654,7 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 name = "virtualenv"
 version = "20.16.2"
 description = "Virtual Python Environment builder"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.6"
 
@@ -1754,7 +1753,7 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "111d76ff272f0ec5644918480168c59a9d63f75afda523863253917e71756e1f"
+content-hash = "61187ed09ca4704bd16048ad00efbf79270aa259f676a4c14cef1dc249fa5b87"
 
 [metadata.files]
 aniso8601 = [
@@ -2722,8 +2721,8 @@ redis = [
     {file = "redis-4.3.4.tar.gz", hash = "sha256:ddf27071df4adf3821c4f2ca59d67525c3a82e5f268bed97b813cb4fabf87880"},
 ]
 redisbench-admin = [
-    {file = "redisbench-admin-0.9.23.tar.gz", hash = "sha256:dd15ae6d614f5600a459d176da02f1f0110da86f04fb952a4a0505fecac873c5"},
-    {file = "redisbench_admin-0.9.23-py3-none-any.whl", hash = "sha256:5177d28c05c7c910bf08d12a0a9cfd1047c71589626924c4e3629949a0a38b68"},
+    {file = "redisbench_admin-0.9.25-py3-none-any.whl", hash = "sha256:b94d7eabf7f0d837754629ba86e9b44c3bca3c3a5c6e091a2b113867bffda2d8"},
+    {file = "redisbench_admin-0.9.25.tar.gz", hash = "sha256:ee880994d0b55304bdba61106fcffb5c04d703ec33fe033cdd9e17e4ff291a3f"},
 ]
 regex = [
     {file = "regex-2022.9.13-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0394265391a86e2bbaa7606e59ac71bd9f1edf8665a59e42771a9c9adbf6fd4f"},
