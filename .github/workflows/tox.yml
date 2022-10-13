@@ -28,7 +28,8 @@ jobs:
     - uses: docker-practice/actions-setup-docker@master
 
     - name: Install Poetry
-      uses: dschep/install-poetry-action@v1.3
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
 
     - name: Install Tox
       run: |
