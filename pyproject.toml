@@ -6,7 +6,7 @@ authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <
 readme = "Readme.md"
 
 [tool.poetry.dependencies]
-python = "^3.6.1"
+python = "^3.7"
 Flask = "^2.0.1"
 Werkzeug = "^2.0.1"
 flask-restx = "^0.5.0"
@@ -35,7 +35,7 @@ tox-poetry-installer = {extras = ["poetry"], version = "^0.8.1"}
 tox-docker = {extras = ["poetry"], version = "^3.1.0"}
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry>=1.2"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
