@@ -49,6 +49,23 @@ def create_app(conn, user, test_config=None):
             pass
         return result
 
+    @app.route("/ping", methods=["GET"])
+    def ping():
+        return "PONG", 200
+
+    # verify deps
+    @app.route("/pong", methods=["GET"])
+    def pong():
+        code = 200
+        try:
+            conn.ping()
+            redis_status = "OK"
+        except Exception as e:
+            redis_status = e.__str__()
+            code = 503
+        res = {"redis": {"status": redis_status}}
+        return jsonify(res), code
+
     @app.route("/api/gh/redis/redis/commits", methods=["POST"])
     def base():
         if verify_signature(request):

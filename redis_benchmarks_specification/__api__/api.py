@@ -40,6 +40,7 @@ def main():
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
+    parser.add_argument("--port", type=int, default=5000, help="port")
     args = parser.parse_args()
     print(
         "Using redis available at: {}:{} for event store.".format(
@@ -78,7 +79,8 @@ def main():
             GH_REDIS_SERVER_HOST, GH_REDIS_SERVER_PORT
         )
     )
-    app.run(host="0.0.0.0")
+    logging.info("Listening on port {}".format(args.port))
+    app.run(host="0.0.0.0", port=args.port)
 
 
 if __name__ == "__main__":

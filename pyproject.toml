@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.50"
+version = "0.1.53"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
 
 [tool.poetry.dependencies]
-python = "^3.6.1"
+python = "^3.7"
 Flask = "^2.0.1"
 Werkzeug = "^2.0.1"
 flask-restx = "^0.5.0"
@@ -14,10 +14,9 @@ redis = "^4.2.0"
 marshmallow = "^3.12.2"
 argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
-PyYAML = "^5.4.1"
+PyYAML = "^6.0"
 docker = "^5.0.0"
-redisbench-admin = "^0.9.3"
-#redisbench-admin = {path = "../redisbench-admin", develop = true}
+redisbench-admin = "^0.9.25"
 psutil = "^5.8.0"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
@@ -35,7 +34,7 @@ tox-poetry-installer = {extras = ["poetry"], version = "^0.8.1"}
 tox-docker = {extras = ["poetry"], version = "^3.1.0"}
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry>=1.2"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
