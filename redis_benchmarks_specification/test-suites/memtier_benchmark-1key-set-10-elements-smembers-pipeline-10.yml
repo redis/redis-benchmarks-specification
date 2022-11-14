@@ -9,6 +9,8 @@ dbconfig:
     - save: '""'
   - init_commands:
     - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+tested-groups:
+  - set
 tested-commands:
   - SMEMBERS
 redis-topologies:

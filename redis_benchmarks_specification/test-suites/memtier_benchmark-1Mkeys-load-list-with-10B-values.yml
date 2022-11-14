@@ -5,6 +5,8 @@ description: "Runs memtier_benchmark, for a keyspace length of 1M keys
 dbconfig:
   configuration-parameters:
     save: '""'
+tested-groups:
+  - list
 tested-commands:
   - LPUSH
 redis-topologies:

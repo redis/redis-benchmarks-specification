@@ -1,21 +1,26 @@
+import datetime
+import json
 import logging
 import pathlib
+import shutil
+import tempfile
+import traceback
+
 import docker
 import redis
 import os
 from pathlib import Path
+import sys
 
+from docker.models.containers import Container
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
-    profilers_stop_if_required,
 )
-from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 
 from redis_benchmarks_specification.__common__.env import (
     LOG_FORMAT,
     LOG_DATEFMT,
     LOG_LEVEL,
-    STREAM_KEYNAME_NEW_BUILD_EVENTS,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
 )
@@ -23,6 +28,7 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
 )
+from redis_benchmarks_specification.__common__.runner import extract_testsuites
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
 )
@@ -32,6 +38,60 @@ from redis_benchmarks_specification.__self_contained_coordinator__.runners impor
     process_self_contained_coordinator_stream,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
+
+
+from redisbench_admin.profilers.profilers_local import (
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
+)
+from redisbench_admin.run.common import (
+    get_start_time_vars,
+    prepare_benchmark_parameters,
+    execute_init_commands,
+)
+from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
+from redisbench_admin.run.redistimeseries import (
+    datasink_profile_tabular_data,
+    timeseries_test_sucess_flow,
+)
+from redisbench_admin.run.run import calculate_client_tool_duration_and_check
+from redisbench_admin.utils.benchmark_config import (
+    get_final_benchmark_config,
+    extract_redis_dbconfig_parameters,
+)
+from redisbench_admin.utils.local import get_local_run_full_filename
+from redisbench_admin.utils.results import post_process_benchmark_results
+
+from redis_benchmarks_specification.__common__.env import (
+    STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    S3_BUCKET_NAME,
+)
+from redis_benchmarks_specification.__common__.spec import (
+    extract_build_variant_variations,
+    extract_client_cpu_limit,
+    extract_client_tool,
+    extract_client_container_image,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
+    restore_build_artifacts_from_test_details,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
+    extract_build_info_from_streamdata,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+    prepare_memtier_benchmark_parameters,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
+    extract_db_cpu_limit,
+    generate_cpuset_cpus,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    generate_standalone_redis_server_args,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation import (
+    data_prepopulation_step,
+)
 
 
 def main():
@@ -69,14 +129,7 @@ def main():
         )
     )
     topologies_map = get_topologies(topologies_files[0])
-    testsuites_folder = os.path.abspath(args.test_suites_folder)
-    logging.info("Using test-suites folder dir {}".format(testsuites_folder))
-    testsuite_spec_files = get_benchmark_specs(testsuites_folder)
-    logging.info(
-        "There are a total of {} test-suites in folder {}".format(
-            len(testsuite_spec_files), testsuites_folder
-        )
-    )
+    testsuite_spec_files = extract_testsuites(args)
 
     logging.info(
         "Reading event streams from: {}:{} with user {}".format(
@@ -495,6 +548,10 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     test_name,
                                 )
+
+                            execute_init_commands(
+                                benchmark_config, r, dbconfig_keyname="dbconfig"
+                            )
 
                             benchmark_tool = extract_client_tool(benchmark_config)
                             # backwards compatible

@@ -48,6 +48,7 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
 )
+from redis_benchmarks_specification.__common__.runner import extract_testsuites
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
@@ -82,14 +83,7 @@ def main():
             datefmt=LOG_DATEFMT,
         )
     logging.info(get_version_string(project_name, project_version))
-    testsuites_folder = os.path.abspath(args.test_suites_folder)
-    logging.info("Using test-suites folder dir {}".format(testsuites_folder))
-    testsuite_spec_files = get_benchmark_specs(testsuites_folder, args.test)
-    logging.info(
-        "There are a total of {} test-suites in folder {}".format(
-            len(testsuite_spec_files), testsuites_folder
-        )
-    )
+    testsuite_spec_files = extract_testsuites(args)
 
     datasink_conn = None
     if args.datasink_push_results_redistimeseries:
@@ -783,22 +777,6 @@ def data_prepopulation_step(
                 client_container_stdout,
             )
         )
-
-
-def get_benchmark_specs(testsuites_folder, test):
-    if test == "":
-        files = pathlib.Path(testsuites_folder).glob("*.yml")
-        files = [str(x) for x in files]
-        logging.info(
-            "Running all specified benchmarks: {}".format(
-                " ".join([str(x) for x in files])
-            )
-        )
-    else:
-        files = test.split(",")
-        files = ["{}/{}".format(testsuites_folder, x) for x in files]
-        logging.info("Running specific benchmark in file: {}".format(files))
-    return files
 
 
 def generate_cpuset_cpus(ceil_db_cpu_limit, current_cpu_pos):

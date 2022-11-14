@@ -9,6 +9,8 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "10" "--command" "SET __key__ __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
+tested-groups:
+  - string
 tested-commands:
   - SET
   - SETX

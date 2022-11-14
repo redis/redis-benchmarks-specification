@@ -5,17 +5,18 @@ on:
     branches:
       - master
       - main
+
 jobs:
   pytest:
     strategy:
       matrix:
-        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
-        os: [ ubuntu-latest ]
+        python-version: [ '3.7', '3.8', '3.9', '3.10' ]
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
-      USING_COVERAGE: "3.9"
+      USING_COVERAGE: "3.10"
+      USING_COVERAGE_OS: "ubuntu-latest"
 
-    runs-on: ${{ matrix.os }}
+    runs-on: "ubuntu-latest"
     name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
     steps:
     - uses: actions/checkout@master
@@ -28,18 +29,32 @@ jobs:
     - uses: docker-practice/actions-setup-docker@master
 
     - name: Install Poetry
-      uses: dschep/install-poetry-action@v1.3
-
-    - name: Install Tox
       run: |
-        pip3 install black coverage flake8 tox tox-docker tox-poetry
+        curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install Dev requirements
+      run: |
+        pip install -U setuptools wheel
+        pip install -r dev_requirements.txt
+
+    - name: Set Submodules
+      run: |
+        git submodule update --init --recursive
+
+    - name: Install Redis
+      run: |
+        sudo add-apt-repository ppa:redislabs/redis
+        sudo apt-get update
+        sudo apt-get install redis -y
+        sudo systemctl stop redis-server
 
     - name: Run tox
       run: |
         tox
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v2
       if: contains(env.USING_COVERAGE, matrix.python-version)
       with:
+        token: ${{secrets.CODECOV_TOKEN}}
         fail_ci_if_error: true

@@ -355,6 +355,7 @@ poetry run flake8
 A test suite is provided, and can be run with:
 
 ```sh
+$ pip3 install -r ./utils/test-requirements.txt
 $ tox
 ```
 
@@ -365,4 +366,4 @@ $ tox -- utils/tests/test_runner.py
 
 ## License
 
-redisbench-admin is distributed under the BSD3 license - see [LICENSE](LICENSE)
+redis-benchmarks-specification is distributed under the BSD3 license - see [LICENSE](LICENSE)

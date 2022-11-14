@@ -9,6 +9,8 @@ dbconfig:
     - save: '""'
   - init_commands:
     - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+tested-groups:
+  - list
 tested-commands:
   - LRANGE
 redis-topologies:
