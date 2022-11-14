@@ -35,7 +35,6 @@ from redis_benchmarks_specification.__self_contained_coordinator__.args import (
 from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
     build_runners_consumer_group_create,
     get_runners_consumer_group_name,
-    process_self_contained_coordinator_stream,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
@@ -79,18 +78,12 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
-from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
-    prepare_memtier_benchmark_parameters,
-)
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     extract_db_cpu_limit,
     generate_cpuset_cpus,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
-)
-from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation import (
-    data_prepopulation_step,
 )
 
 
