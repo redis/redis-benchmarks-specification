@@ -9,14 +9,14 @@ jobs:
   pytest:
     strategy:
       matrix:
-        python-version: [ '3.7', '3.8', '3.9', '3.10' ]
+        python-version: [ '3.8', '3.9', '3.10' ]
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       USING_COVERAGE: "3.10"
       USING_COVERAGE_OS: "ubuntu-latest"
 
     runs-on: "ubuntu-latest"
-    name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
+    name: python ${{ matrix.python-version }} Linting, testing, and compliance
     steps:
     - uses: actions/checkout@master
 
