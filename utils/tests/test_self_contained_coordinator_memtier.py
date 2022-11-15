@@ -48,7 +48,12 @@ def test_self_contained_coordinator_blocking_read():
             else:
                 conn.flushall()
                 build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
+                if b"git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(
+                        reply_fields[b"git_timestamp_ms"].decode()
+                    )
+                if "git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
@@ -215,7 +220,12 @@ def test_self_contained_coordinator_skip_build_variant():
             else:
                 conn.flushall()
                 build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
+                if b"git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(
+                        reply_fields[b"git_timestamp_ms"].decode()
+                    )
+                if "git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
