@@ -802,7 +802,11 @@ def process_self_contained_coordinator_stream(
                             if redis_container is not None:
                                 logging.critical("Printing redis container log....")
                                 print("-" * 60)
-                                print(redis_container.logs())
+                                print(
+                                    redis_container.logs(
+                                        stdout=True, stderr=True, logs=True
+                                    )
+                                )
                                 print("-" * 60)
                             test_result = False
                         # tear-down
