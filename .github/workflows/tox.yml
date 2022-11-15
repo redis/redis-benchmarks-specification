@@ -36,20 +36,9 @@ jobs:
         pip install -U setuptools wheel
         pip install -r dev_requirements.txt
 
-    - name: Set Submodules
-      run: |
-        git submodule update --init --recursive
-
-    - name: Install Redis
-      run: |
-        sudo add-apt-repository ppa:redislabs/redis
-        sudo apt-get update
-        sudo apt-get install redis -y
-        sudo systemctl stop redis-server
-
     - name: Run tox
       run: |
-        tox
+        TST_RUNNER_USE_RDB=0 tox
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v2

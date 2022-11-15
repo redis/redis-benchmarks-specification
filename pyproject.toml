@@ -7,8 +7,8 @@ readme = "Readme.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-Flask = "^2.0.1"
-Werkzeug = "^2.0.1"
+Flask = "^2.2.2"
+Werkzeug = "^2.2.2"
 flask-restx = "^0.5.0"
 redis = "^4.2.0"
 marshmallow = "^3.12.2"
@@ -16,8 +16,8 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^6.0"
 docker = "^5.0.0"
-redisbench-admin = "^0.9.25"
-psutil = "^5.8.0"
+redisbench-admin = "^0.9.29"
+psutil = "^5.9.4"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
 semver = "^2.13.0"
@@ -26,12 +26,12 @@ typed-ast = "^1.5.0"
 numpy = "^1.23.4"
 
 [tool.poetry.dev-dependencies]
-pytest = "^4.6"
-pytest-cov = "^2.9.0"
-codecov = "^2.1.4"
-black = "22.3.0"
+pytest = "^7.2.0"
+pytest-cov = "^4.0.0"
+codecov = "^2.1.12"
+black = "22.10.0"
 flake8 = "^5.0.0"
-tox-poetry-installer = {extras = ["poetry"], version = "^0.8.1"}
+tox-poetry-installer = {extras = ["poetry"], version = "^0.10.0"}
 tox-docker = {extras = ["poetry"], version = "^3.1.0"}
 
 [build-system]
