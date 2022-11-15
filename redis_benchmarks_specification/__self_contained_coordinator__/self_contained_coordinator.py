@@ -442,6 +442,7 @@ def process_self_contained_coordinator_stream(
                             )
                     for topology_spec_name in benchmark_config["redis-topologies"]:
                         test_result = False
+                        redis_container = None
                         try:
                             current_cpu_pos = cpuset_start_pos
                             ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -500,7 +501,7 @@ def process_self_contained_coordinator_stream(
                                     run_image, db_cpuset_cpus, command_str
                                 )
                             )
-                            container = docker_client.containers.run(
+                            redis_container = docker_client.containers.run(
                                 image=run_image,
                                 volumes={
                                     temporary_dir: {"bind": mnt_point, "mode": "rw"},
@@ -514,7 +515,7 @@ def process_self_contained_coordinator_stream(
                                 cpuset_cpus=db_cpuset_cpus,
                                 pid_mode="host",
                             )
-                            redis_containers.append(container)
+                            redis_containers.append(redis_container)
 
                             r = redis.StrictRedis(port=redis_proc_start_port)
                             r.ping()
@@ -798,28 +799,33 @@ def process_self_contained_coordinator_stream(
                             print("-" * 60)
                             traceback.print_exc(file=sys.stdout)
                             print("-" * 60)
+                            if redis_container is not None:
+                                logging.critical("Printing redis container log....")
+                                print("-" * 60)
+                                print(redis_container.logs())
+                                print("-" * 60)
                             test_result = False
                         # tear-down
                         logging.info("Tearing down setup")
-                        for container in redis_containers:
+                        for redis_container in redis_containers:
                             try:
-                                container.stop()
+                                redis_container.stop()
                             except docker.errors.NotFound:
                                 logging.info(
                                     "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                        container.id, container.image
+                                        redis_container.id, redis_container.image
                                     )
                                 )
                                 pass
 
-                        for container in client_containers:
-                            if type(container) == Container:
+                        for redis_container in client_containers:
+                            if type(redis_container) == Container:
                                 try:
-                                    container.stop()
+                                    redis_container.stop()
                                 except docker.errors.NotFound:
                                     logging.info(
                                         "When trying to stop Client container with id {} and image {} it was already stopped".format(
-                                            container.id, container.image
+                                            redis_container.id, redis_container.image
                                         )
                                     )
                                     pass
