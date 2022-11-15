@@ -271,7 +271,8 @@ def test_self_contained_coordinator_blocking_read():
             assert len(datasink_conn.smembers(project_branches_setname)) == 1
             assert len(datasink_conn.smembers(project_versions_setname)) == 0
             # ensure we don't change state on the rdb
-            conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
+            if use_rdb:
+                conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
 
     except redis.exceptions.ConnectionError:
         pass
