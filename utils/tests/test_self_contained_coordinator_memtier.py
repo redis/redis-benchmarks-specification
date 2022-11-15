@@ -118,9 +118,9 @@ def test_self_contained_coordinator_blocking_read():
                 )
                 rts = datasink_conn.ts()
                 assert ts_key_name.encode() in conn.keys()
-                assert len(rts.range(ts_key_name, 0, -1)) == 1
+                assert len(rts.range(ts_key_name, 0, "+")) == 1
                 if expected_datapoint_ts is not None:
-                    assert rts.range(ts_key_name, 0, -1)[0][0] == expected_datapoint_ts
+                    assert rts.range(ts_key_name, 0, "+")[0][0] == expected_datapoint_ts
             (
                 prefix,
                 testcases_setname,
