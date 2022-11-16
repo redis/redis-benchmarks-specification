@@ -242,6 +242,10 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                 )
                             else:
+                                shard_count = 1
+                                start_port = redis_proc_start_port
+                                dbdir_folder = None
+                                server_private_ip = "127.0.0.1"
                                 for master_shard_id in range(1, shard_count + 1):
                                     shard_port = master_shard_id + start_port - 1
 
@@ -251,15 +255,15 @@ def process_self_contained_coordinator_stream(
                                     ) = generate_cluster_redis_server_args(
                                         "redis-server",
                                         dbdir_folder,
-                                        remote_module_files,
+                                        None,
                                         server_private_ip,
                                         shard_port,
                                         redis_configuration_parameters,
                                         "yes",
-                                        modules_configuration_parameters_map,
-                                        logname_prefix,
+                                        None,
+                                        "",
                                         "yes",
-                                        redis_7,
+                                        False,
                                     )
                                     logging.error(
                                         "Remote primary shard {} command: {}".format(

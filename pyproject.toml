@@ -1,14 +1,14 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.53"
+version = "0.1.58"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
 
 [tool.poetry.dependencies]
-python = "^3.7"
-Flask = "^2.0.1"
-Werkzeug = "^2.0.1"
+python = "^3.8"
+Flask = "^2.2.2"
+Werkzeug = "^2.2.2"
 flask-restx = "^0.5.0"
 redis = "^4.2.0"
 marshmallow = "^3.12.2"
@@ -16,25 +16,26 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^6.0"
 docker = "^5.0.0"
-redisbench-admin = "^0.9.25"
-psutil = "^5.8.0"
+redisbench-admin = "^0.9.29"
+psutil = "^5.9.4"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
 semver = "^2.13.0"
 node-semver = "^0.8.1"
 typed-ast = "^1.5.0"
+numpy = "^1.23.4"
 
 [tool.poetry.dev-dependencies]
-black = "20.8b1"
-pytest = "^5.2"
-flake8 = "^3.9.2"
-pytest-cov = "^2.12.1"
+pytest = "^7.2.0"
+pytest-cov = "^4.0.0"
 codecov = "^2.1.12"
-tox-poetry-installer = {extras = ["poetry"], version = "^0.8.1"}
+black = "22.10.0"
+flake8 = "^5.0.0"
+tox-poetry-installer = {extras = ["poetry"], version = "^0.10.0"}
 tox-docker = {extras = ["poetry"], version = "^3.1.0"}
 
 [build-system]
-requires = ["poetry>=1.2"]
+requires = ["poetry_core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
@@ -44,3 +45,4 @@ redis-benchmarks-spec-client-runner = "redis_benchmarks_specification.__runner__
 redis-benchmarks-spec-sc-coordinator = "redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator:main"
 redis-benchmarks-spec-cli = "redis_benchmarks_specification.__cli__.cli:main"
 redis-benchmarks-spec-watchdog = "redis_benchmarks_specification.__watchdog__.watchdog:main"
+redis-benchmarks-spec = "redis_benchmarks_specification.__spec__.cli:main"

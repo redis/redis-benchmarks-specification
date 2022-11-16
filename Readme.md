@@ -355,7 +355,7 @@ poetry run flake8
 A test suite is provided, and can be run with:
 
 ```sh
-$ pip3 install -r ./utils/test-requirements.txt
+$ pip3 install -r ./dev_requirements.txt
 $ tox
 ```
 

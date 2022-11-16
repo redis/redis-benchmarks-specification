@@ -78,6 +78,13 @@ def create_self_contained_coordinator_args(project_name):
         help="Test suites folder, containing the different test variations",
     )
     parser.add_argument(
+        "--test",
+        type=str,
+        default="",
+        help="specify a test to run. By default will run all the tests"
+        + " present in the folder specified in --test-suites-folder.",
+    )
+    parser.add_argument(
         "--datasink_redistimeseries_host", type=str, default=DATASINK_RTS_HOST
     )
     parser.add_argument(

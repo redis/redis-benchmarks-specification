@@ -280,6 +280,8 @@ def builder_process_stream(
                 ]
                 if "hdr_histogram" in deps_dir:
                     deps_list.append("hdr_histogram")
+                if "fpconv" in deps_dir:
+                    deps_list.append("fpconv")
                 redis_temporary_dir = temporary_dir + "/" + redis_dir + "/"
                 logging.info("Using redis temporary dir {}".format(redis_temporary_dir))
                 build_command = "bash -c 'make Makefile.dep && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j'".format(

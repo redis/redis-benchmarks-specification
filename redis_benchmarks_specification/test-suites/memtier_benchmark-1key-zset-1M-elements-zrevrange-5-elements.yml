@@ -11,6 +11,8 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '--key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern P --hide-histogram -t 4 -c 100'
+tested-groups:
+  - sorted_set
 tested-commands:
   - ZREVRANGE
 redis-topologies:

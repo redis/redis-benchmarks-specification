@@ -92,10 +92,11 @@ def cli_command_logic(args, project_name, project_version):
     total_commits = 0
     if args.use_branch:
         for commit in repo.iter_commits():
-            commit_datetime = commit.committed_datetime
             if (
                 args.from_date
-                <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
+                <= datetime.datetime.utcfromtimestamp(
+                    commit.committed_datetime.timestamp()
+                )
                 <= args.to_date
             ):
                 if (
@@ -108,7 +109,6 @@ def cli_command_logic(args, project_name, project_version):
                             "git_hash": commit.hexsha,
                             "git_branch": repo.active_branch.name,
                             "commit_summary": commit.summary,
-                            "commit_datetime": commit_datetime,
                         }
                     )
     if args.use_tags:
@@ -203,7 +203,7 @@ def cli_command_logic(args, project_name, project_version):
             )
             filtered_hash_commits.append(cdict)
 
-    if True:  # args.dry_run is False:
+    if args.dry_run is False:
         conn = redis.StrictRedis(
             host=args.redis_host,
             port=args.redis_port,
@@ -226,26 +226,17 @@ def cli_command_logic(args, project_name, project_version):
                     cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
                 )
                 if result is True:
-                    stream_id = "n/a"
-                    if args.dry_run is False:
-                        (
-                            result,
-                            reply_fields,
-                            error_msg,
-                        ) = request_build_from_commit_info(
-                            conn,
-                            commit_dict,
-                            {},
-                            binary_key,
-                            binary_value,
-                            REDIS_BINS_EXPIRE_SECS,
-                        )
-                        stream_id = reply_fields["id"]
+                    result, reply_fields, error_msg = request_build_from_commit_info(
+                        conn,
+                        commit_dict,
+                        {},
+                        binary_key,
+                        binary_value,
+                        REDIS_BINS_EXPIRE_SECS,
+                    )
                     logging.info(
-                        "Successfully requested a build for commit: {}. Date: {} Request stream id: {}.".format(
-                            cdict["git_hash"],
-                            cdict["commit_datetime"],
-                            stream_id,
+                        "Successfully requested a build for commit: {}. Request stream id: {}.".format(
+                            cdict["git_hash"], reply_fields["id"]
                         )
                     )
                 else:

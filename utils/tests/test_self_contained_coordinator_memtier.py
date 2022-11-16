@@ -48,7 +48,12 @@ def test_self_contained_coordinator_blocking_read():
             else:
                 conn.flushall()
                 build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
+                if b"git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(
+                        reply_fields[b"git_timestamp_ms"].decode()
+                    )
+                if "git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
@@ -113,9 +118,9 @@ def test_self_contained_coordinator_blocking_read():
                 )
                 rts = datasink_conn.ts()
                 assert ts_key_name.encode() in conn.keys()
-                assert len(rts.range(ts_key_name, 0, -1)) == 1
+                assert len(rts.range(ts_key_name, 0, "+")) == 1
                 if expected_datapoint_ts is not None:
-                    assert rts.range(ts_key_name, 0, -1)[0][0] == expected_datapoint_ts
+                    assert rts.range(ts_key_name, 0, "+")[0][0] == expected_datapoint_ts
             (
                 prefix,
                 testcases_setname,
@@ -215,7 +220,12 @@ def test_self_contained_coordinator_skip_build_variant():
             else:
                 conn.flushall()
                 build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                expected_datapoint_ts = reply_fields["git_timestamp_ms"]
+                if b"git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(
+                        reply_fields[b"git_timestamp_ms"].decode()
+                    )
+                if "git_timestamp_ms" in reply_fields:
+                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
