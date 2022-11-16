@@ -1,7 +1,10 @@
+![SPEC logo](./spec-logo.png)
+
 
 [![codecov](https://codecov.io/gh/redis/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/redis/redis-benchmarks-specification)
 [![CI tests](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml/badge.svg)](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml)
 [![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://pypi.org/project/redis-benchmarks-specification)
+
 
 ## Installation
 
@@ -58,63 +61,7 @@ python3 -m pip install redis-benchmarks-specification
 
 ## Architecture diagram
 
-```                                                                                    
-                                                                                      
-                                                                                      
-┌──────────────────────────────────────┐                                              
-│1) gh.com/redis/redis update          │                                              
-│   - git_repo: github.com/redis/redis │                                              
-│   - git_hash: 459c3a                 │                                              
-│   - git_branch: unstable             │                                              
-└─────────────────┬────────────────────┘                                              
-                  │                                                                   
-                  │      ┌───────────────────────────────────┐                        
-                  │      │HTTP POST                          │                        
-                  └──────┤<domain>/api/gh/redis/redis/commit │──┐                     
-                         └───────────────────────────────────┘  │                     
-                                                                │                     
-                                                                ▼                     
-                                          ┌──────────────────────────────────────────┐
-                                          │2) api                                    │
-                                          │  - Converts the HTTP info into an stream │
-                                          │entry                                     │
-                                          │  - XADD stream:redis:redis:commit <...>  │
-                                          │                                          │
-                                          └─────────────────────┬────────────────────┘
-                                                                │                     
-                                                                │                     
-                                                                │                     
-                                                                │ ┌────┐              
-                    .─────────────────────────────────────.     │ │push│              
-        ┌─────┐ ┌ ▶(  2.1 ) stream of build events         )◀───┘ └────┘              
-        │pull │     `─────────────────────────────────────'                           
-        └─────┘ │                                                                     
-                                                                                      
-                │                       ┌────────────────────────────────────────────┐
-                 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│2.2) build_agent                            │
-                                        │   - based on setup platforms               │
-                                        │   - build different required redis         │
-                                        │artifacts                                   │
-                                        └───────────────────────┬────────────────────┘
-                                                                │                     
-                                                                │                     
-                                                                │ ┌────┐              
-                   .─────────────────────────────────────.      │ │push│              
-        ┌─────┐ ─▶(   2.3 ) stream of artifact benchmarks )◀────┘ └────┘              
-        │pull ││   `─────────────────────────────────────'                            
-        └─────┘                                                                       
-               │                                                                      
-                                        ┌────────────────────────────────────────────┐
-               │                        │                                            │
-                                        │3) benchmark_coordinator                    │
-               │                        │   - based on test-suites and setups:       │
-                                        │      - Trigger env setup                   │
-               └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│      - 3.1 ) Trigger topology setup        │
-                                        │      - 3.2 ) Run benchmarks                │
-                                        │      - Record results into datasinks       │
-                                        │                                            │
-                                        └────────────────────────────────────────────┘
-```                                              
+![Architecture diagram](./arch-diagram.png)
 
 In a very brief description, github.com/redis/redis upstream changes trigger an HTTP API call containing the
 relevant git information. 
