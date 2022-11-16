@@ -92,7 +92,7 @@ def cli_command_logic(args, project_name, project_version):
     total_commits = 0
     if args.use_branch:
         for commit in repo.iter_commits():
-            commit_datetime = commit.committed_datetime
+            commit_datetime = str(commit.committed_datetime)
             if (
                 args.from_date
                 <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
@@ -144,6 +144,7 @@ def cli_command_logic(args, project_name, project_version):
                         )
                     else:
                         git_version = tag.name
+                        commit_datetime = str(tag.commit.committed_datetime)
                         print(
                             "Commit summary: {}. Extract semver: {}".format(
                                 tag.commit.summary, git_version
@@ -154,6 +155,7 @@ def cli_command_logic(args, project_name, project_version):
                                 "git_hash": tag.commit.hexsha,
                                 "git_version": git_version,
                                 "commit_summary": tag.commit.summary,
+                                "commit_datetime": commit_datetime,
                             }
                         )
                 except packaging.version.InvalidVersion:
