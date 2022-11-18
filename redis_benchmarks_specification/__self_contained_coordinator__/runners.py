@@ -8,6 +8,13 @@ import traceback
 
 import redis
 from redisbench_admin.environments.oss_cluster import generate_cluster_redis_server_args
+
+from redisbench_admin.utils.local import check_dataset_local_requirements
+
+from redisbench_admin.run.common import (
+    dbconfig_keyspacelen_check,
+)
+
 from redisbench_admin.profilers.profilers_local import (
     local_profilers_platform_checks,
     profilers_start_if_required,
@@ -211,6 +218,23 @@ def process_self_contained_coordinator_stream(
                             restore_build_artifacts_from_test_details(
                                 build_artifacts, conn, temporary_dir, testDetails
                             )
+
+                            logging.info("Checking if there is a dataset requirement")
+                            (
+                                dataset,
+                                dataset_name,
+                                _,
+                                _,
+                            ) = check_dataset_local_requirements(
+                                benchmark_config,
+                                temporary_dir,
+                                None,
+                                "./datasets",
+                                "dbconfig",
+                                shard_count,
+                                False,
+                            )
+
                             dso = "redis-server"
                             profilers_artifacts_matrix = []
 
@@ -285,6 +309,9 @@ def process_self_contained_coordinator_stream(
                             client_mnt_point = "/mnt/client/"
                             benchmark_tool_workdir = client_mnt_point
 
+                            logging.info(
+                                "Checking if there is a data preload_tool requirement"
+                            )
                             if "preload_tool" in benchmark_config["dbconfig"]:
                                 data_prepopulation_step(
                                     benchmark_config,
@@ -296,6 +323,14 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     test_name,
                                 )
+
+                            logging.info(
+                                "Checking if there is a keyspace check being enforced"
+                            )
+                            dbconfig_keyspacelen_check(
+                                benchmark_config,
+                                [r],
+                            )
 
                             benchmark_tool = extract_client_tool(benchmark_config)
                             # backwards compatible
