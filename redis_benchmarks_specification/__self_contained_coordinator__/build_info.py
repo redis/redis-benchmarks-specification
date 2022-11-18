@@ -1,12 +1,14 @@
 import json
 import logging
 
+from redis_benchmarks_specification.__common__.builder_schema import (
+    get_branch_version_from_test_details,
+)
+
 
 def extract_build_info_from_streamdata(testDetails):
     use_git_timestamp = False
     git_timestamp_ms = None
-    git_version = None
-    git_branch = None
     metadata = None
     build_variant_name = None
     fields = [fieldname.decode() for fieldname in testDetails.keys()]
@@ -20,14 +22,7 @@ def extract_build_info_from_streamdata(testDetails):
         build_variant_name = testDetails[b"id"]
         if type(build_variant_name) == bytes:
             build_variant_name = build_variant_name.decode()
-    if b"git_branch" in testDetails:
-        git_branch = testDetails[b"git_branch"]
-        if type(git_branch) == bytes:
-            git_branch = git_branch.decode()
-    if b"git_version" in testDetails:
-        git_version = testDetails[b"git_version"]
-        if type(git_version) == bytes:
-            git_version = git_version.decode()
+    git_branch, git_version = get_branch_version_from_test_details(testDetails)
     if type(git_hash) == bytes:
         git_hash = git_hash.decode()
     logging.info("Received commit hash specifier {}.".format(git_hash))

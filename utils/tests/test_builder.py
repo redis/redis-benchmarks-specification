@@ -7,6 +7,7 @@ import os
 
 from redis_benchmarks_specification.__common__.builder_schema import (
     commit_schema_to_stream,
+    get_branch_version_from_test_details,
 )
 import redis
 
@@ -14,7 +15,6 @@ from redis_benchmarks_specification.__builder__.builder import (
     builder_consumer_group_create,
     builder_process_stream,
     build_spec_image_prefetch,
-    get_branch_version_from_test_details,
 )
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,

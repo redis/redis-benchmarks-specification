@@ -13,6 +13,9 @@ from redis_benchmarks_specification.__builder__.schema import (
     get_build_config,
     get_build_config_metadata,
 )
+from redis_benchmarks_specification.__common__.builder_schema import (
+    get_branch_version_from_test_details,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
@@ -365,23 +368,6 @@ def builder_process_stream(
         else:
             logging.error("Missing commit information within received message.")
     return previous_id, new_builds_count
-
-
-def get_branch_version_from_test_details(testDetails):
-    git_branch = None
-    git_version = None
-    if b"git_branch" in testDetails:
-        git_branch = testDetails[b"git_branch"]
-    if b"ref_label" in testDetails:
-        git_branch = testDetails[b"ref_label"]
-    if b"git_version" in testDetails:
-        git_version = testDetails[b"git_version"]
-    if git_branch is not None:
-        # remove event prefix
-        if git_branch.startswith("/refs/heads/"):
-            git_branch = git_branch.replace("/refs/heads/", "")
-
-    return git_branch, git_version
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):
