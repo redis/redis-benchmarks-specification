@@ -231,7 +231,7 @@ def process_self_contained_coordinator_stream(
                                 None,
                                 "./datasets",
                                 "dbconfig",
-                                shard_count,
+                                1,
                                 False,
                             )
 

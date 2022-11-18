@@ -14,6 +14,7 @@ from redis_benchmarks_specification.__builder__.builder import (
     builder_consumer_group_create,
     builder_process_stream,
     build_spec_image_prefetch,
+    get_branch_version_from_test_details,
 )
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
@@ -115,3 +116,15 @@ def test_commit_schema_to_stream_then_build_historical_redis():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_get_branch_version_from_test_details():
+    testDetails = {b"ref_label": "/refs/heads/unstable"}
+    git_branch, _ = get_branch_version_from_test_details(testDetails)
+    assert git_branch == "unstable"
+    testDetails = {b"ref_label": "unstable"}
+    git_branch, _ = get_branch_version_from_test_details(testDetails)
+    assert git_branch == "unstable"
+    testDetails = {b"git_version": "555.555.555"}
+    _, git_version = get_branch_version_from_test_details(testDetails)
+    assert git_version == "555.555.555"

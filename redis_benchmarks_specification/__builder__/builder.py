@@ -201,16 +201,9 @@ def builder_process_stream(
                 )
             )
             buffer = conn.get(binary_zip_key)
-            git_branch = None
-            git_version = None
-            if b"git_branch" in testDetails:
-                git_branch = testDetails[b"git_branch"]
-            if b"ref_label" in testDetails:
-                git_branch = testDetails[b"ref_label"]
-            if b"git_version" in testDetails:
-                git_version = testDetails[b"git_version"]
             git_timestamp_ms = None
             use_git_timestamp = False
+            git_branch, git_version = get_branch_version_from_test_details(testDetails)
             if b"use_git_timestamp" in testDetails:
                 use_git_timestamp = bool(testDetails[b"use_git_timestamp"])
             if b"git_timestamp_ms" in testDetails:
@@ -372,6 +365,23 @@ def builder_process_stream(
         else:
             logging.error("Missing commit information within received message.")
     return previous_id, new_builds_count
+
+
+def get_branch_version_from_test_details(testDetails):
+    git_branch = None
+    git_version = None
+    if b"git_branch" in testDetails:
+        git_branch = testDetails[b"git_branch"]
+    if b"ref_label" in testDetails:
+        git_branch = testDetails[b"ref_label"]
+    if b"git_version" in testDetails:
+        git_version = testDetails[b"git_version"]
+    if git_branch is not None:
+        # remove event prefix
+        if git_branch.startswith("/refs/heads/"):
+            git_branch = git_branch.replace("/refs/heads/", "")
+
+    return git_branch, git_version
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):
