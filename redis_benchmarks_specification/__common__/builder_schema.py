@@ -146,3 +146,25 @@ def request_build_from_commit_info(
     id = conn.xadd(STREAM_KEYNAME_GH_EVENTS_COMMIT.encode(), fields)
     reply_fields["id"] = id
     return result, reply_fields, error_msg
+
+
+def get_branch_version_from_test_details(testDetails):
+    git_branch = None
+    git_version = None
+    if b"git_branch" in testDetails:
+        git_branch = testDetails[b"git_branch"]
+    if b"ref_label" in testDetails:
+        git_branch = testDetails[b"ref_label"]
+    if b"git_version" in testDetails:
+        git_version = testDetails[b"git_version"]
+    if git_branch is not None:
+        # remove event prefix
+        if type(git_branch) == bytes:
+            git_branch = git_branch.decode()
+        if git_branch.startswith("/refs/heads/"):
+            git_branch = git_branch.replace("/refs/heads/", "")
+    if git_version is not None:
+        if type(git_version) == bytes:
+            git_version = git_version.decode()
+
+    return git_branch, git_version

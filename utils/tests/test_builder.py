@@ -7,6 +7,7 @@ import os
 
 from redis_benchmarks_specification.__common__.builder_schema import (
     commit_schema_to_stream,
+    get_branch_version_from_test_details,
 )
 import redis
 
@@ -115,3 +116,15 @@ def test_commit_schema_to_stream_then_build_historical_redis():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_get_branch_version_from_test_details():
+    testDetails = {b"ref_label": "/refs/heads/unstable"}
+    git_branch, _ = get_branch_version_from_test_details(testDetails)
+    assert git_branch == "unstable"
+    testDetails = {b"ref_label": "unstable"}
+    git_branch, _ = get_branch_version_from_test_details(testDetails)
+    assert git_branch == "unstable"
+    testDetails = {b"git_version": "555.555.555"}
+    _, git_version = get_branch_version_from_test_details(testDetails)
+    assert git_version == "555.555.555"

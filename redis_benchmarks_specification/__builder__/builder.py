@@ -13,6 +13,9 @@ from redis_benchmarks_specification.__builder__.schema import (
     get_build_config,
     get_build_config_metadata,
 )
+from redis_benchmarks_specification.__common__.builder_schema import (
+    get_branch_version_from_test_details,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
@@ -201,16 +204,9 @@ def builder_process_stream(
                 )
             )
             buffer = conn.get(binary_zip_key)
-            git_branch = None
-            git_version = None
-            if b"git_branch" in testDetails:
-                git_branch = testDetails[b"git_branch"]
-            if b"ref_label" in testDetails:
-                git_branch = testDetails[b"ref_label"]
-            if b"git_version" in testDetails:
-                git_version = testDetails[b"git_version"]
             git_timestamp_ms = None
             use_git_timestamp = False
+            git_branch, git_version = get_branch_version_from_test_details(testDetails)
             if b"use_git_timestamp" in testDetails:
                 use_git_timestamp = bool(testDetails[b"use_git_timestamp"])
             if b"git_timestamp_ms" in testDetails:
