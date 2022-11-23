@@ -1,0 +1,38 @@
+version: 0.4
+name: "memtier_benchmark-10keys-100B-expire-use-case"
+description: "Runs memtier_benchmark, for a keyspace length of 1M keys
+              with a data size of 100 Bytes for each key, which 50% of the keys have expiration set during the benchmark."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--command" "SETEX __key__ 360 __value__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram" "--key-minimum" 1 "--key-maximum" "10"'
+tested-commands:
+  - SET
+  - SETX
+  - GET
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - abc
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--key-minimum" 1 "--key-maximum" "10" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" -c 5 -t 1 --hide-histogram --test-time 10'
+  resources:
+    requests:
+      cpus: "1"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".Totals."Ops/sec"'
+      - '$."ALL STATS".Totals."Latency"'
+      - '$."ALL STATS".Totals."Misses/sec"'
+      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'

@@ -65,6 +65,10 @@ def main():
     )
     args = parser.parse_args()
 
+    run_client_runner_logic(args, project_name, project_name_suffix, project_version)
+
+
+def run_client_runner_logic(args, project_name, project_name_suffix, project_version):
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
         logging.basicConfig(
@@ -83,7 +87,6 @@ def main():
         )
     logging.info(get_version_string(project_name, project_version))
     testsuite_spec_files = extract_testsuites(args)
-
     datasink_conn = None
     if args.datasink_push_results_redistimeseries:
         logging.info(
@@ -113,7 +116,6 @@ def main():
             )
             logging.error("Error message {}".format(e.__str__()))
             exit(1)
-
     running_platform = args.platform_name
     tls_enabled = args.tls
     tls_skip_verify = args.tls_skip_verify
@@ -124,7 +126,6 @@ def main():
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
     docker_client = docker.from_env()
     home = str(Path.home())
-
     profilers_list = []
     profilers_enabled = args.enable_profilers
     if profilers_enabled:
@@ -137,9 +138,7 @@ def main():
                 )
             )
             exit(1)
-
     logging.info("Running the benchmark specs.")
-
     process_self_contained_coordinator_stream(
         args,
         args.datasink_push_results_redistimeseries,
