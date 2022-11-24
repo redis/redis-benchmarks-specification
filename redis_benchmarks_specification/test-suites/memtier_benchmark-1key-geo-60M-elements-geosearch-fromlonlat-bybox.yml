@@ -1,7 +1,7 @@
 version: 0.4
 name: "memtier_benchmark-1key-geo-60M-elements-geosearch-fromlonlat-bybox"
 description: "Runs memtier_benchmark, for a keyspace length of 1 GEO key.
-              The GEO key contains 60841557 elements in it and we query it using GEOSEARCH command that replies with a very large (~100K ) number of elements.
+              The GEO key contains 60841557 elements in it and we query it using GEOSEARCH command that replies with a very large (~11K ) number of elements.
               "
 dbconfig:
   - configuration-parameters:
