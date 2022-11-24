@@ -402,7 +402,6 @@ def process_self_contained_coordinator_stream(
                 images_loaded = docker_client.images.load(airgap_docker_image_bin)
                 logging.info("Successfully loaded images {}".format(images_loaded))
 
-#Martin temp test
             for test_file in testsuite_spec_files:
                 redis_containers = []
                 client_containers = []
