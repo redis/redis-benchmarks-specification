@@ -1,0 +1,39 @@
+version: 0.4
+name: "memtier_benchmark-1key-geo-60M-elements-geosearch-fromlonlat-bybox"
+description: "Runs memtier_benchmark, for a keyspace length of 1 GEO key.
+              The GEO key contains 60841557 elements in it and we query it using GEOSEARCH command that replies with a very large (~100K ) number of elements.
+              "
+dbconfig:
+  - configuration-parameters:
+    - save: '""'
+  - dataset: "https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb"
+
+tested-groups:
+  - geo
+tested-commands:
+  - GEOSEARCH
+redis-topologies:
+  - oss-standalone
+
+build-variants:
+  - gcc:8.5.0-amd64-debian-buster-default
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '-c 2 -t 2 --command="GEOSEARCH key FROMLONLAT 7.0 55.0 BYBOX 200 200 KM"  --hide-histogram --test-time 180'
+  resources:
+    requests:
+      cpus: "4"
+      memory: "2g"
+exporter:
+  redistimeseries:
+    break_by:
+      - version
+      - commit
+    timemetric: '$."ALL STATS".Runtime."Start time"'
+    metrics:
+      - '$."ALL STATS".Totals."Ops/sec"'
+      - '$."ALL STATS".Totals."Latency"'
+      - '$."ALL STATS".Totals."Misses/sec"'
+      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'
