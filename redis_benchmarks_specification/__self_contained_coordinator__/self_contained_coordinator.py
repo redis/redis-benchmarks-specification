@@ -455,6 +455,11 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir
                                 )
                             )
+                            logging.info(
+                                "Using local temporary dir to persist client output files. Path: {}".format(
+                                    temporary_dir_client
+                                )
+                            )
                             tf_github_org = "redis"
                             tf_github_repo = "redis"
                             setup_name = "oss-standalone"
@@ -834,6 +839,10 @@ def process_self_contained_coordinator_stream(
                                     )
                                     pass
                         shutil.rmtree(temporary_dir, ignore_errors=True)
+                        shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                        logging.info(
+                        "Removing temporary dirs {} and {}".format(temporary_dir, temporary_dir_client)
+                        )
 
                         overall_result &= test_result
 
