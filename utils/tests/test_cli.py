@@ -7,7 +7,7 @@ import argparse
 import os
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
-from redis_benchmarks_specification.__cli__.cli import cli_command_logic
+from redis_benchmarks_specification.__cli__.cli import trigger_tests_cli_command_logic
 
 
 def test_run_local_command_logic_oss_cluster():
@@ -19,7 +19,7 @@ def test_run_local_command_logic_oss_cluster():
     parser = spec_cli_args(parser)
     args = parser.parse_args(args=[])
     try:
-        cli_command_logic(args, "tool", "v0")
+        trigger_tests_cli_command_logic(args, "tool", "v0")
     except SystemExit as e:
         assert e.code == 1
 
@@ -37,6 +37,6 @@ def test_run_local_command_logic_oss_cluster():
         args=run_args,
     )
     try:
-        cli_command_logic(args, "tool", "v0")
+        trigger_tests_cli_command_logic(args, "tool", "v0")
     except SystemExit as e:
         assert e.code == 0

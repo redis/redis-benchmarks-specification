@@ -19,6 +19,7 @@ from packaging import version
 
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
+from redis_benchmarks_specification.__cli__.stats import generate_stats_cli_command_logic
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
     request_build_from_commit_info,
@@ -46,11 +47,13 @@ def main():
     )
     parser = spec_cli_args(parser)
     args = parser.parse_args()
+    if args.tool == "trigger":
+        trigger_tests_cli_command_logic(args, project_name, project_version)
+    if args.tool == "stats":
+        generate_stats_cli_command_logic(args, project_name, project_version)
 
-    cli_command_logic(args, project_name, project_version)
 
-
-def cli_command_logic(args, project_name, project_version):
+def trigger_tests_cli_command_logic(args, project_name, project_version):
     logging.info(
         "Using: {project_name} {project_version}".format(
             project_name=project_name, project_version=project_version
