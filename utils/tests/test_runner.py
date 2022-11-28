@@ -1,8 +1,14 @@
+import argparse
+
+import redis
 import yaml
 
+from redis_benchmarks_specification.__common__.package import get_version_string
 from redis_benchmarks_specification.__common__.spec import extract_client_tool
+from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 from redis_benchmarks_specification.__runner__.runner import (
     prepare_memtier_benchmark_parameters,
+    run_client_runner_logic,
 )
 
 
@@ -140,3 +146,65 @@ def test_prepare_memtier_benchmark_parameters():
             benchmark_command_str
             == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --tls --cert cert.file --key key.file --cacert cacert.file "--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
         )
+
+
+def test_run_client_runner_logic():
+    project_name = "tool"
+    project_version = "v0"
+    parser = argparse.ArgumentParser(
+        description="test",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser = create_client_runner_args(
+        get_version_string(project_name, project_version)
+    )
+    db_host = "localhost"
+    db_port = "6380"
+    datasink_port = "16379"
+    db_port_int = int(db_port)
+    datasink_port_int = int(db_port)
+    args = parser.parse_args(
+        args=[
+            "--test",
+            "../../utils/tests/test_data/test-suites/memtier_benchmark-10keys-100B-expire-use-case-with-variant.yml",
+            "--db_server_host",
+            "{}".format(db_host),
+            "--db_server_port",
+            "{}".format(db_port),
+            "--flushall_on_every_test_start",
+        ]
+    )
+    try:
+        run_client_runner_logic(args, "tool", "", "v0")
+    except SystemExit as e:
+        assert e.code == 0
+
+    r = redis.Redis(host=db_host, port=db_port_int)
+    total_keys = r.info("keyspace")["db0"]["keys"]
+    assert total_keys == 10
+
+    # run while pushing to redistimeseries
+    args = parser.parse_args(
+        args=[
+            "--test",
+            "../../utils/tests/test_data/test-suites/memtier_benchmark-10keys-100B-expire-use-case-with-variant.yml",
+            "--datasink_push_results_redistimeseries",
+            "--datasink_redistimeseries_host",
+            "{}".format(db_host),
+            "--datasink_redistimeseries_port",
+            "{}".format(datasink_port),
+            "--db_server_host",
+            "{}".format(db_host),
+            "--db_server_port",
+            "{}".format(db_port),
+            "--flushall_on_every_test_start",
+        ]
+    )
+    try:
+        run_client_runner_logic(args, "tool", "", "v0")
+    except SystemExit as e:
+        assert e.code == 0
+
+    r = redis.Redis(host=db_host, port=db_port_int)
+    total_keys = r.info("keyspace")["db0"]["keys"]
+    assert total_keys == 10
