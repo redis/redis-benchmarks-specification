@@ -1,40 +1,38 @@
 version: 0.4
-name: "memtier_benchmark-1key-set-10-elements-smembers-pipeline-10"
-description: "Runs memtier_benchmark, for a keyspace length of 1 SET key.
-              The SET contains 10 elements in it and we query it using SMEMBERS that returns all elements.
-              "
-
+name: memtier_benchmark-1key-set-10-elements-smembers-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
+  contains 10 elements in it and we query it using SMEMBERS that returns all elements. '
 dbconfig:
-  - configuration-parameters:
-    - save: '""'
-  - init_commands:
-    - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+- configuration-parameters:
+  - save: '""'
+- init_commands:
+  - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
+    "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
 tested-groups:
-  - set
+- set
 tested-commands:
-  - SMEMBERS
+- smembers
 redis-topologies:
-  - oss-standalone
-
+- oss-standalone
 build-variants:
-  - gcc:8.5.0-amd64-debian-buster-default
-
+- gcc:8.5.0-amd64-debian-buster-default
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time 180'
+  arguments: --pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time
+    180
   resources:
     requests:
-      cpus: "4"
-      memory: "2g"
+      cpus: '4'
+      memory: 2g
 exporter:
   redistimeseries:
     break_by:
-      - version
-      - commit
-    timemetric: '$."ALL STATS".Runtime."Start time"'
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
     metrics:
-      - '$."ALL STATS".Totals."Ops/sec"'
-      - '$."ALL STATS".Totals."Latency"'
-      - '$."ALL STATS".Totals."Misses/sec"'
-      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
