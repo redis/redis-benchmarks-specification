@@ -56,7 +56,6 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 is_memtier = False
                 if "memtier" in test_name:
                     is_memtier = True
-                have_tested_groups = False
                 tested_groups = []
                 origin_tested_groups = []
                 if "tested-groups" in benchmark_config:
