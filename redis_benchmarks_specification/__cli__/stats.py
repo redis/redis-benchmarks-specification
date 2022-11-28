@@ -6,9 +6,6 @@ import redis
 import oyaml as yaml
 
 from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
-from redisbench_admin.utils.benchmark_config import (
-    get_final_benchmark_config,
-)
 
 # logging settings
 logging.basicConfig(
@@ -63,13 +60,10 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 tested_groups = []
                 origin_tested_groups = []
                 if "tested-groups" in benchmark_config:
-                    have_tested_groups = True
                     origin_tested_groups = benchmark_config["tested-groups"]
                 origin_tested_commands = []
                 tested_commands = []
-                have_tested_commands = False
                 if "tested-commands" in benchmark_config:
-                    have_tested_commands = True
                     origin_tested_commands = benchmark_config["tested-commands"]
                 else:
                     logging.warn("dont have test commands in {}".format(test_name))
@@ -142,9 +136,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 )
             )
             with open(test_file, "w") as file:
-                documents = yaml.dump(
-                    benchmark_config, file, sort_keys=False, width=100000
-                )
+                yaml.dump(benchmark_config, file, sort_keys=False, width=100000)
 
     logging.info("Total commands: {}".format(total_commands))
     total_tracked_commands = len(tracked_commands_json.keys())
