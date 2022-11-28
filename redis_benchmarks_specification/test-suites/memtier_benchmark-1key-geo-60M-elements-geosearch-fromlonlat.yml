@@ -1,8 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-geo-60M-elements-geosearch-fromlonlat
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO
-  key contains 60841557 elements in it and we query it using GEOSEARCH command that
-  replies with a very large (~100K ) number of elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEOSEARCH command that replies with a very large (~100K ) number of elements. '
 dbconfig:
 - configuration-parameters:
   - save: '""'
@@ -18,8 +16,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: -c 2 -t 2 --command="GEOSEARCH key FROMLONLAT 7.0 55.0 BYRADIUS 200 KM"  --hide-histogram
-    --test-time 180
+  arguments: -c 2 -t 2 --command="GEOSEARCH key FROMLONLAT 7.0 55.0 BYRADIUS 200 KM"  --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '4'

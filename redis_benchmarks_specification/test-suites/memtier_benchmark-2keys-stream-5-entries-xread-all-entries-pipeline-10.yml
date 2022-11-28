@@ -1,8 +1,6 @@
 version: 0.4
 name: memtier_benchmark-2keys-stream-5-entries-xread-all-entries-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 2 STREAM keys with
-  5 entries on each stream. We query both streams on the same command using XREAD
-  with range of all entries. '
+description: 'Runs memtier_benchmark, for a keyspace length of 2 STREAM keys with 5 entries on each stream. We query both streams on the same command using XREAD with range of all entries. '
 dbconfig:
 - configuration-parameters:
   - save: '""'
@@ -26,8 +24,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="XREAD STREAMS key-1 key-2 0 0"  --hide-histogram
-    --test-time 180
+  arguments: --pipeline 10 --command="XREAD STREAMS key-1 key-2 0 0"  --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '4'
@@ -43,3 +40,5 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- stream

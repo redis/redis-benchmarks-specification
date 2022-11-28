@@ -11,7 +11,8 @@ from redis_benchmarks_specification.__common__.env import (
     GH_TOKEN,
     GH_REDIS_SERVER_PORT,
     GH_REDIS_SERVER_AUTH,
-    GH_REDIS_SERVER_USER, SPECS_PATH_TEST_SUITES,
+    GH_REDIS_SERVER_USER,
+    SPECS_PATH_TEST_SUITES,
 )
 
 from redisbench_admin.run.common import get_start_time_vars
@@ -29,6 +30,8 @@ def spec_cli_args(parser):
     )
     parser.add_argument("--redis_host", type=str, default=GH_REDIS_SERVER_HOST)
     parser.add_argument("--branch", type=str, default="unstable")
+    parser.add_argument("--commandstats-csv", type=str, default="")
+    parser.add_argument("--summary-csv", type=str, default="")
     parser.add_argument("--commands-json-file", type=str, default="./commands.json")
     parser.add_argument("--groups-json-file", type=str, default="./groups.json")
     parser.add_argument(
@@ -36,6 +39,12 @@ def spec_cli_args(parser):
         default=False,
         action="store_true",
         help="Override test specs.",
+    )
+    parser.add_argument(
+        "--push-stats-redis",
+        default=False,
+        action="store_true",
+        help="Push test stats to redis.",
     )
     parser.add_argument("--tool", type=str, default="trigger")
     parser.add_argument("--gh_token", type=str, default=GH_TOKEN)

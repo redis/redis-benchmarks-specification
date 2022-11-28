@@ -1,7 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-zset-with-10-elements-double-score
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading ZSETs
-  with 10 elements.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading ZSETs with 10 elements.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -14,11 +13,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 180 -c 50 -t 4 --command "ZADD __key__ 0.306275 lysbgqqfqw
-    0.486004 mtccjerdon 0.941626 jekkafodvk 0.602656 nmgxcctxpn 0.630771 vyqqkuszzh
-    0.406379 pytrnqdhvs 0.521814 oguwnmniig 0.182854 gekntrykfh 0.657658 nhfnbxqgol
-    0.218066 cgoeihlnei" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000
-    --hide-histogram
+  arguments: --test-time 180 -c 50 -t 4 --command "ZADD __key__ 0.306275 lysbgqqfqw 0.486004 mtccjerdon 0.941626 jekkafodvk 0.602656 nmgxcctxpn 0.630771 vyqqkuszzh 0.406379 pytrnqdhvs 0.521814 oguwnmniig 0.182854 gekntrykfh 0.657658 nhfnbxqgol 0.218066 cgoeihlnei" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --hide-histogram
   resources:
     requests:
       cpus: '4'
@@ -34,3 +29,5 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- sorted-set

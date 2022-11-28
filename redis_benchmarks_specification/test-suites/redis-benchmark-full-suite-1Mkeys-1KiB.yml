@@ -1,8 +1,6 @@
 version: 0.4
 name: redis-benchmark-full-suite-1Mkeys-1KiB
-description: Runs the default redis-benchmark test suite, for a keyspace length of
-  1M keys with a data size of 1000 Bytes for each key. On total 50 concurrent connections
-  will be used, sending 1M requests.
+description: Runs the default redis-benchmark test suite, for a keyspace length of 1M keys with a data size of 1000 Bytes for each key. On total 50 concurrent connections will be used, sending 1M requests.
 dbconfig:
 - configuration-parameters:
   - save: '""'

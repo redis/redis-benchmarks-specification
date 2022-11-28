@@ -1,18 +1,16 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-100B-expire-use-case
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
-  size of 100 Bytes for each key, which 50% of the keys have expiration set during
-  the benchmark.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key, which 50% of the keys have expiration set during the benchmark.
 dbconfig:
   configuration-parameters:
     save: '""'
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--command" "SET __key__ __value__" "--command-key-pattern"
-      "P" "-c" "50" "-t" "2" "--hide-histogram"'
+    arguments: '"--data-size" "100" "--command" "SET __key__ __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
 tested-groups:
 - string
+- generic
 tested-commands:
 - set
 - setx
@@ -26,10 +24,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R"
-    --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__"
-    --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c
-    50 -t 2 --hide-histogram --test-time 300'
+  arguments: '"--data-size" "100" --command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
   resources:
     requests:
       cpus: '3'

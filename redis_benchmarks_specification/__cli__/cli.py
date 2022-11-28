@@ -19,7 +19,9 @@ from packaging import version
 
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
-from redis_benchmarks_specification.__cli__.stats import generate_stats_cli_command_logic
+from redis_benchmarks_specification.__cli__.stats import (
+    generate_stats_cli_command_logic,
+)
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
     request_build_from_commit_info,
