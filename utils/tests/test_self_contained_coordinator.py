@@ -31,6 +31,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
+from utils.tests.test_self_contained_coordinator_memtier import rdb_load_in_tests
 
 
 def test_extract_client_cpu_limit():
@@ -98,15 +99,10 @@ def test_self_contained_coordinator_blocking_read():
         if run_coordinator:
             conn = redis.StrictRedis(port=16379)
             conn.ping()
-            use_rdb = True
-            TST_RUNNER_USE_RDB = os.getenv("TST_RUNNER_USE_RDB", "1")
             build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
-            if TST_RUNNER_USE_RDB == "0":
-                use_rdb = False
-            if use_rdb:
-                conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
-            else:
+            use_rdb = rdb_load_in_tests(conn)
+            if use_rdb is False:
                 conn.flushall()
                 build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
                 if b"git_timestamp_ms" in reply_fields:
@@ -270,9 +266,6 @@ def test_self_contained_coordinator_blocking_read():
             assert len(datasink_conn.smembers(testcases_setname)) == 1
             assert len(datasink_conn.smembers(project_branches_setname)) == 1
             assert len(datasink_conn.smembers(project_versions_setname)) == 0
-            # ensure we don't change state on the rdb
-            if use_rdb:
-                conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
 
     except redis.exceptions.ConnectionError:
         pass
