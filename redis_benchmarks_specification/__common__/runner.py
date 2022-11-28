@@ -3,7 +3,7 @@ import os
 import pathlib
 
 
-def get_benchmark_specs(testsuites_folder, test):
+def get_benchmark_specs(testsuites_folder, test=""):
     if test == "":
         files = pathlib.Path(testsuites_folder).glob("*.yml")
         files = [str(x) for x in files]

@@ -1,7 +1,6 @@
 version: 0.4
-name: "memtier_benchmark-1Mkeys-string-get-100B-pipeline-10"
-description: "Runs memtier_benchmark, for a keyspace length of 1M keys
-              with a data size of 100 Bytes for each key."
+name: memtier_benchmark-1Mkeys-string-get-100B-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,29 +9,29 @@ dbconfig:
     tool: memtier_benchmark
     arguments: '"--data-size" "100" "--command" "SET __key__ __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
 tested-commands:
-  - GET
+- get
 redis-topologies:
-  - oss-standalone
-
+- oss-standalone
 build-variants:
-  - gcc:8.5.0-amd64-debian-buster-default
-
+- gcc:8.5.0-amd64-debian-buster-default
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: '"--pipeline" "10" "--data-size" "100" --command "GET __key__" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
   resources:
     requests:
-      cpus: "2"
-      memory: "2g"
+      cpus: '2'
+      memory: 2g
 exporter:
   redistimeseries:
     break_by:
-      - version
-      - commit
-    timemetric: '$."ALL STATS".Runtime."Start time"'
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
     metrics:
-      - '$."ALL STATS".Totals."Ops/sec"'
-      - '$."ALL STATS".Totals."Latency"'
-      - '$."ALL STATS".Totals."Misses/sec"'
-      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- string

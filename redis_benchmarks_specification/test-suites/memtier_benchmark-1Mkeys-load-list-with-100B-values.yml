@@ -1,36 +1,33 @@
 version: 0.4
-name: "memtier_benchmark-1Mkeys-load-list-with-100B-values"
-description: "Runs memtier_benchmark, for a keyspace length of 1M keys
-              loading LISTs in which the value has a data size of 100 Bytes."
+name: memtier_benchmark-1Mkeys-load-list-with-100B-values
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading LISTs in which the value has a data size of 100 Bytes.
 dbconfig:
   configuration-parameters:
     save: '""'
 tested-groups:
-  - list
+- list
 tested-commands:
-  - LPUSH
+- lpush
 redis-topologies:
-  - oss-standalone
-
+- oss-standalone
 build-variants:
-  - gcc:8.5.0-amd64-debian-buster-default
-
+- gcc:8.5.0-amd64-debian-buster-default
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: '"--data-size" "100" --command "LPUSH __key__ __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
-      cpus: "4"
-      memory: "2g"
+      cpus: '4'
+      memory: 2g
 exporter:
   redistimeseries:
     break_by:
-      - version
-      - commit
-    timemetric: '$."ALL STATS".Runtime."Start time"'
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
     metrics:
-      - '$."ALL STATS".Totals."Ops/sec"'
-      - '$."ALL STATS".Totals."Latency"'
-      - '$."ALL STATS".Totals."Misses/sec"'
-      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
