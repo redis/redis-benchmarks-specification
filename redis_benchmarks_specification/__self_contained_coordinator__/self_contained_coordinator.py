@@ -734,6 +734,18 @@ def process_self_contained_coordinator_stream(
                                             https_link
                                         )
                                     )
+                                    
+                                    # Delete all the perf artifacts, now that they are uploaded to S3. 
+                                    # The .script and .script.mainthread files are not part of the artifacts_matrix and thus have to be deleted separately
+                                    line = profilers_artifacts_matrix[0]
+                                    logging.info("Deleting perf file {}".format(line[3].split('.')[0] + ".out.script.mainthread"))
+                                    logging.info("Deleteing perf file {}".format(line[3].split('.')[0] + ".out.script"))
+                                    os.remove(line[3].split('.')[0] + ".out.script.mainthread")
+                                    os.remove(line[3].split('.')[0] + ".out.script")
+                                    for line in profilers_artifacts_matrix:
+                                        logging.info("Deleting perf file {}".format(line[3]))
+                                        os.remove(line[3])
+
 
                             datapoint_time_ms = start_time_ms
                             if (
