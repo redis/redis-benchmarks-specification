@@ -4,6 +4,7 @@ import redis
 import yaml
 
 from redis_benchmarks_specification.__common__.package import get_version_string
+from redis_benchmarks_specification.__common__.runner import extract_testsuites
 from redis_benchmarks_specification.__common__.spec import extract_client_tool
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 from redis_benchmarks_specification.__runner__.runner import (
@@ -208,3 +209,45 @@ def test_run_client_runner_logic():
     r = redis.Redis(host=db_host, port=db_port_int)
     total_keys = r.info("keyspace")["db0"]["keys"]
     assert total_keys == 10
+
+
+def test_extract_testsuites():
+    project_name = "tool"
+    project_version = "v0"
+    parser = argparse.ArgumentParser(
+        description="test",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser = create_client_runner_args(
+        get_version_string(project_name, project_version)
+    )
+    args = parser.parse_args(
+        args=[
+            "--test-suites-folder",
+            "./utils/tests/test_data/test-suites",
+        ]
+    )
+    tests = extract_testsuites(args)
+    assert len(tests) == 4
+
+    args = parser.parse_args(
+        args=[
+            "--test-suites-folder",
+            "./utils/tests/test_data/test-suites",
+            "--tests-regex",
+            ".*\.yml",
+        ]
+    )
+    tests = extract_testsuites(args)
+    assert len(tests) == 4
+
+    args = parser.parse_args(
+        args=[
+            "--test-suites-folder",
+            "./utils/tests/test_data/test-suites",
+            "--tests-regex",
+            ".*expire.*",
+        ]
+    )
+    tests = extract_testsuites(args)
+    assert len(tests) == 3

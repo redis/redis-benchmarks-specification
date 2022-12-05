@@ -85,6 +85,12 @@ def create_self_contained_coordinator_args(project_name):
         + " present in the folder specified in --test-suites-folder.",
     )
     parser.add_argument(
+        "--tests-regexp",
+        type=str,
+        default=".*",
+        help="Interpret PATTERN as a regular expression to filter test names",
+    )
+    parser.add_argument(
         "--datasink_redistimeseries_host", type=str, default=DATASINK_RTS_HOST
     )
     parser.add_argument(
