@@ -39,7 +39,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     logging.info("Using test-suites folder dir {}".format(testsuites_folder))
     testsuite_spec_files = get_benchmark_specs(testsuites_folder)
     logging.info(
-        "There are a total of {} test-suites in folder {}".format(
+        "There are a total of {} test-suites being run in folder {}".format(
             len(testsuite_spec_files), testsuites_folder
         )
     )
