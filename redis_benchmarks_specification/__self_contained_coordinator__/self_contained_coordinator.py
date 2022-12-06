@@ -455,6 +455,11 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir
                                 )
                             )
+                            logging.info(
+                                "Using local temporary dir to persist client output files. Path: {}".format(
+                                    temporary_dir_client
+                                )
+                            )
                             tf_github_org = "redis"
                             tf_github_repo = "redis"
                             setup_name = "oss-standalone"
@@ -730,6 +735,30 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
 
+                                    # Delete all the perf artifacts, now that they are uploaded to S3.
+                                    # The .script and .script.mainthread files are not part of the artifacts_matrix and thus have to be deleted separately
+                                    line = profilers_artifacts_matrix[0]
+                                    logging.info(
+                                        "Deleting perf file {}".format(
+                                            line[3].split(".")[0]
+                                            + ".out.script.mainthread"
+                                        )
+                                    )
+                                    os.remove(
+                                        line[3].split(".")[0] + ".out.script.mainthread"
+                                    )
+                                    logging.info(
+                                        "Deleteing perf file {}".format(
+                                            line[3].split(".")[0] + ".out.script"
+                                        )
+                                    )
+                                    os.remove(line[3].split(".")[0] + ".out.script")
+                                    for line in profilers_artifacts_matrix:
+                                        logging.info(
+                                            "Deleting perf file {}".format(line[3])
+                                        )
+                                        os.remove(line[3])
+
                             datapoint_time_ms = start_time_ms
                             if (
                                 use_git_timestamp is True
@@ -834,6 +863,12 @@ def process_self_contained_coordinator_stream(
                                     )
                                     pass
                         shutil.rmtree(temporary_dir, ignore_errors=True)
+                        shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                        logging.info(
+                            "Removing temporary dirs {} and {}".format(
+                                temporary_dir, temporary_dir_client
+                            )
+                        )
 
                         overall_result &= test_result
 

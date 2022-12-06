@@ -1,15 +1,17 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-string-get-100B-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key.
+name: memtier_benchmark-1key-zset-1M-elements-zcard-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements in it and we query it using ZCARD.'
 dbconfig:
   configuration-parameters:
     save: '""'
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--command" "SET __key__ __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
+    arguments: --key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern P --hide-histogram -t 4 -c 100
+tested-groups:
+- sorted-set
 tested-commands:
-- get
+- zcard
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -17,10 +19,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "10" "--data-size" "100" --command "GET __key__" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
+  arguments: --command="ZCARD lb"  --hide-histogram --test-time 180 --pipeline 10
   resources:
     requests:
-      cpus: '2'
+      cpus: '4'
       memory: 2g
 exporter:
   redistimeseries:
@@ -33,5 +35,3 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
-tested-groups:
-- string

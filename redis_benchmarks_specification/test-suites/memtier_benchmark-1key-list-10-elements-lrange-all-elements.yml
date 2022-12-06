@@ -1,40 +1,35 @@
 version: 0.4
-name: "memtier_benchmark-1key-list-10-elements-lrange-all-elements"
-description: "Runs memtier_benchmark, for a keyspace length of 1 LIST key.
-              The LIST contains 10 elements in it and we query it using LRANGE with a range of all elements.
-              "
-
+name: memtier_benchmark-1key-list-10-elements-lrange-all-elements
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10 elements in it and we query it using LRANGE with a range of all elements. '
 dbconfig:
-  - configuration-parameters:
-    - save: '""'
-  - init_commands:
-    - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+- configuration-parameters:
+  - save: '""'
+- init_commands:
+  - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
 tested-groups:
-  - list
+- list
 tested-commands:
-  - LRANGE
+- lrange
 redis-topologies:
-  - oss-standalone
-
+- oss-standalone
 build-variants:
-  - gcc:8.5.0-amd64-debian-buster-default
-
+- gcc:8.5.0-amd64-debian-buster-default
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command="LRANGE list:10 0 -1"  --hide-histogram --test-time 180'
+  arguments: --command="LRANGE list:10 0 -1"  --hide-histogram --test-time 180
   resources:
     requests:
-      cpus: "4"
-      memory: "2g"
+      cpus: '4'
+      memory: 2g
 exporter:
   redistimeseries:
     break_by:
-      - version
-      - commit
-    timemetric: '$."ALL STATS".Runtime."Start time"'
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
     metrics:
-      - '$."ALL STATS".Totals."Ops/sec"'
-      - '$."ALL STATS".Totals."Latency"'
-      - '$."ALL STATS".Totals."Misses/sec"'
-      - '$."ALL STATS".Totals."Percentile Latencies"."p50.00"'
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"

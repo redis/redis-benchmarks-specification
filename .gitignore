@@ -1,3 +1,7 @@
+# work files
+*.csv
+utils/tests/test_data/dump.rdb
+
 # mac
 
 .DS_Store
