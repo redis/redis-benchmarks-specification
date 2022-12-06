@@ -14,12 +14,16 @@ from docker.models.containers import Container
 from pytablewriter import CsvTableWriter, MarkdownTableWriter
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
-    local_profilers_platform_checks, profilers_start_if_required,
-    profilers_stop_if_required)
-from redisbench_admin.run.common import (execute_init_commands,
-                                         get_start_time_vars,
-                                         merge_default_and_config_metrics,
-                                         prepare_benchmark_parameters)
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
+)
+from redisbench_admin.run.common import (
+    execute_init_commands,
+    get_start_time_vars,
+    merge_default_and_config_metrics,
+    prepare_benchmark_parameters,
+)
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
@@ -28,16 +32,24 @@ from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
-    LOG_DATEFMT, LOG_FORMAT, LOG_LEVEL, REDIS_HEALTH_CHECK_INTERVAL,
-    REDIS_SOCKET_TIMEOUT, S3_BUCKET_NAME)
+    LOG_DATEFMT,
+    LOG_FORMAT,
+    LOG_LEVEL,
+    REDIS_HEALTH_CHECK_INTERVAL,
+    REDIS_SOCKET_TIMEOUT,
+    S3_BUCKET_NAME,
+)
 from redis_benchmarks_specification.__common__.package import (
-    get_version_string, populate_with_poetry_data)
+    get_version_string,
+    populate_with_poetry_data,
+)
 from redis_benchmarks_specification.__common__.runner import extract_testsuites
 from redis_benchmarks_specification.__common__.spec import (
-    extract_client_container_image, extract_client_cpu_limit,
-    extract_client_tool)
-from redis_benchmarks_specification.__runner__.args import \
-    create_client_runner_args
+    extract_client_container_image,
+    extract_client_cpu_limit,
+    extract_client_tool,
+)
+from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
 
 def main():
@@ -492,9 +504,7 @@ def process_self_contained_coordinator_stream(
                         full_result_path = "{}/{}".format(
                             temporary_dir_client, local_benchmark_output_filename
                         )
-                    logging.info(
-                        f"Reading results json from {full_result_path}"
-                    )
+                    logging.info(f"Reading results json from {full_result_path}")
 
                     with open(
                         full_result_path,
@@ -519,9 +529,7 @@ def process_self_contained_coordinator_stream(
 
                     dataset_load_duration_seconds = 0
 
-                    logging.info(
-                        f"Using datapoint_time_ms: {datapoint_time_ms}"
-                    )
+                    logging.info(f"Using datapoint_time_ms: {datapoint_time_ms}")
 
                     timeseries_test_sucess_flow(
                         datasink_push_results_redistimeseries,
@@ -615,9 +623,7 @@ def process_self_contained_coordinator_stream(
     if client_aggregated_results_folder != "":
         os.makedirs(client_aggregated_results_folder, exist_ok=True)
         dest_fpath = f"{client_aggregated_results_folder}/aggregate-results.csv"
-        logging.info(
-            f"Storing an aggregated results CSV into {full_result_path}"
-        )
+        logging.info(f"Storing an aggregated results CSV into {full_result_path}")
 
         csv_writer = CsvTableWriter(
             table_name=table_name,
