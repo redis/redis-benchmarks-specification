@@ -100,7 +100,6 @@ def test_commit_schema_to_stream_then_build_historical_redis():
                     conn,
                     "redis",
                     "redis",
-                    "./utils/tests/test_data/zip_caches/",
                 )
                 assert result == True
                 assert error_msg == None
