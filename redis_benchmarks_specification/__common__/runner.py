@@ -13,9 +13,7 @@ def get_benchmark_specs(testsuites_folder, test="", test_regex=".*"):
             logging.info(
                 "Acception all test files. If you need further filter specify a regular expression via --tests-regexp"
             )
-            "Running all specified benchmarks: {}".format(
-                " ".join([str(x) for x in files])
-            )
+            "Running all specified benchmarks: {}".format(" ".join(original_files))
             final_files = original_files
         else:
             logging.info(
