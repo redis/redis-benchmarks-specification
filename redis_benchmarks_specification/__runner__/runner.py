@@ -2,71 +2,55 @@ import datetime
 import json
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import traceback
 from pathlib import Path
-import shutil
 
-from redisbench_admin.profilers.profilers_local import (
-    check_compatible_system_and_kernel_and_prepare_profile,
-    profilers_start_if_required,
-    local_profilers_platform_checks,
-    profilers_stop_if_required,
-)
 import docker
 import redis
 from docker.models.containers import Container
-from pytablewriter import MarkdownTableWriter
-from pytablewriter import CsvTableWriter
-
-from redisbench_admin.run.common import (
-    get_start_time_vars,
-    prepare_benchmark_parameters,
-    execute_init_commands,
-    merge_default_and_config_metrics,
-)
+from pytablewriter import CsvTableWriter, MarkdownTableWriter
+from redisbench_admin.profilers.profilers_local import (
+    check_compatible_system_and_kernel_and_prepare_profile,
+    local_profilers_platform_checks, profilers_start_if_required,
+    profilers_stop_if_required)
+from redisbench_admin.run.common import (execute_init_commands,
+                                         get_start_time_vars,
+                                         merge_default_and_config_metrics,
+                                         prepare_benchmark_parameters)
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
-from redisbench_admin.utils.benchmark_config import (
-    get_final_benchmark_config,
-)
+from redisbench_admin.utils.benchmark_config import get_final_benchmark_config
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
-    LOG_FORMAT,
-    LOG_DATEFMT,
-    LOG_LEVEL,
-    REDIS_HEALTH_CHECK_INTERVAL,
-    REDIS_SOCKET_TIMEOUT,
-    S3_BUCKET_NAME,
-)
+    LOG_DATEFMT, LOG_FORMAT, LOG_LEVEL, REDIS_HEALTH_CHECK_INTERVAL,
+    REDIS_SOCKET_TIMEOUT, S3_BUCKET_NAME)
 from redis_benchmarks_specification.__common__.package import (
-    get_version_string,
-    populate_with_poetry_data,
-)
+    get_version_string, populate_with_poetry_data)
 from redis_benchmarks_specification.__common__.runner import extract_testsuites
 from redis_benchmarks_specification.__common__.spec import (
-    extract_client_cpu_limit,
-    extract_client_container_image,
-    extract_client_tool,
-)
-from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+    extract_client_container_image, extract_client_cpu_limit,
+    extract_client_tool)
+from redis_benchmarks_specification.__runner__.args import \
+    create_client_runner_args
 
 
 def main():
     _, _, project_version = populate_with_poetry_data()
     project_name_suffix = "redis-benchmarks-spec-client-runner"
-    project_name = "{} (solely client)".format(project_name_suffix)
+    project_name = f"{project_name_suffix} (solely client)"
     parser = create_client_runner_args(
         get_version_string(project_name, project_version)
     )
     args = parser.parse_args()
 
     if args.logname is not None:
-        print("Writting log to {}".format(args.logname))
+        print(f"Writting log to {args.logname}")
         logging.basicConfig(
             filename=args.logname,
             filemode="a",
@@ -111,7 +95,7 @@ def main():
                     args.datasink_redistimeseries_port,
                 )
             )
-            logging.error("Error message {}".format(e.__str__()))
+            logging.error(f"Error message {e.__str__()}")
             exit(1)
 
     running_platform = args.platform_name
@@ -120,6 +104,7 @@ def main():
     tls_cert = args.cert
     tls_key = args.key
     tls_cacert = args.cacert
+    resp_version = args.resp
     client_aggregated_results_folder = args.client_aggregated_results_folder
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
     docker_client = docker.from_env()
@@ -159,6 +144,7 @@ def main():
         tls_cacert,
         client_aggregated_results_folder,
         preserve_temporary_client_dirs,
+        resp_version,
     )
 
 
@@ -174,13 +160,14 @@ def prepare_memtier_benchmark_parameters(
     tls_cert=None,
     tls_key=None,
     tls_cacert=None,
+    resp_version=None,
 ):
     benchmark_command = [
         full_benchmark_path,
         "--port",
-        "{}".format(port),
+        f"{port}",
         "--server",
-        "{}".format(server),
+        f"{server}",
         "--json-out-file",
         local_benchmark_output_filename,
     ]
@@ -194,6 +181,14 @@ def prepare_memtier_benchmark_parameters(
             benchmark_command.extend(["--cacert", tls_cacert])
         if tls_skip_verify:
             benchmark_command.append("--tls-skip-verify")
+
+    if resp_version:
+        tool = clientconfig["tool"]
+        if tool == "memtier_benchmark":
+            benchmark_command.extend(["--resp", resp_version])
+        elif tool == "redis-benchmark":
+            if resp_version == "3":
+                benchmark_command.append("-3")
 
     if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
@@ -223,6 +218,7 @@ def process_self_contained_coordinator_stream(
     tls_cacert=None,
     client_aggregated_results_folder="",
     preserve_temporary_client_dirs=False,
+    resp_version=None,
 ):
     overall_result = True
     results_matrix = []
@@ -246,6 +242,7 @@ def process_self_contained_coordinator_stream(
 
             for topology_spec_name in benchmark_config["redis-topologies"]:
                 test_result = False
+                benchmark_tool_global = ""
                 try:
                     current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)
@@ -281,7 +278,7 @@ def process_self_contained_coordinator_stream(
                     redis_pids.append(first_redis_pid)
 
                     setup_name = "oss-standalone"
-                    github_actor = "{}-{}".format(tf_triggering_env, running_platform)
+                    github_actor = f"{tf_triggering_env}-{running_platform}"
                     dso = "redis-server"
                     profilers_artifacts_matrix = []
 
@@ -345,6 +342,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_cert,
                             test_tls_key,
                             test_tls_cacert,
+                            resp_version,
                         )
 
                     execute_init_commands(
@@ -352,10 +350,11 @@ def process_self_contained_coordinator_stream(
                     )
 
                     benchmark_tool = extract_client_tool(benchmark_config)
+                    benchmark_tool_global = benchmark_tool
                     # backwards compatible
                     if benchmark_tool is None:
                         benchmark_tool = "redis-benchmark"
-                    full_benchmark_path = "/usr/local/bin/{}".format(benchmark_tool)
+                    full_benchmark_path = f"/usr/local/bin/{benchmark_tool}"
 
                     # setup the benchmark
                     (
@@ -405,6 +404,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_cert,
                             test_tls_key,
                             test_tls_cacert,
+                            resp_version,
                         )
 
                     client_container_image = extract_client_container_image(
@@ -493,7 +493,7 @@ def process_self_contained_coordinator_stream(
                             temporary_dir_client, local_benchmark_output_filename
                         )
                     logging.info(
-                        "Reading results json from {}".format(full_result_path)
+                        f"Reading results json from {full_result_path}"
                     )
 
                     with open(
@@ -520,7 +520,7 @@ def process_self_contained_coordinator_stream(
                     dataset_load_duration_seconds = 0
 
                     logging.info(
-                        "Using datapoint_time_ms: {}".format(datapoint_time_ms)
+                        f"Using datapoint_time_ms: {datapoint_time_ms}"
                     )
 
                     timeseries_test_sucess_flow(
@@ -588,17 +588,15 @@ def process_self_contained_coordinator_stream(
 
                 if preserve_temporary_client_dirs is True:
                     logging.info(
-                        "Preserving temporary client dir {}".format(
-                            temporary_dir_client
-                        )
+                        f"Preserving temporary client dir {temporary_dir_client}"
                     )
                 else:
-                    if "redis-benchmark" in benchmark_tool:
+                    if "redis-benchmark" in benchmark_tool_global:
                         os.remove(full_result_path)
                         logging.info("Removing temporary JSON file")
                     shutil.rmtree(temporary_dir_client, ignore_errors=True)
                     logging.info(
-                        "Removing temporary client dir {}".format(temporary_dir_client)
+                        f"Removing temporary client dir {temporary_dir_client}"
                     )
 
     table_name = "Results for entire test-suite"
@@ -616,12 +614,9 @@ def process_self_contained_coordinator_stream(
 
     if client_aggregated_results_folder != "":
         os.makedirs(client_aggregated_results_folder, exist_ok=True)
-        dest_fpath = "{}/{}".format(
-            client_aggregated_results_folder,
-            "aggregate-results.csv",
-        )
+        dest_fpath = f"{client_aggregated_results_folder}/aggregate-results.csv"
         logging.info(
-            "Storing an aggregated results CSV into {}".format(full_result_path)
+            f"Storing an aggregated results CSV into {full_result_path}"
         )
 
         csv_writer = CsvTableWriter(
@@ -634,12 +629,10 @@ def process_self_contained_coordinator_stream(
 
 def cp_to_workdir(benchmark_tool_workdir, srcfile):
     head, filename = os.path.split(srcfile)
-    dstfile = "{}/{}".format(benchmark_tool_workdir, filename)
+    dstfile = f"{benchmark_tool_workdir}/{filename}"
     shutil.copyfile(srcfile, dstfile)
     logging.info(
-        "Copying to workdir the following file {}. Final workdir file {}".format(
-            srcfile, dstfile
-        )
+        f"Copying to workdir the following file {srcfile}. Final workdir file {dstfile}"
     )
     return dstfile, filename
 
@@ -658,14 +651,14 @@ def print_results_table_stdout(
         default_metrics,
         None,
     )
-    table_name = "Results for {} test-case on {} topology".format(test_name, setup_name)
+    table_name = f"Results for {test_name} test-case on {setup_name} topology"
     results_matrix_headers = [
         "Metric JSON Path",
         "Metric Value",
     ]
     results_matrix = extract_results_table(metrics, results_dict)
 
-    results_matrix = [[x[0], "{:.3f}".format(x[3])] for x in results_matrix]
+    results_matrix = [[x[0], f"{x[3]:.3f}"] for x in results_matrix]
     writer = MarkdownTableWriter(
         table_name=table_name,
         headers=results_matrix_headers,
@@ -685,7 +678,7 @@ def prepare_overall_total_test_results(
     )
     current_test_results_matrix = extract_results_table(metrics, results_dict)
     current_test_results_matrix = [
-        [test_name, x[0], "{:.3f}".format(x[3])] for x in current_test_results_matrix
+        [test_name, x[0], f"{x[3]:.3f}"] for x in current_test_results_matrix
     ]
     overall_results_matrix.extend(current_test_results_matrix)
 
@@ -705,6 +698,7 @@ def data_prepopulation_step(
     tls_cert=None,
     tls_key=None,
     tls_cacert=None,
+    resp_version=None,
 ):
     # setup the benchmark
     (
@@ -722,7 +716,7 @@ def data_prepopulation_step(
         benchmark_config["dbconfig"], "preload_tool"
     )
     preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
-    full_benchmark_path = "/usr/local/bin/{}".format(preload_tool)
+    full_benchmark_path = f"/usr/local/bin/{preload_tool}"
     client_mnt_point = "/mnt/client/"
     if "memtier_benchmark" in preload_tool:
         (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
@@ -737,6 +731,7 @@ def data_prepopulation_step(
             tls_cert,
             tls_key,
             tls_cacert,
+            resp_version,
         )
 
         logging.info(

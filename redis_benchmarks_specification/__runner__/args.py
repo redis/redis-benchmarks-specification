@@ -1,18 +1,9 @@
 import argparse
 
 from redis_benchmarks_specification.__common__.env import (
-    SPECS_PATH_TEST_SUITES,
-    DATASINK_RTS_HOST,
-    DATASINK_RTS_PORT,
-    DATASINK_RTS_AUTH,
-    DATASINK_RTS_USER,
-    DATASINK_RTS_PUSH,
-    MACHINE_NAME,
-    PROFILERS_ENABLED,
-    PROFILERS,
-    PROFILERS_DEFAULT,
-    ALLOWED_PROFILERS,
-)
+    ALLOWED_PROFILERS, DATASINK_RTS_AUTH, DATASINK_RTS_HOST, DATASINK_RTS_PORT,
+    DATASINK_RTS_PUSH, DATASINK_RTS_USER, MACHINE_NAME, PROFILERS,
+    PROFILERS_DEFAULT, PROFILERS_ENABLED, SPECS_PATH_TEST_SUITES)
 
 
 def create_client_runner_args(project_name):
@@ -74,8 +65,8 @@ def create_client_runner_args(project_name):
         default=PROFILERS_ENABLED,
         action="store_true",
         help="Enable Identifying On-CPU and Off-CPU Time using perf/ebpf/vtune tooling. "
-        + "By default the chosen profilers are {}".format(PROFILERS_DEFAULT)
-        + "Full list of profilers: {}".format(ALLOWED_PROFILERS)
+        + f"By default the chosen profilers are {PROFILERS_DEFAULT}"
+        + f"Full list of profilers: {ALLOWED_PROFILERS}"
         + "Only available on x86 Linux platform and kernel version >= 4.9",
     )
 
@@ -129,5 +120,10 @@ def create_client_runner_args(project_name):
         "--cacert",
         default="",
         help="Use specified CA certs bundle for TLS",
+    )
+    parser.add_argument(
+        "--resp",
+        default="2",
+        help="Set up RESP protocol version",
     )
     return parser
