@@ -41,7 +41,12 @@ def commit_schema_to_stream(
             binary_key,
             binary_value,
         ) = get_commit_dict_from_sha(
-            fields["git_hash"], gh_org, gh_repo, fields, use_git_timestamp, gh_token
+            fields["git_hash"],
+            gh_org,
+            gh_repo,
+            fields,
+            use_git_timestamp,
+            gh_token,
         )
         reply_fields["use_git_timestamp"] = fields["use_git_timestamp"]
         if "git_timestamp_ms" in fields:
@@ -66,6 +71,7 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
         gh_org, gh_repo, git_hash
     )
     try:
+        logging.info("Fetching data from {}".format(github_url))
         response = urlopen(github_url, timeout=5)
         content = response.read()
         fields["zip_archive_key"] = bin_key
@@ -78,6 +84,7 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
         )
         logging.error(error_msg)
         result = False
+
     return result, bin_key, binary_value, error_msg
 
 
@@ -107,7 +114,10 @@ def get_commit_dict_from_sha(
         commit_dict["git_branch"] = gh_branch
 
     result, binary_key, binary_value, error_msg = get_archive_zip_from_hash(
-        gh_org, gh_repo, git_hash, commit_dict
+        gh_org,
+        gh_repo,
+        git_hash,
+        commit_dict,
     )
     return result, error_msg, commit_dict, commit, binary_key, binary_value
 

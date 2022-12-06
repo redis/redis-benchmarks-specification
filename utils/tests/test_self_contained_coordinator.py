@@ -31,7 +31,6 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
-from utils.tests.test_self_contained_coordinator_memtier import rdb_load_in_tests
 
 
 def test_extract_client_cpu_limit():
@@ -99,22 +98,15 @@ def test_self_contained_coordinator_blocking_read():
         if run_coordinator:
             conn = redis.StrictRedis(port=16379)
             conn.ping()
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
-            use_rdb = rdb_load_in_tests(conn)
-            if use_rdb is False:
-                conn.flushall()
-                build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                if b"git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(
-                        reply_fields[b"git_timestamp_ms"].decode()
-                    )
-                if b"git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(
-                        reply_fields[b"git_timestamp_ms"].decode()
-                    )
-                if "git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
+            conn.flushall()
+            build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
+            if b"git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields[b"git_timestamp_ms"].decode())
+            if b"git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields[b"git_timestamp_ms"].decode())
+            if "git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0

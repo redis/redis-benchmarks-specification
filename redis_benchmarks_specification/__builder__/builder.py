@@ -329,11 +329,13 @@ def builder_process_stream(
                     bin_artifact = open(
                         "{}src/{}".format(redis_temporary_dir, artifact), "rb"
                     ).read()
+                    bin_artifact_len = len(bytes(bin_artifact))
+                    assert bin_artifact_len > 0
                     conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
                     build_stream_fields[artifact] = bin_key
-                    build_stream_fields["{}_len_bytes".format(artifact)] = len(
-                        bytes(bin_artifact)
-                    )
+                    build_stream_fields[
+                        "{}_len_bytes".format(artifact)
+                    ] = bin_artifact_len
                 result = True
                 if result is True:
                     stream_id = conn.xadd(

@@ -38,7 +38,7 @@ jobs:
 
     - name: Run tox
       run: |
-        TST_RUNNER_USE_RDB=0 tox
+        tox
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v2
