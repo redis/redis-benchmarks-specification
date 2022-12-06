@@ -167,7 +167,7 @@ def test_run_client_runner_logic():
     args = parser.parse_args(
         args=[
             "--test",
-            "../../utils/tests/test_data/test-suites/memtier_benchmark-10keys-100B-expire-use-case-with-variant.yml",
+            "../../utils/tests/test_data/test-suites/memtier_benchmark-2keys-stream-5-entries-xread-all-entries.yml",
             "--db_server_host",
             "{}".format(db_host),
             "--db_server_port",
@@ -182,13 +182,13 @@ def test_run_client_runner_logic():
 
     r = redis.Redis(host=db_host, port=db_port_int)
     total_keys = r.info("keyspace")["db0"]["keys"]
-    assert total_keys == 10
+    assert total_keys == 2
 
     # run while pushing to redistimeseries
     args = parser.parse_args(
         args=[
             "--test",
-            "../../utils/tests/test_data/test-suites/memtier_benchmark-10keys-100B-expire-use-case-with-variant.yml",
+            "../../utils/tests/test_data/test-suites/memtier_benchmark-2keys-stream-5-entries-xread-all-entries.yml",
             "--datasink_push_results_redistimeseries",
             "--datasink_redistimeseries_host",
             "{}".format(db_host),
@@ -208,7 +208,10 @@ def test_run_client_runner_logic():
 
     r = redis.Redis(host=db_host, port=db_port_int)
     total_keys = r.info("keyspace")["db0"]["keys"]
-    assert total_keys == 10
+    assert total_keys == 2
+    rts = redis.Redis(host=db_host, port=db_port_int)
+    total_keys = rts.info("keyspace")["db0"]["keys"]
+    assert total_keys > 0
 
 
 def test_extract_testsuites():
@@ -250,4 +253,4 @@ def test_extract_testsuites():
         ]
     )
     tests = extract_testsuites(args)
-    assert len(tests) == 3
+    assert len(tests) == 2
