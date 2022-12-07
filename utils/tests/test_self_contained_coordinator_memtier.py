@@ -37,18 +37,13 @@ def test_self_contained_coordinator_blocking_read():
         if run_coordinator:
             conn = redis.StrictRedis(port=16379)
             conn.ping()
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
-            use_rdb = rdb_load_in_tests(conn)
-            if use_rdb is False:
-                conn.flushall()
-                build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                if b"git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(
-                        reply_fields[b"git_timestamp_ms"].decode()
-                    )
-                if "git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
+            conn.flushall()
+            build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
+            if b"git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields[b"git_timestamp_ms"].decode())
+            if "git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
@@ -195,23 +190,6 @@ def test_self_contained_coordinator_blocking_read():
         pass
 
 
-def rdb_load_in_tests(conn):
-    use_rdb = True
-    TST_RUNNER_USE_RDB = os.getenv("TST_RUNNER_USE_RDB", "1")
-    if TST_RUNNER_USE_RDB == "0":
-        use_rdb = False
-    if use_rdb:
-        try:
-            conn.execute_command("DEBUG", "RELOAD", "NOSAVE")
-        except redis.exceptions.ResponseError as e:
-            if "DEBUG command not allowed" in e.__str__():
-                use_rdb = False
-                pass
-            else:
-                raise e
-    return use_rdb
-
-
 def test_self_contained_coordinator_skip_build_variant():
     try:
         run_coordinator = True
@@ -223,16 +201,12 @@ def test_self_contained_coordinator_skip_build_variant():
             conn.ping()
             build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
-            use_rdb = rdb_load_in_tests(conn)
-            if use_rdb is False:
-                conn.flushall()
-                build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
-                if b"git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(
-                        reply_fields[b"git_timestamp_ms"].decode()
-                    )
-                if "git_timestamp_ms" in reply_fields:
-                    expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
+            conn.flushall()
+            build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
+            if b"git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields[b"git_timestamp_ms"].decode())
+            if "git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
