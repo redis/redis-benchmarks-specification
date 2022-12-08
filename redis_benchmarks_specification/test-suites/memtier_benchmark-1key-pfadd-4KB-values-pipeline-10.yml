@@ -32,6 +32,3 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
-~
-~
-
