@@ -1,0 +1,39 @@
+name: Validate SPEC fields
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  pytest:
+    name: Validate SPEC fields
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+    steps:
+    - uses: actions/checkout@master
+
+    - name: Set up Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: '3.10'
+
+    - uses: docker-practice/actions-setup-docker@master
+
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install Dev requirements
+      run: |
+        pip install -U setuptools wheel
+        pip install -r dev_requirements.txt
+
+    - name: Install Dependencies
+      run: |
+        poetry install
+
+    - name: Validate SPEC fields
+      run: |
+        poetry run redis-benchmarks-spec-cli --tool stats --fail-on-required-diff
