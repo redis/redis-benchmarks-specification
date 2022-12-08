@@ -41,6 +41,12 @@ def spec_cli_args(parser):
         help="Override test specs.",
     )
     parser.add_argument(
+        "--fail-on-required-diff",
+        default=False,
+        action="store_true",
+        help="Fail tool when there is difference between required parameters.",
+    )
+    parser.add_argument(
         "--push-stats-redis",
         default=False,
         action="store_true",

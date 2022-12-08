@@ -44,11 +44,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         )
     )
     tracked_groups = []
+    override_enabled = args.override_tests
+    fail_on_required_diff = args.fail_on_required_diff
+    overall_result = True
     for test_file in testsuite_spec_files:
         benchmark_config = {}
         requires_override = False
-        override_enabled = args.override_tests
+        test_result = True
         with open(test_file, "r") as stream:
+
             try:
                 benchmark_config = yaml.safe_load(stream)
                 test_name = benchmark_config["name"]
@@ -126,7 +130,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         test_file, e.__str__()
                     )
                 )
+                test_result = False
                 pass
+
+        if requires_override:
+            test_result = False
+        overall_result &= test_result
 
         if requires_override and override_enabled:
             logging.info(
@@ -145,6 +154,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     logging.info("Total groups: {}".format(total_groups))
     total_tracked_groups = len(tracked_groups)
     logging.info("Total tracked groups: {}".format(total_tracked_groups))
+
+    if overall_result is False and fail_on_required_diff:
+        logging.error(
+            "Failing given there were changes required to be made and --fail-on-required-diff was enabled"
+        )
+        exit(1)
 
     if args.commandstats_csv != "":
         logging.info(
