@@ -35,6 +35,5 @@ jobs:
         poetry install
 
     - name: Validate SPEC fields
-      if: github.event_name == 'release'
       run: |
         poetry run redis-benchmarks-spec-cli --tool stats --fail-on-required-diff
