@@ -24,10 +24,11 @@ redis-benchmarks-specificaiton should be run together with redis-server in the s
 ./src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
 
 # Run benchmark
-redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test1 --test memtier_benchmark-1key-list-100-elements-lrange-all-elements.yml
+redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test
 ```
 
-Option --daemonize yes allows to run redis-server in background
+Option "--daemonize yes" given to server run command allows to run redis-server in background.
+Option "--test X.yml" given to benchmark execution command allows to run particular test, where X - test name
 
 
 ## Benchmark specifications goal
