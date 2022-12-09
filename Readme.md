@@ -16,6 +16,19 @@ Installation is done using pip, the package installer for Python, in the followi
 python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
 ```
 
+## Execution
+redis-benchmarks-specificaiton should be run together with redis-server in the same time.
+
+```bash
+# Run redis server
+./src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
+
+# Run benchmark
+redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test1 --test memtier_benchmark-1key-list-100-elements-lrange-all-elements.yml
+```
+
+Option --daemonize yes allows to run redis-server in background
+
 
 ## Benchmark specifications goal
 
@@ -62,6 +75,11 @@ Installation is done using pip, the package installer for Python, in the followi
 
 ```bash
 python3 -m pip install redis-benchmarks-specification
+```
+
+To run particular version - use its number, e.g. 0.1.57:
+```bash
+pip3 install redis-benchmarks-specification==0.1.57
 ```
 
 ## Architecture diagram
