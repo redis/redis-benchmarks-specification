@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-1key-pfadd-4KB-values-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 HyperLogLog key. Continuously add 4KB sized random elements using the PFADD command.'
+dbconfig:
+- configuration-parameters:
+  - save: '""'
+- dataset:
+tested-groups:
+- hyperloglog
+tested-commands:
+- pfadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 -c 2 -t 2 --command="PFADD hll  __data__" -R --data-size=4096   --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
