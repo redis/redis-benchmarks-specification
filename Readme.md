@@ -5,6 +5,31 @@
 [![CI tests](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml/badge.svg)](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox.yml)
 [![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://pypi.org/project/redis-benchmarks-specification)
 
+<!-- toc -->
+
+- [Benchmark specifications goal](#benchmark-specifications-goal)
+- [Scope](#scope)
+- [Architecture diagram](#architecture-diagram)
+- [Directory layout](#directory-layout)
+  - [Specifications](#specifications)
+  - [Spec tool implementations](#spec-tool-implementations)
+- [Contributing guidelines](#contributing-guidelines)
+  - [Joining the performance initiative and adding a continuous benchmark platform](#joining-the-performance-initiative-and-adding-a-continuous-benchmark-platform)
+    - [Joining the performance initiative](#joining-the-performance-initiative)
+    - [Adding a continuous benchmark platform](#adding-a-continuous-benchmark-platform)
+      - [Installing package requirements](#installing-package-requirements)
+      - [Installing Redis benchmarks specification](#installing-redis-benchmarks-specification-implementations)
+      - [Testing out the redis-benchmarks-spec-runner](#testing-out-the-redis-benchmarks-spec-runner)
+      - [Testing out redis-benchmarks-spec-sc-coordinator](#testing-out-redis-benchmarks-spec-sc-coordinator)
+      - [Adding redis-benchmarks-spec-sc-coordinator to supervisord](#adding-redis-benchmarks-spec-sc-coordinator-to-supervisord)
+- [Development](#development)
+  - [Running formaters](#running-formaters)
+  - [Running linters](#running-linters)
+  - [Running tests](#running-tests)
+- [License](#license)
+
+<!-- tocstop -->
+
 
 ## Benchmark specifications goal
 
