@@ -6,31 +6,6 @@
 [![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://pypi.org/project/redis-benchmarks-specification)
 
 
-## Installation
-
-To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.
-
-Installation is done using pip, the package installer for Python, in the following manner:
-
-```bash
-python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
-```
-
-## Execution
-redis-benchmarks-specificaiton should be run together with redis-server in the same time.
-
-```bash
-# Run redis server
-./src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
-
-# Run benchmark
-redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test
-```
-
-Option "--daemonize yes" given to server run command allows to run redis-server in background.<br />
-Option "--test X.yml" given to benchmark execution command allows to run particular test, where X - test name
-
-
 ## Benchmark specifications goal
 
 The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. 
@@ -67,21 +42,6 @@ Current supported benchmark tools:
 - [memtier_benchmark](https://github.com/RedisLabs/memtier_benchmark)
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
 
-
-## Installing Redis benchmarks specification implementations
-
-The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.
-
-Installation is done using pip, the package installer for Python, in the following manner:
-
-```bash
-python3 -m pip install redis-benchmarks-specification
-```
-
-To run particular version - use its number, e.g. 0.1.57:
-```bash
-pip3 install redis-benchmarks-specification==0.1.57
-```
 
 ## Architecture diagram
 
@@ -165,6 +125,70 @@ sudo apt install supervisor -y
 python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
 ```
 
+
+##### Installing Redis benchmarks specification implementations
+
+To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.<br />
+Installation is done using pip, the package installer for Python, in the following manner:
+
+```bash
+python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
+```
+
+To run particular version - use its number, e.g. 0.1.57:
+```bash
+pip3 install redis-benchmarks-specification==0.1.57
+```
+
+
+##### Testing out the redis-benchmarks-spec-runner
+
+There is am option to run "redis-benchmarks-spec" tests using standalone runner approach. For this option redis-benchmarks-specificaiton should be run together with redis-server in the same time.
+
+```bash
+# Run redis server
+./src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
+
+# Run benchmark
+redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test
+```
+
+Option "--daemonize yes" given to server run command allows to run redis-server in background.<br />
+Option "--test X.yml" given to benchmark execution command allows to run particular test, where X - test name
+
+Full list of option can be taken with "-h" option:
+```
+$ redis-benchmarks-spec-client-runner -h
+  usage: redis-benchmarks-spec-client-runner [-h]
+                                             [--platform-name PLATFORM_NAME]
+                                             [--triggering_env TRIGGERING_ENV]
+                                             [--setup_type SETUP_TYPE]
+                                             [--github_repo GITHUB_REPO]
+                                             [--github_org GITHUB_ORG]
+                                             [--github_version GITHUB_VERSION]
+                                             [--logname LOGNAME]
+                                             [--test-suites-folder TEST_SUITES_FOLDER]
+                                             [--test TEST]
+                                             [--db_server_host DB_SERVER_HOST]
+                                             [--db_server_port DB_SERVER_PORT]
+                                             [--cpuset_start_pos CPUSET_START_POS]
+                                             [--datasink_redistimeseries_host DATASINK_REDISTIMESERIES_HOST]
+                                             [--datasink_redistimeseries_port DATASINK_REDISTIMESERIES_PORT]
+                                             [--datasink_redistimeseries_pass DATASINK_REDISTIMESERIES_PASS]
+                                             [--datasink_redistimeseries_user DATASINK_REDISTIMESERIES_USER]
+                                             [--datasink_push_results_redistimeseries] [--profilers PROFILERS]
+                                             [--enable-profilers] [--flushall_on_every_test_start]
+                                             [--flushall_on_every_test_end]
+                                             [--preserve_temporary_client_dirs]
+                                             [--client_aggregated_results_folder CLIENT_AGGREGATED_RESULTS_FOLDER]
+                                             [--tls]
+                                             [--tls-skip-verify]
+                                             [--cert CERT]
+                                             [--key KEY]
+                                             [--cacert CACERT]
+  redis-benchmarks-spec-client-runner (solely client) 0.1.61
+  ...
+```
 
 ##### Testing out redis-benchmarks-spec-sc-coordinator
 
