@@ -145,13 +145,10 @@ sudo apt install docker.io -y
 
 # install supervisord 
 sudo apt install supervisor -y
-
-# install benchmark specs
-python3 -m pip install redis-benchmarks-specification --ignore-installed PyYAML
 ```
 
 
-##### Installing Redis benchmarks specification implementations
+##### Installing Redis benchmarks specification
 
 To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.<br />
 Installation is done using pip, the package installer for Python, in the following manner:
