@@ -196,7 +196,8 @@ def prepare_memtier_benchmark_parameters(
     if resp_version:
         tool = clientconfig["tool"]
         if tool == "memtier_benchmark":
-            benchmark_command.extend(["--resp", resp_version])
+            if resp_version == "3":
+                benchmark_command.extend(["--protocol", "resp{}".format(resp_version)])
         elif tool == "redis-benchmark":
             if resp_version == "3":
                 benchmark_command.append("-3")

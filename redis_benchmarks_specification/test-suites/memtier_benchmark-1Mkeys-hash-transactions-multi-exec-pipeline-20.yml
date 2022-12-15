@@ -1,0 +1,39 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-hash-transactions-multi-exec-pipeline-20
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key, focusing on the MULTI EXEC scenario.
+tested-groups:
+- transactions
+- hash
+tested-commands:
+- multi
+- exec
+- hsetnx
+- hexists
+- hget
+- hdel
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+dbconfig:
+  configuration-parameters:
+    save: '""'
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "100" --command=MULTI --command-key-pattern=S --command="HSETNX __key__ __key__ __data__" --command-key-pattern=S --command="HEXISTS __key__ __key__" --command-key-pattern=S  --command="HGET __key__ __key__" --command-key-pattern=S --command="HDEL __key__ __key__"  --command-key-pattern=S --command=EXEC --command-key-pattern=S --pipeline=20 -c 50 -t 2 --hide-histogram --test-time 300'
+  resources:
+    requests:
+      cpus: '3'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
