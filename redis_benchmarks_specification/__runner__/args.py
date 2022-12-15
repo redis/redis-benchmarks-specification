@@ -104,6 +104,12 @@ def create_client_runner_args(project_name):
         help="Preserve the temporary client dirs",
     )
     parser.add_argument(
+        "--run-tests-with-dataset",
+        default=False,
+        action="store_true",
+        help="Run tests that contain a dbconfig with dataset",
+    )
+    parser.add_argument(
         "--client_aggregated_results_folder",
         type=str,
         default="",
@@ -140,5 +146,11 @@ def create_client_runner_args(project_name):
         "--resp",
         default="2",
         help="Set up RESP protocol version",
+    )
+    parser.add_argument(
+        "--override-memtier-test-time",
+        default=0,
+        type=int,
+        help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
     )
     return parser

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+import re
 
 import docker
 import redis
@@ -121,6 +122,7 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     resp_version = args.resp
     client_aggregated_results_folder = args.client_aggregated_results_folder
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
+    override_memtier_test_time = args.override_memtier_test_time
     docker_client = docker.from_env()
     home = str(Path.home())
     profilers_list = []
@@ -135,6 +137,12 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
                 )
             )
             exit(1)
+    if override_memtier_test_time > 0:
+        logging.info(
+            "Overriding memtier benchmark --test-time to {} seconds".format(
+                override_memtier_test_time
+            )
+        )
     logging.info("Running the benchmark specs.")
     process_self_contained_coordinator_stream(
         args,
@@ -156,6 +164,7 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
         client_aggregated_results_folder,
         preserve_temporary_client_dirs,
         resp_version,
+        override_memtier_test_time,
     )
 
 
@@ -172,6 +181,7 @@ def prepare_memtier_benchmark_parameters(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
+    override_memtier_test_time=0,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -207,6 +217,22 @@ def prepare_memtier_benchmark_parameters(
     benchmark_command_str = " ".join(benchmark_command)
     if "arguments" in clientconfig:
         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
+    if override_memtier_test_time > 0:
+        benchmark_command_str = re.sub(
+            "--test-time\\s\\d+",
+            "--test-time={}".format(override_memtier_test_time),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            "--test-time=\\d+",
+            "--test-time={}".format(override_memtier_test_time),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            '--test-time="\\d+"',
+            "--test-time={}".format(override_memtier_test_time),
+            benchmark_command_str,
+        )
 
     return None, benchmark_command_str
 
@@ -231,6 +257,7 @@ def process_self_contained_coordinator_stream(
     client_aggregated_results_folder="",
     preserve_temporary_client_dirs=False,
     resp_version=None,
+    override_memtier_test_time=0,
 ):
     overall_result = True
     results_matrix = []
@@ -338,6 +365,15 @@ def process_self_contained_coordinator_stream(
                                 temporary_dir_client, tls_key
                             )
 
+                    if "dataset" in benchmark_config["dbconfig"]:
+                        if args.run_tests_with_dataset is False:
+                            logging.warning(
+                                "Skipping test {} giving it implies dataset preload".format(
+                                    test_name
+                                )
+                            )
+                            continue
+
                     if "preload_tool" in benchmark_config["dbconfig"]:
                         data_prepopulation_step(
                             benchmark_config,
@@ -417,6 +453,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
+                            override_memtier_test_time,
                         )
 
                     client_container_image = extract_client_container_image(

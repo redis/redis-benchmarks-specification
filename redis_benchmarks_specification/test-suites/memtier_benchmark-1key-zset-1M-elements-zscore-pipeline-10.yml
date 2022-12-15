@@ -1,14 +1,17 @@
 version: 0.4
-name: memtier_benchmark-1key-geo-60M-elements-geohash-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEOHASH command. '
+name: memtier_benchmark-1key-zset-1M-elements-zscore-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements in it and we query it using ZCARD.'
 dbconfig:
   configuration-parameters:
     save: '""'
-  dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern P --hide-histogram -t 4 -c 100
 tested-groups:
-- geo
+- sorted-set
 tested-commands:
-- geohash
+- zscore
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -16,7 +19,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 -c 2 -t 2 --command="GEOHASH key 1"  --hide-histogram --test-time 180
+  arguments: --command="zscore lb __key__" --key-prefix "" --hide-histogram --test-time 180 --pipeline 10
   resources:
     requests:
       cpus: '4'

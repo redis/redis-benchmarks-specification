@@ -115,6 +115,7 @@ def process_self_contained_coordinator_stream(
     redis_proc_start_port=6379,
     docker_air_gap=False,
     verbose=False,
+    run_tests_with_dataset=False,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -219,6 +220,14 @@ def process_self_contained_coordinator_stream(
                                 build_artifacts, conn, temporary_dir, testDetails
                             )
 
+                            if "dataset" in benchmark_config["dbconfig"]:
+                                if run_tests_with_dataset is False:
+                                    logging.warning(
+                                        "Skipping test {} giving it implies dataset preload".format(
+                                            test_name
+                                        )
+                                    )
+                                    continue
                             logging.info("Checking if there is a dataset requirement")
                             (
                                 dataset,

@@ -2,9 +2,9 @@ version: 0.4
 name: memtier_benchmark-1key-geo-60M-elements-geopos-pipeline-10
 description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEOPOS command. '
 dbconfig:
-- configuration-parameters:
-  - save: '""'
-- dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
+  configuration-parameters:
+    save: '""'
+  dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
 tested-groups:
 - geo
 tested-commands:

@@ -1,14 +1,16 @@
 version: 0.4
-name: memtier_benchmark-1key-geo-60M-elements-geohash-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEOHASH command. '
+name: memtier_benchmark-1Mkeys-string-mget-1KiB
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 1000 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
-  dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
-tested-groups:
-- geo
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET __key__ __data__"  --command-key-pattern P --hide-histogram -t 2 -c 100
+
 tested-commands:
-- geohash
+- mget
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -16,10 +18,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 -c 2 -t 2 --command="GEOHASH key 1"  --hide-histogram --test-time 180
+  arguments: '--key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2 --hide-histogram --test-time 180'
   resources:
     requests:
-      cpus: '4'
+      cpus: '2'
       memory: 2g
 exporter:
   redistimeseries:
@@ -32,3 +34,5 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- string

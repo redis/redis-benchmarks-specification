@@ -41,6 +41,9 @@ def spec_cli_args(parser):
     )
     parser.add_argument("--summary-csv", type=str, default="")
     parser.add_argument("--commands-json-file", type=str, default="./commands.json")
+    parser.add_argument(
+        "--commands-priority-file", type=str, default="./commands-priority.json"
+    )
     parser.add_argument("--groups-json-file", type=str, default="./groups.json")
     parser.add_argument(
         "--override-tests",

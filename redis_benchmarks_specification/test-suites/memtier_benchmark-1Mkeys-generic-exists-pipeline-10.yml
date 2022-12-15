@@ -1,17 +1,17 @@
 version: 0.4
-name: memtier_benchmark-1key-zrevrangebyscore-256K-elements-pipeline-1
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 256K elements of 1KB each and we query it using ZREVRANGEBYSCORE.'
+name: memtier_benchmark-1Mkeys-generic-exists-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on EXISTS performance. 50% of the EXIST commands will be on non-existing keys.
 dbconfig:
   configuration-parameters:
     save: '""'
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="ZADD key1 __key__  __data__" --command-key-pattern=P --key-maximum 262144 --key-prefix "" -R --data-size=1024 -n 262144 --hide-histogram -t 1 -c 1
-tested-groups:
-- sorted-set
+    arguments: '"--data-size" "100" "--command" "HSET __key__ field __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
 tested-commands:
-- zrevrangebyscore
+- exists
+tested-groups:
+- generic
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -19,10 +19,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZREVRANGEBYSCORE key1 262144 1 WITHSCORES LIMIT 1 10" --hide-histogram --test-time 180 --pipeline 1
+  arguments: '--key-minimum=1 --key-maximum 2000000 --command "EXISTS __key__" --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
   resources:
     requests:
-      cpus: '4'
+      cpus: '2'
       memory: 2g
 exporter:
   redistimeseries:
@@ -35,3 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+

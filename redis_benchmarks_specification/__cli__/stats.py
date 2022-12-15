@@ -48,6 +48,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     override_enabled = args.override_tests
     fail_on_required_diff = args.fail_on_required_diff
     overall_result = True
+    test_names = []
     for test_file in testsuite_spec_files:
         benchmark_config = {}
         requires_override = False
@@ -57,6 +58,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             try:
                 benchmark_config = yaml.safe_load(stream)
                 test_name = benchmark_config["name"]
+                if test_name in test_names:
+                    logging.error(
+                        "Duplicate testname detected! {} is already present in {}".format(
+                            test_name, test_names
+                        )
+                    )
+                    test_result = False
+
+                test_names.append(test_name)
                 group = ""
                 is_memtier = False
                 if "memtier" in test_name:
@@ -146,21 +156,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             )
             with open(test_file, "w") as file:
                 yaml.dump(benchmark_config, file, sort_keys=False, width=100000)
-
-    logging.info("Total commands: {}".format(total_commands))
-    total_tracked_commands = len(tracked_commands_json.keys())
-    logging.info("Total tracked commands: {}".format(total_tracked_commands))
-
-    total_groups = len(groups_json.keys())
-    logging.info("Total groups: {}".format(total_groups))
-    total_tracked_groups = len(tracked_groups)
-    logging.info("Total tracked groups: {}".format(total_tracked_groups))
-
-    if overall_result is False and fail_on_required_diff:
-        logging.error(
-            "Failing given there were changes required to be made and --fail-on-required-diff was enabled"
-        )
-        exit(1)
+    total_tracked_commands_pct = "n/a"
 
     if args.commandstats_csv != "":
         logging.info(
@@ -171,8 +167,11 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         from csv import reader
 
         rows = []
+        priority = {}
 
         # open file in read mode
+        total_count = 0
+        total_tracked_count = 0
         with open(
             args.commandstats_csv, "r", encoding="utf8", errors="ignore"
         ) as read_obj:
@@ -201,14 +200,52 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     if "deprecated_since" in command_json:
                         deprecated = True
 
+                if module is False or include_modules:
+                    priority[cmd.lower()] = count
+
                 if cmdstat in tracked_commands_json:
                     tracked = True
                 if module is False or include_modules:
                     row = [cmdstat, group, count, tracked, deprecated]
                     rows.append(row)
 
+        priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
+
+        priority_json = {}
+        top_10_missing = []
+        top_30_missing = []
+        top_50_missing = []
+        # first pass on count
+        for x in priority_list:
+            count = x[0]
+            total_count += count
+
+        for pos, x in enumerate(priority_list, 1):
+            count = x[0]
+            cmd = x[1]
+            priority_json[cmd] = pos
+            pct = count / total_count
+            if cmd not in tracked_commands_json:
+                if pos <= 10:
+                    top_10_missing.append(cmd)
+                if pos <= 30:
+                    top_30_missing.append(cmd)
+                if pos <= 50:
+                    top_50_missing.append(cmd)
+            else:
+                total_tracked_count += count
+
+        if args.commands_priority_file != "":
+            with open(args.commands_priority_file, "w") as fd:
+                logging.info(
+                    "Updating {} file with priority by commandstats".format(
+                        args.commands_priority_file
+                    )
+                )
+                json.dump(priority_json, fd, indent=True)
+
         if args.summary_csv != "":
-            header = ["command", "group", "count", "tracked", "deprecated"]
+            header = ["command", "group", "count", "tracked", "deprecated", "%"]
             import csv
 
             with open(args.summary_csv, "w", encoding="UTF8", newline="") as f:
@@ -218,7 +255,47 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 writer.writerow(header)
                 for row in rows:
                     # write the data
+                    count = row[2]
+                    pct = count / total_count
+                    row.append(pct)
                     writer.writerow(row)
+
+    if total_tracked_count > 0:
+        total_tracked_commands_pct = "{0:.3g} %".format(
+            total_tracked_count / total_count * 100.0
+        )
+
+    logging.info("Total commands: {}".format(total_commands))
+    total_tracked_commands = len(tracked_commands_json.keys())
+    logging.info("Total tracked commands: {}".format(total_tracked_commands))
+    logging.info("Total tracked commands pct: {}".format(total_tracked_commands_pct))
+    all_groups = groups_json.keys()
+    total_groups = len(all_groups)
+    logging.info("Total groups: {}".format(total_groups))
+    total_tracked_groups = len(tracked_groups)
+    logging.info("Total tracked groups: {}".format(total_tracked_groups))
+    logging.info(
+        "Total untracked groups: {}".format(total_groups - total_tracked_groups)
+    )
+    logging.info("Printing untracked groups:")
+    for group_name in all_groups:
+        if group_name not in tracked_groups:
+            logging.info("                         - {}".format(group_name))
+    logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
+    logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
+    if len(top_30_missing) > 0:
+        logging.info("\t\tTotal missing for Top 30: {}".format(len(top_30_missing)))
+
+    logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
+    if len(top_50_missing) > 0:
+        logging.info("\t\tTotal missing for Top 50: {}".format(len(top_50_missing)))
+
+    if overall_result is False and fail_on_required_diff:
+        logging.error(
+            "Failing given there were changes required to be made and --fail-on-required-diff was enabled"
+        )
+        exit(1)
+
     if args.push_stats_redis:
         logging.info(
             "Pushing stats to redis at: {}:{}".format(args.redis_host, args.redis_port)
