@@ -1,0 +1,37 @@
+version: 0.4
+name: memtier_benchmark-1key-100MB-string-bitfield
+description: Runs memtier_benchmark, for a keyspace length of 1 key with a data size of 100MB for the key. The motivation for BITFIELD is to be able to pack many small integers in a large bitmat. Perform GET, SET and INCRBY using the BITFIELD command with random bit offsets. Since the bit offsets may be up to and including 100000000, some operations may result in enlarging the string (which is OK). 
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 100000000 -n 1 --command "SET key1 __data__" -c 1 -t 1 --hide-histogram
+tested-commands:
+- bitfield
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BITFIELD key1 INCRBY i5 __key__ 1 GET u4 __key__ SET i8 __key__ 1" --key-maximum 100000000 --command-key-pattern="R" --key-prefix "" -c 2 -t 2 --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- bitmap
