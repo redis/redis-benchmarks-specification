@@ -187,7 +187,6 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 count = int(row[1])
                 if count == 0:
                     continue
-                total_count += count
                 tracked = False
                 module = False
                 cmd = cmdstat.upper()
@@ -201,7 +200,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     if "deprecated_since" in command_json:
                         deprecated = True
 
-                if module is False:
+                if module is False or include_modules:
                     priority[cmd.lower()] = count
 
                 if cmdstat in tracked_commands_json:
@@ -216,11 +215,16 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         top_10_missing = []
         top_30_missing = []
         top_50_missing = []
+        # first pass on count
+        for x in priority_list:
+            count = x[0]
+            total_count += count
+
         for pos, x in enumerate(priority_list, 1):
             count = x[0]
             cmd = x[1]
-            total_count += count
             priority_json[cmd] = pos
+            pct = count / total_count
             if cmd not in tracked_commands_json:
                 if pos <= 10:
                     top_10_missing.append(cmd)

@@ -1,0 +1,33 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-load-hash-hmset-5-fields-with-1000B-values
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HASHES with 5 fields each. Each field value has a data size of 1000 Bytes.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+tested-groups:
+- hash
+tested-commands:
+- hmset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 "--data-size" "1000" --command "HMSET __key__ field1 __data__ field2 __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"

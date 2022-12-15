@@ -1,0 +1,38 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-mget-1KiB
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 1000 Bytes for each key.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET __key__ __data__"  --command-key-pattern P --hide-histogram -t 2 -c 100
+
+tested-commands:
+- mget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2 --hide-histogram --test-time 180'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+tested-groups:
+- string
