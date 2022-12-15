@@ -9,6 +9,11 @@
 
 - [Benchmark specifications goal](#benchmark-specifications-goal)
 - [Scope](#scope)
+- [Installation and Execution](#installation-and-execution)
+  - [Installing package requirements](#installing-package-requirements)
+  - [Installing Redis benchmarks specification](#installing-redis-benchmarks-specification-implementations)
+  - [Testing out the redis-benchmarks-spec-runner](#testing-out-the-redis-benchmarks-spec-runner)
+  - [Testing out redis-benchmarks-spec-sc-coordinator](#testing-out-redis-benchmarks-spec-sc-coordinator)
 - [Architecture diagram](#architecture-diagram)
 - [Directory layout](#directory-layout)
   - [Specifications](#specifications)
@@ -17,10 +22,6 @@
   - [Joining the performance initiative and adding a continuous benchmark platform](#joining-the-performance-initiative-and-adding-a-continuous-benchmark-platform)
     - [Joining the performance initiative](#joining-the-performance-initiative)
     - [Adding a continuous benchmark platform](#adding-a-continuous-benchmark-platform)
-      - [Installing package requirements](#installing-package-requirements)
-      - [Installing Redis benchmarks specification](#installing-redis-benchmarks-specification-implementations)
-      - [Testing out the redis-benchmarks-spec-runner](#testing-out-the-redis-benchmarks-spec-runner)
-      - [Testing out redis-benchmarks-spec-sc-coordinator](#testing-out-redis-benchmarks-spec-sc-coordinator)
       - [Adding redis-benchmarks-spec-sc-coordinator to supervisord](#adding-redis-benchmarks-spec-sc-coordinator-to-supervisord)
 - [Development](#development)
   - [Running formaters](#running-formaters)
@@ -68,72 +69,13 @@ Current supported benchmark tools:
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
 
 
-## Architecture diagram
+## Installation and Execution
 
-![Architecture diagram](./arch-diagram.png)
+The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.
+To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.<br />
+Before package's installation, please install its' dependencies.
 
-In a very brief description, github.com/redis/redis upstream changes trigger an HTTP API call containing the
-relevant git information. 
-
-The HTTP request is then converted into an event ( tracked within redis ) that will trigger multiple build variants requests based upon the distinct platforms described in [`platforms`](redis_benchmarks_specification/setups/platforms/). 
-
-As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) 
-prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
-## Directory layout
-
-### Specifications 
-
-  The following is a high level status report for currently available specs.
-
-* `redis_benchmarks_specification`
-  * [`test-suites`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/test-suites/): contains the benchmark suites definitions, specifying the target redis topology, the tested commands, the benchmark utility to use (the client), and if required the preloading dataset steps.
-  
-* `redis_benchmarks_specification/setups`
-  * [`platforms`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/platforms/): contains the standard platforms considered to provide steady stable results, and to represent common deployment targets.
-  * [`topologies`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/topologies/): contains the standard deployment topologies definition with the associated minimum specs to enable the topology definition.
-  * [`builders`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/builders/): contains the build environment variations, that enable to build Redis with different compilers, compiler flags, libraries, etc...
-
-### Spec tool implementations
-
-  The following is a high level status report for currently available spec implementations.
-
-* **STATUS: Experimental** [`redis-benchmarks-spec-api`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__api__/) : contains the API that translates the POST HTTP request that was triggered by github.com/redis/redis upstream changes, and fetches the relevant git/source info and coverts it into an event ( tracked within redis ).
-
-* **STATUS: Experimental** [`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/): contains the benchmark build agent utility that receives an event indicating a new build variant, generates the required redis binaries to test, and triggers the benchmark run on the listening agents.
-
-* **STATUS: Experimental** [`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/): contains the coordinator utility that listens for benchmark suite run requests and setups the required steps to spin the actual benchmark topologies and to trigger the actual benchmarks.
-
-* **STATUS: Experimental** [`redis-benchmarks-spec-client-runner`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__runner__/): contains the client utility that triggers the actual benchmarks against an endpoint provided. This tool is setup agnostic and expects the DB to be properly spinned beforehand.
-
-## Contributing guidelines
-
-### Adding new test suites
-
-TBD
-
-### Adding new topologies
-
-TBD
-
-### Joining the performance initiative and adding a continuous benchmark platform
-
-#### Joining the performance initiative 
-In order to join the performance initiative the only requirement is that you provide a steady-stable infrastructure 
-platform to run the benchmark suites, and you reach out to one of the Redis Performance Initiative member via 
-`performance <at> redis <dot> com` so that we can provide you with the required secrets to actively listen for benchmark events.
-
-If you check the above "Architecture diagram", this means you only need to run the last moving part of the arch, meaning you will have
-one or more benchmark coordinator machines actively running benchmarks and pushing the results back to our datasink.
-
-#### Adding a continuous benchmark platform
-
-In order to be able to run the benchmarks on the platform you need pip installer for python3, and docker.
-Apart from it, we recommend you manage the `redis-benchmarks-spec-sc-coordinator` process(es) state via a process monitoring tool like 
-supervisorctl, lauchd, daemon tools, or other. 
-
-For this example we relly uppon `supervisorctl` for process managing.
-
-##### Installing package requirements
+### Installing package requirements
 
 ```bash
 # install pip installer for python3
@@ -148,9 +90,8 @@ sudo apt install supervisor -y
 ```
 
 
-##### Installing Redis benchmarks specification
+### Installing Redis benchmarks specification
 
-To have access to the latest SPEC and Tooling impletamtion you only need to install one python package.<br />
 Installation is done using pip, the package installer for Python, in the following manner:
 
 ```bash
@@ -163,9 +104,9 @@ pip3 install redis-benchmarks-specification==0.1.57
 ```
 
 
-##### Testing out the redis-benchmarks-spec-runner
+### Testing out the redis-benchmarks-spec-client-runner
 
-There is am option to run "redis-benchmarks-spec" tests using standalone runner approach. For this option redis-benchmarks-specificaiton should be run together with redis-server in the same time.
+There is an option to run "redis-benchmarks-spec" tests using standalone runner approach. For this option redis-benchmarks-specificaiton should be run together with redis-server in the same time.
 
 ```bash
 # Run redis server
@@ -212,7 +153,9 @@ $ redis-benchmarks-spec-client-runner -h
   ...
 ```
 
-##### Testing out redis-benchmarks-spec-sc-coordinator
+### Testing out redis-benchmarks-spec-sc-coordinator
+
+Alternative way of running redis-server for listeting is running via redis-benchmarks coordinator.
 
 You should now be able to print the following installed benchmark runner help:
 
@@ -301,6 +244,74 @@ $ poetry run redis-benchmarks-spec-sc-coordinator --platform-name example-platfo
 ```
 
 You're now actively listening for benchmarks requests to Redis!
+
+
+
+## Architecture diagram
+
+![Architecture diagram](./arch-diagram.png)
+
+In a very brief description, github.com/redis/redis upstream changes trigger an HTTP API call containing the
+relevant git information. 
+
+The HTTP request is then converted into an event ( tracked within redis ) that will trigger multiple build variants requests based upon the distinct platforms described in [`platforms`](redis_benchmarks_specification/setups/platforms/). 
+
+As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) 
+prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
+## Directory layout
+
+### Specifications 
+
+  The following is a high level status report for currently available specs.
+
+* `redis_benchmarks_specification`
+  * [`test-suites`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/test-suites/): contains the benchmark suites definitions, specifying the target redis topology, the tested commands, the benchmark utility to use (the client), and if required the preloading dataset steps.
+  
+* `redis_benchmarks_specification/setups`
+  * [`platforms`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/platforms/): contains the standard platforms considered to provide steady stable results, and to represent common deployment targets.
+  * [`topologies`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/topologies/): contains the standard deployment topologies definition with the associated minimum specs to enable the topology definition.
+  * [`builders`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/setups/builders/): contains the build environment variations, that enable to build Redis with different compilers, compiler flags, libraries, etc...
+
+### Spec tool implementations
+
+  The following is a high level status report for currently available spec implementations.
+
+* **STATUS: Experimental** [`redis-benchmarks-spec-api`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__api__/) : contains the API that translates the POST HTTP request that was triggered by github.com/redis/redis upstream changes, and fetches the relevant git/source info and coverts it into an event ( tracked within redis ).
+
+* **STATUS: Experimental** [`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/): contains the benchmark build agent utility that receives an event indicating a new build variant, generates the required redis binaries to test, and triggers the benchmark run on the listening agents.
+
+* **STATUS: Experimental** [`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/): contains the coordinator utility that listens for benchmark suite run requests and setups the required steps to spin the actual benchmark topologies and to trigger the actual benchmarks.
+
+* **STATUS: Experimental** [`redis-benchmarks-spec-client-runner`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__runner__/): contains the client utility that triggers the actual benchmarks against an endpoint provided. This tool is setup agnostic and expects the DB to be properly spinned beforehand.
+
+## Contributing guidelines
+
+### Adding new test suites
+
+TBD
+
+### Adding new topologies
+
+TBD
+
+### Joining the performance initiative and adding a continuous benchmark platform
+
+#### Joining the performance initiative 
+In order to join the performance initiative the only requirement is that you provide a steady-stable infrastructure 
+platform to run the benchmark suites, and you reach out to one of the Redis Performance Initiative member via 
+`performance <at> redis <dot> com` so that we can provide you with the required secrets to actively listen for benchmark events.
+
+If you check the above "Architecture diagram", this means you only need to run the last moving part of the arch, meaning you will have
+one or more benchmark coordinator machines actively running benchmarks and pushing the results back to our datasink.
+
+#### Adding a continuous benchmark platform
+
+In order to be able to run the benchmarks on the platform you need pip installer for python3, and docker.
+Apart from it, we recommend you manage the `redis-benchmarks-spec-sc-coordinator` process(es) state via a process monitoring tool like 
+supervisorctl, lauchd, daemon tools, or other. 
+
+For this example we relly uppon `supervisorctl` for process managing.
+
 
 ##### Adding redis-benchmarks-spec-sc-coordinator to supervisord
 
