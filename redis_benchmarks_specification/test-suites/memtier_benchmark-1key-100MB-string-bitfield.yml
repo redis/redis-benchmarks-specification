@@ -9,7 +9,7 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --data-size 100000000 -n 1 --command "SET key1 __data__" -c 1 -t 1 --hide-histogram
 tested-commands:
-- get
+- bitfield
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -34,4 +34,4 @@ exporter:
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
 tested-groups:
-- string
+- bitmap
