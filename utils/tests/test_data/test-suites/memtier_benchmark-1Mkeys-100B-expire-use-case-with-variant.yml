@@ -8,7 +8,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--command" "SETEX __key__ 360 __value__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram"'
+    arguments: '"--command" "SETEX __key__ 360 __data__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram"'
 tested-commands:
   - SET
   - SETX
@@ -21,7 +21,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command "SETEX __key__ 10 __value__" --command-key-pattern="R" --command "SET __key__ __value__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 5 -t 1 --hide-histogram --test-time 10'
+  arguments: '--command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 5 -t 1 --hide-histogram --test-time 10'
   resources:
     requests:
       cpus: "1"
