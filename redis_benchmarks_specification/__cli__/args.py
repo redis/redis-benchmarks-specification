@@ -19,6 +19,8 @@ from redisbench_admin.run.common import get_start_time_vars
 
 START_TIME_NOW_UTC, _, _ = get_start_time_vars()
 START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=7)
+CLI_TOOL_STATS = "stats"
+CLI_TOOL_TRIGGER = "trigger"
 
 
 def spec_cli_args(parser):
@@ -31,6 +33,12 @@ def spec_cli_args(parser):
     parser.add_argument("--redis_host", type=str, default=GH_REDIS_SERVER_HOST)
     parser.add_argument("--branch", type=str, default="unstable")
     parser.add_argument("--commandstats-csv", type=str, default="")
+    parser.add_argument(
+        "--commandstats-csv-include-modules",
+        default=False,
+        action="store_true",
+        help="Include modules statistics on commandstats.",
+    )
     parser.add_argument("--summary-csv", type=str, default="")
     parser.add_argument("--commands-json-file", type=str, default="./commands.json")
     parser.add_argument("--groups-json-file", type=str, default="./groups.json")
@@ -52,7 +60,14 @@ def spec_cli_args(parser):
         action="store_true",
         help="Push test stats to redis.",
     )
-    parser.add_argument("--tool", type=str, default="trigger")
+    parser.add_argument(
+        "--tool",
+        type=str,
+        default=CLI_TOOL_TRIGGER,
+        help="subtool to use. One of '{}' ".format(
+            ",".join([CLI_TOOL_STATS, CLI_TOOL_TRIGGER])
+        ),
+    )
     parser.add_argument("--gh_token", type=str, default=GH_TOKEN)
     parser.add_argument("--redis_port", type=int, default=GH_REDIS_SERVER_PORT)
     parser.add_argument("--redis_pass", type=str, default=GH_REDIS_SERVER_AUTH)

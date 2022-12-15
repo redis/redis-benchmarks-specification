@@ -22,6 +22,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         )
     )
     commands_json_file = os.path.abspath(args.commands_json_file)
+    include_modules = args.commandstats_csv_include_modules
     logging.info("Reading commands.json file from {}".format(commands_json_file))
     commands_json = {}
     tracked_commands_json = {}
@@ -202,7 +203,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
                 if cmdstat in tracked_commands_json:
                     tracked = True
-                if module is False:
+                if module is False or include_modules:
                     row = [cmdstat, group, count, tracked, deprecated]
                     rows.append(row)
 
