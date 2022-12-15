@@ -156,29 +156,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             )
             with open(test_file, "w") as file:
                 yaml.dump(benchmark_config, file, sort_keys=False, width=100000)
-
-    logging.info("Total commands: {}".format(total_commands))
-    total_tracked_commands = len(tracked_commands_json.keys())
-    logging.info("Total tracked commands: {}".format(total_tracked_commands))
-
-    all_groups = groups_json.keys()
-    total_groups = len(all_groups)
-    logging.info("Total groups: {}".format(total_groups))
-    total_tracked_groups = len(tracked_groups)
-    logging.info("Total tracked groups: {}".format(total_tracked_groups))
-    logging.info(
-        "Total untracked groups: {}".format(total_groups - total_tracked_groups)
-    )
-    logging.info("Printing untracked groups:")
-    for group_name in all_groups:
-        if group_name not in tracked_groups:
-            logging.info("                         - {}".format(group_name))
-
-    if overall_result is False and fail_on_required_diff:
-        logging.error(
-            "Failing given there were changes required to be made and --fail-on-required-diff was enabled"
-        )
-        exit(1)
+    total_tracked_commands_pct = "n/a"
 
     if args.commandstats_csv != "":
         logging.info(
@@ -223,7 +201,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         deprecated = True
 
                 if module is False:
-                    priority[cmd] = count
+                    priority[cmd.lower()] = count
 
                 if cmdstat in tracked_commands_json:
                     tracked = True
@@ -234,11 +212,21 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
 
         priority_json = {}
+        top_10_missing = []
+        top_30_missing = []
+        top_50_missing = []
         for pos, x in enumerate(priority_list, 1):
             count = x[0]
             cmd = x[1]
             total_count += count
             priority_json[cmd] = pos
+            if cmd not in tracked_commands_json:
+                if pos <= 10:
+                    top_10_missing.append(cmd)
+                if pos <= 30:
+                    top_30_missing.append(cmd)
+                if pos <= 50:
+                    top_50_missing.append(cmd)
 
         if args.commands_priority_file != "":
             with open(args.commands_priority_file, "w") as fd:
@@ -264,6 +252,38 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     pct = count / total_count
                     row.append(pct)
                     writer.writerow(row)
+
+    logging.info("Total commands: {}".format(total_commands))
+    total_tracked_commands = len(tracked_commands_json.keys())
+    logging.info("Total tracked commands: {}".format(total_tracked_commands))
+
+    all_groups = groups_json.keys()
+    total_groups = len(all_groups)
+    logging.info("Total groups: {}".format(total_groups))
+    total_tracked_groups = len(tracked_groups)
+    logging.info("Total tracked groups: {}".format(total_tracked_groups))
+    logging.info(
+        "Total untracked groups: {}".format(total_groups - total_tracked_groups)
+    )
+    logging.info("Printing untracked groups:")
+    for group_name in all_groups:
+        if group_name not in tracked_groups:
+            logging.info("                         - {}".format(group_name))
+    logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
+    logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
+    if len(top_30_missing) > 0:
+        logging.info("\t\tTotal missing for Top 30: {}".format(len(top_30_missing)))
+
+    logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
+    if len(top_50_missing) > 0:
+        logging.info("\t\tTotal missing for Top 50: {}".format(len(top_50_missing)))
+
+    if overall_result is False and fail_on_required_diff:
+        logging.error(
+            "Failing given there were changes required to be made and --fail-on-required-diff was enabled"
+        )
+        exit(1)
+
     if args.push_stats_redis:
         logging.info(
             "Pushing stats to redis at: {}:{}".format(args.redis_host, args.redis_port)
