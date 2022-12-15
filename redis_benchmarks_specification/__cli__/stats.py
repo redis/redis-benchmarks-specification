@@ -48,6 +48,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     override_enabled = args.override_tests
     fail_on_required_diff = args.fail_on_required_diff
     overall_result = True
+    test_names = []
     for test_file in testsuite_spec_files:
         benchmark_config = {}
         requires_override = False
@@ -57,6 +58,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             try:
                 benchmark_config = yaml.safe_load(stream)
                 test_name = benchmark_config["name"]
+                if test_name in test_names:
+                    logging.error(
+                        "Duplicate testname detected! {} is already present in {}".format(
+                            test_name, test_names
+                        )
+                    )
+                    test_result = False
+
+                test_names.append(test_name)
                 group = ""
                 is_memtier = False
                 if "memtier" in test_name:
@@ -151,10 +161,18 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     total_tracked_commands = len(tracked_commands_json.keys())
     logging.info("Total tracked commands: {}".format(total_tracked_commands))
 
-    total_groups = len(groups_json.keys())
+    all_groups = groups_json.keys()
+    total_groups = len(all_groups)
     logging.info("Total groups: {}".format(total_groups))
     total_tracked_groups = len(tracked_groups)
     logging.info("Total tracked groups: {}".format(total_tracked_groups))
+    logging.info(
+        "Total untracked groups: {}".format(total_groups - total_tracked_groups)
+    )
+    logging.info("Printing untracked groups:")
+    for group_name in all_groups:
+        if group_name not in tracked_groups:
+            logging.info("                         - {}".format(group_name))
 
     if overall_result is False and fail_on_required_diff:
         logging.error(
@@ -171,8 +189,10 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         from csv import reader
 
         rows = []
+        priority = {}
 
         # open file in read mode
+        total_count = 0
         with open(
             args.commandstats_csv, "r", encoding="utf8", errors="ignore"
         ) as read_obj:
@@ -188,6 +208,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 count = int(row[1])
                 if count == 0:
                     continue
+                total_count += count
                 tracked = False
                 module = False
                 cmd = cmdstat.upper()
@@ -201,14 +222,35 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     if "deprecated_since" in command_json:
                         deprecated = True
 
+                if module is False:
+                    priority[cmd] = count
+
                 if cmdstat in tracked_commands_json:
                     tracked = True
                 if module is False or include_modules:
                     row = [cmdstat, group, count, tracked, deprecated]
                     rows.append(row)
 
+        priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
+
+        priority_json = {}
+        for pos, x in enumerate(priority_list, 1):
+            count = x[0]
+            cmd = x[1]
+            total_count += count
+            priority_json[cmd] = pos
+
+        if args.commands_priority_file != "":
+            with open(args.commands_priority_file, "w") as fd:
+                logging.info(
+                    "Updating {} file with priority by commandstats".format(
+                        args.commands_priority_file
+                    )
+                )
+                json.dump(priority_json, fd, indent=True)
+
         if args.summary_csv != "":
-            header = ["command", "group", "count", "tracked", "deprecated"]
+            header = ["command", "group", "count", "tracked", "deprecated", "%"]
             import csv
 
             with open(args.summary_csv, "w", encoding="UTF8", newline="") as f:
@@ -218,6 +260,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 writer.writerow(header)
                 for row in rows:
                     # write the data
+                    count = row[2]
+                    pct = count / total_count
+                    row.append(pct)
                     writer.writerow(row)
     if args.push_stats_redis:
         logging.info(

@@ -141,4 +141,10 @@ def create_client_runner_args(project_name):
         default="2",
         help="Set up RESP protocol version",
     )
+    parser.add_argument(
+        "--override-memtier-test-time",
+        default=0,
+        type=int,
+        help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
+    )
     return parser

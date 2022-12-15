@@ -1,0 +1,38 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-generic-ttl-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on TTL performance.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" "--command" "SETEX __key__ 3600 __value__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
+tested-commands:
+- ttl
+tested-groups:
+- generic
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "TTL __key__" --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+
