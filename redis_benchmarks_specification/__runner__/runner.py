@@ -365,6 +365,15 @@ def process_self_contained_coordinator_stream(
                                 temporary_dir_client, tls_key
                             )
 
+                    if "dataset" in benchmark_config["dbconfig"]:
+                        if args.run_tests_with_dataset is False:
+                            logging.warning(
+                                "Skipping test {} giving it implies dataset preload".format(
+                                    test_name
+                                )
+                            )
+                            continue
+
                     if "preload_tool" in benchmark_config["dbconfig"]:
                         data_prepopulation_step(
                             benchmark_config,

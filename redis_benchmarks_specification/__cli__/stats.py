@@ -171,6 +171,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
         # open file in read mode
         total_count = 0
+        total_tracked_count = 0
         with open(
             args.commandstats_csv, "r", encoding="utf8", errors="ignore"
         ) as read_obj:
@@ -227,6 +228,8 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     top_30_missing.append(cmd)
                 if pos <= 50:
                     top_50_missing.append(cmd)
+            else:
+                total_tracked_count += count
 
         if args.commands_priority_file != "":
             with open(args.commands_priority_file, "w") as fd:
@@ -253,10 +256,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     row.append(pct)
                     writer.writerow(row)
 
+    if total_tracked_count > 0:
+        total_tracked_commands_pct = total_tracked_count / total_count
+
     logging.info("Total commands: {}".format(total_commands))
     total_tracked_commands = len(tracked_commands_json.keys())
     logging.info("Total tracked commands: {}".format(total_tracked_commands))
-
+    logging.info("Total tracked commands pct: {}".format(total_tracked_commands_pct))
     all_groups = groups_json.keys()
     total_groups = len(all_groups)
     logging.info("Total groups: {}".format(total_groups))

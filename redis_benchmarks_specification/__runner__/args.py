@@ -104,6 +104,12 @@ def create_client_runner_args(project_name):
         help="Preserve the temporary client dirs",
     )
     parser.add_argument(
+        "--run-tests-with-dataset",
+        default=False,
+        action="store_true",
+        help="Run tests that contain a dbconfig with dataset",
+    )
+    parser.add_argument(
         "--client_aggregated_results_folder",
         type=str,
         default="",
