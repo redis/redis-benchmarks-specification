@@ -261,7 +261,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     writer.writerow(row)
 
     if total_tracked_count > 0:
-        total_tracked_commands_pct = total_tracked_count / total_count
+        total_tracked_commands_pct = "{0:.3g} %".format(
+            total_tracked_count / total_count * 100.0
+        )
 
     logging.info("Total commands: {}".format(total_commands))
     total_tracked_commands = len(tracked_commands_json.keys())
