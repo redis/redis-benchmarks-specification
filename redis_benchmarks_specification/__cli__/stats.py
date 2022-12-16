@@ -260,35 +260,37 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     row.append(pct)
                     writer.writerow(row)
 
-    if total_tracked_count > 0:
-        total_tracked_commands_pct = "{0:.3g} %".format(
-            total_tracked_count / total_count * 100.0
+        if total_tracked_count > 0:
+            total_tracked_commands_pct = "{0:.3g} %".format(
+                total_tracked_count / total_count * 100.0
+            )
+
+        logging.info("Total commands: {}".format(total_commands))
+        total_tracked_commands = len(tracked_commands_json.keys())
+        logging.info("Total tracked commands: {}".format(total_tracked_commands))
+        logging.info(
+            "Total tracked commands pct: {}".format(total_tracked_commands_pct)
         )
+        all_groups = groups_json.keys()
+        total_groups = len(all_groups)
+        logging.info("Total groups: {}".format(total_groups))
+        total_tracked_groups = len(tracked_groups)
+        logging.info("Total tracked groups: {}".format(total_tracked_groups))
+        logging.info(
+            "Total untracked groups: {}".format(total_groups - total_tracked_groups)
+        )
+        logging.info("Printing untracked groups:")
+        for group_name in all_groups:
+            if group_name not in tracked_groups:
+                logging.info("                         - {}".format(group_name))
+        logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
+        logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
+        if len(top_30_missing) > 0:
+            logging.info("\t\tTotal missing for Top 30: {}".format(len(top_30_missing)))
 
-    logging.info("Total commands: {}".format(total_commands))
-    total_tracked_commands = len(tracked_commands_json.keys())
-    logging.info("Total tracked commands: {}".format(total_tracked_commands))
-    logging.info("Total tracked commands pct: {}".format(total_tracked_commands_pct))
-    all_groups = groups_json.keys()
-    total_groups = len(all_groups)
-    logging.info("Total groups: {}".format(total_groups))
-    total_tracked_groups = len(tracked_groups)
-    logging.info("Total tracked groups: {}".format(total_tracked_groups))
-    logging.info(
-        "Total untracked groups: {}".format(total_groups - total_tracked_groups)
-    )
-    logging.info("Printing untracked groups:")
-    for group_name in all_groups:
-        if group_name not in tracked_groups:
-            logging.info("                         - {}".format(group_name))
-    logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
-    logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
-    if len(top_30_missing) > 0:
-        logging.info("\t\tTotal missing for Top 30: {}".format(len(top_30_missing)))
-
-    logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
-    if len(top_50_missing) > 0:
-        logging.info("\t\tTotal missing for Top 50: {}".format(len(top_50_missing)))
+        logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
+        if len(top_50_missing) > 0:
+            logging.info("\t\tTotal missing for Top 50: {}".format(len(top_50_missing)))
 
     if overall_result is False and fail_on_required_diff:
         logging.error(
