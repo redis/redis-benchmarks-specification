@@ -1,0 +1,37 @@
+version: 0.4
+name: memtier_benchmark-1key-zrevrank-1M-elements-pipeline-1
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements and we query it using ZREVRANK.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum 1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1
+tested-groups:
+- sorted-set
+tested-commands:
+- zrevrank
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZREVRANK key1 __key__" --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
