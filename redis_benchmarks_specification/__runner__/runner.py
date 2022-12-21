@@ -813,6 +813,7 @@ def data_prepopulation_step(
             tls_key,
             tls_cacert,
             resp_version,
+            0,
             password,
         )
 
