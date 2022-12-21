@@ -35,3 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
 tested-groups:
 - string
+priority: 1

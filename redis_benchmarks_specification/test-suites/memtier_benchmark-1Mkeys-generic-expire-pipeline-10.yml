@@ -19,7 +19,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command "EXPIRE __key__ 3600" --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
+  arguments: --command "EXPIRE __key__ 3600" --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'
@@ -35,4 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
-
+priority: 11

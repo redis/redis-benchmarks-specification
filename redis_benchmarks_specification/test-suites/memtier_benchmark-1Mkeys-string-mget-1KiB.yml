@@ -8,7 +8,6 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET __key__ __data__"  --command-key-pattern P --hide-histogram -t 2 -c 100
-
 tested-commands:
 - mget
 redis-topologies:
@@ -18,7 +17,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2 --hide-histogram --test-time 180'
+  arguments: --key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'
@@ -36,3 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
 tested-groups:
 - string
+priority: 13
