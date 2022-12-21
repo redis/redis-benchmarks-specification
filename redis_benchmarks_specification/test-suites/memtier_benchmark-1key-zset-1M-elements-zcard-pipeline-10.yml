@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zcard-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements in it and we query it using ZCARD.'
+description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements in it and we query it using ZCARD.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -35,3 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+priority: 10

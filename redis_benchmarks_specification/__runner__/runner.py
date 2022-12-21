@@ -262,6 +262,8 @@ def process_self_contained_coordinator_stream(
     overall_result = True
     results_matrix = []
     total_test_suite_runs = 0
+    dry_run_count = 0
+    dry_run = args.dry_run
     for test_file in testsuite_spec_files:
         client_containers = []
 
@@ -290,6 +292,7 @@ def process_self_contained_coordinator_stream(
                     tf_github_repo = args.github_repo
                     tf_triggering_env = args.platform_name
                     setup_type = args.setup_type
+                    priority_limit = args.tests_priority_upper_limit
                     git_hash = "NA"
                     git_version = args.github_version
                     build_variant_name = "NA"
@@ -364,6 +367,25 @@ def process_self_contained_coordinator_stream(
                             _, test_tls_key = cp_to_workdir(
                                 temporary_dir_client, tls_key
                             )
+                    priority = None
+                    if "priority" in benchmark_config:
+                        priority = benchmark_config["priority"]
+
+                        if priority_limit > 0 and priority is not None:
+                            if priority_limit < priority:
+                                logging.warning(
+                                    "Skipping test {} giving the priority limit ({}) is above the priority value ({})".format(
+                                        test_name, priority_limit, priority
+                                    )
+                                )
+                                continue
+                            logging.info(
+                                "Test {} priority ({}) is within the priority limit ({})".format(
+                                    test_name,
+                                    priority,
+                                    priority_limit,
+                                )
+                            )
 
                     if "dataset" in benchmark_config["dbconfig"]:
                         if args.run_tests_with_dataset is False:
@@ -373,6 +395,10 @@ def process_self_contained_coordinator_stream(
                                 )
                             )
                             continue
+
+                    if dry_run is True:
+                        dry_run_count = dry_run_count + 1
+                        continue
 
                     if "preload_tool" in benchmark_config["dbconfig"]:
                         data_prepopulation_step(
@@ -668,6 +694,11 @@ def process_self_contained_coordinator_stream(
             value_matrix=results_matrix,
         )
         csv_writer.dump(dest_fpath)
+
+    if dry_run is True:
+        logging.info(
+            "Number of tests that would have been run: {}".format(dry_run_count)
+        )
 
 
 def cp_to_workdir(benchmark_tool_workdir, srcfile):

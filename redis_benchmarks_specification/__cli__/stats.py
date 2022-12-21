@@ -44,6 +44,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             len(testsuite_spec_files), testsuites_folder
         )
     )
+    priority_json = {}
+    if args.commands_priority_file != "":
+        with open(args.commands_priority_file, "r") as fd:
+            logging.info(
+                "Reading {} file with priority by commandstats".format(
+                    args.commands_priority_file
+                )
+            )
+            priority_json = json.load(fd)
     tracked_groups = []
     override_enabled = args.override_tests
     fail_on_required_diff = args.fail_on_required_diff
@@ -76,6 +85,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 if "tested-groups" in benchmark_config:
                     origin_tested_groups = benchmark_config["tested-groups"]
                 origin_tested_commands = []
+
                 tested_commands = []
                 if "tested-commands" in benchmark_config:
                     origin_tested_commands = benchmark_config["tested-commands"]
@@ -126,6 +136,31 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         )
                     )
 
+                priority = None
+                # maximum priority of all tested commands
+                priority_json_value = None
+                for command in tested_commands:
+                    if command in priority_json:
+                        priority_v = priority_json[command]
+                        if priority_json_value is None:
+                            priority_json_value = priority_v
+                        if priority_v > priority_json_value:
+                            priority_json_value = priority_v
+
+                if "priority" in benchmark_config:
+                    priority = benchmark_config["priority"]
+                else:
+                    if priority_json_value is not None:
+                        requires_override = True
+                        logging.warn(
+                            "dont have priority in {}, but the commands in the test have max priority of {}".format(
+                                test_name, priority_json_value
+                            )
+                        )
+                        priority = priority_json_value
+                if priority is not None:
+                    benchmark_config["priority"] = priority
+
                 if tested_groups != origin_tested_groups:
                     requires_override = True
                     benchmark_config["tested-groups"] = tested_groups
@@ -171,6 +206,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
         # open file in read mode
         total_count = 0
+        total_usecs = 0
         total_tracked_count = 0
         with open(
             args.commandstats_csv, "r", encoding="utf8", errors="ignore"
@@ -185,6 +221,10 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 cmdstat = row[0]
                 cmdstat = cmdstat.replace("cmdstat_", "")
                 count = int(row[1])
+                usecs = None
+                if len(row) > 2:
+                    usecs = int(row[2])
+                    total_usecs += usecs
                 if count == 0:
                     continue
                 tracked = False
@@ -206,7 +246,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 if cmdstat in tracked_commands_json:
                     tracked = True
                 if module is False or include_modules:
-                    row = [cmdstat, group, count, tracked, deprecated]
+                    row = [cmdstat, group, count, usecs, tracked, deprecated]
                     rows.append(row)
 
         priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
@@ -245,7 +285,16 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 json.dump(priority_json, fd, indent=True)
 
         if args.summary_csv != "":
-            header = ["command", "group", "count", "tracked", "deprecated", "%"]
+            header = [
+                "command",
+                "group",
+                "count",
+                "usecs",
+                "tracked",
+                "deprecated",
+                "% count",
+                "% usecs",
+            ]
             import csv
 
             with open(args.summary_csv, "w", encoding="UTF8", newline="") as f:
@@ -256,8 +305,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 for row in rows:
                     # write the data
                     count = row[2]
+                    usec = row[3]
                     pct = count / total_count
+                    pct_usec = "n/a"
+                    if usec is not None:
+                        pct_usec = usec / total_usecs
                     row.append(pct)
+                    row.append(pct_usec)
                     writer.writerow(row)
 
         if total_tracked_count > 0:

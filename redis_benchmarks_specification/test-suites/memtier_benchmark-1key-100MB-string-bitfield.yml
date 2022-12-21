@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-100MB-string-bitfield
-description: Runs memtier_benchmark, for a keyspace length of 1 key with a data size of 100MB for the key. The motivation for BITFIELD is to be able to pack many small integers in a large bitmat. Perform GET, SET and INCRBY using the BITFIELD command with random bit offsets. Since the bit offsets may be up to and including 100000000, some operations may result in enlarging the string (which is OK). 
+description: Runs memtier_benchmark, for a keyspace length of 1 key with a data size of 100MB for the key. The motivation for BITFIELD is to be able to pack many small integers in a large bitmat. Perform GET, SET and INCRBY using the BITFIELD command with random bit offsets. Since the bit offsets may be up to and including 100000000, some operations may result in enlarging the string (which is OK).
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -35,3 +35,4 @@ exporter:
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
 tested-groups:
 - bitmap
+priority: 14
