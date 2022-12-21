@@ -182,6 +182,7 @@ def prepare_memtier_benchmark_parameters(
     tls_cacert=None,
     resp_version=None,
     override_memtier_test_time=0,
+    password=None,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -192,6 +193,8 @@ def prepare_memtier_benchmark_parameters(
         "--json-out-file",
         local_benchmark_output_filename,
     ]
+    if password is not None:
+        benchmark_command.extend(["--authenticate", password])
     if tls_enabled:
         benchmark_command.append("--tls")
         if tls_cert is not None and tls_cert != "":
@@ -300,6 +303,7 @@ def process_self_contained_coordinator_stream(
 
                     port = args.db_server_port
                     host = args.db_server_host
+                    password = args.db_server_password
 
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
@@ -307,6 +311,7 @@ def process_self_contained_coordinator_stream(
                     r = redis.StrictRedis(
                         host=host,
                         port=port,
+                        password=password,
                         ssl=tls_enabled,
                         ssl_cert_reqs=ssl_cert_reqs,
                         ssl_keyfile=tls_key,
@@ -480,6 +485,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_cacert,
                             resp_version,
                             override_memtier_test_time,
+                            password,
                         )
 
                     client_container_image = extract_client_container_image(
@@ -773,6 +779,7 @@ def data_prepopulation_step(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
+    password=None,
 ):
     # setup the benchmark
     (
@@ -806,6 +813,7 @@ def data_prepopulation_step(
             tls_key,
             tls_cacert,
             resp_version,
+            password,
         )
 
         logging.info(

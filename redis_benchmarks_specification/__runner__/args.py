@@ -54,6 +54,7 @@ def create_client_runner_args(project_name):
         help="Interpret PATTERN as a regular expression to filter test names",
     )
     parser.add_argument("--db_server_host", type=str, default="localhost")
+    parser.add_argument("--db_server_password", type=str, default=None)
     parser.add_argument("--db_server_port", type=int, default=6379)
     parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(
