@@ -799,7 +799,9 @@ def data_prepopulation_step(
     preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
     full_benchmark_path = f"/usr/local/bin/{preload_tool}"
     client_mnt_point = "/mnt/client/"
+
     if "memtier_benchmark" in preload_tool:
+        override_memtier_test_time_preload = 0
         (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
             benchmark_config["dbconfig"]["preload_tool"],
             full_benchmark_path,
@@ -814,6 +816,7 @@ def data_prepopulation_step(
             tls_key,
             tls_cacert,
             resp_version,
+            override_memtier_test_time_preload,
         )
 
         logging.info(
