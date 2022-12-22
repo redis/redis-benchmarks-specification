@@ -173,6 +173,7 @@ def prepare_memtier_benchmark_parameters(
     full_benchmark_path,
     port,
     server,
+    password,
     local_benchmark_output_filename,
     oss_cluster_api_enabled,
     tls_enabled=False,
@@ -181,7 +182,6 @@ def prepare_memtier_benchmark_parameters(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
-    password=None,
     override_memtier_test_time=0,
 ):
     benchmark_command = [
@@ -476,6 +476,7 @@ def process_self_contained_coordinator_stream(
                             full_benchmark_path,
                             port,
                             host,
+                            password,
                             local_benchmark_output_filename,
                             False,
                             tls_enabled,
@@ -484,7 +485,6 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
-                            password,
                             override_memtier_test_time,
                         )
 
@@ -805,6 +805,7 @@ def data_prepopulation_step(
             full_benchmark_path,
             port,
             host,
+            password,
             local_benchmark_output_filename,
             False,
             tls_enabled,
@@ -813,7 +814,6 @@ def data_prepopulation_step(
             tls_key,
             tls_cacert,
             resp_version,
-            password,
         )
 
         logging.info(
