@@ -181,8 +181,8 @@ def prepare_memtier_benchmark_parameters(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
-    override_memtier_test_time=0,
     password=None,
+    override_memtier_test_time=0,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -484,8 +484,8 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
-                            override_memtier_test_time,
                             password,
+                            override_memtier_test_time,
                         )
 
                     client_container_image = extract_client_container_image(
@@ -813,7 +813,6 @@ def data_prepopulation_step(
             tls_key,
             tls_cacert,
             resp_version,
-            0,
             password,
         )
 
