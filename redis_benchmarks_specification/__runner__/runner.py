@@ -220,6 +220,7 @@ def prepare_memtier_benchmark_parameters(
     benchmark_command_str = " ".join(benchmark_command)
     if "arguments" in clientconfig:
         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
+    logging.info(override_memtier_test_time)
     if override_memtier_test_time > 0:
         benchmark_command_str = re.sub(
             "--test-time\\s\\d+",
