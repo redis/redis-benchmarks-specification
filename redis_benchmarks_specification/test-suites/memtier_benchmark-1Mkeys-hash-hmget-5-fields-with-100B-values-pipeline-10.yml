@@ -4,10 +4,15 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys pre-loadin
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1000000
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "100" --command "HSET __key__ field1 __data__ field2 __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - hash
 tested-commands:

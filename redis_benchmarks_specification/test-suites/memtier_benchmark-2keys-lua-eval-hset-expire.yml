@@ -2,8 +2,13 @@ version: 0.4
 name: memtier_benchmark-2keys-lua-eval-hset-expire
 description: 'Runs memtier_benchmark, for a keyspace length of 2 HASH keys. This benchmark invokes the execution of a server-side Lua script doing 2 HSET commands and doing EXPIRE on those keys. '
 dbconfig:
-- configuration-parameters:
-  - save: '""'
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - scripting
 tested-commands:

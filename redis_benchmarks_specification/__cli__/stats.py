@@ -161,6 +161,33 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 if priority is not None:
                     benchmark_config["priority"] = priority
 
+                resources = {}
+                if "resources" in benchmark_config["dbconfig"]:
+                    resources = benchmark_config["dbconfig"]["resources"]
+                else:
+                    benchmark_config["dbconfig"]["resources"] = resources
+
+                resources_requests = {}
+                if "requests" in resources:
+                    resources_requests = benchmark_config["dbconfig"]["resources"][
+                        "requests"
+                    ]
+                else:
+                    benchmark_config["dbconfig"]["resources"][
+                        "requests"
+                    ] = resources_requests
+
+                if "memory" not in resources_requests:
+                    benchmark_config["dbconfig"]["resources"]["requests"][
+                        "memory"
+                    ] = "1g"
+                    requires_override = True
+                    logging.warn(
+                        "dont have resources.requests.memory in {}. Setting 1GB default".format(
+                            test_name
+                        )
+                    )
+
                 if tested_groups != origin_tested_groups:
                     requires_override = True
                     benchmark_config["tested-groups"] = tested_groups

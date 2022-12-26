@@ -4,6 +4,11 @@ description: Runs memtier_benchmark, for a keyspace length of 10M keys loading H
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
 tested-commands:
 - hset
 redis-topologies:

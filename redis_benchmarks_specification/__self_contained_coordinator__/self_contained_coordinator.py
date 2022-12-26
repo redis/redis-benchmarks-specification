@@ -28,7 +28,11 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
 )
-from redis_benchmarks_specification.__common__.runner import extract_testsuites
+from redis_benchmarks_specification.__common__.runner import (
+    extract_testsuites,
+    reset_commandstats,
+    exporter_datasink_common,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
 )
@@ -52,7 +56,6 @@ from redisbench_admin.run.common import (
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 from redisbench_admin.run.redistimeseries import (
     datasink_profile_tabular_data,
-    timeseries_test_sucess_flow,
 )
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -463,6 +466,7 @@ def process_self_contained_coordinator_stream(
                             tf_github_org = "redis"
                             tf_github_repo = "redis"
                             setup_name = "oss-standalone"
+                            setup_type = "oss-standalone"
                             tf_triggering_env = "ci"
                             github_actor = "{}-{}".format(
                                 tf_triggering_env, running_platform
@@ -524,6 +528,8 @@ def process_self_contained_coordinator_stream(
 
                             r = redis.StrictRedis(port=redis_proc_start_port)
                             r.ping()
+                            redis_conns = [r]
+                            reset_commandstats(redis_conns)
                             redis_pids = []
                             first_redis_pid = r.info()["process_id"]
                             redis_pids.append(first_redis_pid)
@@ -661,7 +667,6 @@ def process_self_contained_coordinator_stream(
                                 )
                             )
                             logging.info("output {}".format(client_container_stdout))
-                            r.shutdown(save=False)
 
                             (_, overall_tabular_data_map,) = profilers_stop_if_required(
                                 datasink_push_results_redistimeseries,
@@ -790,32 +795,29 @@ def process_self_contained_coordinator_stream(
                                 results_dict = json.load(json_file)
                             dataset_load_duration_seconds = 0
 
-                            logging.info(
-                                "Using datapoint_time_ms: {}".format(datapoint_time_ms)
-                            )
-
-                            timeseries_test_sucess_flow(
-                                datasink_push_results_redistimeseries,
-                                git_version,
+                            exporter_datasink_common(
                                 benchmark_config,
                                 benchmark_duration_seconds,
-                                dataset_load_duration_seconds,
-                                None,
-                                topology_spec_name,
-                                setup_name,
-                                None,
-                                results_dict,
-                                datasink_conn,
+                                build_variant_name,
                                 datapoint_time_ms,
-                                test_name,
+                                dataset_load_duration_seconds,
+                                datasink_conn,
+                                datasink_push_results_redistimeseries,
                                 git_branch,
+                                git_version,
+                                metadata,
+                                redis_conns,
+                                results_dict,
+                                running_platform,
+                                setup_name,
+                                setup_type,
+                                test_name,
                                 tf_github_org,
                                 tf_github_repo,
                                 tf_triggering_env,
-                                metadata,
-                                build_variant_name,
-                                running_platform,
+                                topology_spec_name,
                             )
+                            r.shutdown(save=False)
                             test_result = True
                             total_test_suite_runs = total_test_suite_runs + 1
 

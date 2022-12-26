@@ -4,10 +4,16 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing o
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1000000
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-  arguments: '--command "BITFIELD __key__ SET u32 #0 1000" --command-key-pattern="R" --command "BITFIELD __key__ INCRBY u32 #0 50 INCRBY u32 #1 1" --command-key-pattern="R" --command "BITFIELD __key__ INCRBY u32 #0 -999" --command-key-pattern="R" --pipeline 10 -c 50 -t 2 --hide-histogram'
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2 --pipeline 10 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
 tested-commands:
 - getbit
 tested-groups:
@@ -19,7 +25,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command "GETBIT __key__ 1" --command-key-pattern="R"  --command "GETBIT __key__ 43" --command-key-pattern="R" --command "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'
