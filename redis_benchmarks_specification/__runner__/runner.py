@@ -652,7 +652,9 @@ def process_self_contained_coordinator_stream(
 
                     logging.info("Printing client tool stdout output")
 
-                    used_memory_check(benchmark_required_memory, r, "end of benchmark")
+                    used_memory_check(
+                        test_name, benchmark_required_memory, r, "end of benchmark"
+                    )
 
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
@@ -804,14 +806,14 @@ def process_self_contained_coordinator_stream(
         )
 
 
-def used_memory_check(benchmark_required_memory, r, stage):
+def used_memory_check(test_name, benchmark_required_memory, r, stage):
     used_memory = r.info("memory")["used_memory"]
     used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
     logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
     if used_memory > benchmark_required_memory:
         logging.error(
-            "The benchmark specified a dbconfig resource request of memory ({}) bellow the REAL MEMORY USAGE OF: {}. FIX IT!.".format(
-                benchmark_required_memory, used_memory_gb
+            "The benchmark {} specified a dbconfig resource request of memory ({}) bellow the REAL MEMORY USAGE OF: {}. FIX IT!.".format(
+                test_name, benchmark_required_memory, used_memory_gb
             )
         )
         exit(1)
