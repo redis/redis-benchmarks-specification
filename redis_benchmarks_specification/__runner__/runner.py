@@ -788,20 +788,12 @@ def process_self_contained_coordinator_stream(
                         f"Removing temporary client dir {temporary_dir_client}"
                     )
 
-    # check which metrics to extract
-    (_, metrics,) = merge_default_and_config_metrics(
-        benchmark_config,
-        default_metrics,
-        None,
-    )
     table_name = "Results for entire test-suite"
     results_matrix_headers = [
         "Test Name",
         "Metric JSON Path",
         "Metric Value",
     ]
-    results_matrix = extract_results_table(metrics, results_dict)
-    results_matrix = [[x[0], x[1], "{:.3f}".format(x[3])] for x in results_matrix]
     writer = MarkdownTableWriter(
         table_name=table_name,
         headers=results_matrix_headers,
