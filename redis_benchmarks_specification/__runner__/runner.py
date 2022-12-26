@@ -28,7 +28,7 @@ from redisbench_admin.run.common import (
 )
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
-from redisbench_admin.utils.benchmark_config import get_final_benchmark_config
+from redisbench_admin.utils.benchmark_config import get_final_benchmark_config, get_defaults
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
 
@@ -301,6 +301,15 @@ def process_self_contained_coordinator_stream(
     dry_run_count = 0
     dry_run = args.dry_run
     dry_run_include_preload = args.dry_run_include_preload
+    defaults_filename = args.defaults_filename
+    (
+        _,
+        default_metrics,
+        _,
+        _,
+        _,
+    ) = get_defaults(defaults_filename)
+
     for test_file in testsuite_spec_files:
         client_containers = []
 
@@ -781,6 +790,19 @@ def process_self_contained_coordinator_stream(
         "Metric JSON Path",
         "Metric Value",
     ]
+    # check which metrics to extract
+    (_, metrics,) = merge_default_and_config_metrics(
+        benchmark_config,
+        default_metrics,
+        None,
+    )
+    table_name = "Results for {} test-case on {} topology".format(test_name, setup_name)
+    results_matrix_headers = [
+        "Metric JSON Path",
+        "Metric Value",
+    ]
+    results_matrix = extract_results_table(metrics, results_dict)
+    results_matrix = [[x[0], "{:.3f}".format(x[3])] for x in results_matrix]
     writer = MarkdownTableWriter(
         table_name=table_name,
         headers=results_matrix_headers,
