@@ -29,7 +29,7 @@ def create_client_runner_args(project_name):
     parser.add_argument(
         "--defaults_filename",
         type=str,
-        default="defaults.yml",
+        default="{}/defaults.yml".format(SPECS_PATH_TEST_SUITES),
         help="specify the defaults file containing spec topologies, common metric extractions,etc...",
     )
     parser.add_argument("--triggering_env", type=str, default="ci")
