@@ -511,7 +511,7 @@ def process_self_contained_coordinator_stream(
                     )
 
                     used_memory_check(
-                        benchmark_required_memory, r, "start of benchmark"
+                        test_name.benchmark_required_memory, r, "start of benchmark"
                     )
 
                     logging.info("Checking if there is a keyspace check being enforced")
