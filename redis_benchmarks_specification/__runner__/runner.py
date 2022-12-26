@@ -44,7 +44,11 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
 )
-from redis_benchmarks_specification.__common__.runner import extract_testsuites
+from redis_benchmarks_specification.__common__.runner import (
+    extract_testsuites,
+    exporter_datasink_common,
+    reset_commandstats,
+)
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
     extract_client_cpu_limit,
@@ -321,6 +325,7 @@ def process_self_contained_coordinator_stream(
                         ssl_check_hostname=False,
                     )
                     r.ping()
+                    redis_conns = [r]
                     redis_pids = []
                     first_redis_pid = r.info()["process_id"]
                     redis_pids.append(first_redis_pid)
@@ -352,6 +357,9 @@ def process_self_contained_coordinator_stream(
                     if args.flushall_on_every_test_start:
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
+
+                    reset_commandstats(redis_conns)
+
                     client_mnt_point = "/mnt/client/"
                     benchmark_tool_workdir = client_mnt_point
 
@@ -599,29 +607,27 @@ def process_self_contained_coordinator_stream(
 
                     dataset_load_duration_seconds = 0
 
-                    logging.info(f"Using datapoint_time_ms: {datapoint_time_ms}")
-
-                    timeseries_test_sucess_flow(
-                        datasink_push_results_redistimeseries,
-                        git_version,
+                    exporter_datasink_common(
                         benchmark_config,
                         benchmark_duration_seconds,
-                        dataset_load_duration_seconds,
-                        None,
-                        topology_spec_name,
-                        setup_type,
-                        None,
-                        results_dict,
-                        datasink_conn,
+                        build_variant_name,
                         datapoint_time_ms,
-                        test_name,
+                        dataset_load_duration_seconds,
+                        datasink_conn,
+                        datasink_push_results_redistimeseries,
                         git_branch,
+                        git_version,
+                        metadata,
+                        redis_conns,
+                        results_dict,
+                        running_platform,
+                        setup_name,
+                        setup_type,
+                        test_name,
                         tf_github_org,
                         tf_github_repo,
                         tf_triggering_env,
-                        metadata,
-                        build_variant_name,
-                        running_platform,
+                        topology_spec_name,
                     )
                     test_result = True
                     total_test_suite_runs = total_test_suite_runs + 1

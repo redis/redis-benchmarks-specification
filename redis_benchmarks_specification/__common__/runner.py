@@ -3,6 +3,11 @@ import os
 import pathlib
 import re
 
+import redis
+from redisbench_admin.run.metrics import collect_redis_metrics
+from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
+from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
 
 def get_benchmark_specs(testsuites_folder, test="", test_regex=".*"):
     final_files = []
@@ -56,3 +61,110 @@ def extract_testsuites(args):
         )
     )
     return testsuite_spec_files
+
+
+def reset_commandstats(redis_conns):
+    for pos, redis_conn in enumerate(redis_conns):
+        logging.info("Resetting commmandstats for shard {}".format(pos))
+        try:
+            redis_conn.config_resetstat()
+        except redis.exceptions.ResponseError as e:
+            logging.warning(
+                "Catched an error while resetting status: {}".format(e.__str__())
+            )
+
+
+def exporter_datasink_common(
+    benchmark_config,
+    benchmark_duration_seconds,
+    build_variant_name,
+    datapoint_time_ms,
+    dataset_load_duration_seconds,
+    datasink_conn,
+    datasink_push_results_redistimeseries,
+    git_branch,
+    git_version,
+    metadata,
+    redis_conns,
+    results_dict,
+    running_platform,
+    setup_name,
+    setup_type,
+    test_name,
+    tf_github_org,
+    tf_github_repo,
+    tf_triggering_env,
+    topology_spec_name,
+):
+    logging.info("Using datapoint_time_ms: {}".format(datapoint_time_ms))
+    timeseries_test_sucess_flow(
+        datasink_push_results_redistimeseries,
+        git_version,
+        benchmark_config,
+        benchmark_duration_seconds,
+        dataset_load_duration_seconds,
+        None,
+        topology_spec_name,
+        setup_name,
+        None,
+        results_dict,
+        datasink_conn,
+        datapoint_time_ms,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        metadata,
+        build_variant_name,
+        running_platform,
+    )
+    logging.info("Collecting memory metrics")
+    (_, _, overall_end_time_metrics,) = collect_redis_metrics(
+        redis_conns,
+        ["memory"],
+        {
+            "memory": [
+                "used_memory",
+                "used_memory_dataset",
+            ]
+        },
+    )
+    # 7 days from now
+    expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
+    export_redis_metrics(
+        git_version,
+        datapoint_time_ms,
+        overall_end_time_metrics,
+        datasink_conn,
+        setup_name,
+        setup_type,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        {"metric-type": "redis-metrics"},
+        expire_redis_metrics_ms,
+    )
+    logging.info("Collecting commandstat metrics")
+    (
+        _,
+        _,
+        overall_commandstats_metrics,
+    ) = collect_redis_metrics(redis_conns, ["commandstats"])
+    export_redis_metrics(
+        git_version,
+        datapoint_time_ms,
+        overall_commandstats_metrics,
+        datasink_conn,
+        setup_name,
+        setup_type,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        {"metric-type": "commandstats"},
+        expire_redis_metrics_ms,
+    )
