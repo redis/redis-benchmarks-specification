@@ -2,10 +2,15 @@ version: 0.4
 name: memtier_benchmark-1key-set-10-elements-smembers
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 10 elements in it and we query it using SMEMBERS that returns all elements. '
 dbconfig:
-- configuration-parameters:
-  - save: '""'
-- init_commands:
-  - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+   - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
 tested-groups:
 - set
 tested-commands:

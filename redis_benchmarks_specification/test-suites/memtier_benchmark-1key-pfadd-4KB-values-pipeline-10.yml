@@ -2,9 +2,13 @@ version: 0.4
 name: memtier_benchmark-1key-pfadd-4KB-values-pipeline-10
 description: Runs memtier_benchmark, for a keyspace length of 1 HyperLogLog key. Continuously add 4KB sized random elements using the PFADD command.
 dbconfig:
-- configuration-parameters:
-  - save: '""'
-- dataset: null
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - hyperloglog
 tested-commands:

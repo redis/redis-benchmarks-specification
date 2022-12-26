@@ -1,3 +1,4 @@
+import csv
 import logging
 import os
 import pathlib
@@ -7,6 +8,56 @@ import redis
 from redisbench_admin.run.metrics import collect_redis_metrics
 from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
+
+def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
+    cmds = None
+    res = 0
+    if dbconfig_keyname in benchmark_config:
+        # print(benchmark_config[dbconfig_keyname])
+        # print(type(benchmark_config[dbconfig_keyname]))
+        for k, v in benchmark_config[dbconfig_keyname].items():
+            if "init_commands" in k:
+                cmds = v
+
+    if type(cmds) == str:
+        cmds = [cmds]
+    if cmds is not None:
+        for cmd in cmds:
+            is_array = False
+            print(type(cmd))
+            if type(cmd) == list:
+                is_array = True
+            if '"' in cmd:
+                cols = []
+                for lines in csv.reader(
+                    cmd,
+                    quotechar='"',
+                    delimiter=" ",
+                    quoting=csv.QUOTE_ALL,
+                    skipinitialspace=True,
+                ):
+                    if lines[0] != " " and len(lines[0]) > 0:
+                        cols.append(lines[0])
+                cmd = cols
+                is_array = True
+            try:
+                logging.info("Sending init command: {}".format(cmd))
+                stdout = ""
+                if is_array:
+                    stdout = r.execute_command(*cmd)
+                else:
+                    stdout = r.execute_command(cmd)
+                res = res + 1
+                logging.info("Command reply: {}".format(stdout))
+            except redis.connection.ConnectionError as e:
+                logging.error(
+                    "Error establishing connection to Redis. Message: {}".format(
+                        e.__str__()
+                    )
+                )
+
+    return res
 
 
 def get_benchmark_specs(testsuites_folder, test="", test_regex=".*"):

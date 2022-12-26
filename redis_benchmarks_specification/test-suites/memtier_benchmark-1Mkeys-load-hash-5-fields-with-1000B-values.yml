@@ -4,6 +4,11 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HA
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - hash
 tested-commands:

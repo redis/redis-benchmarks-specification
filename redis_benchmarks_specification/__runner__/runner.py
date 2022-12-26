@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -20,13 +21,12 @@ from redisbench_admin.profilers.profilers_local import (
     profilers_stop_if_required,
 )
 from redisbench_admin.run.common import (
-    execute_init_commands,
     get_start_time_vars,
     merge_default_and_config_metrics,
     prepare_benchmark_parameters,
+    dbconfig_keyspacelen_check,
 )
 from redisbench_admin.run.metrics import extract_results_table
-from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import get_final_benchmark_config
 from redisbench_admin.utils.local import get_local_run_full_filename
@@ -48,6 +48,7 @@ from redis_benchmarks_specification.__common__.runner import (
     extract_testsuites,
     exporter_datasink_common,
     reset_commandstats,
+    execute_init_commands,
 )
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
@@ -55,6 +56,33 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+
+def parse_size(size):
+    units = {
+        "B": 1,
+        "KB": 2**10,
+        "MB": 2**20,
+        "GB": 2**30,
+        "TB": 2**40,
+        "": 1,
+        "KIB": 10**3,
+        "MIB": 10**6,
+        "GIB": 10**9,
+        "TIB": 10**12,
+        "K": 2**10,
+        "M": 2**20,
+        "G": 2**30,
+        "T": 2**40,
+        "": 1,
+        "KI": 10**3,
+        "MI": 10**6,
+        "GI": 10**9,
+        "TI": 10**12,
+    }
+    m = re.match(r"^([\d\.]+)\s*([a-zA-Z]{0,3})$", str(size).strip())
+    number, unit = float(m.group(1)), m.group(2).upper()
+    return int(number * units[unit])
 
 
 def main():
@@ -272,6 +300,7 @@ def process_self_contained_coordinator_stream(
     total_test_suite_runs = 0
     dry_run_count = 0
     dry_run = args.dry_run
+    dry_run_include_preload = args.dry_run_include_preload
     for test_file in testsuite_spec_files:
         client_containers = []
 
@@ -300,7 +329,8 @@ def process_self_contained_coordinator_stream(
                     tf_github_repo = args.github_repo
                     tf_triggering_env = args.platform_name
                     setup_type = args.setup_type
-                    priority_limit = args.tests_priority_upper_limit
+                    priority_upper_limit = args.tests_priority_upper_limit
+                    priority_lower_limit = args.tests_priority_lower_limit
                     git_hash = "NA"
                     git_version = args.github_version
                     build_variant_name = "NA"
@@ -358,6 +388,42 @@ def process_self_contained_coordinator_stream(
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
 
+                    benchmark_required_memory = 0
+                    maxmemory = 0
+                    if "resources" in benchmark_config["dbconfig"]:
+                        resources = benchmark_config["dbconfig"]["resources"]
+                        if "requests" in resources:
+                            resources_requests = benchmark_config["dbconfig"][
+                                "resources"
+                            ]["requests"]
+                            if "memory" in resources_requests:
+                                benchmark_required_memory = resources_requests["memory"]
+                                benchmark_required_memory = parse_size(
+                                    benchmark_required_memory
+                                )
+                                logging.info(
+                                    "Benchmark required memory: {} Bytes".format(
+                                        benchmark_required_memory
+                                    )
+                                )
+
+                    maxmemory = r.info("memory")["maxmemory"]
+                    if maxmemory == 0:
+                        total_system_memory = r.info("memory")["total_system_memory"]
+                        logging.info(
+                            " Using total system memory as max {}".format(
+                                total_system_memory
+                            )
+                        )
+                        maxmemory = total_system_memory
+                    if benchmark_required_memory > maxmemory:
+                        logging.WARN(
+                            "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
+                                test_name, maxmemory, benchmark_required_memory
+                            )
+                        )
+                        continue
+
                     reset_commandstats(redis_conns)
 
                     client_mnt_point = "/mnt/client/"
@@ -385,19 +451,27 @@ def process_self_contained_coordinator_stream(
                     if "priority" in benchmark_config:
                         priority = benchmark_config["priority"]
 
-                        if priority_limit > 0 and priority is not None:
-                            if priority_limit < priority:
+                        if priority is not None:
+                            if priority > priority_upper_limit:
                                 logging.warning(
                                     "Skipping test {} giving the priority limit ({}) is above the priority value ({})".format(
-                                        test_name, priority_limit, priority
+                                        test_name, priority_upper_limit, priority
+                                    )
+                                )
+                                continue
+                            if priority < priority_lower_limit:
+                                logging.warning(
+                                    "Skipping test {} giving the priority limit ({}) is bellow the priority value ({})".format(
+                                        test_name, priority_lower_limit, priority
                                     )
                                 )
                                 continue
                             logging.info(
-                                "Test {} priority ({}) is within the priority limit ({})".format(
+                                "Test {} priority ({}) is within the priority limit [{},{}]".format(
                                     test_name,
                                     priority,
-                                    priority_limit,
+                                    priority_lower_limit,
+                                    priority_upper_limit,
                                 )
                             )
 
@@ -432,10 +506,23 @@ def process_self_contained_coordinator_stream(
                             test_tls_cacert,
                             resp_version,
                         )
-
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
+
+                    used_memory_check(
+                        benchmark_required_memory, r, "start of benchmark"
+                    )
+
+                    logging.info("Checking if there is a keyspace check being enforced")
+                    dbconfig_keyspacelen_check(
+                        benchmark_config,
+                        [r],
+                    )
+
+                    if dry_run_include_preload is True:
+                        dry_run_count = dry_run_count + 1
+                        continue
 
                     benchmark_tool = extract_client_tool(benchmark_config)
                     benchmark_tool_global = benchmark_tool
@@ -564,6 +651,9 @@ def process_self_contained_coordinator_stream(
                     )
 
                     logging.info("Printing client tool stdout output")
+
+                    used_memory_check(benchmark_required_memory, r, "end of benchmark")
+
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
@@ -712,6 +802,19 @@ def process_self_contained_coordinator_stream(
         logging.info(
             "Number of tests that would have been run: {}".format(dry_run_count)
         )
+
+
+def used_memory_check(benchmark_required_memory, r, stage):
+    used_memory = r.info("memory")["used_memory"]
+    used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
+    logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
+    if used_memory > benchmark_required_memory:
+        logging.error(
+            "The benchmark specified a dbconfig resource request of memory ({}) bellow the REAL MEMORY USAGE OF: {}. FIX IT!.".format(
+                benchmark_required_memory, used_memory_gb
+            )
+        )
+        exit(1)
 
 
 def cp_to_workdir(benchmark_tool_workdir, srcfile):
