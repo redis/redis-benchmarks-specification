@@ -14,8 +14,6 @@ def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
     cmds = None
     res = 0
     if dbconfig_keyname in benchmark_config:
-        # print(benchmark_config[dbconfig_keyname])
-        # print(type(benchmark_config[dbconfig_keyname]))
         for k, v in benchmark_config[dbconfig_keyname].items():
             if "init_commands" in k:
                 cmds = v
@@ -25,7 +23,6 @@ def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
     if cmds is not None:
         for cmd in cmds:
             is_array = False
-            print(type(cmd))
             if type(cmd) == list:
                 is_array = True
             if '"' in cmd:

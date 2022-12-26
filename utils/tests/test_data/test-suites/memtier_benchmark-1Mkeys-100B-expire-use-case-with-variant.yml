@@ -6,7 +6,7 @@ dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 1
+    keyspacelen: 0
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
