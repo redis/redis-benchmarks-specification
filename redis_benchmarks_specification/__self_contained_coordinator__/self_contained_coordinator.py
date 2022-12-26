@@ -372,6 +372,7 @@ def process_self_contained_coordinator_stream(
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
     docker_air_gap=False,
+    defaults_filename="defaults.yml",
 ):
     stream_id = "n/a"
     overall_result = False
@@ -406,6 +407,8 @@ def process_self_contained_coordinator_stream(
                 logging.info("Successfully loaded images {}".format(images_loaded))
 
             for test_file in testsuite_spec_files:
+                if defaults_filename in test_file:
+                    continue
                 redis_containers = []
                 client_containers = []
 

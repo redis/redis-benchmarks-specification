@@ -30,6 +30,12 @@ def spec_cli_args(parser):
         default=SPECS_PATH_TEST_SUITES,
         help="Test suites folder, containing the different test variations",
     )
+    parser.add_argument(
+        "--defaults_filename",
+        type=str,
+        default="defaults.yml",
+        help="specify the defaults file containing spec topologies, common metric extractions,etc...",
+    )
     parser.add_argument("--redis_host", type=str, default=GH_REDIS_SERVER_HOST)
     parser.add_argument("--branch", type=str, default="unstable")
     parser.add_argument("--commandstats-csv", type=str, default="")

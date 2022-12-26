@@ -58,7 +58,11 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     fail_on_required_diff = args.fail_on_required_diff
     overall_result = True
     test_names = []
+    defaults_filename = args.defaults_filename
+
     for test_file in testsuite_spec_files:
+        if defaults_filename in test_file:
+            continue
         benchmark_config = {}
         requires_override = False
         test_result = True
