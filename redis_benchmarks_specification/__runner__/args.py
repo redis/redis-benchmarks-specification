@@ -184,4 +184,10 @@ def create_client_runner_args(project_name):
         type=int,
         help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
     )
+    parser.add_argument(
+        "--override-test-runs",
+        default=1,
+        type=int,
+        help="override memtier number of runs for each benchmark. By default will run once each test",
+    )
     return parser
