@@ -28,7 +28,10 @@ from redisbench_admin.run.common import (
 )
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
-from redisbench_admin.utils.benchmark_config import get_final_benchmark_config
+from redisbench_admin.utils.benchmark_config import (
+    get_final_benchmark_config,
+    get_defaults,
+)
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
 
@@ -215,6 +218,7 @@ def prepare_memtier_benchmark_parameters(
     tls_cacert=None,
     resp_version=None,
     override_memtier_test_time=0,
+    override_test_runs=1,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -253,6 +257,62 @@ def prepare_memtier_benchmark_parameters(
     if "arguments" in clientconfig:
         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
     logging.info(override_memtier_test_time)
+
+    if override_test_runs > 1:
+        benchmark_command_str = re.sub(
+            "--run-count\\s\\d+",
+            "--run-count={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            "--run-count=\\d+",
+            "--run-count={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            '--run-count="\\d+"',
+            "--run-count={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        # short
+        benchmark_command_str = re.sub(
+            "-x\\s\\d+",
+            "-x={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            "-x=\\d+",
+            "-x={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        benchmark_command_str = re.sub(
+            '-x="\\d+"',
+            "-x={}".format(override_test_runs),
+            benchmark_command_str,
+        )
+        if (
+            len(
+                re.findall(
+                    "--run-count={}".format(override_test_runs),
+                    benchmark_command_str,
+                )
+            )
+            == 0
+            and len(
+                re.findall(
+                    "-x={}".format(override_test_runs),
+                    benchmark_command_str,
+                )
+            )
+            == 0
+        ):
+            logging.info("adding --run-count option to benchmark run. ")
+            benchmark_command_str = (
+                benchmark_command_str
+                + " "
+                + "--run-count={}".format(override_test_runs)
+            )
+
     if override_memtier_test_time > 0:
         benchmark_command_str = re.sub(
             "--test-time\\s\\d+",
@@ -301,14 +361,25 @@ def process_self_contained_coordinator_stream(
     dry_run_count = 0
     dry_run = args.dry_run
     dry_run_include_preload = args.dry_run_include_preload
+    defaults_filename = args.defaults_filename
+    override_test_runs = args.override_test_runs
+    (
+        _,
+        default_metrics,
+        _,
+        _,
+        _,
+    ) = get_defaults(defaults_filename)
+
     for test_file in testsuite_spec_files:
+        if defaults_filename in test_file:
+            continue
         client_containers = []
 
         with open(test_file, "r") as stream:
             _, benchmark_config, test_name = get_final_benchmark_config(
                 None, stream, ""
             )
-            default_metrics = []
 
             if tls_enabled:
                 test_name = test_name + "-tls"
@@ -511,7 +582,7 @@ def process_self_contained_coordinator_stream(
                     )
 
                     used_memory_check(
-                        benchmark_required_memory, r, "start of benchmark"
+                        test_name, benchmark_required_memory, r, "start of benchmark"
                     )
 
                     logging.info("Checking if there is a keyspace check being enforced")
@@ -582,6 +653,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_cacert,
                             resp_version,
                             override_memtier_test_time,
+                            override_test_runs,
                         )
 
                     client_container_image = extract_client_container_image(
@@ -652,7 +724,9 @@ def process_self_contained_coordinator_stream(
 
                     logging.info("Printing client tool stdout output")
 
-                    used_memory_check(benchmark_required_memory, r, "end of benchmark")
+                    used_memory_check(
+                        test_name, benchmark_required_memory, r, "end of benchmark"
+                    )
 
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
@@ -804,14 +878,14 @@ def process_self_contained_coordinator_stream(
         )
 
 
-def used_memory_check(benchmark_required_memory, r, stage):
+def used_memory_check(test_name, benchmark_required_memory, r, stage):
     used_memory = r.info("memory")["used_memory"]
     used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
     logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
     if used_memory > benchmark_required_memory:
         logging.error(
-            "The benchmark specified a dbconfig resource request of memory ({}) bellow the REAL MEMORY USAGE OF: {}. FIX IT!.".format(
-                benchmark_required_memory, used_memory_gb
+            "The benchmark {} specified a dbconfig resource request of memory ({}) bellow the REAL MEMORY USAGE OF: {}. FIX IT!.".format(
+                test_name, benchmark_required_memory, used_memory_gb
             )
         )
         exit(1)

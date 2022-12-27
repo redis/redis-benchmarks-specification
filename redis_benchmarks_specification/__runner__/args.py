@@ -26,6 +26,12 @@ def create_client_runner_args(project_name):
         default=MACHINE_NAME,
         help="Specify the running platform name. By default it will use the machine name.",
     )
+    parser.add_argument(
+        "--defaults_filename",
+        type=str,
+        default="{}/defaults.yml".format(SPECS_PATH_TEST_SUITES),
+        help="specify the defaults file containing spec topologies, common metric extractions,etc...",
+    )
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--setup_type", type=str, default="oss-standalone")
     parser.add_argument("--github_repo", type=str, default="redis")
@@ -177,5 +183,11 @@ def create_client_runner_args(project_name):
         default=0,
         type=int,
         help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
+    )
+    parser.add_argument(
+        "--override-test-runs",
+        default=1,
+        type=int,
+        help="override memtier number of runs for each benchmark. By default will run once each test",
     )
     return parser
