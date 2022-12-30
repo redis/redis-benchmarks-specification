@@ -459,36 +459,12 @@ def process_self_contained_coordinator_stream(
                         logging.info("Sending FLUSHALL to the DB")
                         r.flushall()
 
-                    benchmark_required_memory = 0
-                    maxmemory = 0
-                    if "resources" in benchmark_config["dbconfig"]:
-                        resources = benchmark_config["dbconfig"]["resources"]
-                        if "requests" in resources:
-                            resources_requests = benchmark_config["dbconfig"][
-                                "resources"
-                            ]["requests"]
-                            if "memory" in resources_requests:
-                                benchmark_required_memory = resources_requests["memory"]
-                                benchmark_required_memory = parse_size(
-                                    benchmark_required_memory
-                                )
-                                logging.info(
-                                    "Benchmark required memory: {} Bytes".format(
-                                        benchmark_required_memory
-                                    )
-                                )
-
-                    maxmemory = r.info("memory")["maxmemory"]
-                    if maxmemory == 0:
-                        total_system_memory = r.info("memory")["total_system_memory"]
-                        logging.info(
-                            " Using total system memory as max {}".format(
-                                total_system_memory
-                            )
-                        )
-                        maxmemory = total_system_memory
+                    benchmark_required_memory = get_benchmark_required_memory(
+                        benchmark_config
+                    )
+                    maxmemory = get_maxmemory(r)
                     if benchmark_required_memory > maxmemory:
-                        logging.WARN(
+                        logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
                                 test_name, maxmemory, benchmark_required_memory
                             )
@@ -876,6 +852,35 @@ def process_self_contained_coordinator_stream(
         logging.info(
             "Number of tests that would have been run: {}".format(dry_run_count)
         )
+
+
+def get_maxmemory(r):
+    maxmemory = int(r.info("memory")["maxmemory"])
+    if maxmemory == 0:
+        total_system_memory = int(r.info("memory")["total_system_memory"])
+        logging.info(" Using total system memory as max {}".format(total_system_memory))
+        maxmemory = total_system_memory
+    else:
+        logging.info(" Detected redis maxmemory config value {}".format(maxmemory))
+
+    return maxmemory
+
+
+def get_benchmark_required_memory(benchmark_config):
+    benchmark_required_memory = 0
+    if "resources" in benchmark_config["dbconfig"]:
+        resources = benchmark_config["dbconfig"]["resources"]
+        if "requests" in resources:
+            resources_requests = benchmark_config["dbconfig"]["resources"]["requests"]
+            if "memory" in resources_requests:
+                benchmark_required_memory = resources_requests["memory"]
+                benchmark_required_memory = int(parse_size(benchmark_required_memory))
+                logging.info(
+                    "Benchmark required memory: {} Bytes".format(
+                        benchmark_required_memory
+                    )
+                )
+    return benchmark_required_memory
 
 
 def used_memory_check(test_name, benchmark_required_memory, r, stage):
