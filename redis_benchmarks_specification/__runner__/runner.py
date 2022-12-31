@@ -552,6 +552,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
+                            password,
                         )
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
@@ -564,7 +565,7 @@ def process_self_contained_coordinator_stream(
                     logging.info("Checking if there is a keyspace check being enforced")
                     dbconfig_keyspacelen_check(
                         benchmark_config,
-                        [r],
+                        redis_conns,
                     )
 
                     if dry_run_include_preload is True:
