@@ -1,14 +1,13 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.62"
+version = "0.1.66"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
 
 [tool.poetry.dependencies]
-python = "^3.8"
-Flask = "^2.2.2"
-Werkzeug = "^2.2.2"
+python = "^3.6.9a"
+Flask = "^2.0.3"
 flask-restx = "^0.5.0"
 redis = "^4.2.0"
 marshmallow = "^3.12.2"
@@ -16,14 +15,13 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^6.0"
 docker = "^5.0.0"
-redisbench-admin = "0.9.31"
+redisbench-admin = "^0.9.23"
 psutil = "^5.9.4"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
 semver = "^2.13.0"
 node-semver = "^0.8.1"
 typed-ast = "^1.5.0"
-numpy = "^1.23.4"
 oyaml = "^1.0"
 
 [tool.poetry.dev-dependencies]

@@ -1,7 +1,60 @@
+import csv
 import logging
 import os
 import pathlib
 import re
+
+import redis
+from redisbench_admin.run.metrics import collect_redis_metrics
+from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
+from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
+
+def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
+    cmds = None
+    res = 0
+    if dbconfig_keyname in benchmark_config:
+        for k, v in benchmark_config[dbconfig_keyname].items():
+            if "init_commands" in k:
+                cmds = v
+
+    if type(cmds) == str:
+        cmds = [cmds]
+    if cmds is not None:
+        for cmd in cmds:
+            is_array = False
+            if type(cmd) == list:
+                is_array = True
+            if '"' in cmd:
+                cols = []
+                for lines in csv.reader(
+                    cmd,
+                    quotechar='"',
+                    delimiter=" ",
+                    quoting=csv.QUOTE_ALL,
+                    skipinitialspace=True,
+                ):
+                    if lines[0] != " " and len(lines[0]) > 0:
+                        cols.append(lines[0])
+                cmd = cols
+                is_array = True
+            try:
+                logging.info("Sending init command: {}".format(cmd))
+                stdout = ""
+                if is_array:
+                    stdout = r.execute_command(*cmd)
+                else:
+                    stdout = r.execute_command(cmd)
+                res = res + 1
+                logging.info("Command reply: {}".format(stdout))
+            except redis.connection.ConnectionError as e:
+                logging.error(
+                    "Error establishing connection to Redis. Message: {}".format(
+                        e.__str__()
+                    )
+                )
+
+    return res
 
 
 def get_benchmark_specs(testsuites_folder, test="", test_regex=".*"):
@@ -56,3 +109,111 @@ def extract_testsuites(args):
         )
     )
     return testsuite_spec_files
+
+
+def reset_commandstats(redis_conns):
+    for pos, redis_conn in enumerate(redis_conns):
+        logging.info("Resetting commmandstats for shard {}".format(pos))
+        try:
+            redis_conn.config_resetstat()
+        except redis.exceptions.ResponseError as e:
+            logging.warning(
+                "Catched an error while resetting status: {}".format(e.__str__())
+            )
+
+
+def exporter_datasink_common(
+    benchmark_config,
+    benchmark_duration_seconds,
+    build_variant_name,
+    datapoint_time_ms,
+    dataset_load_duration_seconds,
+    datasink_conn,
+    datasink_push_results_redistimeseries,
+    git_branch,
+    git_version,
+    metadata,
+    redis_conns,
+    results_dict,
+    running_platform,
+    setup_name,
+    setup_type,
+    test_name,
+    tf_github_org,
+    tf_github_repo,
+    tf_triggering_env,
+    topology_spec_name,
+):
+    logging.info("Using datapoint_time_ms: {}".format(datapoint_time_ms))
+    timeseries_test_sucess_flow(
+        datasink_push_results_redistimeseries,
+        git_version,
+        benchmark_config,
+        benchmark_duration_seconds,
+        dataset_load_duration_seconds,
+        None,
+        topology_spec_name,
+        setup_name,
+        None,
+        results_dict,
+        datasink_conn,
+        datapoint_time_ms,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        metadata,
+        build_variant_name,
+        running_platform,
+    )
+    logging.info("Collecting memory metrics")
+    (_, _, overall_end_time_metrics,) = collect_redis_metrics(
+        redis_conns,
+        ["memory"],
+        {
+            "memory": [
+                "used_memory",
+                "used_memory_dataset",
+            ]
+        },
+    )
+    print(overall_end_time_metrics)
+    # 7 days from now
+    expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
+    export_redis_metrics(
+        git_version,
+        datapoint_time_ms,
+        overall_end_time_metrics,
+        datasink_conn,
+        setup_name,
+        setup_type,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        {"metric-type": "redis-metrics"},
+        expire_redis_metrics_ms,
+    )
+    logging.info("Collecting commandstat metrics")
+    (
+        _,
+        _,
+        overall_commandstats_metrics,
+    ) = collect_redis_metrics(redis_conns, ["commandstats"])
+    export_redis_metrics(
+        git_version,
+        datapoint_time_ms,
+        overall_commandstats_metrics,
+        datasink_conn,
+        setup_name,
+        setup_type,
+        test_name,
+        git_branch,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        {"metric-type": "commandstats"},
+        expire_redis_metrics_ms,
+    )

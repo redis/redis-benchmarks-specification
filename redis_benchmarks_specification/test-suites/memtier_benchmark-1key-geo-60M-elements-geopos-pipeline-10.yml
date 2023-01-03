@@ -4,7 +4,12 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GE
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1
   dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - geo
 tested-commands:
@@ -21,15 +26,5 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-exporter:
-  redistimeseries:
-    break_by:
-    - version
-    - commit
-    timemetric: $."ALL STATS".Runtime."Start time"
-    metrics:
-    - $."ALL STATS".Totals."Ops/sec"
-    - $."ALL STATS".Totals."Latency"
-    - $."ALL STATS".Totals."Misses/sec"
-    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+
 priority: 138

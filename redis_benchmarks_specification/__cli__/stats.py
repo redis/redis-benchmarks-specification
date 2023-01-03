@@ -58,7 +58,11 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     fail_on_required_diff = args.fail_on_required_diff
     overall_result = True
     test_names = []
+    defaults_filename = args.defaults_filename
+
     for test_file in testsuite_spec_files:
+        if defaults_filename in test_file:
+            continue
         benchmark_config = {}
         requires_override = False
         test_result = True
@@ -160,6 +164,33 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         priority = priority_json_value
                 if priority is not None:
                     benchmark_config["priority"] = priority
+
+                resources = {}
+                if "resources" in benchmark_config["dbconfig"]:
+                    resources = benchmark_config["dbconfig"]["resources"]
+                else:
+                    benchmark_config["dbconfig"]["resources"] = resources
+
+                resources_requests = {}
+                if "requests" in resources:
+                    resources_requests = benchmark_config["dbconfig"]["resources"][
+                        "requests"
+                    ]
+                else:
+                    benchmark_config["dbconfig"]["resources"][
+                        "requests"
+                    ] = resources_requests
+
+                if "memory" not in resources_requests:
+                    benchmark_config["dbconfig"]["resources"]["requests"][
+                        "memory"
+                    ] = "1g"
+                    requires_override = True
+                    logging.warn(
+                        "dont have resources.requests.memory in {}. Setting 1GB default".format(
+                            test_name
+                        )
+                    )
 
                 if tested_groups != origin_tested_groups:
                     requires_override = True

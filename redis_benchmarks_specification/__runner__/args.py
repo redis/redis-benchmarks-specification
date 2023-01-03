@@ -26,6 +26,12 @@ def create_client_runner_args(project_name):
         default=MACHINE_NAME,
         help="Specify the running platform name. By default it will use the machine name.",
     )
+    parser.add_argument(
+        "--defaults_filename",
+        type=str,
+        default="{}/defaults.yml".format(SPECS_PATH_TEST_SUITES),
+        help="specify the defaults file containing spec topologies, common metric extractions,etc...",
+    )
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--setup_type", type=str, default="oss-standalone")
     parser.add_argument("--github_repo", type=str, default="redis")
@@ -54,12 +60,19 @@ def create_client_runner_args(project_name):
         help="Interpret PATTERN as a regular expression to filter test names",
     )
     parser.add_argument("--db_server_host", type=str, default="localhost")
+    parser.add_argument("--db_server_password", type=str, default=None)
     parser.add_argument("--db_server_port", type=int, default=6379)
     parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(
+        "--tests-priority-lower-limit",
+        type=int,
+        default=0,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
         "--tests-priority-upper-limit",
         type=int,
-        default=-1,
+        default=100000,
         help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
     )
     parser.add_argument(
@@ -67,6 +80,12 @@ def create_client_runner_args(project_name):
         default=False,
         action="store_true",
         help="Only check how many benchmarks we would run. Don't run benchmark but can change state of DB.",
+    )
+    parser.add_argument(
+        "--dry-run-include-preload",
+        default=False,
+        action="store_true",
+        help="Run all steps before benchmark. This can change the state of the DB.",
     )
     parser.add_argument(
         "--datasink_redistimeseries_host", type=str, default=DATASINK_RTS_HOST
@@ -170,5 +189,11 @@ def create_client_runner_args(project_name):
         default=False,
         action="store_true",
         help="Assume benchmarking tool (e.g. memtier benchmark) is installed locally and execute it without using a docker container.",
+    )
+    parser.add_argument(
+        "--override-test-runs",
+        default=1,
+        type=int,
+        help="override memtier number of runs for each benchmark. By default will run once each test",
     )
     return parser

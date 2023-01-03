@@ -4,10 +4,15 @@ description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. 
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum 1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1
+  resources:
+    requests:
+      memory: 1g
 tested-groups:
 - sorted-set
 tested-commands:
@@ -24,15 +29,5 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-exporter:
-  redistimeseries:
-    break_by:
-    - version
-    - commit
-    timemetric: $."ALL STATS".Runtime."Start time"
-    metrics:
-    - $."ALL STATS".Totals."Ops/sec"
-    - $."ALL STATS".Totals."Latency"
-    - $."ALL STATS".Totals."Misses/sec"
-    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+
 priority: 72

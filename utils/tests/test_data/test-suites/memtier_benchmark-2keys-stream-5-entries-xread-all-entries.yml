@@ -2,19 +2,24 @@ version: 0.4
 name: memtier_benchmark-2keys-stream-5-entries-xread-all-entries
 description: 'Runs memtier_benchmark, for a keyspace length of 2 STREAM keys with 5 entries on each stream. We query both streams on the same command using XREAD with range of all entries. '
 dbconfig:
-- configuration-parameters:
-  - save: '""'
-- init_commands:
-  - xadd key-1 * field value
-  - xadd key-1 * field value
-  - xadd key-1 * field value
-  - xadd key-1 * field value
-  - xadd key-1 * field value
-  - xadd key-2 * field value
-  - xadd key-2 * field value
-  - xadd key-2 * field value
-  - xadd key-2 * field value
-  - xadd key-2 * field value
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+   - xadd key-1 * field value
+   - xadd key-1 * field value
+   - xadd key-1 * field value
+   - xadd key-1 * field value
+   - xadd key-1 * field value
+   - xadd key-2 * field value
+   - xadd key-2 * field value
+   - xadd key-2 * field value
+   - xadd key-2 * field value
+   - xadd key-2 * field value
 tested-commands:
 - xread
 redis-topologies:
@@ -29,16 +34,6 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-exporter:
-  redistimeseries:
-    break_by:
-    - version
-    - commit
-    timemetric: $."ALL STATS".Runtime."Start time"
-    metrics:
-    - $."ALL STATS".Totals."Ops/sec"
-    - $."ALL STATS".Totals."Latency"
-    - $."ALL STATS".Totals."Misses/sec"
-    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+
 tested-groups:
 - stream

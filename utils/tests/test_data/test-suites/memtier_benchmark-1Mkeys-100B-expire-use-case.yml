@@ -5,10 +5,12 @@ description: "Runs memtier_benchmark, for a keyspace length of 1M keys
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 0
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--command" "SETEX __key__ 360 __data__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram"'
+    arguments: '"--command" "SETEX __key__ 360 __data__" "--command-key-pattern" "P" "-c" "5" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
 tested-commands:
   - SET
   - SETX

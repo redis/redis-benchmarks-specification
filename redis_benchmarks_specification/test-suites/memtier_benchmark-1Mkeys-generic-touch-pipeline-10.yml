@@ -4,10 +4,15 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing o
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1000000
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--command" "SETEX __key__ 3600 __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"'
+    arguments: '"--data-size" "100" "--command" "SETEX __key__ 3600 __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+  resources:
+    requests:
+      memory: 1g
 tested-commands:
 - touch
 tested-groups:
@@ -24,15 +29,5 @@ clientconfig:
     requests:
       cpus: '2'
       memory: 2g
-exporter:
-  redistimeseries:
-    break_by:
-    - version
-    - commit
-    timemetric: $."ALL STATS".Runtime."Start time"
-    metrics:
-    - $."ALL STATS".Totals."Ops/sec"
-    - $."ALL STATS".Totals."Latency"
-    - $."ALL STATS".Totals."Misses/sec"
-    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+
 priority: 41
