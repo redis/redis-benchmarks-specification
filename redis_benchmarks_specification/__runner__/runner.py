@@ -552,11 +552,8 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
-<<<<<<< HEAD
                             args.benchmark_local_install,
-=======
                             password,
->>>>>>> b7a4f24bef86cdfdf4ee892c9da50cb6095a5276
                         )
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
@@ -989,11 +986,8 @@ def data_prepopulation_step(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
-<<<<<<< HEAD
     benchmark_local_install=False,
-=======
     password=None,
->>>>>>> b7a4f24bef86cdfdf4ee892c9da50cb6095a5276
 ):
     # setup the benchmark
     (
