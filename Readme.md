@@ -41,12 +41,7 @@ Members from both industry and academia, including organizations and individuals
 Currently, the following members actively support this project:
 
 - [Redis Ltd.](https://redis.com/) via the Redis Performance Group: providing steady-stable infrastructure platform to run the benchmark suite. Supporting the active development of this project within the company.
-- [Intel.](https://intel.com/): Intel is hosting an on-prem cluster of servers dedicated to the always-on automatic performance testing.
-
-  The cluster contains six current generation (IceLake) servers and six prior generation (CascadeLake) servers connected to a high-speed 40Gb switch.
-
-  The older servers are used for performance testing across hardware generations, as well as for load generation clients in client-server benchmarks.
-
+- [Intel.](https://intel.com/): Intel is hosting an on-prem cluster of servers dedicated to the always-on automatic performance testing. 
 
 ## Scope 
 
