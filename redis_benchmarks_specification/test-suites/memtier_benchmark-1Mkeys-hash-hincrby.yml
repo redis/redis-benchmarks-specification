@@ -9,7 +9,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: ' --key-prefix "" --command "HSET __key__ field1 __key__" --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram'
+    arguments: '"--data-size" "1000" --command "HSET __key__ field1 __data__ field2 __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
       memory: 1g
@@ -24,7 +24,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 180 "--data-size" "1000" --command "HINCRBY __key__ field1 1.0" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
+  arguments: --test-time 180 --command "HINCRBY __key__ field1 1.0" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
