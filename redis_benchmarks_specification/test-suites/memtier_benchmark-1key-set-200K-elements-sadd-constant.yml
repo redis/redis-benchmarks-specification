@@ -1,0 +1,32 @@
+version: 0.4
+name: memtier_benchmark-1key-set-200K-elements-sadd-constant
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 200K elements. The SADD is being issued on a SET with constant size (we are just updating its members but not increasing). '
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SADD myset __key__" --command-key-pattern=P --key-maximum 200000 --key-prefix "" -n 200000 --hide-histogram -t 1 -c 1
+tested-groups:
+- set
+tested-commands:
+- sadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SADD myset __key__" --key-maximum 200000 --key-prefix ""  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 30
