@@ -190,4 +190,10 @@ def create_client_runner_args(project_name):
         type=int,
         help="override memtier number of runs for each benchmark. By default will run once each test",
     )
+    parser.add_argument(
+        "--cluster-mode",
+        default=False,
+        action="store_true",
+        help="Run client in cluster mode.",
+    )
     return parser
