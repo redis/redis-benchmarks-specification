@@ -410,7 +410,7 @@ def process_self_contained_coordinator_stream(
                     port = args.db_server_port
                     host = args.db_server_host
                     password = args.db_server_password
-
+                    oss_cluster_api_enabled = args.cluster_mode
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
                         ssl_cert_reqs = None
@@ -553,6 +553,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_cacert,
                             resp_version,
                             password,
+                            oss_cluster_api_enabled,
                         )
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
@@ -596,6 +597,7 @@ def process_self_contained_coordinator_stream(
                             local_benchmark_output_filename
                         )
                     )
+
                     if "memtier_benchmark" not in benchmark_tool:
                         # prepare the benchmark command
                         (
@@ -622,7 +624,7 @@ def process_self_contained_coordinator_stream(
                             host,
                             password,
                             local_benchmark_output_filename,
-                            False,
+                            oss_cluster_api_enabled,
                             tls_enabled,
                             tls_skip_verify,
                             test_tls_cert,
@@ -970,6 +972,7 @@ def data_prepopulation_step(
     tls_cacert=None,
     resp_version=None,
     password=None,
+    oss_cluster_api_enabled=False,
 ):
     # setup the benchmark
     (
@@ -999,7 +1002,7 @@ def data_prepopulation_step(
             host,
             password,
             local_benchmark_output_filename,
-            False,
+            oss_cluster_api_enabled,
             tls_enabled,
             tls_skip_verify,
             tls_cert,
