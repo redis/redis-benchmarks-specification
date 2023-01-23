@@ -220,6 +220,7 @@ def prepare_memtier_benchmark_parameters(
     override_memtier_test_time=0,
     override_test_runs=1,
 ):
+    arbitrary_command = False
     benchmark_command = [
         full_benchmark_path,
         "--port",
@@ -256,7 +257,9 @@ def prepare_memtier_benchmark_parameters(
     benchmark_command_str = " ".join(benchmark_command)
     if "arguments" in clientconfig:
         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
-    logging.info(override_memtier_test_time)
+
+    if "--command" in benchmark_command_str:
+        arbitrary_command = True
 
     if override_test_runs > 1:
         benchmark_command_str = re.sub(
@@ -330,7 +333,7 @@ def prepare_memtier_benchmark_parameters(
             benchmark_command_str,
         )
 
-    return None, benchmark_command_str
+    return None, benchmark_command_str, arbitrary_command
 
 
 def process_self_contained_coordinator_stream(
@@ -425,13 +428,41 @@ def process_self_contained_coordinator_stream(
                         ssl_ca_certs=tls_cacert,
                         ssl_check_hostname=False,
                     )
+                    setup_name = "oss-standalone"
                     r.ping()
                     redis_conns = [r]
-                    redis_pids = []
-                    first_redis_pid = r.info()["process_id"]
-                    redis_pids.append(first_redis_pid)
+                    if oss_cluster_api_enabled:
+                        redis_conns = []
+                        logging.info("updating redis connections from cluster slots")
+                        slots = r.cluster("slots")
+                        for slot in slots:
+                            # Master for slot range represented as nested networking information starts at pos 2
+                            # example: [0, 5460, [b'127.0.0.1', 30001, b'eccd21c2e7e9b7820434080d2e394cb8f2a7eff2', []]]
+                            slot_network_info = slot[2]
+                            prefered_endpoint = slot_network_info[0]
+                            prefered_port = slot_network_info[1]
+                            shard_conn = redis.StrictRedis(
+                                host=prefered_endpoint,
+                                port=prefered_port,
+                                password=password,
+                                ssl=tls_enabled,
+                                ssl_cert_reqs=ssl_cert_reqs,
+                                ssl_keyfile=tls_key,
+                                ssl_certfile=tls_cert,
+                                ssl_ca_certs=tls_cacert,
+                                ssl_check_hostname=False,
+                            )
+                            redis_conns.append(shard_conn)
+                        logging.info(
+                            "There are a total of {} shards".format(len(redis_conns))
+                        )
+                        setup_name = "oss-cluster"
 
-                    setup_name = "oss-standalone"
+                    redis_pids = []
+                    for conn in redis_conns:
+                        redis_pid = conn.info()["process_id"]
+                        redis_pids.append(redis_pid)
+
                     github_actor = f"{tf_triggering_env}-{running_platform}"
                     dso = "redis-server"
                     profilers_artifacts_matrix = []
@@ -457,12 +488,15 @@ def process_self_contained_coordinator_stream(
                     )
                     if args.flushall_on_every_test_start:
                         logging.info("Sending FLUSHALL to the DB")
-                        r.flushall()
+                        for conn in redis_conns:
+                            conn.flushall()
 
                     benchmark_required_memory = get_benchmark_required_memory(
                         benchmark_config
                     )
-                    maxmemory = get_maxmemory(r)
+                    maxmemory = 0
+                    for conn in redis_conns:
+                        maxmemory = maxmemory + get_maxmemory(conn)
                     if benchmark_required_memory > maxmemory:
                         logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
@@ -536,7 +570,7 @@ def process_self_contained_coordinator_stream(
                         continue
 
                     if "preload_tool" in benchmark_config["dbconfig"]:
-                        data_prepopulation_step(
+                        res = data_prepopulation_step(
                             benchmark_config,
                             benchmark_tool_workdir,
                             client_cpuset_cpus,
@@ -555,12 +589,20 @@ def process_self_contained_coordinator_stream(
                             password,
                             oss_cluster_api_enabled,
                         )
+                        if res is False:
+                            logging.warning(
+                                "Skipping this test given preload result was false"
+                            )
+                            continue
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
 
                     used_memory_check(
-                        test_name, benchmark_required_memory, r, "start of benchmark"
+                        test_name,
+                        benchmark_required_memory,
+                        redis_conns,
+                        "start of benchmark",
                     )
 
                     logging.info("Checking if there is a keyspace check being enforced")
@@ -597,6 +639,7 @@ def process_self_contained_coordinator_stream(
                             local_benchmark_output_filename
                         )
                     )
+                    arbitrary_command = False
 
                     if "memtier_benchmark" not in benchmark_tool:
                         # prepare the benchmark command
@@ -617,6 +660,7 @@ def process_self_contained_coordinator_stream(
                         (
                             _,
                             benchmark_command_str,
+                            arbitrary_command,
                         ) = prepare_memtier_benchmark_parameters(
                             benchmark_config["clientconfig"],
                             full_benchmark_path,
@@ -634,6 +678,16 @@ def process_self_contained_coordinator_stream(
                             override_memtier_test_time,
                             override_test_runs,
                         )
+
+                    if (
+                        arbitrary_command
+                        and oss_cluster_api_enabled
+                        and "memtier" in benchmark_tool
+                    ):
+                        logging.warning(
+                            "Forcing skip this test given there is an arbitrary commmand and memtier usage. Check https://github.com/RedisLabs/memtier_benchmark/pull/117 ."
+                        )
+                        continue
 
                     client_container_image = extract_client_container_image(
                         benchmark_config
@@ -704,12 +758,16 @@ def process_self_contained_coordinator_stream(
                     logging.info("Printing client tool stdout output")
 
                     used_memory_check(
-                        test_name, benchmark_required_memory, r, "end of benchmark"
+                        test_name,
+                        benchmark_required_memory,
+                        redis_conns,
+                        "end of benchmark",
                     )
 
                     if args.flushall_on_every_test_end:
                         logging.info("Sending FLUSHALL to the DB")
-                        r.flushall()
+                        for r in redis_conns:
+                            r.flushall()
                     datapoint_time_ms = start_time_ms
 
                     post_process_benchmark_results(
@@ -886,8 +944,10 @@ def get_benchmark_required_memory(benchmark_config):
     return benchmark_required_memory
 
 
-def used_memory_check(test_name, benchmark_required_memory, r, stage):
-    used_memory = r.info("memory")["used_memory"]
+def used_memory_check(test_name, benchmark_required_memory, redis_conns, stage):
+    used_memory = 0
+    for conn in redis_conns:
+        used_memory = used_memory + conn.info("memory")["used_memory"]
     used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
     logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
     if used_memory > benchmark_required_memory:
@@ -974,6 +1034,7 @@ def data_prepopulation_step(
     password=None,
     oss_cluster_api_enabled=False,
 ):
+    result = True
     # setup the benchmark
     (
         start_time,
@@ -995,7 +1056,11 @@ def data_prepopulation_step(
 
     if "memtier_benchmark" in preload_tool:
         override_memtier_test_time_preload = 0
-        (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
+        (
+            _,
+            preload_command_str,
+            arbitrary_command,
+        ) = prepare_memtier_benchmark_parameters(
             benchmark_config["dbconfig"]["preload_tool"],
             full_benchmark_path,
             port,
@@ -1011,6 +1076,12 @@ def data_prepopulation_step(
             resp_version,
             override_memtier_test_time_preload,
         )
+        if arbitrary_command is True and oss_cluster_api_enabled:
+            logging.warning(
+                "Skipping this test given it implies arbitrary command on an cluster setup. Not supported on memtier: https://github.com/RedisLabs/memtier_benchmark/pull/117"
+            )
+            result = False
+            return result
 
         logging.info(
             "Using docker image {} as benchmark PRELOAD image (cpuset={}) with the following args: {}".format(
@@ -1049,6 +1120,7 @@ def data_prepopulation_step(
                 client_container_stdout,
             )
         )
+    return result
 
 
 def generate_cpuset_cpus(ceil_db_cpu_limit, current_cpu_pos):
