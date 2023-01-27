@@ -463,7 +463,12 @@ def process_self_contained_coordinator_stream(
                         benchmark_config
                     )
                     maxmemory = get_maxmemory(r)
-                    if benchmark_required_memory > maxmemory:
+
+                    test_iterations = 1
+                    if override_test_runs > 1: 
+                            test_iterations = override_test_runs
+                    
+                    if benchmark_required_memory * test_iterations > maxmemory:
                         logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
                                 test_name, maxmemory, benchmark_required_memory
