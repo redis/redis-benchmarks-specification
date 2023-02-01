@@ -552,6 +552,7 @@ def process_self_contained_coordinator_stream(
                             test_tls_key,
                             test_tls_cacert,
                             resp_version,
+                            args.benchmark_local_install,
                             password,
                             oss_cluster_api_enabled,
                         )
@@ -652,32 +653,49 @@ def process_self_contained_coordinator_stream(
                         profiler_frequency,
                         profiler_call_graph_mode,
                     )
-                    logging.info(
-                        "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
-                            client_container_image,
-                            client_cpuset_cpus,
-                            benchmark_command_str,
-                        )
-                    )
+
                     # run the benchmark
                     benchmark_start_time = datetime.datetime.now()
 
-                    client_container_stdout = docker_client.containers.run(
-                        image=client_container_image,
-                        volumes={
-                            temporary_dir_client: {
-                                "bind": client_mnt_point,
-                                "mode": "rw",
+                    if args.benchmark_local_install:
+                        logging.info("Running memtier benchmark outside of docker")
+                        benchmark_command_str = "taskset -c " + client_cpuset_cpus + " " + benchmark_command_str
+                        logging.info(
+                            "Running memtier benchmark command {}".format(
+                                benchmark_command_str
+                            )
+                        )
+                        stream = os.popen(benchmark_command_str)
+                        client_container_stdout = stream.read()
+                        move_command = "mv {} {}".format(
+                            local_benchmark_output_filename, temporary_dir_client
+                        )
+                        os.system(move_command)
+                    else:
+                        logging.info(
+                            "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
+                                client_container_image,
+                                client_cpuset_cpus,
+                                benchmark_command_str,
+                            )
+                        )
+
+                        client_container_stdout = docker_client.containers.run(
+                            image=client_container_image,
+                            volumes={
+                                temporary_dir_client: {
+                                    "bind": client_mnt_point,
+                                    "mode": "rw",
+                                },
                             },
-                        },
-                        auto_remove=True,
-                        privileged=True,
-                        working_dir=benchmark_tool_workdir,
-                        command=benchmark_command_str,
-                        network_mode="host",
-                        detach=False,
-                        cpuset_cpus=client_cpuset_cpus,
-                    )
+                            auto_remove=True,
+                            privileged=True,
+                            working_dir=benchmark_tool_workdir,
+                            command=benchmark_command_str,
+                            network_mode="host",
+                            detach=False,
+                            cpuset_cpus=client_cpuset_cpus,
+                        )
 
                     benchmark_end_time = datetime.datetime.now()
                     benchmark_duration_seconds = (
@@ -971,6 +989,7 @@ def data_prepopulation_step(
     tls_key=None,
     tls_cacert=None,
     resp_version=None,
+    benchmark_local_install=False,
     password=None,
     oss_cluster_api_enabled=False,
 ):
@@ -1012,32 +1031,50 @@ def data_prepopulation_step(
             override_memtier_test_time_preload,
         )
 
-        logging.info(
-            "Using docker image {} as benchmark PRELOAD image (cpuset={}) with the following args: {}".format(
-                preload_image,
-                client_cpuset_cpus,
-                preload_command_str,
-            )
-        )
         # run the benchmark
         preload_start_time = datetime.datetime.now()
 
-        client_container_stdout = docker_client.containers.run(
-            image=preload_image,
-            volumes={
-                temporary_dir: {
-                    "bind": client_mnt_point,
-                    "mode": "rw",
+        if benchmark_local_install:
+            logging.info("Running memtier benchmark outside of docker")
+
+            preload_command_str = "taskset -c " + client_cpuset_cpus + " " + preload_command_str
+            logging.info(
+                "Pre-loading using memtier benchmark command {}".format(
+                    preload_command_str
+                )
+            )
+            stream = os.popen(preload_command_str)
+            client_container_stdout = stream.read()
+
+            move_command = "mv {} {}".format(
+                local_benchmark_output_filename, temporary_dir
+            )
+            os.system(move_command)
+
+        else:
+            logging.info(
+                "Using docker image {} as benchmark PRELOAD image (cpuset={}) with the following args: {}".format(
+                    preload_image,
+                    client_cpuset_cpus,
+                    preload_command_str,
+                )
+            )
+            client_container_stdout = docker_client.containers.run(
+                image=preload_image,
+                volumes={
+                    temporary_dir: {
+                        "bind": client_mnt_point,
+                        "mode": "rw",
+                    },
                 },
-            },
-            auto_remove=True,
-            privileged=True,
-            working_dir=benchmark_tool_workdir,
-            command=preload_command_str,
-            network_mode="host",
-            detach=False,
-            cpuset_cpus=client_cpuset_cpus,
-        )
+                auto_remove=True,
+                privileged=True,
+                working_dir=benchmark_tool_workdir,
+                command=preload_command_str,
+                network_mode="host",
+                detach=False,
+                cpuset_cpus=client_cpuset_cpus,
+            )
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(

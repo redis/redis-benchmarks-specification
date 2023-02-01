@@ -185,6 +185,12 @@ def create_client_runner_args(project_name):
         help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
     )
     parser.add_argument(
+        "--benchmark_local_install",
+        default=False,
+        action="store_true",
+        help="Assume benchmarking tool (e.g. memtier benchmark) is installed locally and execute it without using a docker container.",
+    )
+    parser.add_argument(
         "--override-test-runs",
         default=1,
         type=int,
