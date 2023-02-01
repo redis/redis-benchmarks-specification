@@ -105,12 +105,13 @@ There is an option to run "redis-benchmarks-spec" tests using standalone runner 
 
 ```bash
 # Run redis server
-./src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
+[taskset -c cpu] /src/redis-server --port 6379 --dir logs --logfile server.log --save "" [--daemonize yes]
 
 # Run benchmark
 redis-benchmarks-spec-client-runner --db_server_host localhost --db_server_port 6379 --client_aggregated_results_folder ./test
 ```
 
+Use taskset when starting the redis-server to pin it to a particular cpu and get more consistent results. 
 Option "--daemonize yes" given to server run command allows to run redis-server in background.<br />
 Option "--test X.yml" given to benchmark execution command allows to run particular test, where X - test name
 
