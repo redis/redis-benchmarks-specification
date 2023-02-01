@@ -8,7 +8,7 @@ dbconfig:
     keyspacelen: 1
   resources:
     requests:
-      memory: 1g
+      memory: 2g
 tested-groups:
 - hyperloglog
 tested-commands:
