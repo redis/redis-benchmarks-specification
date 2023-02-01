@@ -8,7 +8,7 @@ dbconfig:
     keyspacelen: 0
   resources:
     requests:
-      memory: 12g
+      memory: 5g
 tested-commands:
 - xadd
 redis-topologies:
@@ -18,7 +18,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "10" "--data-size" "100" --command "XADD __key__ * field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+  arguments: '"--pipeline" "10" "--data-size" "100" --command "XADD __key__ MAXLEN ~ 1 * field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
       cpus: '4'
