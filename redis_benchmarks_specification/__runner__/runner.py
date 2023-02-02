@@ -659,7 +659,12 @@ def process_self_contained_coordinator_stream(
 
                     if args.benchmark_local_install:
                         logging.info("Running memtier benchmark outside of docker")
-                        benchmark_command_str = "taskset -c " + client_cpuset_cpus + " " + benchmark_command_str
+                        benchmark_command_str = (
+                            "taskset -c "
+                            + client_cpuset_cpus
+                            + " "
+                            + benchmark_command_str
+                        )
                         logging.info(
                             "Running memtier benchmark command {}".format(
                                 benchmark_command_str
@@ -1037,7 +1042,9 @@ def data_prepopulation_step(
         if benchmark_local_install:
             logging.info("Running memtier benchmark outside of docker")
 
-            preload_command_str = "taskset -c " + client_cpuset_cpus + " " + preload_command_str
+            preload_command_str = (
+                "taskset -c " + client_cpuset_cpus + " " + preload_command_str
+            )
             logging.info(
                 "Pre-loading using memtier benchmark command {}".format(
                     preload_command_str
