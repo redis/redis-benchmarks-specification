@@ -101,6 +101,11 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 if is_memtier:
                     arguments = benchmark_config["clientconfig"]["arguments"]
                     arguments_split = arguments.split("--command")
+
+                    if len(arguments_split) == 1:
+                        # this means no arbitrary command is being used so we default to memtier default group, which is 'string'
+                        tested_groups.append("string")
+
                     for command_part in arguments_split[1:]:
                         command_part = command_part.strip()
                         command_p = command_part.split(" ", 1)[0]
@@ -248,6 +253,8 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             for row in csv_reader:
                 if len(row) == 0:
                     continue
+                if "cmdstat_" not in row[0]:
+                    continue
                 # row variable is a list that represents a row in csv
                 cmdstat = row[0]
                 cmdstat = cmdstat.replace("cmdstat_", "")
@@ -323,8 +330,10 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 "usecs",
                 "tracked",
                 "deprecated",
+                "usec_per_call",
                 "% count",
                 "% usecs",
+                "diff count usecs",
             ]
             import csv
 
@@ -339,10 +348,16 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     usec = row[3]
                     pct = count / total_count
                     pct_usec = "n/a"
+                    usec_per_call = "n/a"
+                    diff_pct = "n/a"
                     if usec is not None:
                         pct_usec = usec / total_usecs
+                        usec_per_call = float(usec) / float(count)
+                        diff_pct = pct_usec - pct
+                    row.append(usec_per_call)
                     row.append(pct)
                     row.append(pct_usec)
+                    row.append(diff_pct)
                     writer.writerow(row)
 
         if total_tracked_count > 0:

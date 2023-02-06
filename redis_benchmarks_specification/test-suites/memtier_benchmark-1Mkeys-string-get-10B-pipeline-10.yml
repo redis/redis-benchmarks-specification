@@ -9,7 +9,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "10" "--command" "SET __key__ __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
   resources:
     requests:
       memory: 1g
@@ -22,10 +22,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "10" "--data-size" "10" --command "GET __key__" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180'
+  arguments: '"--pipeline" "10" "--data-size" "10" --ratio 0:1 --key-pattern R:R -c 25 -t 4 --hide-histogram --test-time 180'
   resources:
     requests:
-      cpus: '2'
+      cpus: '4'
       memory: 2g
 
 tested-groups:

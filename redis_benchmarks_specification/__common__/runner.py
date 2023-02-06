@@ -178,7 +178,6 @@ def exporter_datasink_common(
             ]
         },
     )
-    print(overall_end_time_metrics)
     # 7 days from now
     expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
     export_redis_metrics(
