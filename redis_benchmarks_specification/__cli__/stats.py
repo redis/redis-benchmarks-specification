@@ -357,7 +357,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     row.append(usec_per_call)
                     row.append(pct)
                     row.append(pct_usec)
-                    row.append(pct_usec)
+                    row.append(diff_pct)
                     writer.writerow(row)
 
         if total_tracked_count > 0:
