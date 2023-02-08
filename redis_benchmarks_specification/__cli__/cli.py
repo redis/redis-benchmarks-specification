@@ -97,7 +97,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     total_commits = 0
     if args.use_branch:
         for commit in repo.iter_commits():
-            commit_datetime = str(commit.committed_datetime)
+            commit_datetime = commit.committed_datetime
             if (
                 args.from_date
                 <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
