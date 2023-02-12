@@ -8,7 +8,7 @@ dbconfig:
     keyspacelen: 0
   resources:
     requests:
-      memory: 1g
+      memory: 3g
 tested-commands:
 - set
 redis-topologies:
