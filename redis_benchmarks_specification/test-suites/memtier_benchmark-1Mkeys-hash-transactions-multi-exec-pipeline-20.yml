@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-hash-transactions-multi-exec-pipeline-20
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key, focusing on the MULTI EXEC scenario.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key, focusing on the MULTI EXEC scenario. TODO - this descriotion needs fixing. We either need a preload command to populate 1M keys, or we need to modify this description. 
 tested-groups:
 - transactions
 - hash
@@ -19,7 +19,7 @@ dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 1000000
+    keyspacelen: 0
   resources:
     requests:
       memory: 1g

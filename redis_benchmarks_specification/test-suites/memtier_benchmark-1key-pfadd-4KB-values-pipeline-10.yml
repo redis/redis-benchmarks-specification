@@ -5,7 +5,7 @@ dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 1
+    keyspacelen: 0
   resources:
     requests:
       memory: 2g
