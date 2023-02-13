@@ -65,9 +65,7 @@ def get_commits(args, repo):
             <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
             <= args.to_date
         ):
-            if (
-                args.last_n > 0 and total_commits < args.last_n
-            ) or args.last_n == -1:
+            if (args.last_n > 0 and total_commits < args.last_n) or args.last_n == -1:
                 total_commits = total_commits + 1
                 print(commit.summary)
                 commits.append(
@@ -153,7 +151,6 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 )
                 <= args.to_date
             ):
-
                 try:
                     version.Version(tag.name)
                     match_obj = re.search(tags_regex_string, tag.name)
@@ -237,7 +234,6 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
 
         for rep in range(0, 1):
             for cdict in filtered_hash_commits:
-
                 (
                     result,
                     error_msg,
