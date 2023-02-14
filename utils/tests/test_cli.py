@@ -5,9 +5,10 @@
 #
 import argparse
 import os
+import git
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
-from redis_benchmarks_specification.__cli__.cli import trigger_tests_cli_command_logic
+from redis_benchmarks_specification.__cli__.cli import trigger_tests_cli_command_logic, get_commits, get_repo
 
 
 def test_run_local_command_logic_oss_cluster():
@@ -38,5 +39,22 @@ def test_run_local_command_logic_oss_cluster():
     )
     try:
         trigger_tests_cli_command_logic(args, "tool", "v0")
+    except SystemExit as e:
+        assert e.code == 0
+
+
+def test_get_commits():
+    parser = argparse.ArgumentParser(
+        description="test",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser = spec_cli_args(parser)
+    args = parser.parse_args(args=[])
+
+    redisDirPath, cleanUp = get_repo(args)
+    repo = git.Repo(redisDirPath)
+
+    try:
+        get_commits(args, repo)
     except SystemExit as e:
         assert e.code == 0

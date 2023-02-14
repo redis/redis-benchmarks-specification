@@ -55,15 +55,31 @@ def main():
         generate_stats_cli_command_logic(args, project_name, project_version)
 
 
-def trigger_tests_cli_command_logic(args, project_name, project_version):
-    logging.info(
-        "Using: {project_name} {project_version}".format(
-            project_name=project_name, project_version=project_version
-        )
-    )
-    if args.use_branch is False and args.use_tags is False:
-        logging.error("You must specify either --use-tags or --use-branch flag")
-        sys.exit(1)
+def get_commits(args, repo):
+    total_commits = 0
+    commits = []
+    for commit in repo.iter_commits():
+        commit_datetime = commit.committed_datetime
+        if (
+            args.from_date
+            <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
+            <= args.to_date
+        ):
+            if (args.last_n > 0 and total_commits < args.last_n) or args.last_n == -1:
+                total_commits = total_commits + 1
+                print(commit.summary)
+                commits.append(
+                    {
+                        "git_hash": commit.hexsha,
+                        "git_branch": repo.active_branch.name,
+                        "commit_summary": commit.summary,
+                        "commit_datetime": commit_datetime,
+                    }
+                )
+    return commits, total_commits
+
+
+def get_repo(args):
     redisDirPath = args.redis_repo
     cleanUp = False
     if redisDirPath is None:
@@ -87,35 +103,33 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 redisDirPath
             )
         )
+    return redisDirPath, cleanUp
+
+
+def trigger_tests_cli_command_logic(args, project_name, project_version):
+    logging.info(
+        "Using: {project_name} {project_version}".format(
+            project_name=project_name, project_version=project_version
+        )
+    )
+
+    if args.use_branch is False and args.use_tags is False:
+        logging.error("You must specify either --use-tags or --use-branch flag")
+        sys.exit(1)
+
+    redisDirPath, cleanUp = get_repo(args)
+    repo = git.Repo(redisDirPath)
+
     logging.info(
         "Using the following timeframe: from {} to {}".format(
             args.from_date, args.to_date
         )
     )
-    repo = git.Repo(redisDirPath)
+
     commits = []
-    total_commits = 0
     if args.use_branch:
-        for commit in repo.iter_commits():
-            commit_datetime = str(commit.committed_datetime)
-            if (
-                args.from_date
-                <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
-                <= args.to_date
-            ):
-                if (
-                    args.last_n > 0 and total_commits < args.last_n
-                ) or args.last_n == -1:
-                    total_commits = total_commits + 1
-                    print(commit.summary)
-                    commits.append(
-                        {
-                            "git_hash": commit.hexsha,
-                            "git_branch": repo.active_branch.name,
-                            "commit_summary": commit.summary,
-                            "commit_datetime": commit_datetime,
-                        }
-                    )
+        commits, total_commits = get_commits(args, repo)
+
     if args.use_tags:
         tags_regexp = args.tags_regexp
         if tags_regexp == ".*":
@@ -137,7 +151,6 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 )
                 <= args.to_date
             ):
-
                 try:
                     version.Version(tag.name)
                     match_obj = re.search(tags_regex_string, tag.name)
@@ -221,7 +234,6 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
 
         for rep in range(0, 1):
             for cdict in filtered_hash_commits:
-
                 (
                     result,
                     error_msg,
