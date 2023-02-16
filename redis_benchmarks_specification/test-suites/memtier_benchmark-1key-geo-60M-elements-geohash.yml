@@ -9,7 +9,7 @@ dbconfig:
   dataset: https://s3.us-east-2.amazonaws.com/redis.benchmarks.spec/datasets/geopoint/dump.rdb
   resources:
     requests:
-      memory: 1g
+      memory: 6g
 tested-groups:
 - geo
 tested-commands:
@@ -21,7 +21,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: -c 2 -t 2 --command="GEOHASH key 1"  --hide-histogram --test-time 180
+  arguments: -c 50 -t 4 --command="GEOHASH key 1"  --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '4'
