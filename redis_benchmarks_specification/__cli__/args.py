@@ -46,6 +46,7 @@ def spec_cli_args(parser):
         help="Include modules statistics on commandstats.",
     )
     parser.add_argument("--summary-csv", type=str, default="")
+    parser.add_argument("--group-csv", type=str, default="")
     parser.add_argument("--commands-json-file", type=str, default="./commands.json")
     parser.add_argument(
         "--commands-priority-file", type=str, default="./commands-priority.json"

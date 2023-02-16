@@ -1,0 +1,31 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-10-elements-zrange-all-elements-long-scores
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 10 elements in it and we query it using ZRANGE BYSCORE with a range of all elements. The scores are long numbers.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"ZADD" "zset:10:long_score" "10000000" "lysbgqqfqw" "10000001" "mtccjerdon" "10000002" "jekkafodvk" "10000003" "nmgxcctxpn" "10000004" "vyqqkuszzh" "10000005" "pytrnqdhvs" "10000006" "oguwnmniig" "10000007" "gekntrykfh" "10000008" "nhfnbxqgol" "10000009" "cgoeihlnei"'
+tested-groups:
+- sorted-set
+tested-commands:
+- zrange
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANGE zset:10:long_score 0 1000000000 BYSCORE WITHSCORES"  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 53

@@ -4,6 +4,7 @@ import os
 
 import redis
 import oyaml as yaml
+import csv
 
 from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
 
@@ -224,6 +225,24 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 yaml.dump(benchmark_config, file, sort_keys=False, width=100000)
     total_tracked_commands_pct = "n/a"
 
+    module_names = {
+        "ft": "redisearch",
+        "search": "redisearch",
+        "_ft": "redisearch",
+        "graph": "redisgraph",
+        "ts": "redistimeseries",
+        "timeseries": "redistimeseries",
+        "json": "redisjson",
+        "bf": "redisbloom",
+        "cf": "redisbloom",
+        "topk": "redisbloom",
+        "cms": "redisbloom",
+        "tdigest": "redisbloom",
+    }
+
+    group_usage_calls = {}
+    group_usage_usecs = {}
+
     if args.commandstats_csv != "":
         logging.info(
             "Reading commandstats csv {} to determine commands/test coverage".format(
@@ -234,6 +253,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
         rows = []
         priority = {}
+        priority_usecs = {}
 
         # open file in read mode
         total_count = 0
@@ -246,10 +266,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             csv_reader = reader(x.replace("\0", "") for x in read_obj)
             # Iterate over each row in the csv using reader object
             for row in csv_reader:
-                if len(row) == 0:
+                if len(row) <= 2:
                     continue
                 # row variable is a list that represents a row in csv
                 cmdstat = row[0]
+                cmdstat = cmdstat.lower()
+                if "cmdstat_" not in cmdstat:
+                    continue
                 cmdstat = cmdstat.replace("cmdstat_", "")
                 count = int(row[1])
                 usecs = None
@@ -265,6 +288,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 deprecated = False
                 if "." in cmdstat:
                     module = True
+                    cmd_module_prefix = cmdstat.split(".")[0]
+                    if cmd_module_prefix in module_names:
+                        group = module_names[cmd_module_prefix]
+                    else:
+                        logging.error(
+                            "command with a module prefix does not have module name {}".format(
+                                cmd_module_prefix
+                            )
+                        )
                 if cmd in commands_json:
                     command_json = commands_json[cmd]
                     group = command_json["group"]
@@ -273,14 +305,35 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
                 if module is False or include_modules:
                     priority[cmd.lower()] = count
+                    if type(usecs) == int:
+                        priority_usecs[cmd.lower()] = usecs
 
                 if cmdstat in tracked_commands_json:
                     tracked = True
                 if module is False or include_modules:
                     row = [cmdstat, group, count, usecs, tracked, deprecated]
                     rows.append(row)
+                if group not in group_usage_calls:
+                    group_usage_calls[group] = {}
+                    group_usage_calls[group]["call"] = 0
+                if group not in group_usage_usecs:
+                    group_usage_usecs[group] = {}
+                    group_usage_usecs[group]["usecs"] = 0
+                if type(count) == int:
+                    group_usage_calls[group]["call"] = (
+                        group_usage_calls[group]["call"] + count
+                    )
+                if type(usecs) == int:
+                    group_usage_usecs[group]["usecs"] = (
+                        group_usage_usecs[group]["usecs"] + usecs
+                    )
+                if group == "n/a":
+                    logging.warn("Unable to detect group in {}".format(cmd))
 
         priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
+        priority_list_usecs = sorted(
+            ((priority_usecs[cmd], cmd) for cmd in priority_usecs), reverse=True
+        )
 
         priority_json = {}
         top_10_missing = []
@@ -290,6 +343,16 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         for x in priority_list:
             count = x[0]
             total_count += count
+
+        for group_name, group in group_usage_calls.items():
+            call = group["call"]
+            pct = call / total_count
+            group["pct"] = pct
+
+        for group_name, group in group_usage_usecs.items():
+            usecs = group["usecs"]
+            pct = usecs / total_usecs
+            group["pct"] = pct
 
         for pos, x in enumerate(priority_list, 1):
             count = x[0]
@@ -315,6 +378,31 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 )
                 json.dump(priority_json, fd, indent=True)
 
+        if args.group_csv != "":
+            header = [
+                "group",
+                "count",
+                "usecs",
+                "usec_per_call",
+                "% count",
+                "% usecs",
+            ]
+            with open(args.group_csv, "w", encoding="UTF8", newline="") as f:
+                writer = csv.writer(f)
+
+                # write the header
+                writer.writerow(header)
+                for group_name, group_usage_info in group_usage_calls.items():
+                    count = group_usage_info["call"]
+                    call_pct = group_usage_info["pct"]
+                    usecs = group_usage_usecs[group_name]["usecs"]
+                    usecs_pct = group_usage_usecs[group_name]["pct"]
+                    usecs_per_call = usecs / count
+
+                    writer.writerow(
+                        [group_name, count, usecs, usecs_per_call, call_pct, usecs_pct]
+                    )
+
         if args.summary_csv != "":
             header = [
                 "command",
@@ -326,7 +414,6 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 "% count",
                 "% usecs",
             ]
-            import csv
 
             with open(args.summary_csv, "w", encoding="UTF8", newline="") as f:
                 writer = csv.writer(f)
