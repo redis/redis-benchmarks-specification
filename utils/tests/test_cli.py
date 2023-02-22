@@ -8,7 +8,7 @@ import os
 import git
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
-from redis_benchmarks_specification.__cli__.cli import trigger_tests_cli_command_logic, get_commits, get_repo
+from redis_benchmarks_specification.__cli__.cli import trigger_tests_cli_command_logic, get_commits_by_branch, get_commits_by_tags, get_repo
 
 
 def test_run_local_command_logic_oss_cluster():
@@ -45,16 +45,23 @@ def test_run_local_command_logic_oss_cluster():
 
 def test_get_commits():
     parser = argparse.ArgumentParser(
-        description="test",
+        description="Get commits test",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser = spec_cli_args(parser)
-    args = parser.parse_args(args=[])
 
+    args = parser.parse_args(args=[])
     redisDirPath, cleanUp = get_repo(args)
     repo = git.Repo(redisDirPath)
 
+    args = parser.parse_args(args=["--use-branch", "--from-date", "2023-02-11"])
     try:
-        get_commits(args, repo)
+        get_commits_by_branch(args, repo)
+    except SystemExit as e:
+        assert e.code == 0
+
+    args = parser.parse_args(args=["--use-branch", "--from-date", "2023-02-11"])
+    try:
+        get_commits_by_tags(args, repo)
     except SystemExit as e:
         assert e.code == 0

@@ -55,7 +55,7 @@ def main():
         generate_stats_cli_command_logic(args, project_name, project_version)
 
 
-def get_commits(args, repo):
+def get_commits_by_branch(args, repo):
     total_commits = 0
     commits = []
     for commit in repo.iter_commits():
@@ -73,11 +73,67 @@ def get_commits(args, repo):
                         "git_hash": commit.hexsha,
                         "git_branch": repo.active_branch.name,
                         "commit_summary": commit.summary,
-                        "commit_datetime": commit_datetime,
+                        "commit_datetime": str(commit_datetime),
                     }
                 )
     return commits, total_commits
 
+
+def get_commits_by_tags(args, repo):
+    commits = []
+    tags_regexp = args.tags_regexp
+    if tags_regexp == ".*":
+        logging.info(
+            "Acception all tags that follow semver between the timeframe. If you need further filter specify a regular expression via --tags-regexp"
+        )
+    else:
+        logging.info(
+            "Filtering all tags via a regular expression: {}".format(tags_regexp)
+        )
+    tags_regex_string = re.compile(tags_regexp)
+
+    tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
+    for tag in tags:
+        if (
+            args.from_date
+            <= datetime.datetime.utcfromtimestamp(
+                tag.commit.committed_datetime.timestamp()
+            )
+            <= args.to_date
+        ):
+            try:
+                version.Version(tag.name)
+                match_obj = re.search(tags_regex_string, tag.name)
+                if match_obj is None:
+                    logging.info(
+                        "Skipping {} given it does not match regex {}".format(
+                            tag.name, tags_regexp
+                        )
+                    )
+                else:
+                    git_version = tag.name
+                    commit_datetime = str(tag.commit.committed_datetime)
+                    print(
+                        "Commit summary: {}. Extract semver: {}".format(
+                            tag.commit.summary, git_version
+                        )
+                    )
+                    commits.append(
+                        {
+                            "git_hash": tag.commit.hexsha,
+                            "git_version": git_version,
+                            "commit_summary": tag.commit.summary,
+                            "commit_datetime": commit_datetime,
+                        }
+                    )
+            except packaging.version.InvalidVersion:
+                logging.info(
+                    "Ignoring tag {} given we were not able to extract commit or version info from it.".format(
+                        tag.name
+                    )
+                )
+                pass
+    return commits
 
 def get_repo(args):
     redisDirPath = args.redis_repo
@@ -128,61 +184,10 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
 
     commits = []
     if args.use_branch:
-        commits, total_commits = get_commits(args, repo)
-
+        commits, total_commits = get_commits_by_branch(args, repo)
     if args.use_tags:
-        tags_regexp = args.tags_regexp
-        if tags_regexp == ".*":
-            logging.info(
-                "Acception all tags that follow semver between the timeframe. If you need further filter specify a regular expression via --tags-regexp"
-            )
-        else:
-            logging.info(
-                "Filtering all tags via a regular expression: {}".format(tags_regexp)
-            )
-        tags_regex_string = re.compile(tags_regexp)
+        commtis = get_commits_by_tags(args, repo)
 
-        tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
-        for tag in tags:
-            if (
-                args.from_date
-                <= datetime.datetime.utcfromtimestamp(
-                    tag.commit.committed_datetime.timestamp()
-                )
-                <= args.to_date
-            ):
-                try:
-                    version.Version(tag.name)
-                    match_obj = re.search(tags_regex_string, tag.name)
-                    if match_obj is None:
-                        logging.info(
-                            "Skipping {} given it does not match regex {}".format(
-                                tag.name, tags_regexp
-                            )
-                        )
-                    else:
-                        git_version = tag.name
-                        commit_datetime = str(tag.commit.committed_datetime)
-                        print(
-                            "Commit summary: {}. Extract semver: {}".format(
-                                tag.commit.summary, git_version
-                            )
-                        )
-                        commits.append(
-                            {
-                                "git_hash": tag.commit.hexsha,
-                                "git_version": git_version,
-                                "commit_summary": tag.commit.summary,
-                                "commit_datetime": commit_datetime,
-                            }
-                        )
-                except packaging.version.InvalidVersion:
-                    logging.info(
-                        "Ignoring tag {} given we were not able to extract commit or version info from it.".format(
-                            tag.name
-                        )
-                    )
-                    pass
     by_description = "n/a"
     if args.use_branch:
         by_description = "from branch {}".format(repo.active_branch.name)
