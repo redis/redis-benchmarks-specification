@@ -338,9 +338,6 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     logging.warn("Unable to detect group in {}".format(cmd))
 
         priority_list = sorted(((priority[cmd], cmd) for cmd in priority), reverse=True)
-        priority_list_usecs = sorted(
-            ((priority_usecs[cmd], cmd) for cmd in priority_usecs), reverse=True
-        )
 
         priority_json = {}
         top_10_missing = []
