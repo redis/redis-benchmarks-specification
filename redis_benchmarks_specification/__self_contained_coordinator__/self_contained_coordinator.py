@@ -441,7 +441,7 @@ def process_self_contained_coordinator_stream(
                             )
                             continue
                         else:
-                            logging.error(
+                            logging.info(
                                 "Running build variant {} given it's present on the build-variants spec {}".format(
                                     build_variant_name, build_variants
                                 )
