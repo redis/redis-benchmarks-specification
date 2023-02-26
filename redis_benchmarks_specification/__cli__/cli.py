@@ -135,6 +135,7 @@ def get_commits_by_tags(args, repo):
                 pass
     return commits
 
+
 def get_repo(args):
     redisDirPath = args.redis_repo
     cleanUp = False

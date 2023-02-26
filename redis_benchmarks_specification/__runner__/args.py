@@ -64,6 +64,12 @@ def create_client_runner_args(project_name):
     parser.add_argument("--db_server_port", type=int, default=6379)
     parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(
+        "--maxmemory",
+        type=int,
+        default=0,
+        help="If specified will not retrieved the maxmemory from the DB Server and will use this limit. If 0 will read the this value from the DB servers.",
+    )
+    parser.add_argument(
         "--tests-priority-lower-limit",
         type=int,
         default=0,

@@ -495,8 +495,11 @@ def process_self_contained_coordinator_stream(
                         benchmark_config
                     )
                     maxmemory = 0
-                    for conn in redis_conns:
-                        maxmemory = maxmemory + get_maxmemory(conn)
+                    if args.maxmemory > 0:
+                        maxmemory = args.maxmemory
+                    else:
+                        for conn in redis_conns:
+                            maxmemory = maxmemory + get_maxmemory(conn)
                     if benchmark_required_memory > maxmemory:
                         logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
