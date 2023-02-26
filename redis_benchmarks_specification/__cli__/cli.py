@@ -73,7 +73,7 @@ def get_commits(args, repo):
                         "git_hash": commit.hexsha,
                         "git_branch": repo.active_branch.name,
                         "commit_summary": commit.summary,
-                        "commit_datetime": commit_datetime,
+                        "commit_datetime": str(commit_datetime),
                     }
                 )
     return commits, total_commits
