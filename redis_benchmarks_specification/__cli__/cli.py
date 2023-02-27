@@ -135,6 +135,7 @@ def get_commits_by_tags(args, repo):
                 pass
     return commits
 
+
 def get_repo(args):
     redisDirPath = args.redis_repo
     cleanUp = False
@@ -186,7 +187,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     if args.use_branch:
         commits, total_commits = get_commits_by_branch(args, repo)
     if args.use_tags:
-        commtis = get_commits_by_tags(args, repo)
+        commits = get_commits_by_tags(args, repo)
 
     by_description = "n/a"
     if args.use_branch:
