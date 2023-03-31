@@ -8,7 +8,7 @@ dbconfig:
     keyspacelen: 0
   resources:
     requests:
-      memory: 24g
+      memory: 32g
 tested-groups:
 - list
 tested-commands:
