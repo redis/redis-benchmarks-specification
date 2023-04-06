@@ -329,6 +329,7 @@ def self_contained_coordinator_blocking_read(
             cpuset_start_pos,
             redis_proc_start_port,
             docker_air_gap,
+            default_metrics,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -904,13 +905,13 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                     pass
-                        shutil.rmtree(temporary_dir, ignore_errors=True)
-                        shutil.rmtree(temporary_dir_client, ignore_errors=True)
                         logging.info(
                             "Removing temporary dirs {} and {}".format(
                                 temporary_dir, temporary_dir_client
                             )
                         )
+                        shutil.rmtree(temporary_dir, ignore_errors=True)
+                        shutil.rmtree(temporary_dir_client, ignore_errors=True)
 
                         overall_result &= test_result
 
