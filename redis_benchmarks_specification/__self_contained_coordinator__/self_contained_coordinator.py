@@ -35,7 +35,6 @@ from redis_benchmarks_specification.__common__.runner import (
 )
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
-    prepare_overall_total_test_results,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
