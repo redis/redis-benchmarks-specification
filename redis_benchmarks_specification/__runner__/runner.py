@@ -157,7 +157,7 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     resp_version = args.resp
     client_aggregated_results_folder = args.client_aggregated_results_folder
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
-    override_memtier_test_time = args.override_memtier_test_time
+
     docker_client = docker.from_env()
     home = str(Path.home())
     profilers_list = []
@@ -172,6 +172,7 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
                 )
             )
             exit(1)
+    override_memtier_test_time = args.override_memtier_test_time
     if override_memtier_test_time > 0:
         logging.info(
             "Overriding memtier benchmark --test-time to {} seconds".format(
@@ -855,6 +856,7 @@ def process_self_contained_coordinator_stream(
                         tf_github_repo,
                         tf_triggering_env,
                         topology_spec_name,
+                        default_metrics,
                     )
                     test_result = True
                     total_test_suite_runs = total_test_suite_runs + 1

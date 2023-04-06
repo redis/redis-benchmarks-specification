@@ -33,6 +33,10 @@ from redis_benchmarks_specification.__common__.runner import (
     reset_commandstats,
     exporter_datasink_common,
 )
+from redis_benchmarks_specification.__runner__.runner import (
+    print_results_table_stdout,
+    prepare_overall_total_test_results,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
 )
@@ -61,6 +65,7 @@ from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
     extract_redis_dbconfig_parameters,
+    get_defaults,
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
@@ -197,6 +202,15 @@ def main():
     datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
     grafana_profile_dashboard = args.grafana_profile_dashboard
 
+    defaults_filename = args.defaults_filename
+    (
+        _,
+        default_metrics,
+        _,
+        _,
+        _,
+    ) = get_defaults(defaults_filename)
+
     # Consumer id
     consumer_pos = args.consumer_pos
     logging.info("Consumer pos {}".format(consumer_pos))
@@ -221,6 +235,13 @@ def main():
             )
             exit(1)
 
+    override_memtier_test_time = args.override_memtier_test_time
+    if override_memtier_test_time > 0:
+        logging.info(
+            "Overriding memtier benchmark --test-time to {} seconds".format(
+                override_memtier_test_time
+            )
+        )
     logging.info("Entering blocking read waiting for work.")
     if stream_id is None:
         stream_id = args.consumer_start_id
@@ -242,6 +263,8 @@ def main():
             redis_proc_start_port,
             consumer_pos,
             docker_air_gap,
+            override_memtier_test_time,
+            default_metrics,
         )
 
 
@@ -262,6 +285,8 @@ def self_contained_coordinator_blocking_read(
     redis_proc_start_port=6379,
     consumer_pos=1,
     docker_air_gap=False,
+    override_test_time=None,
+    default_metrics=None,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -373,6 +398,8 @@ def process_self_contained_coordinator_stream(
     redis_proc_start_port=6379,
     docker_air_gap=False,
     defaults_filename="defaults.yml",
+    override_test_time=None,
+    default_metrics=[],
 ):
     stream_id = "n/a"
     overall_result = False
@@ -796,6 +823,15 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
+                                print_results_table_stdout(
+                                    benchmark_config,
+                                    default_metrics,
+                                    results_dict,
+                                    setup_type,
+                                    test_name,
+                                    None,
+                                )
+
                             dataset_load_duration_seconds = 0
 
                             exporter_datasink_common(
@@ -819,6 +855,7 @@ def process_self_contained_coordinator_stream(
                                 tf_github_repo,
                                 tf_triggering_env,
                                 topology_spec_name,
+                                default_metrics,
                             )
                             r.shutdown(save=False)
                             test_result = True
