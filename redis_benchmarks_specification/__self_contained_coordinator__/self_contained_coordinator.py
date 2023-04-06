@@ -329,6 +329,8 @@ def self_contained_coordinator_blocking_read(
             cpuset_start_pos,
             redis_proc_start_port,
             docker_air_gap,
+            "defaults.yml",
+            None,
             default_metrics,
         )
         num_process_streams = num_process_streams + 1
