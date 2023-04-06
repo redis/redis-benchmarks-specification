@@ -143,6 +143,7 @@ def exporter_datasink_common(
     tf_github_repo,
     tf_triggering_env,
     topology_spec_name,
+    default_metrics=None,
 ):
     logging.info("Using datapoint_time_ms: {}".format(datapoint_time_ms))
     timeseries_test_sucess_flow(
@@ -151,7 +152,7 @@ def exporter_datasink_common(
         benchmark_config,
         benchmark_duration_seconds,
         dataset_load_duration_seconds,
-        None,
+        default_metrics,
         topology_spec_name,
         setup_name,
         None,

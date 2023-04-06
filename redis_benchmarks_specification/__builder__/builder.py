@@ -61,7 +61,7 @@ def main():
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
     parser.add_argument(
-        "--arch", type=str, default="x86", help="arch to build artifacts"
+        "--arch", type=str, default="amd64", help="arch to build artifacts"
     )
     parser.add_argument(
         "--setups-folder",
@@ -132,6 +132,9 @@ def main():
         logging.error("Error message {}".format(e.__str__()))
         exit(1)
 
+    arch = args.arch
+    logging.info("Building for arch: {}".format(arch))
+
     build_spec_image_prefetch(builders_folder, different_build_specs)
 
     builder_consumer_group_create(conn)
@@ -144,6 +147,7 @@ def main():
             different_build_specs,
             previous_id,
             args.docker_air_gap,
+            arch,
         )
 
 
@@ -169,7 +173,12 @@ def builder_consumer_group_create(conn, id="$"):
 
 
 def builder_process_stream(
-    builders_folder, conn, different_build_specs, previous_id, docker_air_gap=False
+    builders_folder,
+    conn,
+    different_build_specs,
+    previous_id,
+    docker_air_gap=False,
+    arch="amd64",
 ):
     new_builds_count = 0
     logging.info("Entering blocking read waiting for work.")
@@ -217,6 +226,14 @@ def builder_process_stream(
                 build_config_metadata = get_build_config_metadata(build_config)
 
                 build_image = build_config["build_image"]
+                build_arch = build_config["arch"]
+                if build_arch != arch:
+                    logging.info(
+                        "skipping build spec {} given arch {}!={}".format(
+                            build_spec, build_arch, arch
+                        )
+                    )
+                    continue
                 run_image = build_image
                 if "run_image" in build_config:
                     run_image = build_config["run_image"]
@@ -247,7 +264,6 @@ def builder_process_stream(
                 compiler = build_config["compiler"]
                 cpp_compiler = build_config["cpp_compiler"]
                 build_os = build_config["os"]
-                build_arch = build_config["arch"]
 
                 build_artifacts = ["redis-server"]
                 if "build_artifacts" in build_config:

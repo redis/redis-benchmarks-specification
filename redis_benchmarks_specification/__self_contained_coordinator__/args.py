@@ -135,4 +135,16 @@ def create_self_contained_coordinator_args(project_name):
         action="store_true",
         help="Run in verbose mode.",
     )
+    parser.add_argument(
+        "--override-memtier-test-time",
+        default=0,
+        type=int,
+        help="override memtier test-time for each benchmark. By default will preserve test time specified in test spec",
+    )
+    parser.add_argument(
+        "--defaults_filename",
+        type=str,
+        default="{}/defaults.yml".format(SPECS_PATH_TEST_SUITES),
+        help="specify the defaults file containing spec topologies, common metric extractions,etc...",
+    )
     return parser
