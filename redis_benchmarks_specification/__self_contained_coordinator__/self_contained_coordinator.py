@@ -32,6 +32,7 @@ from redis_benchmarks_specification.__common__.runner import (
     extract_testsuites,
     reset_commandstats,
     exporter_datasink_common,
+    execute_init_commands,
 )
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
@@ -54,7 +55,6 @@ from redisbench_admin.profilers.profilers_local import (
 from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,
-    execute_init_commands,
 )
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 from redisbench_admin.run.redistimeseries import (

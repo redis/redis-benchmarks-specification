@@ -4,8 +4,8 @@ description: "Runs the default redis-benchmark test suite, for a keyspace length
               with a data size of 100 Bytes for each key. On total 50 concurrent connections 
               will be used, sending 1M requests."
 dbconfig:
-  - configuration-parameters:
-    - save: '""'
+  configuration-parameters:
+    save: '""'
 tested-commands:
   - PING
   - SET
