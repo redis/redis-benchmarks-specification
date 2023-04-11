@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-lhash-hexists
+name: memtier_benchmark-1Mkeys-hash-hexists
 description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HASHES with 5 fields each. Each field value has a data size of 100 Bytes. After loading test HEXISTS command. 
 dbconfig:
   configuration-parameters:
