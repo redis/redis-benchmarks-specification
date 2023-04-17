@@ -214,6 +214,10 @@ def main():
     consumer_pos = args.consumer_pos
     logging.info("Consumer pos {}".format(consumer_pos))
 
+    # Arch
+    arch = args.arch
+    logging.info("Running for arch: {}".format(arch))
+
     # Docker air gap usage
     docker_air_gap = args.docker_air_gap
     if docker_air_gap:
@@ -264,6 +268,7 @@ def main():
             docker_air_gap,
             override_memtier_test_time,
             default_metrics,
+            arch,
         )
 
 
@@ -286,6 +291,7 @@ def self_contained_coordinator_blocking_read(
     docker_air_gap=False,
     override_test_time=None,
     default_metrics=None,
+    arch="amd64",
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -331,6 +337,7 @@ def self_contained_coordinator_blocking_read(
             "defaults.yml",
             None,
             default_metrics,
+            arch,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -402,6 +409,7 @@ def process_self_contained_coordinator_stream(
     defaults_filename="defaults.yml",
     override_test_time=None,
     default_metrics=[],
+    arch="amd64",
 ):
     stream_id = "n/a"
     overall_result = False
@@ -422,500 +430,535 @@ def process_self_contained_coordinator_stream(
                 run_image,
                 use_git_timestamp,
                 git_timestamp_ms,
+                run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
 
-            overall_result = True
-            profiler_dashboard_links = []
-            if docker_air_gap:
-                airgap_key = "docker:air-gap:{}".format(run_image)
-                logging.info(
-                    "Restoring docker image: {} from {}".format(run_image, airgap_key)
-                )
-                airgap_docker_image_bin = conn.get(airgap_key)
-                images_loaded = docker_client.images.load(airgap_docker_image_bin)
-                logging.info("Successfully loaded images {}".format(images_loaded))
-
-            for test_file in testsuite_spec_files:
-                if defaults_filename in test_file:
-                    continue
-                redis_containers = []
-                client_containers = []
-
-                with open(test_file, "r") as stream:
-                    result, benchmark_config, test_name = get_final_benchmark_config(
-                        None, stream, ""
-                    )
-                    if result is False:
-                        logging.error(
-                            "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
-                                test_file
-                            )
+            if run_arch == arch:
+                overall_result = True
+                profiler_dashboard_links = []
+                if docker_air_gap:
+                    airgap_key = "docker:air-gap:{}".format(run_image)
+                    logging.info(
+                        "Restoring docker image: {} from {}".format(
+                            run_image, airgap_key
                         )
+                    )
+                    airgap_docker_image_bin = conn.get(airgap_key)
+                    images_loaded = docker_client.images.load(airgap_docker_image_bin)
+                    logging.info("Successfully loaded images {}".format(images_loaded))
+
+                for test_file in testsuite_spec_files:
+                    if defaults_filename in test_file:
                         continue
-                    (
-                        _,
-                        _,
-                        redis_configuration_parameters,
-                        _,
-                        _,
-                    ) = extract_redis_dbconfig_parameters(benchmark_config, "dbconfig")
-                    build_variants = extract_build_variant_variations(benchmark_config)
-                    if build_variants is not None:
-                        logging.info("Detected build variant filter")
-                        if build_variant_name not in build_variants:
+                    redis_containers = []
+                    client_containers = []
+
+                    with open(test_file, "r") as stream:
+                        (
+                            result,
+                            benchmark_config,
+                            test_name,
+                        ) = get_final_benchmark_config(None, stream, "")
+                        if result is False:
                             logging.error(
-                                "Skipping {} given it's not part of build-variants for this test-suite {}".format(
-                                    build_variant_name, build_variants
+                                "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
+                                    test_file
                                 )
                             )
                             continue
-                        else:
-                            logging.info(
-                                "Running build variant {} given it's present on the build-variants spec {}".format(
-                                    build_variant_name, build_variants
+                        (
+                            _,
+                            _,
+                            redis_configuration_parameters,
+                            _,
+                            _,
+                        ) = extract_redis_dbconfig_parameters(
+                            benchmark_config, "dbconfig"
+                        )
+                        build_variants = extract_build_variant_variations(
+                            benchmark_config
+                        )
+                        if build_variants is not None:
+                            logging.info("Detected build variant filter")
+                            if build_variant_name not in build_variants:
+                                logging.error(
+                                    "Skipping {} given it's not part of build-variants for this test-suite {}".format(
+                                        build_variant_name, build_variants
+                                    )
                                 )
-                            )
-                    for topology_spec_name in benchmark_config["redis-topologies"]:
-                        test_result = False
-                        redis_container = None
-                        try:
-                            current_cpu_pos = cpuset_start_pos
-                            ceil_db_cpu_limit = extract_db_cpu_limit(
-                                topologies_map, topology_spec_name
-                            )
-                            temporary_dir = tempfile.mkdtemp(dir=home)
-                            temporary_dir_client = tempfile.mkdtemp(dir=home)
-                            logging.info(
-                                "Using local temporary dir to persist redis build artifacts. Path: {}".format(
-                                    temporary_dir
+                                continue
+                            else:
+                                logging.info(
+                                    "Running build variant {} given it's present on the build-variants spec {}".format(
+                                        build_variant_name, build_variants
+                                    )
                                 )
-                            )
-                            logging.info(
-                                "Using local temporary dir to persist client output files. Path: {}".format(
-                                    temporary_dir_client
+                        for topology_spec_name in benchmark_config["redis-topologies"]:
+                            test_result = False
+                            redis_container = None
+                            try:
+                                current_cpu_pos = cpuset_start_pos
+                                ceil_db_cpu_limit = extract_db_cpu_limit(
+                                    topologies_map, topology_spec_name
                                 )
-                            )
-                            tf_github_org = "redis"
-                            tf_github_repo = "redis"
-                            setup_name = "oss-standalone"
-                            setup_type = "oss-standalone"
-                            tf_triggering_env = "ci"
-                            github_actor = "{}-{}".format(
-                                tf_triggering_env, running_platform
-                            )
-                            dso = "redis-server"
-                            profilers_artifacts_matrix = []
-
-                            collection_summary_str = ""
-                            if profilers_enabled:
-                                collection_summary_str = (
-                                    local_profilers_platform_checks(
-                                        dso,
-                                        github_actor,
-                                        git_branch,
-                                        tf_github_repo,
-                                        git_hash,
+                                temporary_dir = tempfile.mkdtemp(dir=home)
+                                temporary_dir_client = tempfile.mkdtemp(dir=home)
+                                logging.info(
+                                    "Using local temporary dir to persist redis build artifacts. Path: {}".format(
+                                        temporary_dir
                                     )
                                 )
                                 logging.info(
-                                    "Using the following collection summary string for profiler description: {}".format(
-                                        collection_summary_str
+                                    "Using local temporary dir to persist client output files. Path: {}".format(
+                                        temporary_dir_client
                                     )
                                 )
-
-                            restore_build_artifacts_from_test_details(
-                                build_artifacts, conn, temporary_dir, testDetails
-                            )
-                            mnt_point = "/mnt/redis/"
-                            command = generate_standalone_redis_server_args(
-                                "{}redis-server".format(mnt_point),
-                                redis_proc_start_port,
-                                mnt_point,
-                                redis_configuration_parameters,
-                            )
-                            command_str = " ".join(command)
-                            db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                                ceil_db_cpu_limit, current_cpu_pos
-                            )
-                            logging.info(
-                                "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
-                                    run_image, db_cpuset_cpus, command_str
+                                tf_github_org = "redis"
+                                tf_github_repo = "redis"
+                                setup_name = "oss-standalone"
+                                setup_type = "oss-standalone"
+                                tf_triggering_env = "ci"
+                                github_actor = "{}-{}".format(
+                                    tf_triggering_env, running_platform
                                 )
-                            )
-                            redis_container = docker_client.containers.run(
-                                image=run_image,
-                                volumes={
-                                    temporary_dir: {"bind": mnt_point, "mode": "rw"},
-                                },
-                                auto_remove=True,
-                                privileged=True,
-                                working_dir=mnt_point,
-                                command=command_str,
-                                network_mode="host",
-                                detach=True,
-                                cpuset_cpus=db_cpuset_cpus,
-                                pid_mode="host",
-                            )
-                            redis_containers.append(redis_container)
+                                dso = "redis-server"
+                                profilers_artifacts_matrix = []
 
-                            r = redis.StrictRedis(port=redis_proc_start_port)
-                            r.ping()
-                            redis_conns = [r]
-                            reset_commandstats(redis_conns)
-                            redis_pids = []
-                            first_redis_pid = r.info()["process_id"]
-                            redis_pids.append(first_redis_pid)
-                            ceil_client_cpu_limit = extract_client_cpu_limit(
-                                benchmark_config
-                            )
-                            client_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                                ceil_client_cpu_limit, current_cpu_pos
-                            )
-                            client_mnt_point = "/mnt/client/"
-                            benchmark_tool_workdir = client_mnt_point
+                                collection_summary_str = ""
+                                if profilers_enabled:
+                                    collection_summary_str = (
+                                        local_profilers_platform_checks(
+                                            dso,
+                                            github_actor,
+                                            git_branch,
+                                            tf_github_repo,
+                                            git_hash,
+                                        )
+                                    )
+                                    logging.info(
+                                        "Using the following collection summary string for profiler description: {}".format(
+                                            collection_summary_str
+                                        )
+                                    )
 
-                            if "preload_tool" in benchmark_config["dbconfig"]:
-                                data_prepopulation_step(
-                                    benchmark_config,
-                                    benchmark_tool_workdir,
-                                    client_cpuset_cpus,
-                                    docker_client,
-                                    git_hash,
+                                restore_build_artifacts_from_test_details(
+                                    build_artifacts, conn, temporary_dir, testDetails
+                                )
+                                mnt_point = "/mnt/redis/"
+                                command = generate_standalone_redis_server_args(
+                                    "{}redis-server".format(mnt_point),
                                     redis_proc_start_port,
-                                    temporary_dir,
-                                    test_name,
+                                    mnt_point,
+                                    redis_configuration_parameters,
                                 )
-
-                            execute_init_commands(
-                                benchmark_config, r, dbconfig_keyname="dbconfig"
-                            )
-
-                            benchmark_tool = extract_client_tool(benchmark_config)
-                            # backwards compatible
-                            if benchmark_tool is None:
-                                benchmark_tool = "redis-benchmark"
-                            full_benchmark_path = "/usr/local/bin/{}".format(
-                                benchmark_tool
-                            )
-
-                            # setup the benchmark
-                            (
-                                start_time,
-                                start_time_ms,
-                                start_time_str,
-                            ) = get_start_time_vars()
-                            local_benchmark_output_filename = (
-                                get_local_run_full_filename(
-                                    start_time_str,
-                                    git_hash,
-                                    test_name,
-                                    "oss-standalone",
+                                command_str = " ".join(command)
+                                db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
+                                    ceil_db_cpu_limit, current_cpu_pos
                                 )
-                            )
-                            logging.info(
-                                "Will store benchmark json output to local file {}".format(
-                                    local_benchmark_output_filename
+                                logging.info(
+                                    "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
+                                        run_image, db_cpuset_cpus, command_str
+                                    )
                                 )
-                            )
-                            if "memtier_benchmark" not in benchmark_tool:
-                                # prepare the benchmark command
-                                (
-                                    benchmark_command,
-                                    benchmark_command_str,
-                                ) = prepare_benchmark_parameters(
-                                    benchmark_config,
-                                    full_benchmark_path,
-                                    redis_proc_start_port,
-                                    "localhost",
-                                    local_benchmark_output_filename,
-                                    False,
-                                    benchmark_tool_workdir,
-                                    False,
-                                )
-                            else:
-                                (
-                                    _,
-                                    benchmark_command_str,
-                                ) = prepare_memtier_benchmark_parameters(
-                                    benchmark_config["clientconfig"],
-                                    full_benchmark_path,
-                                    redis_proc_start_port,
-                                    "localhost",
-                                    local_benchmark_output_filename,
-                                    benchmark_tool_workdir,
-                                )
-
-                            client_container_image = extract_client_container_image(
-                                benchmark_config
-                            )
-                            profiler_call_graph_mode = "dwarf"
-                            profiler_frequency = 99
-                            # start the profile
-                            (
-                                profiler_name,
-                                profilers_map,
-                            ) = profilers_start_if_required(
-                                profilers_enabled,
-                                profilers_list,
-                                redis_pids,
-                                setup_name,
-                                start_time_str,
-                                test_name,
-                                profiler_frequency,
-                                profiler_call_graph_mode,
-                            )
-
-                            logging.info(
-                                "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
-                                    client_container_image,
-                                    client_cpuset_cpus,
-                                    benchmark_command_str,
-                                )
-                            )
-                            # run the benchmark
-                            benchmark_start_time = datetime.datetime.now()
-
-                            client_container_stdout = docker_client.containers.run(
-                                image=client_container_image,
-                                volumes={
-                                    temporary_dir_client: {
-                                        "bind": client_mnt_point,
-                                        "mode": "rw",
+                                redis_container = docker_client.containers.run(
+                                    image=run_image,
+                                    volumes={
+                                        temporary_dir: {
+                                            "bind": mnt_point,
+                                            "mode": "rw",
+                                        },
                                     },
-                                },
-                                auto_remove=True,
-                                privileged=True,
-                                working_dir=benchmark_tool_workdir,
-                                command=benchmark_command_str,
-                                network_mode="host",
-                                detach=False,
-                                cpuset_cpus=client_cpuset_cpus,
-                            )
-
-                            benchmark_end_time = datetime.datetime.now()
-                            benchmark_duration_seconds = (
-                                calculate_client_tool_duration_and_check(
-                                    benchmark_end_time, benchmark_start_time
+                                    auto_remove=True,
+                                    privileged=True,
+                                    working_dir=mnt_point,
+                                    command=command_str,
+                                    network_mode="host",
+                                    detach=True,
+                                    cpuset_cpus=db_cpuset_cpus,
+                                    pid_mode="host",
                                 )
-                            )
-                            logging.info("output {}".format(client_container_stdout))
+                                redis_containers.append(redis_container)
 
-                            (_, overall_tabular_data_map,) = profilers_stop_if_required(
-                                datasink_push_results_redistimeseries,
-                                benchmark_duration_seconds,
-                                collection_summary_str,
-                                dso,
-                                tf_github_org,
-                                tf_github_repo,
-                                profiler_name,
-                                profilers_artifacts_matrix,
-                                profilers_enabled,
-                                profilers_map,
-                                redis_pids,
-                                S3_BUCKET_NAME,
-                                test_name,
-                            )
-                            if (
-                                profilers_enabled
-                                and datasink_push_results_redistimeseries
-                            ):
-                                datasink_profile_tabular_data(
-                                    git_branch,
-                                    tf_github_org,
-                                    tf_github_repo,
-                                    git_hash,
-                                    overall_tabular_data_map,
-                                    conn,
-                                    setup_name,
+                                r = redis.StrictRedis(port=redis_proc_start_port)
+                                r.ping()
+                                redis_conns = [r]
+                                reset_commandstats(redis_conns)
+                                redis_pids = []
+                                first_redis_pid = r.info()["process_id"]
+                                redis_pids.append(first_redis_pid)
+                                ceil_client_cpu_limit = extract_client_cpu_limit(
+                                    benchmark_config
+                                )
+                                (
+                                    client_cpuset_cpus,
+                                    current_cpu_pos,
+                                ) = generate_cpuset_cpus(
+                                    ceil_client_cpu_limit, current_cpu_pos
+                                )
+                                client_mnt_point = "/mnt/client/"
+                                benchmark_tool_workdir = client_mnt_point
+
+                                if "preload_tool" in benchmark_config["dbconfig"]:
+                                    data_prepopulation_step(
+                                        benchmark_config,
+                                        benchmark_tool_workdir,
+                                        client_cpuset_cpus,
+                                        docker_client,
+                                        git_hash,
+                                        redis_proc_start_port,
+                                        temporary_dir,
+                                        test_name,
+                                    )
+
+                                execute_init_commands(
+                                    benchmark_config, r, dbconfig_keyname="dbconfig"
+                                )
+
+                                benchmark_tool = extract_client_tool(benchmark_config)
+                                # backwards compatible
+                                if benchmark_tool is None:
+                                    benchmark_tool = "redis-benchmark"
+                                full_benchmark_path = "/usr/local/bin/{}".format(
+                                    benchmark_tool
+                                )
+
+                                # setup the benchmark
+                                (
+                                    start_time,
                                     start_time_ms,
                                     start_time_str,
-                                    test_name,
-                                    tf_triggering_env,
+                                ) = get_start_time_vars()
+                                local_benchmark_output_filename = (
+                                    get_local_run_full_filename(
+                                        start_time_str,
+                                        git_hash,
+                                        test_name,
+                                        "oss-standalone",
+                                    )
                                 )
-                                if len(profilers_artifacts_matrix) == 0:
-                                    logging.error("No profiler artifact was retrieved")
+                                logging.info(
+                                    "Will store benchmark json output to local file {}".format(
+                                        local_benchmark_output_filename
+                                    )
+                                )
+                                if "memtier_benchmark" not in benchmark_tool:
+                                    # prepare the benchmark command
+                                    (
+                                        benchmark_command,
+                                        benchmark_command_str,
+                                    ) = prepare_benchmark_parameters(
+                                        benchmark_config,
+                                        full_benchmark_path,
+                                        redis_proc_start_port,
+                                        "localhost",
+                                        local_benchmark_output_filename,
+                                        False,
+                                        benchmark_tool_workdir,
+                                        False,
+                                    )
                                 else:
-                                    profilers_artifacts = []
-                                    for line in profilers_artifacts_matrix:
-                                        artifact_name = line[2]
-                                        s3_link = line[4]
-                                        profilers_artifacts.append(
-                                            {
-                                                "artifact_name": artifact_name,
-                                                "s3_link": s3_link,
-                                            }
-                                        )
-                                    https_link = generate_artifacts_table_grafana_redis(
-                                        datasink_push_results_redistimeseries,
-                                        grafana_profile_dashboard,
-                                        profilers_artifacts,
-                                        datasink_conn,
+                                    (
+                                        _,
+                                        benchmark_command_str,
+                                    ) = prepare_memtier_benchmark_parameters(
+                                        benchmark_config["clientconfig"],
+                                        full_benchmark_path,
+                                        redis_proc_start_port,
+                                        "localhost",
+                                        local_benchmark_output_filename,
+                                        benchmark_tool_workdir,
+                                    )
+
+                                client_container_image = extract_client_container_image(
+                                    benchmark_config
+                                )
+                                profiler_call_graph_mode = "dwarf"
+                                profiler_frequency = 99
+                                # start the profile
+                                (
+                                    profiler_name,
+                                    profilers_map,
+                                ) = profilers_start_if_required(
+                                    profilers_enabled,
+                                    profilers_list,
+                                    redis_pids,
+                                    setup_name,
+                                    start_time_str,
+                                    test_name,
+                                    profiler_frequency,
+                                    profiler_call_graph_mode,
+                                )
+
+                                logging.info(
+                                    "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
+                                        client_container_image,
+                                        client_cpuset_cpus,
+                                        benchmark_command_str,
+                                    )
+                                )
+                                # run the benchmark
+                                benchmark_start_time = datetime.datetime.now()
+
+                                client_container_stdout = docker_client.containers.run(
+                                    image=client_container_image,
+                                    volumes={
+                                        temporary_dir_client: {
+                                            "bind": client_mnt_point,
+                                            "mode": "rw",
+                                        },
+                                    },
+                                    auto_remove=True,
+                                    privileged=True,
+                                    working_dir=benchmark_tool_workdir,
+                                    command=benchmark_command_str,
+                                    network_mode="host",
+                                    detach=False,
+                                    cpuset_cpus=client_cpuset_cpus,
+                                )
+
+                                benchmark_end_time = datetime.datetime.now()
+                                benchmark_duration_seconds = (
+                                    calculate_client_tool_duration_and_check(
+                                        benchmark_end_time, benchmark_start_time
+                                    )
+                                )
+                                logging.info(
+                                    "output {}".format(client_container_stdout)
+                                )
+
+                                (
+                                    _,
+                                    overall_tabular_data_map,
+                                ) = profilers_stop_if_required(
+                                    datasink_push_results_redistimeseries,
+                                    benchmark_duration_seconds,
+                                    collection_summary_str,
+                                    dso,
+                                    tf_github_org,
+                                    tf_github_repo,
+                                    profiler_name,
+                                    profilers_artifacts_matrix,
+                                    profilers_enabled,
+                                    profilers_map,
+                                    redis_pids,
+                                    S3_BUCKET_NAME,
+                                    test_name,
+                                )
+                                if (
+                                    profilers_enabled
+                                    and datasink_push_results_redistimeseries
+                                ):
+                                    datasink_profile_tabular_data(
+                                        git_branch,
+                                        tf_github_org,
+                                        tf_github_repo,
+                                        git_hash,
+                                        overall_tabular_data_map,
+                                        conn,
                                         setup_name,
                                         start_time_ms,
                                         start_time_str,
                                         test_name,
-                                        tf_github_org,
-                                        tf_github_repo,
-                                        git_hash,
-                                        git_branch,
+                                        tf_triggering_env,
                                     )
-                                    profiler_dashboard_links.append(
-                                        [
-                                            setup_name,
-                                            test_name,
-                                            " {} ".format(https_link),
-                                        ]
-                                    )
-                                    logging.info(
-                                        "Published new profile info for this testcase. Access it via: {}".format(
-                                            https_link
+                                    if len(profilers_artifacts_matrix) == 0:
+                                        logging.error(
+                                            "No profiler artifact was retrieved"
                                         )
-                                    )
+                                    else:
+                                        profilers_artifacts = []
+                                        for line in profilers_artifacts_matrix:
+                                            artifact_name = line[2]
+                                            s3_link = line[4]
+                                            profilers_artifacts.append(
+                                                {
+                                                    "artifact_name": artifact_name,
+                                                    "s3_link": s3_link,
+                                                }
+                                            )
+                                        https_link = (
+                                            generate_artifacts_table_grafana_redis(
+                                                datasink_push_results_redistimeseries,
+                                                grafana_profile_dashboard,
+                                                profilers_artifacts,
+                                                datasink_conn,
+                                                setup_name,
+                                                start_time_ms,
+                                                start_time_str,
+                                                test_name,
+                                                tf_github_org,
+                                                tf_github_repo,
+                                                git_hash,
+                                                git_branch,
+                                            )
+                                        )
+                                        profiler_dashboard_links.append(
+                                            [
+                                                setup_name,
+                                                test_name,
+                                                " {} ".format(https_link),
+                                            ]
+                                        )
+                                        logging.info(
+                                            "Published new profile info for this testcase. Access it via: {}".format(
+                                                https_link
+                                            )
+                                        )
 
-                                    # Delete all the perf artifacts, now that they are uploaded to S3.
-                                    # The .script and .script.mainthread files are not part of the artifacts_matrix and thus have to be deleted separately
-                                    line = profilers_artifacts_matrix[0]
-                                    logging.info(
-                                        "Deleting perf file {}".format(
+                                        # Delete all the perf artifacts, now that they are uploaded to S3.
+                                        # The .script and .script.mainthread files are not part of the artifacts_matrix and thus have to be deleted separately
+                                        line = profilers_artifacts_matrix[0]
+                                        logging.info(
+                                            "Deleting perf file {}".format(
+                                                line[3].split(".")[0]
+                                                + ".out.script.mainthread"
+                                            )
+                                        )
+                                        os.remove(
                                             line[3].split(".")[0]
                                             + ".out.script.mainthread"
                                         )
-                                    )
-                                    os.remove(
-                                        line[3].split(".")[0] + ".out.script.mainthread"
-                                    )
-                                    logging.info(
-                                        "Deleteing perf file {}".format(
-                                            line[3].split(".")[0] + ".out.script"
-                                        )
-                                    )
-                                    os.remove(line[3].split(".")[0] + ".out.script")
-                                    for line in profilers_artifacts_matrix:
                                         logging.info(
-                                            "Deleting perf file {}".format(line[3])
+                                            "Deleteing perf file {}".format(
+                                                line[3].split(".")[0] + ".out.script"
+                                            )
                                         )
-                                        os.remove(line[3])
+                                        os.remove(line[3].split(".")[0] + ".out.script")
+                                        for line in profilers_artifacts_matrix:
+                                            logging.info(
+                                                "Deleting perf file {}".format(line[3])
+                                            )
+                                            os.remove(line[3])
 
-                            datapoint_time_ms = start_time_ms
-                            if (
-                                use_git_timestamp is True
-                                and git_timestamp_ms is not None
-                            ):
-                                datapoint_time_ms = git_timestamp_ms
-                            post_process_benchmark_results(
-                                benchmark_tool,
-                                local_benchmark_output_filename,
-                                datapoint_time_ms,
-                                start_time_str,
-                                client_container_stdout,
-                                None,
-                            )
-                            full_result_path = local_benchmark_output_filename
-                            if "memtier_benchmark" in benchmark_tool:
-                                full_result_path = "{}/{}".format(
-                                    temporary_dir_client,
+                                datapoint_time_ms = start_time_ms
+                                if (
+                                    use_git_timestamp is True
+                                    and git_timestamp_ms is not None
+                                ):
+                                    datapoint_time_ms = git_timestamp_ms
+                                post_process_benchmark_results(
+                                    benchmark_tool,
                                     local_benchmark_output_filename,
-                                )
-                            logging.critical(
-                                "Reading results json from {}".format(full_result_path)
-                            )
-
-                            with open(
-                                full_result_path,
-                                "r",
-                            ) as json_file:
-                                results_dict = json.load(json_file)
-                                print_results_table_stdout(
-                                    benchmark_config,
-                                    default_metrics,
-                                    results_dict,
-                                    setup_type,
-                                    test_name,
+                                    datapoint_time_ms,
+                                    start_time_str,
+                                    client_container_stdout,
                                     None,
                                 )
-
-                            dataset_load_duration_seconds = 0
-
-                            exporter_datasink_common(
-                                benchmark_config,
-                                benchmark_duration_seconds,
-                                build_variant_name,
-                                datapoint_time_ms,
-                                dataset_load_duration_seconds,
-                                datasink_conn,
-                                datasink_push_results_redistimeseries,
-                                git_branch,
-                                git_version,
-                                metadata,
-                                redis_conns,
-                                results_dict,
-                                running_platform,
-                                setup_name,
-                                setup_type,
-                                test_name,
-                                tf_github_org,
-                                tf_github_repo,
-                                tf_triggering_env,
-                                topology_spec_name,
-                                default_metrics,
-                            )
-                            r.shutdown(save=False)
-                            test_result = True
-                            total_test_suite_runs = total_test_suite_runs + 1
-
-                        except:
-                            logging.critical(
-                                "Some unexpected exception was caught "
-                                "during local work. Failing test...."
-                            )
-                            logging.critical(sys.exc_info()[0])
-                            print("-" * 60)
-                            traceback.print_exc(file=sys.stdout)
-                            print("-" * 60)
-                            if redis_container is not None:
-                                logging.critical("Printing redis container log....")
-                                print("-" * 60)
-                                print(
-                                    redis_container.logs(
-                                        stdout=True, stderr=True, logs=True
+                                full_result_path = local_benchmark_output_filename
+                                if "memtier_benchmark" in benchmark_tool:
+                                    full_result_path = "{}/{}".format(
+                                        temporary_dir_client,
+                                        local_benchmark_output_filename,
+                                    )
+                                logging.critical(
+                                    "Reading results json from {}".format(
+                                        full_result_path
                                     )
                                 )
-                                print("-" * 60)
-                            test_result = False
-                        # tear-down
-                        logging.info("Tearing down setup")
-                        for redis_container in redis_containers:
-                            try:
-                                redis_container.stop()
-                            except docker.errors.NotFound:
-                                logging.info(
-                                    "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                        redis_container.id, redis_container.image
-                                    )
-                                )
-                                pass
 
-                        for redis_container in client_containers:
-                            if type(redis_container) == Container:
+                                with open(
+                                    full_result_path,
+                                    "r",
+                                ) as json_file:
+                                    results_dict = json.load(json_file)
+                                    print_results_table_stdout(
+                                        benchmark_config,
+                                        default_metrics,
+                                        results_dict,
+                                        setup_type,
+                                        test_name,
+                                        None,
+                                    )
+
+                                dataset_load_duration_seconds = 0
+
+                                exporter_datasink_common(
+                                    benchmark_config,
+                                    benchmark_duration_seconds,
+                                    build_variant_name,
+                                    datapoint_time_ms,
+                                    dataset_load_duration_seconds,
+                                    datasink_conn,
+                                    datasink_push_results_redistimeseries,
+                                    git_branch,
+                                    git_version,
+                                    metadata,
+                                    redis_conns,
+                                    results_dict,
+                                    running_platform,
+                                    setup_name,
+                                    setup_type,
+                                    test_name,
+                                    tf_github_org,
+                                    tf_github_repo,
+                                    tf_triggering_env,
+                                    topology_spec_name,
+                                    default_metrics,
+                                )
+                                r.shutdown(save=False)
+                                test_result = True
+                                total_test_suite_runs = total_test_suite_runs + 1
+
+                            except:
+                                logging.critical(
+                                    "Some unexpected exception was caught "
+                                    "during local work. Failing test...."
+                                )
+                                logging.critical(sys.exc_info()[0])
+                                print("-" * 60)
+                                traceback.print_exc(file=sys.stdout)
+                                print("-" * 60)
+                                if redis_container is not None:
+                                    logging.critical("Printing redis container log....")
+                                    print("-" * 60)
+                                    print(
+                                        redis_container.logs(
+                                            stdout=True, stderr=True, logs=True
+                                        )
+                                    )
+                                    print("-" * 60)
+                                test_result = False
+                            # tear-down
+                            logging.info("Tearing down setup")
+                            for redis_container in redis_containers:
                                 try:
                                     redis_container.stop()
                                 except docker.errors.NotFound:
                                     logging.info(
-                                        "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                        "When trying to stop DB container with id {} and image {} it was already stopped".format(
                                             redis_container.id, redis_container.image
                                         )
                                     )
                                     pass
-                        logging.info(
-                            "Removing temporary dirs {} and {}".format(
-                                temporary_dir, temporary_dir_client
+
+                            for redis_container in client_containers:
+                                if type(redis_container) == Container:
+                                    try:
+                                        redis_container.stop()
+                                    except docker.errors.NotFound:
+                                        logging.info(
+                                            "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                                redis_container.id,
+                                                redis_container.image,
+                                            )
+                                        )
+                                        pass
+                            logging.info(
+                                "Removing temporary dirs {} and {}".format(
+                                    temporary_dir, temporary_dir_client
+                                )
                             )
-                        )
-                        shutil.rmtree(temporary_dir, ignore_errors=True)
-                        shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                            shutil.rmtree(temporary_dir, ignore_errors=True)
+                            shutil.rmtree(temporary_dir_client, ignore_errors=True)
 
-                        overall_result &= test_result
+                            overall_result &= test_result
 
+            else:
+                logging.info(
+                    "skipping stream_id {} given arch {}!={}".format(
+                        stream_id, run_arch, arch
+                    )
+                )
         else:
             logging.error("Missing commit information within received message.")
     except:
