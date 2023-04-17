@@ -136,6 +136,7 @@ def process_self_contained_coordinator_stream(
                 run_image,
                 use_git_timestamp,
                 git_timestamp_ms,
+                _,
             ) = extract_build_info_from_streamdata(testDetails)
 
             overall_result = True

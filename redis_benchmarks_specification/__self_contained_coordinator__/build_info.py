@@ -7,6 +7,7 @@ from redis_benchmarks_specification.__common__.builder_schema import (
 
 
 def extract_build_info_from_streamdata(testDetails):
+    arch = "amd64"
     use_git_timestamp = False
     git_timestamp_ms = None
     metadata = None
@@ -29,6 +30,11 @@ def extract_build_info_from_streamdata(testDetails):
     build_artifacts_str = "redis-server"
     build_image = testDetails[b"build_image"].decode()
     run_image = build_image
+    if b"arch" in testDetails:
+        arch = testDetails[b"arch"].decode()
+        logging.info("detected arch info {}.".format(arch))
+    else:
+        logging.info("using default arch info {}.".format(arch))
     if b"run_image" in testDetails:
         run_image = testDetails[b"run_image"].decode()
         logging.info("detected run image info {}.".format(run_image))
@@ -49,4 +55,5 @@ def extract_build_info_from_streamdata(testDetails):
         run_image,
         use_git_timestamp,
         git_timestamp_ms,
+        arch,
     )

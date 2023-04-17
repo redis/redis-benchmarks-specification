@@ -147,4 +147,7 @@ def create_self_contained_coordinator_args(project_name):
         default="{}/defaults.yml".format(SPECS_PATH_TEST_SUITES),
         help="specify the defaults file containing spec topologies, common metric extractions,etc...",
     )
+    parser.add_argument(
+        "--arch", type=str, default="amd64", help="arch to build artifacts"
+    )
     return parser
