@@ -850,7 +850,7 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir_client,
                                         local_benchmark_output_filename,
                                     )
-                                logging.critical(
+                                logging.info(
                                     "Reading results json from {}".format(
                                         full_result_path
                                     )
