@@ -481,7 +481,7 @@ def process_self_contained_coordinator_stream(
                         if build_variants is not None:
                             logging.info("Detected build variant filter")
                             if build_variant_name not in build_variants:
-                                logging.error(
+                                logging.info(
                                     "Skipping {} given it's not part of build-variants for this test-suite {}".format(
                                         build_variant_name, build_variants
                                     )
