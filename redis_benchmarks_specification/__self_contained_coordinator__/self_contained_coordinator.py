@@ -249,6 +249,62 @@ def main():
     if stream_id is None:
         stream_id = args.consumer_start_id
     while True:
+
+        while True: 
+            try:
+                conn.ping()
+                break
+            except redis.exceptions.ConnectionError as e:
+                logging.error(
+                    "Connection to redis server at: {}:{} has died. Will attempt to reconnect".format(
+                        args.event_stream_host, args.event_stream_port
+                    )
+                )
+                logging.error("Error message {}".format(e.__str__()))
+            
+                conn = redis.StrictRedis(
+                    host=args.event_stream_host,
+                    port=args.event_stream_port,
+                    decode_responses=False,  # dont decode due to binary archives
+                    password=args.event_stream_pass,
+                    username=args.event_stream_user,
+                    health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+                    socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+                    socket_keepalive=True,
+                )
+                
+        if args.datasink_push_results_redistimeseries:
+        logging.info(
+            "Checking redistimeseries datasink connection is available at: {}:{} to push the timeseries data".format(
+                args.datasink_redistimeseries_host, args.datasink_redistimeseries_port
+            )
+        )
+            while True: 
+                try: 
+                    datasink_conn.ping()
+                    break
+                except redis.exceptions.ConnectionError as e:
+                    logging.error(
+                        "Connection to datasink server at: {}:{} has died. Will attempt to reconnect. ".format(
+                            args.datasink_redistimeseries_host,
+                            args.datasink_redistimeseries_port,
+                        )
+                    )
+                    logging.error("Error message {}".format(e.__str__()))
+
+                    datasink_conn = redis.StrictRedis(
+                    host=args.datasink_redistimeseries_host,
+                    port=args.datasink_redistimeseries_port,
+                    decode_responses=True,
+                    password=args.datasink_redistimeseries_pass,
+                    username=args.datasink_redistimeseries_user,
+                    health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+                    socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+                    socket_keepalive=True,
+                )
+        
+
+
         _, stream_id, _, _ = self_contained_coordinator_blocking_read(
             conn,
             datasink_push_results_redistimeseries,
@@ -481,7 +537,7 @@ def process_self_contained_coordinator_stream(
                         if build_variants is not None:
                             logging.info("Detected build variant filter")
                             if build_variant_name not in build_variants:
-                                logging.error(
+                                logging.info(
                                     "Skipping {} given it's not part of build-variants for this test-suite {}".format(
                                         build_variant_name, build_variants
                                     )
@@ -850,7 +906,7 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir_client,
                                         local_benchmark_output_filename,
                                     )
-                                logging.critical(
+                                logging.info(
                                     "Reading results json from {}".format(
                                         full_result_path
                                     )
