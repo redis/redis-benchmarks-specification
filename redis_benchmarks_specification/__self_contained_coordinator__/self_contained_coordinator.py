@@ -250,7 +250,7 @@ def main():
         stream_id = args.consumer_start_id
     while True:
 
-        while True: 
+        while True:
             try:
                 conn.ping()
                 break
@@ -261,7 +261,7 @@ def main():
                     )
                 )
                 logging.error("Error message {}".format(e.__str__()))
-            
+
                 conn = redis.StrictRedis(
                     host=args.event_stream_host,
                     port=args.event_stream_port,
@@ -272,15 +272,11 @@ def main():
                     socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
                     socket_keepalive=True,
                 )
-                
+
         if args.datasink_push_results_redistimeseries:
-        logging.info(
-            "Checking redistimeseries datasink connection is available at: {}:{} to push the timeseries data".format(
-                args.datasink_redistimeseries_host, args.datasink_redistimeseries_port
-            )
-        )
-            while True: 
-                try: 
+
+            while True:
+                try:
                     datasink_conn.ping()
                     break
                 except redis.exceptions.ConnectionError as e:
@@ -293,17 +289,15 @@ def main():
                     logging.error("Error message {}".format(e.__str__()))
 
                     datasink_conn = redis.StrictRedis(
-                    host=args.datasink_redistimeseries_host,
-                    port=args.datasink_redistimeseries_port,
-                    decode_responses=True,
-                    password=args.datasink_redistimeseries_pass,
-                    username=args.datasink_redistimeseries_user,
-                    health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
-                    socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
-                    socket_keepalive=True,
-                )
-        
-
+                        host=args.datasink_redistimeseries_host,
+                        port=args.datasink_redistimeseries_port,
+                        decode_responses=True,
+                        password=args.datasink_redistimeseries_pass,
+                        username=args.datasink_redistimeseries_user,
+                        health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+                        socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+                        socket_keepalive=True,
+                    )
 
         _, stream_id, _, _ = self_contained_coordinator_blocking_read(
             conn,
