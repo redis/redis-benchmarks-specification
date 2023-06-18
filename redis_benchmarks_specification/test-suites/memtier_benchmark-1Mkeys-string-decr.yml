@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-string-get-100B
+name: memtier_benchmark-1Mkeys-string-decr
 description: Runs memtier_benchmark, for a keyspace length of 1M keys testing use embedded string object encoding on the string and doing decr command.
 dbconfig:
   configuration-parameters:
@@ -14,7 +14,7 @@ dbconfig:
     requests:
       memory: 1g
 tested-commands:
-- get
+- decr
 redis-topologies:
 - oss-standalone
 build-variants:
