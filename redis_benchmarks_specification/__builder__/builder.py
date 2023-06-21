@@ -353,6 +353,8 @@ def builder_process_stream(
                         "{}_len_bytes".format(artifact)
                     ] = bin_artifact_len
                 result = True
+                if b"platform" in testDetails: 
+                    build_stream_fields["platform"] = testDetails[b"platform"]
                 if result is True:
                     stream_id = conn.xadd(
                         STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields

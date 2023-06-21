@@ -197,6 +197,10 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     logging.info(
         "Will trigger {} distinct tests {}.".format(len(commits), by_description)
     )
+    if args.platform 
+        logging.info(
+            "Will trigger tests only for platform {}".format(args.platform)
+        )
 
     hash_regexp = args.hash_regexp
     if hash_regexp == ".*":
@@ -250,6 +254,8 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 ) = get_commit_dict_from_sha(
                     cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
                 )
+                if args.platform
+                    commit_dict["platform"] = args.platform
                 if result is True:
                     stream_id = "n/a"
                     if args.dry_run is False:
