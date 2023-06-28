@@ -122,24 +122,32 @@ def main():
     kwargs = process_args(args)
 
     logging.info("Connecting to event stream server")
-    conn = connect_redis_server(args.event_stream_host, args.event_stream_port, args.event_stream_user, args.event_stream_pass) 
+    conn = connect_redis_server(
+        args.event_stream_host,
+        args.event_stream_port,
+        args.event_stream_user,
+        args.event_stream_pass,
+    )
     kwargs["conn"] = conn
 
     if kwargs["datasink_push_results_redistimeseries"] is True:
         logging.info("Connecting to datasync server")
-        datasync_conn = connect_redis_server(args.datasink_redistimeseries_host, args.datasink_redistimeseries_port, args.datasink_redistimeseries_user, args.datasink_redistimeseries_pass)
+        datasync_conn = connect_redis_server(
+            args.datasink_redistimeseries_host,
+            args.datasink_redistimeseries_port,
+            args.datasink_redistimeseries_user,
+            args.datasink_redistimeseries_pass,
+        )
         kwargs["datasync_conn"] = datasync_conn
 
     build_runners_consumer_group_create(conn, args.platform_name)
-    
+
     logging.info("Entering blocking read waiting for work.")
     while True:
         _, stream_id, _, _ = self_contained_coordinator_blocking_read(kwargs)
 
 
-def process_args(
-    args
-): 
+def process_args(args):
     kwargs = {}
     topologies_folder = os.path.abspath(args.setups_folder + "/topologies")
     logging.info("Using topologies folder dir {}".format(topologies_folder))
@@ -157,15 +165,19 @@ def process_args(
     kwargs["cpuset_start_pos"] = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(kwargs["cpuset_start_pos"]))
     kwargs["redis_proc_start_port"] = args.redis_proc_start_port
-    logging.info("Redis Processes start port: {}".format(kwargs["redis_proc_start_port"]))
+    logging.info(
+        "Redis Processes start port: {}".format(kwargs["redis_proc_start_port"])
+    )
 
     logging.info("checking build spec requirements")
     kwargs["running_platform"] = args.platform_name
-    
+
     kwargs["stream_id"] = args.consumer_start_id
     kwargs["docker_client"] = docker.from_env()
 
-    kwargs["datasink_push_results_redistimeseries"] = args.datasink_push_results_redistimeseries
+    kwargs[
+        "datasink_push_results_redistimeseries"
+    ] = args.datasink_push_results_redistimeseries
     kwargs["grafana_profile_dashboard"] = args.grafana_profile_dashboard
 
     kwargs["defaults_filename"] = args.defaults_filename
@@ -210,19 +222,22 @@ def process_args(
             )
             exit(1)
     kwargs["consumer_name"] = "{}-self-contained-proc#{}".format(
-        get_runners_consumer_group_name(kwargs["running_platform"]), kwargs["consumer_pos"]
+        get_runners_consumer_group_name(kwargs["running_platform"]),
+        kwargs["consumer_pos"],
     )
     logging.info(
         "Consuming from group {}. Consumer id {}".format(
-            get_runners_consumer_group_name(kwargs["running_platform"]), kwargs["consumer_name"]
+            get_runners_consumer_group_name(kwargs["running_platform"]),
+            kwargs["consumer_name"],
         )
     )
 
     return kwargs
 
+
 def connect_redis_server(
-        event_stream_host, event_stream_port, event_stream_user, event_stream_pass
-): 
+    event_stream_host, event_stream_port, event_stream_user, event_stream_pass
+):
     logging.info(
         "Connecting to Redis server: {}:{} with user {}".format(
             event_stream_host, event_stream_port, event_stream_user
@@ -242,16 +257,16 @@ def connect_redis_server(
         conn.ping()
     except redis.exceptions.ConnectionError as e:
         logging.error(
-            "Unable to connect to Redis server available at: {}:{}".format(event_stream_host, event_stream_port)
+            "Unable to connect to Redis server available at: {}:{}".format(
+                event_stream_host, event_stream_port
+            )
         )
         logging.error("Error message {}".format(e.__str__()))
         exit(1)
     return conn
 
 
-def self_contained_coordinator_blocking_read(
-        kwargs
-):
+def self_contained_coordinator_blocking_read(kwargs):
     num_process_streams = 0
     num_process_test_suites = 0
     overall_result = False
@@ -274,7 +289,6 @@ def self_contained_coordinator_blocking_read(
             total_test_suite_runs,
         ) = process_self_contained_coordinator_stream(kwargs)
 
-        
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
         if overall_result is True:
@@ -297,8 +311,13 @@ def self_contained_coordinator_blocking_read(
                         kwargs["stream_id"], ack_reply
                     )
                 )
-    
-    return overall_result, kwargs["stream_id"], num_process_streams, num_process_test_suites
+
+    return (
+        overall_result,
+        kwargs["stream_id"],
+        num_process_streams,
+        num_process_test_suites,
+    )
 
 
 def prepare_memtier_benchmark_parameters(
@@ -327,9 +346,7 @@ def prepare_memtier_benchmark_parameters(
     return None, benchmark_command_str
 
 
-def process_self_contained_coordinator_stream(
-        kwargs
-):
+def process_self_contained_coordinator_stream(kwargs):
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
@@ -364,7 +381,9 @@ def process_self_contained_coordinator_stream(
                         )
                     )
                     airgap_docker_image_bin = kwargs["conn"].get(airgap_key)
-                    images_loaded = docker_client.images.load(airgap_docker_image_bin)
+                    images_loaded = kwargs["docker_client"].images.load(
+                        airgap_docker_image_bin
+                    )
                     logging.info("Successfully loaded images {}".format(images_loaded))
 
                 for test_file in kwargs["testsuite_spec_files"]:
@@ -422,7 +441,9 @@ def process_self_contained_coordinator_stream(
                                     kwargs["topologies_map"], topology_spec_name
                                 )
                                 temporary_dir = tempfile.mkdtemp(dir=kwargs["home"])
-                                temporary_dir_client = tempfile.mkdtemp(dir=kwargs["home"])
+                                temporary_dir_client = tempfile.mkdtemp(
+                                    dir=kwargs["home"]
+                                )
                                 logging.info(
                                     "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                         temporary_dir
@@ -462,7 +483,10 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 restore_build_artifacts_from_test_details(
-                                    build_artifacts, kwargs["conn"], temporary_dir, testDetails
+                                    build_artifacts,
+                                    kwargs["conn"],
+                                    temporary_dir,
+                                    testDetails,
                                 )
                                 mnt_point = "/mnt/redis/"
                                 command = generate_standalone_redis_server_args(
@@ -481,7 +505,9 @@ def process_self_contained_coordinator_stream(
                                     )
                                 )
 
-                                redis_container = kwargs["docker_client"].containers.run(
+                                redis_container = kwargs[
+                                    "docker_client"
+                                ].containers.run(
                                     image=run_image,
                                     volumes={
                                         temporary_dir: {
@@ -500,14 +526,15 @@ def process_self_contained_coordinator_stream(
                                 )
                                 redis_containers.append(redis_container)
 
-                                r = redis.StrictRedis(port=kwargs["redis_proc_start_port"])
+                                r = redis.StrictRedis(
+                                    port=kwargs["redis_proc_start_port"]
+                                )
                                 r.ping()
                                 redis_conns = [r]
                                 reset_commandstats(redis_conns)
                                 redis_pids = []
                                 first_redis_pid = r.info()["process_id"]
                                 redis_pids.append(first_redis_pid)
-
 
                                 ceil_client_cpu_limit = extract_client_cpu_limit(
                                     benchmark_config
@@ -597,7 +624,6 @@ def process_self_contained_coordinator_stream(
                                     benchmark_config
                                 )
 
-
                                 profiler_call_graph_mode = "dwarf"
                                 profiler_frequency = 99
                                 # start the profile
@@ -625,7 +651,9 @@ def process_self_contained_coordinator_stream(
                                 # run the benchmark
                                 benchmark_start_time = datetime.datetime.now()
 
-                                client_container_stdout = kwargs["docker_client"].containers.run(
+                                client_container_stdout = kwargs[
+                                    "docker_client"
+                                ].containers.run(
                                     image=client_container_image,
                                     volumes={
                                         temporary_dir_client: {
@@ -641,7 +669,6 @@ def process_self_contained_coordinator_stream(
                                     detach=False,
                                     cpuset_cpus=client_cpuset_cpus,
                                 )
-
 
                                 benchmark_end_time = datetime.datetime.now()
                                 benchmark_duration_seconds = (
@@ -703,21 +730,21 @@ def process_self_contained_coordinator_stream(
                                                     "s3_link": s3_link,
                                                 }
                                             )
-                                        https_link = (
-                                            generate_artifacts_table_grafana_redis(
-                                                kwargs["datasink_push_results_redistimeseries"],
-                                                grafana_profile_dashboard,
-                                                profilers_artifacts,
-                                                kwargs["datasync_conn"],
-                                                setup_name,
-                                                start_time_ms,
-                                                start_time_str,
-                                                test_name,
-                                                tf_github_org,
-                                                tf_github_repo,
-                                                git_hash,
-                                                git_branch,
-                                            )
+                                        https_link = generate_artifacts_table_grafana_redis(
+                                            kwargs[
+                                                "datasink_push_results_redistimeseries"
+                                            ],
+                                            kwargs["grafana_profile_dashboard"],
+                                            profilers_artifacts,
+                                            kwargs["datasync_conn"],
+                                            setup_name,
+                                            start_time_ms,
+                                            start_time_str,
+                                            test_name,
+                                            tf_github_org,
+                                            tf_github_repo,
+                                            git_hash,
+                                            git_branch,
                                         )
                                         profiler_dashboard_links.append(
                                             [
@@ -796,7 +823,7 @@ def process_self_contained_coordinator_stream(
                                         test_name,
                                         None,
                                     )
-                                
+
                                 logging.info(
                                     "Done reading results json from {}".format(
                                         full_result_path
@@ -805,7 +832,10 @@ def process_self_contained_coordinator_stream(
 
                                 dataset_load_duration_seconds = 0
 
-                                if kwargs["datasink_push_results_redistimeseries"] is True:
+                                if (
+                                    kwargs["datasink_push_results_redistimeseries"]
+                                    is True
+                                ):
                                     exporter_datasink_common(
                                         benchmark_config,
                                         benchmark_duration_seconds,
@@ -829,9 +859,9 @@ def process_self_contained_coordinator_stream(
                                         topology_spec_name,
                                         kwargs["default_metrics"],
                                     )
-                                
-                                logging.info( "shutting down redis server" )
-                            
+
+                                logging.info("shutting down redis server")
+
                                 r.shutdown(save=False)
                                 test_result = True
                                 total_test_suite_runs = total_test_suite_runs + 1
