@@ -452,7 +452,7 @@ def process_self_contained_coordinator_stream(
                     )
                 )
 
-            if skip_test == False:
+            if skip_test is False:
                 overall_result = True
                 profiler_dashboard_links = []
                 if docker_air_gap:
