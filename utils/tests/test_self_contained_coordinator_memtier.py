@@ -66,6 +66,12 @@ def test_self_contained_coordinator_blocking_read():
             ]
             kwargs["datasink_push_results_redistimeseries"] = True
             kwargs["profilers_enabled"] = False
+            kwargs["consumer_pos"] = 1
+            kwargs["consumer_name"] = "{}-self-contained-proc#{}".format(
+                get_runners_consumer_group_name(kwargs["running_platform"]),
+                kwargs["consumer_pos"],
+            )
+
             (
                 result,
                 stream_id,
