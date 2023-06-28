@@ -91,12 +91,18 @@ def test_generate_cpuset_cpus():
 
 def test_self_contained_coordinator_blocking_read():
     try:
+        kwargs = {}
+        kwargs[
+            "datasink_push_results_redistimeseries"
+        ] = args.datasink_push_results_redistimeseries
+
         run_coordinator = True
         TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
         if TST_RUNNER_X == "0":
             run_coordinator = False
         if run_coordinator:
             conn = redis.StrictRedis(port=16379)
+            kwargs["conn"] = conn
             conn.ping()
             expected_datapoint_ts = None
             conn.flushall()
@@ -110,40 +116,30 @@ def test_self_contained_coordinator_blocking_read():
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
-            running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
             datasink_conn = redis.StrictRedis(port=16379)
+            kwargs["datasync_conn"] = datasync_conn
             rts = datasink_conn.ts()
-            docker_client = docker.from_env()
-            home = str(Path.home())
-            stream_id = ">"
-            topologies_map = get_topologies(
+            kwargs["docker_client"] = docker.from_env()
+            kwargs["home"] = str(Path.home())
+            kwargs["stream_id"] = ">"
+            kwargs["topologies_map"] = get_topologies(
                 "./redis_benchmarks_specification/setups/topologies/topologies.yml"
             )
             # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
             # and we need 1 core for DB and another for CLIENT
-            testsuite_spec_files = [
+            kwargs["testsuite_spec_files"] = [
                 "./utils/tests/test_data/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml"
             ]
+            kwargs["running_platform"] = "fco-ThinkPad-T490"
+            kwargs["profilers_enabled"] = False
             (
                 result,
                 stream_id,
                 number_processed_streams,
                 _,
-            ) = self_contained_coordinator_blocking_read(
-                conn,
-                True,
-                docker_client,
-                home,
-                stream_id,
-                datasink_conn,
-                testsuite_spec_files,
-                topologies_map,
-                running_platform,
-                False,
-                [],
-            )
+            ) = self_contained_coordinator_blocking_read(kwargs)
             assert result == True
             assert number_processed_streams == 1
             # ensure we're able to aknowledge the consumed message
