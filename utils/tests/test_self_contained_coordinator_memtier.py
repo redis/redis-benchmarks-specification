@@ -23,6 +23,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
     build_runners_consumer_group_create,
+    get_runners_consumer_group_name,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
