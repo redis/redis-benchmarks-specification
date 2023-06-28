@@ -30,6 +30,7 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 def test_self_contained_coordinator_blocking_read():
     try:
+        kwargs = {}
         run_coordinator = True
         TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
         if TST_RUNNER_X == "0":
