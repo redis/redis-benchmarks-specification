@@ -434,17 +434,17 @@ def process_self_contained_coordinator_stream(
             ) = extract_build_info_from_streamdata(testDetails)
 
             skip_test = False
-            if b"platform" in testDetails: 
+            if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
-                if running_platform != platform: 
+                if running_platform != platform:
                     skip_test = True
                     logging.info(
                         "skipping stream_id {} given plaform {}!={}".format(
-                            stream_id, running_platform, platform  
+                            stream_id, running_platform, platform
                         )
                     )
 
-            if run_arch != arch: 
+            if run_arch != arch:
                 skip_test = True
                 logging.info(
                     "skipping stream_id {} given arch {}!={}".format(
