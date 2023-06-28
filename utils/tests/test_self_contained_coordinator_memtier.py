@@ -51,7 +51,7 @@ def test_self_contained_coordinator_blocking_read():
             assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
             kwargs["running_platform"] = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, "0")
+            build_runners_consumer_group_create(conn, kwargs["running_platform"], "0")
             kwargs["datasink_conn"] = redis.StrictRedis(port=16379)
             kwargs["docker_client"] = docker.from_env()
             kwargs["home"] = str(Path.home())
