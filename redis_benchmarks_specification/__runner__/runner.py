@@ -359,6 +359,19 @@ def process_self_contained_coordinator_stream(
     resp_version=None,
     override_memtier_test_time=0,
 ):
+    def delete_temporary_files(
+        temporary_dir_client, full_result_path, benchmark_tool_global
+    ):
+        if preserve_temporary_client_dirs is True:
+            logging.info(f"Preserving temporary client dir {temporary_dir_client}")
+        else:
+            if "redis-benchmark" in benchmark_tool_global:
+                if full_result_path is not None:
+                    os.remove(full_result_path)
+                    logging.info("Removing temporary JSON file")
+            shutil.rmtree(temporary_dir_client, ignore_errors=True)
+            logging.info(f"Removing temporary client dir {temporary_dir_client}")
+
     overall_result = True
     results_matrix = []
     total_test_suite_runs = 0
@@ -507,6 +520,11 @@ def process_self_contained_coordinator_stream(
                                 test_name, maxmemory, benchmark_required_memory
                             )
                         )
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
                         continue
 
                     reset_commandstats(redis_conns)
@@ -543,12 +561,22 @@ def process_self_contained_coordinator_stream(
                                         test_name, priority_upper_limit, priority
                                     )
                                 )
+                                delete_temporary_files(
+                                    temporary_dir_client=temporary_dir_client,
+                                    full_result_path=None,
+                                    benchmark_tool_global=benchmark_tool_global,
+                                )
                                 continue
                             if priority < priority_lower_limit:
                                 logging.warning(
                                     "Skipping test {} giving the priority limit ({}) is bellow the priority value ({})".format(
                                         test_name, priority_lower_limit, priority
                                     )
+                                )
+                                delete_temporary_files(
+                                    temporary_dir_client=temporary_dir_client,
+                                    full_result_path=None,
+                                    benchmark_tool_global=benchmark_tool_global,
                                 )
                                 continue
                             logging.info(
@@ -567,10 +595,20 @@ def process_self_contained_coordinator_stream(
                                     test_name
                                 )
                             )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
                             continue
 
                     if dry_run is True:
                         dry_run_count = dry_run_count + 1
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
                         continue
 
                     if "preload_tool" in benchmark_config["dbconfig"]:
@@ -598,6 +636,11 @@ def process_self_contained_coordinator_stream(
                             logging.warning(
                                 "Skipping this test given preload result was false"
                             )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
                             continue
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
@@ -618,6 +661,11 @@ def process_self_contained_coordinator_stream(
 
                     if dry_run_include_preload is True:
                         dry_run_count = dry_run_count + 1
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
                         continue
 
                     benchmark_tool = extract_client_tool(benchmark_config)
@@ -691,6 +739,11 @@ def process_self_contained_coordinator_stream(
                     ):
                         logging.warning(
                             "Forcing skip this test given there is an arbitrary commmand and memtier usage. Check https://github.com/RedisLabs/memtier_benchmark/pull/117 ."
+                        )
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
                         )
                         continue
 
@@ -899,18 +952,11 @@ def process_self_contained_coordinator_stream(
                     shutil.copy(full_result_path, dest_fpath)
                 overall_result &= test_result
 
-                if preserve_temporary_client_dirs is True:
-                    logging.info(
-                        f"Preserving temporary client dir {temporary_dir_client}"
-                    )
-                else:
-                    if "redis-benchmark" in benchmark_tool_global:
-                        os.remove(full_result_path)
-                        logging.info("Removing temporary JSON file")
-                    shutil.rmtree(temporary_dir_client, ignore_errors=True)
-                    logging.info(
-                        f"Removing temporary client dir {temporary_dir_client}"
-                    )
+                delete_temporary_files(
+                    temporary_dir_client=temporary_dir_client,
+                    full_result_path=full_result_path,
+                    benchmark_tool_global=benchmark_tool_global,
+                )
 
     table_name = "Results for entire test-suite"
     results_matrix_headers = [
