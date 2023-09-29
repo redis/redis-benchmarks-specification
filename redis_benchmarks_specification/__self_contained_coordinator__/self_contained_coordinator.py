@@ -912,9 +912,7 @@ def process_self_contained_coordinator_stream(
                                     logging.critical("Printing redis container log....")
                                     print("-" * 60)
                                     print(
-                                        redis_container.logs(
-                                            stdout=True, stderr=True, logs=True
-                                        )
+                                        redis_container.logs(stdout=True, stderr=True)
                                     )
                                     print("-" * 60)
                                 test_result = False
