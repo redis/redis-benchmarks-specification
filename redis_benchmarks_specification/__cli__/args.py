@@ -130,4 +130,10 @@ def spec_cli_args(parser):
         default=-1,
         help="Use the last N samples. by default will use all available values",
     )
+    parser.add_argument(
+        "--platform",
+        type=str,
+        default="",
+        help="Only trigger tests on the specified platform.",
+    )
     return parser

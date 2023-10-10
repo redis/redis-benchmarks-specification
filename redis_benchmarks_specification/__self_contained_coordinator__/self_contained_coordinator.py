@@ -433,7 +433,26 @@ def process_self_contained_coordinator_stream(
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
 
-            if run_arch == arch:
+            skip_test = False
+            if b"platform" in testDetails:
+                platform = testDetails[b"platform"]
+                if running_platform != platform:
+                    skip_test = True
+                    logging.info(
+                        "skipping stream_id {} given plaform {}!={}".format(
+                            stream_id, running_platform, platform
+                        )
+                    )
+
+            if run_arch != arch:
+                skip_test = True
+                logging.info(
+                    "skipping stream_id {} given arch {}!={}".format(
+                        stream_id, run_arch, arch
+                    )
+                )
+
+            if skip_test is False:
                 overall_result = True
                 profiler_dashboard_links = []
                 if docker_air_gap:
@@ -951,12 +970,6 @@ def process_self_contained_coordinator_stream(
 
                             overall_result &= test_result
 
-            else:
-                logging.info(
-                    "skipping stream_id {} given arch {}!={}".format(
-                        stream_id, run_arch, arch
-                    )
-                )
         else:
             logging.error("Missing commit information within received message.")
     except:
