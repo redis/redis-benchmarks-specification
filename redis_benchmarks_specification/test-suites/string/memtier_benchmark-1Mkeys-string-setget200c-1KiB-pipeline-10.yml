@@ -1,0 +1,26 @@
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  arguments: --pipeline 10 --data-size 1000 --ratio 1:10 --key-pattern R:R -c 50 -t
+    4 --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+dbconfig:
+  preload_tool:
+    arguments: --data-size 1000 --ratio 1:0 --key-pattern P:P -c 50 -t 4 --hide-histogram
+      --key-minimum=1 --key-maximum=1000000 -n allkeys
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+name: memtier_benchmark-1Mkeys-string-setget200c-1KiB-pipeline-10
+priority: 1
+redis-topologies:
+- oss-standalone
+tested-commands:
+- get
+tested-groups:
+- string
+version: 0.4

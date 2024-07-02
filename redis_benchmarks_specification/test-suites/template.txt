@@ -1,0 +1,16 @@
+version: 0.4
+name: change_me
+description: describe me.
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 -c 2 -t 2 --command="HSET __key__ field __data__" -R --data-size=30   --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+

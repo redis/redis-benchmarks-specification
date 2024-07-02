@@ -358,6 +358,7 @@ def process_self_contained_coordinator_stream(
     preserve_temporary_client_dirs=False,
     resp_version=None,
     override_memtier_test_time=0,
+    used_memory_check_fail=False,
 ):
     def delete_temporary_files(
         temporary_dir_client, full_result_path, benchmark_tool_global
@@ -587,20 +588,20 @@ def process_self_contained_coordinator_stream(
                                     priority_upper_limit,
                                 )
                             )
-
-                    if "dataset" in benchmark_config["dbconfig"]:
-                        if args.run_tests_with_dataset is False:
-                            logging.warning(
-                                "Skipping test {} giving it implies dataset preload".format(
-                                    test_name
+                    if "dbconfig" in benchmark_config:
+                        if "dataset" in benchmark_config["dbconfig"]:
+                            if args.run_tests_with_dataset is False:
+                                logging.warning(
+                                    "Skipping test {} giving it implies dataset preload".format(
+                                        test_name
+                                    )
                                 )
-                            )
-                            delete_temporary_files(
-                                temporary_dir_client=temporary_dir_client,
-                                full_result_path=None,
-                                benchmark_tool_global=benchmark_tool_global,
-                            )
-                            continue
+                                delete_temporary_files(
+                                    temporary_dir_client=temporary_dir_client,
+                                    full_result_path=None,
+                                    benchmark_tool_global=benchmark_tool_global,
+                                )
+                                continue
 
                     if dry_run is True:
                         dry_run_count = dry_run_count + 1
@@ -610,38 +611,38 @@ def process_self_contained_coordinator_stream(
                             benchmark_tool_global=benchmark_tool_global,
                         )
                         continue
-
-                    if "preload_tool" in benchmark_config["dbconfig"]:
-                        res = data_prepopulation_step(
-                            benchmark_config,
-                            benchmark_tool_workdir,
-                            client_cpuset_cpus,
-                            docker_client,
-                            git_hash,
-                            port,
-                            temporary_dir_client,
-                            test_name,
-                            host,
-                            tls_enabled,
-                            tls_skip_verify,
-                            test_tls_cert,
-                            test_tls_key,
-                            test_tls_cacert,
-                            resp_version,
-                            args.benchmark_local_install,
-                            password,
-                            oss_cluster_api_enabled,
-                        )
-                        if res is False:
-                            logging.warning(
-                                "Skipping this test given preload result was false"
+                    if "dbconfig" in benchmark_config:
+                        if "preload_tool" in benchmark_config["dbconfig"]:
+                            res = data_prepopulation_step(
+                                benchmark_config,
+                                benchmark_tool_workdir,
+                                client_cpuset_cpus,
+                                docker_client,
+                                git_hash,
+                                port,
+                                temporary_dir_client,
+                                test_name,
+                                host,
+                                tls_enabled,
+                                tls_skip_verify,
+                                test_tls_cert,
+                                test_tls_key,
+                                test_tls_cacert,
+                                resp_version,
+                                args.benchmark_local_install,
+                                password,
+                                oss_cluster_api_enabled,
                             )
-                            delete_temporary_files(
-                                temporary_dir_client=temporary_dir_client,
-                                full_result_path=None,
-                                benchmark_tool_global=benchmark_tool_global,
-                            )
-                            continue
+                            if res is False:
+                                logging.warning(
+                                    "Skipping this test given preload result was false"
+                                )
+                                delete_temporary_files(
+                                    temporary_dir_client=temporary_dir_client,
+                                    full_result_path=None,
+                                    benchmark_tool_global=benchmark_tool_global,
+                                )
+                                continue
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
@@ -651,6 +652,7 @@ def process_self_contained_coordinator_stream(
                         benchmark_required_memory,
                         redis_conns,
                         "start of benchmark",
+                        used_memory_check_fail,
                     )
 
                     logging.info("Checking if there is a keyspace check being enforced")
@@ -842,6 +844,7 @@ def process_self_contained_coordinator_stream(
                         benchmark_required_memory,
                         redis_conns,
                         "end of benchmark",
+                        used_memory_check_fail,
                     )
 
                     if args.flushall_on_every_test_end:
@@ -1003,22 +1006,33 @@ def get_maxmemory(r):
 
 def get_benchmark_required_memory(benchmark_config):
     benchmark_required_memory = 0
-    if "resources" in benchmark_config["dbconfig"]:
-        resources = benchmark_config["dbconfig"]["resources"]
-        if "requests" in resources:
-            resources_requests = benchmark_config["dbconfig"]["resources"]["requests"]
-            if "memory" in resources_requests:
-                benchmark_required_memory = resources_requests["memory"]
-                benchmark_required_memory = int(parse_size(benchmark_required_memory))
-                logging.info(
-                    "Benchmark required memory: {} Bytes".format(
-                        benchmark_required_memory
+    if "dbconfig" in benchmark_config:
+        if "resources" in benchmark_config["dbconfig"]:
+            resources = benchmark_config["dbconfig"]["resources"]
+            if "requests" in resources:
+                resources_requests = benchmark_config["dbconfig"]["resources"][
+                    "requests"
+                ]
+                if "memory" in resources_requests:
+                    benchmark_required_memory = resources_requests["memory"]
+                    benchmark_required_memory = int(
+                        parse_size(benchmark_required_memory)
                     )
-                )
+                    logging.info(
+                        "Benchmark required memory: {} Bytes".format(
+                            benchmark_required_memory
+                        )
+                    )
     return benchmark_required_memory
 
 
-def used_memory_check(test_name, benchmark_required_memory, redis_conns, stage):
+def used_memory_check(
+    test_name,
+    benchmark_required_memory,
+    redis_conns,
+    stage,
+    used_memory_check_fail=False,
+):
     used_memory = 0
     for conn in redis_conns:
         used_memory = used_memory + conn.info("memory")["used_memory"]
@@ -1030,7 +1044,8 @@ def used_memory_check(test_name, benchmark_required_memory, redis_conns, stage):
                 test_name, benchmark_required_memory, used_memory_gb
             )
         )
-        exit(1)
+        if used_memory_check_fail:
+            exit(1)
 
 
 def cp_to_workdir(benchmark_tool_workdir, srcfile):
