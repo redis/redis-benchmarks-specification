@@ -142,14 +142,11 @@ def get_repo(args):
     if redisDirPath is None:
         cleanUp = True
         redisDirPath = tempfile.mkdtemp()
+        remote_url = f"https://github.com/{args.gh_org}/{args.gh_repo}"
         logging.info(
-            "Retrieving redis repo from remote into {}. Using branch {}.".format(
-                redisDirPath, args.branch
-            )
+            f"Retrieving redis repo from remote {remote_url} into {redisDirPath}. Using branch {args.branch}."
         )
-        cmd = "git clone https://github.com/redis/redis {} --branch {}\n".format(
-            redisDirPath, args.branch
-        )
+        cmd = f"git clone {remote_url} {redisDirPath} --branch {args.branch}\n"
         process = subprocess.Popen(
             "/bin/bash", stdin=subprocess.PIPE, stdout=subprocess.PIPE
         )
@@ -250,7 +247,12 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                     binary_key,
                     binary_value,
                 ) = get_commit_dict_from_sha(
-                    cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
+                    cdict["git_hash"],
+                    args.gh_org,
+                    args.gh_repo,
+                    cdict,
+                    True,
+                    args.gh_token,
                 )
                 if args.platform:
                     commit_dict["platform"] = args.platform

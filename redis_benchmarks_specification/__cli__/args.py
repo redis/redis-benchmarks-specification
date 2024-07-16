@@ -93,6 +93,8 @@ def spec_cli_args(parser):
         default=START_TIME_NOW_UTC,
     )
     parser.add_argument("--redis_repo", type=str, default=None)
+    parser.add_argument("--gh_org", type=str, default="redis")
+    parser.add_argument("--gh_repo", type=str, default="redis")
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
     parser.add_argument(
         "--use-tags",
