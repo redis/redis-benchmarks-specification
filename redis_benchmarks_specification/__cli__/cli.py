@@ -231,7 +231,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             )
             filtered_hash_commits.append(cdict)
 
-    if True:  # args.dry_run is False:
+    if args.dry_run is False:
         conn = redis.StrictRedis(
             host=args.redis_host,
             port=args.redis_port,
