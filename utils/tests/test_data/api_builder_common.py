@@ -37,7 +37,7 @@ def flow_1_and_2_api_builder_checks(
     builders_folder = "./redis_benchmarks_specification/setups/builders"
     different_build_specs = ["{}.yml".format(build_spec_name)]
     previous_id = ">"
-    previous_id, new_builds_count = builder_process_stream(
+    previous_id, new_builds_count, _ = builder_process_stream(
         builders_folder, conn, different_build_specs, previous_id
     )
     assert new_builds_count == 1

@@ -15,7 +15,6 @@ import datetime as dt
 import os
 from tqdm import tqdm
 from github import Github
-from slack_sdk.webhook import WebhookClient
 import argparse
 from redis_benchmarks_specification.__compare__.args import create_compare_arguments
 
@@ -282,9 +281,6 @@ def compare_command_logic(args, project_name, project_version):
     contains_regression_comment = False
     regression_comment = None
     github_pr = None
-    # slack related
-    webhook_notifications_active = False
-    webhook_client_slack = None
     if running_platform is not None:
         logging.info(
             "Using platform named: {} to do the comparison.\n\n".format(
@@ -455,7 +451,6 @@ def compare_command_logic(args, project_name, project_version):
             )
             user_input = "n"
             html_url = "n/a"
-            regression_count = len(detected_regressions)
             (
                 baseline_str,
                 by_str_baseline,
@@ -801,7 +796,6 @@ def from_rts_to_regression_table(
     total_comparison_points = 0
     noise_waterline = 3
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
-    at_comparison = 0
     for test_name in test_names:
         multi_value_baseline = check_multi_value_filter(baseline_str)
         multi_value_comparison = check_multi_value_filter(comparison_str)

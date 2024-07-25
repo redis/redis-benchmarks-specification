@@ -141,7 +141,7 @@ def main():
 
     previous_id = args.consumer_start_id
     while True:
-        previous_id, new_builds_count = builder_process_stream(
+        previous_id, new_builds_count, _ = builder_process_stream(
             builders_folder,
             conn,
             different_build_specs,
@@ -181,6 +181,7 @@ def builder_process_stream(
     arch="amd64",
 ):
     new_builds_count = 0
+    build_stream_fields_arr = []
     logging.info("Entering blocking read waiting for work.")
     consumer_name = "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1")
     newTestInfo = conn.xreadgroup(
@@ -196,6 +197,7 @@ def builder_process_stream(
     else:
         streamId, testDetails = newTestInfo[0][1][0]
         logging.info("Received work . Stream id {}.".format(streamId))
+        conn.lpush("benchmarks:{streamId}")
         # commit = None
         # commited_date = ""
         # tag = ""
@@ -220,6 +222,22 @@ def builder_process_stream(
                 use_git_timestamp = bool(testDetails[b"use_git_timestamp"])
             if b"git_timestamp_ms" in testDetails:
                 git_timestamp_ms = int(testDetails[b"git_timestamp_ms"].decode())
+            tests_regexp = ".*"
+            if b"tests_regexp" in testDetails:
+                tests_regexp = testDetails[b"tests_regexp"].decode()
+            tests_priority_upper_limit = 10000
+            if b"tests_priority_upper_limit" in testDetails:
+                tests_priority_upper_limit = int(
+                    testDetails[b"tests_priority_upper_limit"].decode()
+                )
+            tests_priority_lower_limit = 0
+            if b"tests_priority_lower_limit" in testDetails:
+                tests_priority_lower_limit = int(
+                    testDetails[b"tests_priority_lower_limit"].decode()
+                )
+            tests_groups_regexp = ".*"
+            if b"tests_groups_regexp" in testDetails:
+                tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
 
             for build_spec in different_build_specs:
                 build_config, id = get_build_config(builders_folder + "/" + build_spec)
@@ -333,11 +351,18 @@ def builder_process_stream(
                     "build_command": build_command,
                     "metadata": json.dumps(build_config_metadata),
                     "build_artifacts": ",".join(build_artifacts),
+                    "tests_regexp": tests_regexp,
+                    "tests_priority_upper_limit": tests_priority_upper_limit,
+                    "tests_priority_lower_limit": tests_priority_lower_limit,
+                    "tests_groups_regexp": tests_groups_regexp,
                 }
                 if git_branch is not None:
                     build_stream_fields["git_branch"] = git_branch
                 if git_version is not None:
                     build_stream_fields["git_version"] = git_version
+                if git_timestamp_ms is not None:
+                    build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
+
                 if git_timestamp_ms is not None:
                     build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
@@ -356,16 +381,23 @@ def builder_process_stream(
                 if b"platform" in testDetails:
                     build_stream_fields["platform"] = testDetails[b"platform"]
                 if result is True:
-                    stream_id = conn.xadd(
+                    benchmark_stream_id = conn.xadd(
                         STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
                     )
                     logging.info(
                         "sucessfully built build variant {} for redis git_sha {}. Stream id: {}".format(
-                            id, git_hash, stream_id
+                            id, git_hash, benchmark_stream_id
                         )
+                    )
+                    builder_list_completed = f"builder:{streamId}:builds_completed"
+                    conn.lpush(builder_list_completed, benchmark_stream_id)
+                    conn.expire(builder_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    logging.info(
+                        f"Adding information of build->benchmark stream info in list {builder_list_completed}. Adding benchmark stream id: {benchmark_stream_id}"
                     )
                 shutil.rmtree(temporary_dir, ignore_errors=True)
                 new_builds_count = new_builds_count + 1
+                build_stream_fields_arr.append(build_stream_fields)
             ack_reply = conn.xack(
                 STREAM_KEYNAME_GH_EVENTS_COMMIT,
                 STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
@@ -387,7 +419,7 @@ def builder_process_stream(
                 )
         else:
             logging.error("Missing commit information within received message.")
-    return previous_id, new_builds_count
+    return previous_id, new_builds_count, build_stream_fields_arr
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):

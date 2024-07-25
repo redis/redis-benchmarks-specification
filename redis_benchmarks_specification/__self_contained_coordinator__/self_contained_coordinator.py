@@ -5,7 +5,7 @@ import pathlib
 import shutil
 import tempfile
 import traceback
-
+import re
 import docker
 import redis
 import os
@@ -23,6 +23,7 @@ from redis_benchmarks_specification.__common__.env import (
     LOG_LEVEL,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
+    REDIS_BINS_EXPIRE_SECS,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -433,6 +434,13 @@ def process_self_contained_coordinator_stream(
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
 
+            test_regexp = ".*"
+            if b"test_regexp" in testDetails:
+                test_regexp = testDetails[b"test_regexp"]
+                logging.info(
+                    f"detected a regexp definition on the streamdata {test_regexp}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -466,11 +474,37 @@ def process_self_contained_coordinator_stream(
                     images_loaded = docker_client.images.load(airgap_docker_image_bin)
                     logging.info("Successfully loaded images {}".format(images_loaded))
 
+                filtered_test_files = []
+
+                stream_test_list_pending = (
+                    f"{stream_id}:{running_platform}:tests_pending"
+                )
+                stream_test_list_running = (
+                    f"{stream_id}:{running_platform}:tests_running"
+                )
+                stream_test_list_completed = (
+                    f"{stream_id}:{running_platform}:tests_completed"
+                )
                 for test_file in testsuite_spec_files:
                     if defaults_filename in test_file:
                         continue
-                    redis_containers = []
-                    client_containers = []
+
+                    if test_regexp != ".*":
+                        logging.info(
+                            "Filtering all tests via a regular expression: {}".format(
+                                test_regexp
+                            )
+                        )
+                        tags_regex_string = re.compile(test_regexp)
+
+                        match_obj = re.search(tags_regex_string, test_file)
+                        if match_obj is None:
+                            logging.info(
+                                "Skipping {} given it does not match regex {}".format(
+                                    test_file, test_regexp
+                                )
+                            )
+                            continue
 
                     with open(test_file, "r") as stream:
                         (
@@ -485,6 +519,28 @@ def process_self_contained_coordinator_stream(
                                 )
                             )
                             continue
+                        conn.lpush(stream_test_list_pending, test_name)
+                        conn.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
+                        logging.info(
+                            f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
+                        )
+                    filtered_test_files.append(test_file)
+
+                for test_file in filtered_test_files:
+                    redis_containers = []
+                    client_containers = []
+                    with open(test_file, "r") as stream:
+                        (
+                            _,
+                            benchmark_config,
+                            test_name,
+                        ) = get_final_benchmark_config(None, stream, "")
+                        conn.lrem(stream_test_list_pending, 1, test_name)
+                        conn.lpush(stream_test_list_running, test_name)
+                        conn.expire(stream_test_list_running, REDIS_BINS_EXPIRE_SECS)
+                        logging.info(
+                            f"Added test named {test_name} to the pending test list in key {stream_test_list_running}"
+                        )
                         (
                             _,
                             _,
@@ -970,6 +1026,12 @@ def process_self_contained_coordinator_stream(
 
                             overall_result &= test_result
 
+                    conn.lrem(stream_test_list_running, 1, test_name)
+                    conn.lpush(stream_test_list_completed, test_name)
+                    conn.expire(stream_test_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    logging.info(
+                        f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
+                    )
         else:
             logging.error("Missing commit information within received message.")
     except:

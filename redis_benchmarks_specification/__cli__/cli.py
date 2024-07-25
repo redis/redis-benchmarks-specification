@@ -26,7 +26,11 @@ from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
     request_build_from_commit_info,
 )
-from redis_benchmarks_specification.__common__.env import REDIS_BINS_EXPIRE_SECS
+from redis_benchmarks_specification.__common__.env import (
+    REDIS_BINS_EXPIRE_SECS,
+    STREAM_KEYNAME_GH_EVENTS_COMMIT,
+    STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+)
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
@@ -228,62 +232,121 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             )
             filtered_hash_commits.append(cdict)
 
-    if args.dry_run is False:
-        conn = redis.StrictRedis(
-            host=args.redis_host,
-            port=args.redis_port,
-            password=args.redis_pass,
-            username=args.redis_user,
-            decode_responses=False,
+    logging.info(
+        "Checking connection to redis with user: {}, host: {}, port: {}".format(
+            args.redis_user,
+            args.redis_host,
+            args.redis_port,
         )
-
-        for rep in range(0, 1):
-            for cdict in filtered_hash_commits:
-                (
-                    result,
-                    error_msg,
-                    commit_dict,
-                    _,
-                    binary_key,
-                    binary_value,
-                ) = get_commit_dict_from_sha(
-                    cdict["git_hash"],
-                    args.gh_org,
-                    args.gh_repo,
-                    cdict,
-                    True,
-                    args.gh_token,
-                )
-                if args.platform:
-                    commit_dict["platform"] = args.platform
-                if result is True:
-                    stream_id = "n/a"
-                    if args.dry_run is False:
-                        (
-                            result,
-                            reply_fields,
-                            error_msg,
-                        ) = request_build_from_commit_info(
-                            conn,
-                            commit_dict,
-                            {},
-                            binary_key,
-                            binary_value,
-                            REDIS_BINS_EXPIRE_SECS,
-                        )
-                        stream_id = reply_fields["id"]
+    )
+    conn = redis.StrictRedis(
+        host=args.redis_host,
+        port=args.redis_port,
+        password=args.redis_pass,
+        username=args.redis_user,
+        decode_responses=False,
+    )
+    conn.ping()
+    for rep in range(0, 1):
+        for cdict in filtered_hash_commits:
+            (
+                result,
+                error_msg,
+                commit_dict,
+                _,
+                binary_key,
+                binary_value,
+            ) = get_commit_dict_from_sha(
+                cdict["git_hash"],
+                args.gh_org,
+                args.gh_repo,
+                cdict,
+                True,
+                args.gh_token,
+            )
+            if args.platform:
+                commit_dict["platform"] = args.platform
+            commit_dict["tests_priority_upper_limit"] = args.tests_priority_upper_limit
+            commit_dict["tests_priority_lower_limit"] = args.tests_priority_lower_limit
+            commit_dict["tests_regexp"] = args.tests_regexp
+            commit_dict["tests_groups_regexp"] = args.tests_groups_regexp
+            if result is True:
+                stream_id = "n/a"
+                if args.dry_run is False:
+                    (result, reply_fields, error_msg,) = request_build_from_commit_info(
+                        conn,
+                        commit_dict,
+                        {},
+                        binary_key,
+                        binary_value,
+                        REDIS_BINS_EXPIRE_SECS,
+                    )
+                    stream_id = reply_fields["id"]
                     logging.info(
-                        "Successfully requested a build for commit: {}. Date: {} Request stream id: {}.".format(
+                        "Successfully requested a build for commit: {}. Date: {} Request stream id: {}. full commited info: {}. Reply fields: {}".format(
                             cdict["git_hash"],
                             cdict["commit_datetime"],
                             stream_id,
+                            commit_dict,
+                            reply_fields,
                         )
                     )
-                else:
-                    logging.error(error_msg)
+                    if args.wait_build is True:
+                        found_id = True
+                        sleep_secs = 10
+                        len_pending = 1
+                        while found_id is True and len_pending > 0:
+                            pending_build_streams = conn.xpending_range(
+                                STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                                "-",
+                                "+",
+                                1000,
+                            )
+                            len_pending = len(pending_build_streams)
+                            logging.info(
+                                f"There is a total of {len_pending} pending builds for stream {STREAM_KEYNAME_GH_EVENTS_COMMIT} and cg {STREAM_GH_EVENTS_COMMIT_BUILDERS_CG}. Checking for stream id: {stream_id}"
+                            )
+                            found_id = False
+                            for pending_try in pending_build_streams:
+                                logging.info(f"pending entry: {pending_try}")
+                                pending_id = pending_try["message_id"]
+                                if stream_id == pending_id:
+                                    found_id = True
+                                    logging.info(
+                                        f"Found the stream id {stream_id} as part of pending entry list. Waiting for it to be ack."
+                                    )
 
-    else:
-        logging.info("Skipping actual work trigger ( dry-run )")
+                            if found_id is True:
+                                import time
+
+                                logging.info(
+                                    f"Sleeping for {sleep_secs} before checking pending list again."
+                                )
+                                time.sleep(sleep_secs)
+
+                        builder_list_completed = f"builder:{stream_id}:builds_completed"
+
+                        logging.info(
+                            f"checking benchmark streams info in key: {builder_list_completed}"
+                        )
+                        benchmark_stream_ids = conn.lrange(
+                            builder_list_completed, 0, -1
+                        )
+                        logging.info(
+                            f"There is a total of {len(benchmark_stream_ids)} benchmark stream ids for this build: {benchmark_stream_ids}"
+                        )
+
+                else:
+                    logging.info(
+                        "DRY-RUN: build for commit: {}. Date: {} Full commited info: {}".format(
+                            cdict["git_hash"],
+                            cdict["commit_datetime"],
+                            commit_dict,
+                        )
+                    )
+            else:
+                logging.error(error_msg)
     if cleanUp is True:
         logging.info("Removing temporary redis dir {}.".format(redisDirPath))
         shutil.rmtree(redisDirPath)

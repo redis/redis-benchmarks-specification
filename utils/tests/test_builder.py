@@ -63,10 +63,16 @@ def test_commit_schema_to_stream_then_build():
             builders_folder = "./redis_benchmarks_specification/setups/builders"
             different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
             previous_id = ">"
-            previous_id, new_builds_count = builder_process_stream(
+            (
+                previous_id,
+                new_builds_count,
+                build_stream_fields_arr,
+            ) = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
             )
             assert new_builds_count == 1
+            assert len(build_stream_fields_arr) == 1
+            assert len(build_stream_fields_arr[0]["test_regexp"]) == ".*"
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             conn.save()
 
@@ -109,7 +115,7 @@ def test_commit_schema_to_stream_then_build_historical_redis():
             builders_folder = "./redis_benchmarks_specification/setups/builders"
             different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
             previous_id = ">"
-            previous_id, new_builds_count = builder_process_stream(
+            previous_id, new_builds_count, _ = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
             )
             assert new_builds_count == 1

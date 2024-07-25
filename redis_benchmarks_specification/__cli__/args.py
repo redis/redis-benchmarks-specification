@@ -31,6 +31,30 @@ def spec_cli_args(parser):
         help="Test suites folder, containing the different test variations",
     )
     parser.add_argument(
+        "--tests-regexp",
+        type=str,
+        default=".*",
+        help="Interpret PATTERN as a regular expression to filter test names",
+    )
+    parser.add_argument(
+        "--tests-groups-regexp",
+        type=str,
+        default=".*",
+        help="Interpret PATTERN as a regular expression to filter test group names",
+    )
+    parser.add_argument(
+        "--tests-priority-lower-limit",
+        type=int,
+        default=0,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
+        "--tests-priority-upper-limit",
+        type=int,
+        default=100000,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
         "--defaults_filename",
         type=str,
         default="defaults.yml",
@@ -137,5 +161,17 @@ def spec_cli_args(parser):
         type=str,
         default="",
         help="Only trigger tests on the specified platform.",
+    )
+    parser.add_argument(
+        "--wait-build",
+        default=False,
+        action="store_true",
+        help="Wait for build to be finished.",
+    )
+    parser.add_argument(
+        "--wait-build-timeout",
+        type=int,
+        default=-1,
+        help="Wait x sections for build. If -1, waits forever.",
     )
     return parser
