@@ -163,7 +163,7 @@ def create_app(conn, user, test_config=None):
                     "gh_org": gh_org,
                 }
                 if pull_request_number is not None:
-                    fields_after["pull_request_number"] = pull_request_number
+                    fields_after["pull_request"] = pull_request_number
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, fields_after

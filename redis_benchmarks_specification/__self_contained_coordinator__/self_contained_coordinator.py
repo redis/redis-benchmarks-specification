@@ -1039,22 +1039,28 @@ def process_self_contained_coordinator_stream(
                                 test_result = True
                                 total_test_suite_runs = total_test_suite_runs + 1
 
-                            except:
+                            except Exception as e:
                                 logging.critical(
-                                    "Some unexpected exception was caught "
-                                    "during local work. Failing test...."
+                                    "Some unexpected exception was caught during local work. Failing test...."
                                 )
-                                logging.critical(sys.exc_info()[0])
+                                logging.critical(f"Exception type: {type(e).__name__}")
+                                logging.critical(f"Exception message: {str(e)}")
+                                logging.critical("Traceback details:")
+                                logging.critical(traceback.format_exc())
                                 print("-" * 60)
                                 traceback.print_exc(file=sys.stdout)
                                 print("-" * 60)
                                 if redis_container is not None:
                                     logging.critical("Printing redis container log....")
+
                                     print("-" * 60)
+
                                     print(
                                         redis_container.logs(stdout=True, stderr=True)
                                     )
+
                                     print("-" * 60)
+
                                 test_result = False
                             # tear-down
                             logging.info("Tearing down setup")
@@ -1116,12 +1122,16 @@ def process_self_contained_coordinator_stream(
                     )
         else:
             logging.error("Missing commit information within received message.")
-    except:
+
+    except Exception as e:
         logging.critical(
             "Some unexpected exception was caught "
             "during local work on stream {}. Failing test....".format(stream_id)
         )
-        logging.critical(sys.exc_info()[0])
+        logging.critical(f"Exception type: {type(e).__name__}")
+        logging.critical(f"Exception message: {str(e)}")
+        logging.critical("Traceback details:")
+        logging.critical(traceback.format_exc())
         print("-" * 60)
         traceback.print_exc(file=sys.stdout)
         print("-" * 60)

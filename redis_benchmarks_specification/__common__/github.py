@@ -32,7 +32,8 @@ def generate_build_finished_pr_comment(
     comment_body += f"       - test name regex: {tests_regexp}\n"
     comment_body += f"       - command group regex: {tests_groups_regexp}\n\n"
     for benchmark_stream_id in benchmark_stream_ids:
-        benchmark_stream_id = benchmark_stream_id.decode()
+        if not isinstance(benchmark_stream_id, str):
+            benchmark_stream_id = benchmark_stream_id.decode()
         grafana_benchmark_status_link = f"https://benchmarksredisio.grafana.net/d/edsxdsrbexhc0f/ce-benchmark-run-status?orgId=1&var-benchmark_work_stream={benchmark_stream_id}"
         print("=============================================================")
         print(f"Check benchmark run status in: {grafana_benchmark_status_link}")
@@ -176,7 +177,7 @@ def markdown_progress_bar(current, total, bar_length=40):
 
 
 def generate_benchmark_started_pr_comment(
-    benchmark_stream_ids,
+    benchmark_stream_id,
     total_pending,
     total_benchmarks,
 ):
@@ -189,14 +190,14 @@ def generate_benchmark_started_pr_comment(
 
     completed = total_benchmarks - total_pending
     comment_body += (
-        f"Status: {markdown_progress_bar(completed,total_benchmarks)} pending.\n\n"
+        f"Status: {markdown_progress_bar(completed,total_benchmarks,80)} completed.\n\n"
     )
     comment_body += f"In total will run {total_benchmarks} benchmarks.\n"
     comment_body += f"    - {total_pending} pending.\n"
-    comment_body += f"    - {total_pending} completed.\n"
+    comment_body += f"    - {completed} completed.\n"
 
-    for benchmark_stream_id in benchmark_stream_ids:
+    if not isinstance(benchmark_stream_id, str):
         benchmark_stream_id = benchmark_stream_id.decode()
-        grafana_benchmark_status_link = f"https://benchmarksredisio.grafana.net/d/edsxdsrbexhc0f/ce-benchmark-run-status?orgId=1&var-benchmark_work_stream={benchmark_stream_id}"
-        comment_body += f"You can check a the status in detail via the [grafana link]({grafana_benchmark_status_link})"
+    grafana_benchmark_status_link = f"https://benchmarksredisio.grafana.net/d/edsxdsrbexhc0f/ce-benchmark-run-status?orgId=1&var-benchmark_work_stream={benchmark_stream_id}"
+    comment_body += f"You can check a the status in detail via the [grafana link]({grafana_benchmark_status_link})"
     return comment_body
