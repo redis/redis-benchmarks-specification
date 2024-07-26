@@ -4,7 +4,7 @@
 #  All rights reserved.
 #
 import datetime
-
+import os
 
 from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_HOST,
@@ -21,6 +21,7 @@ START_TIME_NOW_UTC, _, _ = get_start_time_vars()
 START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=7)
 CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
+PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
 def spec_cli_args(parser):
@@ -68,6 +69,15 @@ def spec_cli_args(parser):
         default=False,
         action="store_true",
         help="Include modules statistics on commandstats.",
+    )
+    parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
+    parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
+    parser.add_argument(
+        "--auto-approve",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Skip interactive approval of changes to github before applying.",
     )
     parser.add_argument("--summary-csv", type=str, default="")
     parser.add_argument("--group-csv", type=str, default="")

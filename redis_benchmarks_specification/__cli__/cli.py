@@ -16,7 +16,16 @@ import git
 import packaging
 import redis
 from packaging import version
+import time
+from github import Github
 
+
+from redis_benchmarks_specification.__common__.github import (
+    update_comment_if_needed,
+    create_new_pr_comment,
+    check_github_available_and_actionable,
+    generate_build_finished_pr_comment,
+)
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
 from redis_benchmarks_specification.__cli__.stats import (
@@ -164,6 +173,28 @@ def get_repo(args):
     return redisDirPath, cleanUp
 
 
+def check_benchmark_run_comment(comments):
+    res = False
+    pos = -1
+    for n, comment in enumerate(comments):
+        body = comment.body
+        if "CE Performance Automation" in body and "Triggered a benchmark" in body:
+            res = True
+            pos = n
+    return res, pos
+
+
+def check_benchmark_build_comment(comments):
+    res = False
+    pos = -1
+    for n, comment in enumerate(comments):
+        body = comment.body
+        if "CE Performance Automation : step 1 of 2" in body:
+            res = True
+            pos = n
+    return res, pos
+
+
 def trigger_tests_cli_command_logic(args, project_name, project_version):
     logging.info(
         "Using: {project_name} {project_version}".format(
@@ -174,6 +205,23 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     if args.use_branch is False and args.use_tags is False:
         logging.error("You must specify either --use-tags or --use-branch flag")
         sys.exit(1)
+
+    github_token = args.github_token
+    pull_request = args.pull_request
+    verbose = True
+    auto_approve = args.auto_approve
+
+    fn = check_benchmark_build_comment
+    (
+        contains_regression_comment,
+        github_pr,
+        is_actionable_pr,
+        old_regression_comment_body,
+        pr_link,
+        regression_comment,
+    ) = check_github_available_and_actionable(
+        fn, github_token, pull_request, "redis", "redis", verbose
+    )
 
     redisDirPath, cleanUp = get_repo(args)
     repo = git.Repo(redisDirPath)
@@ -266,10 +314,20 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             )
             if args.platform:
                 commit_dict["platform"] = args.platform
-            commit_dict["tests_priority_upper_limit"] = args.tests_priority_upper_limit
-            commit_dict["tests_priority_lower_limit"] = args.tests_priority_lower_limit
-            commit_dict["tests_regexp"] = args.tests_regexp
-            commit_dict["tests_groups_regexp"] = args.tests_groups_regexp
+            tests_priority_upper_limit = args.tests_priority_upper_limit
+            tests_priority_lower_limit = args.tests_priority_lower_limit
+            tests_regexp = args.tests_regexp
+            tests_groups_regexp = args.tests_groups_regexp
+            commit_dict["tests_priority_upper_limit"] = tests_priority_upper_limit
+            commit_dict["tests_priority_lower_limit"] = tests_priority_lower_limit
+            commit_dict["tests_regexp"] = tests_regexp
+            commit_dict["tests_groups_regexp"] = tests_groups_regexp
+            git_hash = cdict["git_hash"]
+            git_branch = "n/a"
+            if "git_branch" in cdict:
+                git_branch = cdict["git_branch"]
+            commit_datetime = cdict["commit_datetime"]
+            commit_summary = cdict["commit_summary"]
             if result is True:
                 stream_id = "n/a"
                 if args.dry_run is False:
@@ -291,51 +349,91 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             reply_fields,
                         )
                     )
+
                     if args.wait_build is True:
-                        found_id = True
+                        decoded_stream_id = stream_id.decode()
+                        builder_list_streams = (
+                            f"builder:{decoded_stream_id}:builds_completed"
+                        )
+                        len_list = 0
+                        stream_ack = False
                         sleep_secs = 10
-                        len_pending = 1
-                        while found_id is True and len_pending > 0:
-                            pending_build_streams = conn.xpending_range(
-                                STREAM_KEYNAME_GH_EVENTS_COMMIT,
-                                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
-                                "-",
-                                "+",
-                                1000,
-                            )
-                            len_pending = len(pending_build_streams)
+                        benchmark_stream_ids = []
+                        while len_list == 0 or stream_ack is False:
+
                             logging.info(
-                                f"There is a total of {len_pending} pending builds for stream {STREAM_KEYNAME_GH_EVENTS_COMMIT} and cg {STREAM_GH_EVENTS_COMMIT_BUILDERS_CG}. Checking for stream id: {stream_id}"
+                                f"checking benchmark streams info in key: {builder_list_streams}"
                             )
-                            found_id = False
-                            for pending_try in pending_build_streams:
-                                logging.info(f"pending entry: {pending_try}")
-                                pending_id = pending_try["message_id"]
-                                if stream_id == pending_id:
-                                    found_id = True
-                                    logging.info(
-                                        f"Found the stream id {stream_id} as part of pending entry list. Waiting for it to be ack."
-                                    )
+                            benchmark_stream_ids = conn.lrange(
+                                builder_list_streams, 0, -1
+                            )
+                            len_list = len(benchmark_stream_ids)
+                            logging.info(
+                                f"There is a total of {len_list} already build benchmark stream ids for this build: {benchmark_stream_ids}"
+                            )
 
-                            if found_id is True:
-                                import time
-
+                            if len_list > 0:
+                                pending_build_streams = conn.xpending_range(
+                                    STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                                    STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                                    "-",
+                                    "+",
+                                    1000,
+                                )
+                                len_pending = len(pending_build_streams)
                                 logging.info(
-                                    f"Sleeping for {sleep_secs} before checking pending list again."
+                                    f"There is a total of {len_pending} pending builds for stream {STREAM_KEYNAME_GH_EVENTS_COMMIT} and cg {STREAM_GH_EVENTS_COMMIT_BUILDERS_CG}. Checking for stream id: {stream_id}"
+                                )
+                                found_id = False
+                                for pending_try in pending_build_streams:
+                                    logging.info(f"pending entry: {pending_try}")
+                                    pending_id = pending_try["message_id"]
+                                    if stream_id == pending_id:
+                                        found_id = True
+                                        logging.info(
+                                            f"Found the stream id {stream_id} as part of pending entry list. Waiting for it to be ack."
+                                        )
+
+                                if found_id is True:
+                                    logging.info(
+                                        f"Sleeping for {sleep_secs} before checking pending list again."
+                                    )
+                                    time.sleep(sleep_secs)
+                                else:
+                                    stream_ack = True
+                            else:
+                                logging.info(
+                                    f"Sleeping for {sleep_secs} before checking builds again."
                                 )
                                 time.sleep(sleep_secs)
-
-                        builder_list_completed = f"builder:{stream_id}:builds_completed"
-
                         logging.info(
-                            f"checking benchmark streams info in key: {builder_list_completed}"
+                            f"FINAL total of {len_list} already build benchmark stream ids for this build: {benchmark_stream_ids}"
                         )
-                        benchmark_stream_ids = conn.lrange(
-                            builder_list_completed, 0, -1
+
+                        comment_body = generate_build_finished_pr_comment(
+                            benchmark_stream_ids,
+                            commit_datetime,
+                            commit_summary,
+                            git_branch,
+                            git_hash,
+                            tests_groups_regexp,
+                            tests_priority_lower_limit,
+                            tests_priority_upper_limit,
+                            tests_regexp,
                         )
-                        logging.info(
-                            f"There is a total of {len(benchmark_stream_ids)} benchmark stream ids for this build: {benchmark_stream_ids}"
-                        )
+                        if is_actionable_pr:
+                            if contains_regression_comment:
+                                update_comment_if_needed(
+                                    auto_approve,
+                                    comment_body,
+                                    old_regression_comment_body,
+                                    regression_comment,
+                                    verbose,
+                                )
+                            else:
+                                create_new_pr_comment(
+                                    auto_approve, comment_body, github_pr, pr_link
+                                )
 
                 else:
                     logging.info(

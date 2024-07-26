@@ -14,8 +14,13 @@ import humanize
 import datetime as dt
 import os
 from tqdm import tqdm
-from github import Github
 import argparse
+
+from redis_benchmarks_specification.__common__.github import (
+    update_comment_if_needed,
+    create_new_pr_comment,
+    check_github_available_and_actionable,
+)
 from redis_benchmarks_specification.__compare__.args import create_compare_arguments
 
 
@@ -276,11 +281,7 @@ def compare_command_logic(args, project_name, project_version):
     auto_approve = args.auto_approve
     running_platform = args.running_platform
     grafana_base_dashboard = args.grafana_base_dashboard
-    # using an access token
-    is_actionable_pr = False
-    contains_regression_comment = False
-    regression_comment = None
-    github_pr = None
+
     if running_platform is not None:
         logging.info(
             "Using platform named: {} to do the comparison.\n\n".format(
@@ -288,37 +289,17 @@ def compare_command_logic(args, project_name, project_version):
             )
         )
 
-    old_regression_comment_body = ""
-    if github_token is not None:
-        logging.info("Detected github token")
-        g = Github(github_token)
-        if pull_request is not None and pull_request != "":
-            pull_request_n = int(pull_request)
-            github_pr = (
-                g.get_user(tf_github_org)
-                .get_repo(tf_github_repo)
-                .get_issue(pull_request_n)
-            )
-            comments = github_pr.get_comments()
-            pr_link = github_pr.html_url
-            logging.info("Working on github PR already: {}".format(pr_link))
-            is_actionable_pr = True
-            contains_regression_comment, pos = check_regression_comment(comments)
-            if contains_regression_comment:
-                regression_comment = comments[pos]
-                old_regression_comment_body = regression_comment.body
-                logging.info(
-                    "Already contains regression comment. Link: {}".format(
-                        regression_comment.html_url
-                    )
-                )
-                if verbose:
-                    logging.info("Printing old regression comment:")
-                    print("".join(["-" for x in range(1, 80)]))
-                    print(regression_comment.body)
-                    print("".join(["-" for x in range(1, 80)]))
-            else:
-                logging.info("Does not contain regression comment")
+    fn = check_regression_comment
+    (
+        contains_regression_comment,
+        github_pr,
+        is_actionable_pr,
+        old_regression_comment_body,
+        pr_link,
+        regression_comment,
+    ) = check_github_available_and_actionable(
+        fn, github_token, pull_request, tf_github_org, tf_github_repo, verbose
+    )
 
     grafana_dashboards_uids = {
         "redisgraph": "SH9_rQYGz",
@@ -464,60 +445,15 @@ def compare_command_logic(args, project_name, project_version):
             )
 
             if contains_regression_comment:
-                same_comment = False
-                if comment_body == old_regression_comment_body:
-                    logging.info(
-                        "The old regression comment is the same as the new comment. skipping..."
-                    )
-                    same_comment = True
-                else:
-                    logging.info(
-                        "The old regression comment is different from the new comment. updating it..."
-                    )
-                    comment_body_arr = comment_body.split("\n")
-                    old_regression_comment_body_arr = old_regression_comment_body.split(
-                        "\n"
-                    )
-                    if verbose:
-                        DF = [
-                            x
-                            for x in comment_body_arr
-                            if x not in old_regression_comment_body_arr
-                        ]
-                        print("---------------------")
-                        print(DF)
-                        print("---------------------")
-                if same_comment is False:
-                    if auto_approve:
-                        print("auto approving...")
-                    else:
-                        user_input = input(
-                            "Do you wish to update the comment {} (y/n): ".format(
-                                regression_comment.html_url
-                            )
-                        )
-                    if user_input.lower() == "y" or auto_approve:
-                        print("Updating comment {}".format(regression_comment.html_url))
-                        regression_comment.edit(comment_body)
-                        html_url = regression_comment.html_url
-                        print(
-                            "Updated comment. Access it via {}".format(
-                                regression_comment.html_url
-                            )
-                        )
-
+                update_comment_if_needed(
+                    auto_approve,
+                    comment_body,
+                    old_regression_comment_body,
+                    regression_comment,
+                    verbose,
+                )
             else:
-                if auto_approve:
-                    print("auto approving...")
-                else:
-                    user_input = input(
-                        "Do you wish to add a comment in {} (y/n): ".format(pr_link)
-                    )
-                if user_input.lower() == "y" or auto_approve:
-                    print("creating an comment in PR {}".format(pr_link))
-                    regression_comment = github_pr.create_comment(comment_body)
-                    html_url = regression_comment.html_url
-                    print("created comment. Access it via {}".format(html_url))
+                create_new_pr_comment(auto_approve, comment_body, github_pr, pr_link)
 
     else:
         logging.error("There was no comparison points to produce a table...")

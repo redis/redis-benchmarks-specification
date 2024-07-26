@@ -1,5 +1,5 @@
 import argparse
-
+import os
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
     SPECS_PATH_SETUPS,
@@ -20,6 +20,8 @@ from redis_benchmarks_specification.__common__.env import (
     ALLOWED_PROFILERS,
 )
 
+PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
+
 
 def create_self_contained_coordinator_args(project_name):
     parser = argparse.ArgumentParser(
@@ -30,6 +32,7 @@ def create_self_contained_coordinator_args(project_name):
     parser.add_argument("--event_stream_port", type=int, default=GH_REDIS_SERVER_PORT)
     parser.add_argument("--event_stream_pass", type=str, default=GH_REDIS_SERVER_AUTH)
     parser.add_argument("--event_stream_user", type=str, default=GH_REDIS_SERVER_USER)
+    parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument(
         "--cpu-count",
         type=int,

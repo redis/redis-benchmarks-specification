@@ -25,6 +25,13 @@ from redis_benchmarks_specification.__common__.env import (
     REDIS_SOCKET_TIMEOUT,
     REDIS_BINS_EXPIRE_SECS,
 )
+from redis_benchmarks_specification.__common__.github import (
+    check_github_available_and_actionable,
+    check_benchmark_running_comment,
+    update_comment_if_needed,
+    create_new_pr_comment,
+    generate_benchmark_started_pr_comment,
+)
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
@@ -219,6 +226,11 @@ def main():
     arch = args.arch
     logging.info("Running for arch: {}".format(arch))
 
+    # Github token
+    github_token = args.github_token
+    if github_token is not None:
+        logging.info("Detected GITHUB token. will push PR comments with updates")
+
     # Docker air gap usage
     docker_air_gap = args.docker_air_gap
     if docker_air_gap:
@@ -270,6 +282,7 @@ def main():
             override_memtier_test_time,
             default_metrics,
             arch,
+            github_token,
         )
 
 
@@ -293,6 +306,7 @@ def self_contained_coordinator_blocking_read(
     override_test_time=None,
     default_metrics=None,
     arch="amd64",
+    github_token=None,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -339,6 +353,7 @@ def self_contained_coordinator_blocking_read(
             None,
             default_metrics,
             arch,
+            github_token,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -411,10 +426,20 @@ def process_self_contained_coordinator_stream(
     override_test_time=None,
     default_metrics=[],
     arch="amd64",
+    github_token=None,
 ):
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
+    # github updates
+    is_actionable_pr = False
+    contains_regression_comment = False
+    github_pr = None
+    old_regression_comment_body = ""
+    pr_link = ""
+    regression_comment = None
+    pull_request = None
+    auto_approve_github = True
     try:
         stream_id, testDetails = newTestInfo[0][1][0]
         stream_id = stream_id.decode()
@@ -433,6 +458,24 @@ def process_self_contained_coordinator_stream(
                 git_timestamp_ms,
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
+
+            if b"pull_request" in testDetails:
+                pull_request = testDetails[b"pull_request"].decode()
+                logging.info(
+                    f"detected a pull_request definition on the streamdata {pull_request}"
+                )
+                verbose = True
+                fn = check_benchmark_running_comment
+                (
+                    contains_regression_comment,
+                    github_pr,
+                    is_actionable_pr,
+                    old_regression_comment_body,
+                    pr_link,
+                    regression_comment,
+                ) = check_github_available_and_actionable(
+                    fn, github_token, pull_request, "redis", "redis", verbose
+                )
 
             test_regexp = ".*"
             if b"test_regexp" in testDetails:
@@ -476,15 +519,19 @@ def process_self_contained_coordinator_stream(
 
                 filtered_test_files = []
 
-                stream_test_list_pending = (
-                    f"{stream_id}:{running_platform}:tests_pending"
+                stream_time_ms = stream_id.split("-")[0]
+                zset_running_platform_benchmarks = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{running_platform}:zset"
+                res = conn.zadd(
+                    zset_running_platform_benchmarks,
+                    {stream_id: stream_time_ms},
                 )
-                stream_test_list_running = (
-                    f"{stream_id}:{running_platform}:tests_running"
+                logging.info(
+                    f"Added stream with id {stream_id} to zset {zset_running_platform_benchmarks}"
                 )
-                stream_test_list_completed = (
-                    f"{stream_id}:{running_platform}:tests_completed"
-                )
+
+                stream_test_list_pending = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_pending"
+                stream_test_list_running = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_running"
+                stream_test_list_completed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_completed"
                 for test_file in testsuite_spec_files:
                     if defaults_filename in test_file:
                         continue
@@ -525,6 +572,24 @@ def process_self_contained_coordinator_stream(
                             f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
                         )
                     filtered_test_files.append(test_file)
+                pending_tests = len(filtered_test_files)
+                comment_body = generate_benchmark_started_pr_comment(
+                    stream_id, pending_tests, len(filtered_test_files)
+                )
+                # update on github if needed
+                if is_actionable_pr:
+                    if contains_regression_comment:
+                        update_comment_if_needed(
+                            auto_approve_github,
+                            comment_body,
+                            old_regression_comment_body,
+                            regression_comment,
+                            verbose,
+                        )
+                    else:
+                        regression_comment = create_new_pr_comment(
+                            auto_approve_github, comment_body, github_pr, pr_link
+                        )
 
                 for test_file in filtered_test_files:
                     redis_containers = []
@@ -1029,6 +1094,23 @@ def process_self_contained_coordinator_stream(
                     conn.lrem(stream_test_list_running, 1, test_name)
                     conn.lpush(stream_test_list_completed, test_name)
                     conn.expire(stream_test_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    pending_tests = pending_tests - 1
+
+                    # update on github if needed
+                    if is_actionable_pr:
+                        comment_body = generate_benchmark_started_pr_comment(
+                            stream_id, pending_tests, len(filtered_test_files)
+                        )
+                        update_comment_if_needed(
+                            auto_approve_github,
+                            comment_body,
+                            old_regression_comment_body,
+                            regression_comment,
+                            verbose,
+                        )
+                        logging.info(
+                            f"Updated github comment with latest test info {regression_comment.html_url}"
+                        )
                     logging.info(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
                     )
