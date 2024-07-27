@@ -1011,31 +1011,46 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 dataset_load_duration_seconds = 0
+                                try:
+                                    exporter_datasink_common(
+                                        benchmark_config,
+                                        benchmark_duration_seconds,
+                                        build_variant_name,
+                                        datapoint_time_ms,
+                                        dataset_load_duration_seconds,
+                                        datasink_conn,
+                                        datasink_push_results_redistimeseries,
+                                        git_branch,
+                                        git_version,
+                                        metadata,
+                                        redis_conns,
+                                        results_dict,
+                                        running_platform,
+                                        setup_name,
+                                        setup_type,
+                                        test_name,
+                                        tf_github_org,
+                                        tf_github_repo,
+                                        tf_triggering_env,
+                                        topology_spec_name,
+                                        default_metrics,
+                                    )
+                                    r.shutdown(save=False)
 
-                                exporter_datasink_common(
-                                    benchmark_config,
-                                    benchmark_duration_seconds,
-                                    build_variant_name,
-                                    datapoint_time_ms,
-                                    dataset_load_duration_seconds,
-                                    datasink_conn,
-                                    datasink_push_results_redistimeseries,
-                                    git_branch,
-                                    git_version,
-                                    metadata,
-                                    redis_conns,
-                                    results_dict,
-                                    running_platform,
-                                    setup_name,
-                                    setup_type,
-                                    test_name,
-                                    tf_github_org,
-                                    tf_github_repo,
-                                    tf_triggering_env,
-                                    topology_spec_name,
-                                    default_metrics,
-                                )
-                                r.shutdown(save=False)
+                                except redis.exceptions.ConnectionError as e:
+                                    logging.critical(
+                                        "Some unexpected exception was caught during metric fetching. Skipping it..."
+                                    )
+                                    logging.critical(
+                                        f"Exception type: {type(e).__name__}"
+                                    )
+                                    logging.critical(f"Exception message: {str(e)}")
+                                    logging.critical("Traceback details:")
+                                    logging.critical(traceback.format_exc())
+                                    print("-" * 60)
+                                    traceback.print_exc(file=sys.stdout)
+                                    print("-" * 60)
+
                                 test_result = True
                                 total_test_suite_runs = total_test_suite_runs + 1
 
@@ -1054,10 +1069,20 @@ def process_self_contained_coordinator_stream(
                                     logging.critical("Printing redis container log....")
 
                                     print("-" * 60)
-
-                                    print(
-                                        redis_container.logs(stdout=True, stderr=True)
-                                    )
+                                    try:
+                                        print(
+                                            redis_container.logs(
+                                                stdout=True, stderr=True
+                                            )
+                                        )
+                                    except docker.errors.NotFound:
+                                        logging.info(
+                                            "When trying to stop DB container with id {} and image {} it was already stopped".format(
+                                                redis_container.id,
+                                                redis_container.image,
+                                            )
+                                        )
+                                    pass
 
                                     print("-" * 60)
 
