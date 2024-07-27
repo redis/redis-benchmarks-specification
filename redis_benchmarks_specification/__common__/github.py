@@ -2,6 +2,41 @@ import logging
 from github import Github
 
 
+def generate_build_started_pr_comment(
+    build_datetime,
+    commit_datetime,
+    commit_summary,
+    git_branch,
+    git_hash,
+    tests_groups_regexp,
+    tests_priority_lower_limit,
+    tests_priority_upper_limit,
+    tests_regexp,
+):
+    comment_body = (
+        f"### CE Performance Automation : step 1 of 2 (build) STARTING...\n\n"
+    )
+    comment_body += (
+        "This comment was automatically generated given a benchmark was triggered.\n"
+    )
+    comment_body += f"Started building at {build_datetime}\n"
+    comment_body += "You can check each build/benchmark progress in grafana:\n"
+    comment_body += f"   - git hash: {git_hash}\n"
+    comment_body += f"   - git branch: {git_branch}\n"
+    comment_body += f"   - commit date and time: {commit_datetime}\n"
+    comment_body += f"   - commit summary: {commit_summary}\n"
+    comment_body += f"   - test filters:\n"
+    comment_body += (
+        f"       - command priority lower limit: {tests_priority_lower_limit}\n"
+    )
+    comment_body += (
+        f"       - command priority upper limit: {tests_priority_upper_limit}\n"
+    )
+    comment_body += f"       - test name regex: {tests_regexp}\n"
+    comment_body += f"       - command group regex: {tests_groups_regexp}\n\n"
+    return comment_body
+
+
 def generate_build_finished_pr_comment(
     benchmark_stream_ids,
     commit_datetime,
@@ -12,11 +47,15 @@ def generate_build_finished_pr_comment(
     tests_priority_lower_limit,
     tests_priority_upper_limit,
     tests_regexp,
+    build_start_datetime,
+    build_duration_seconds,
 ):
-    comment_body = "### CE Performance Automation : step 1 of 2 (build) done\n\n"
+    build_duration_seconds = int(build_duration_seconds)
+    comment_body = f"### CE Performance Automation : step 1 of 2 (build) DONE.\n\n"
     comment_body += (
         "This comment was automatically generated given a benchmark was triggered.\n"
     )
+    comment_body += f"Started building at {build_start_datetime} and took {build_duration_seconds} seconds.\n"
     comment_body += "You can check each build/benchmark progress in grafana:\n"
     comment_body += f"   - git hash: {git_hash}\n"
     comment_body += f"   - git branch: {git_branch}\n"
@@ -80,6 +119,9 @@ def check_github_available_and_actionable(
                     print("".join(["-" for x in range(1, 80)]))
             else:
                 logging.info("Does not contain PR comment")
+    logging.info(
+        f"contains_regression_comment: {contains_regression_comment}, is_actionable_pr: {is_actionable_pr}, pr_link: {pr_link}"
+    )
     return (
         contains_regression_comment,
         github_pr,
@@ -112,12 +154,12 @@ def update_comment_if_needed(
     user_input = "n"
     if comment_body == old_regression_comment_body:
         logging.info(
-            "The old regression comment is the same as the new comment. skipping..."
+            "The old github comment is the same as the new comment. skipping..."
         )
         same_comment = True
     else:
         logging.info(
-            "The old regression comment is different from the new comment. updating it..."
+            "The old github comment is different from the new comment. updating it..."
         )
         comment_body_arr = comment_body.split("\n")
         old_regression_comment_body_arr = old_regression_comment_body.split("\n")

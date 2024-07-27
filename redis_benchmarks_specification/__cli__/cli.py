@@ -351,6 +351,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                     )
 
                     if args.wait_build is True:
+                        build_start_datetime = datetime.datetime.utcnow()
                         decoded_stream_id = stream_id.decode()
                         builder_list_streams = (
                             f"builder:{decoded_stream_id}:builds_completed"
@@ -409,6 +410,9 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                         logging.info(
                             f"FINAL total of {len_list} already build benchmark stream ids for this build: {benchmark_stream_ids}"
                         )
+                        build_end_datetime = datetime.datetime.utcnow()
+                        build_duration = build_end_datetime - build_start_datetime
+                        build_duration_secs = build_duration.total_seconds()
 
                         comment_body = generate_build_finished_pr_comment(
                             benchmark_stream_ids,
@@ -420,6 +424,8 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             tests_priority_lower_limit,
                             tests_priority_upper_limit,
                             tests_regexp,
+                            build_start_datetime,
+                            build_duration_secs,
                         )
                         if is_actionable_pr:
                             if contains_regression_comment:

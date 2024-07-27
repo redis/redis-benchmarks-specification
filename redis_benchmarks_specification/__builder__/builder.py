@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import io
 import json
 import logging
@@ -36,6 +37,7 @@ from redis_benchmarks_specification.__common__.github import (
     generate_build_finished_pr_comment,
     update_comment_if_needed,
     create_new_pr_comment,
+    generate_build_started_pr_comment,
 )
 from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
@@ -378,9 +380,41 @@ def builder_process_stream(
                     "redis-server",
                     build_vars_str,
                 )
+                build_start_datetime = datetime.datetime.utcnow()
                 logging.info(
-                    "Using the following build command {}".format(build_command)
+                    "Using the following build command {}.".format(build_command)
                 )
+                if is_actionable_pr:
+                    logging.info(
+                        f"updating on github we'll start the build at {build_start_datetime}"
+                    )
+                    comment_body = generate_build_started_pr_comment(
+                        build_start_datetime,
+                        commit_datetime,
+                        commit_summary,
+                        git_branch,
+                        git_hash,
+                        tests_groups_regexp,
+                        tests_priority_lower_limit,
+                        tests_priority_upper_limit,
+                        tests_regexp,
+                    )
+                    if contains_regression_comment:
+                        update_comment_if_needed(
+                            auto_approve_github_comments,
+                            comment_body,
+                            old_regression_comment_body,
+                            regression_comment,
+                            verbose,
+                        )
+                    else:
+                        regression_comment = create_new_pr_comment(
+                            auto_approve_github_comments,
+                            comment_body,
+                            github_pr,
+                            pr_link,
+                        )
+
                 docker_client.containers.run(
                     image=build_image,
                     volumes={
@@ -391,6 +425,10 @@ def builder_process_stream(
                     working_dir="/mnt/redis/",
                     command=build_command,
                 )
+                build_end_datetime = datetime.datetime.utcnow()
+                build_duration = build_end_datetime - build_start_datetime
+                build_duration_secs = build_duration.total_seconds()
+
                 build_stream_fields = {
                     "id": id,
                     "git_hash": git_hash,
@@ -416,9 +454,6 @@ def builder_process_stream(
                     build_stream_fields["git_branch"] = git_branch
                 if git_version is not None:
                     build_stream_fields["git_version"] = git_version
-                if git_timestamp_ms is not None:
-                    build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
-
                 if git_timestamp_ms is not None:
                     build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
                 for artifact in build_artifacts:
@@ -456,18 +491,24 @@ def builder_process_stream(
                         f"Adding information of build->benchmark stream info in list {builder_list_completed}. Adding benchmark stream id: {benchmark_stream_id_decoded}"
                     )
                     benchmark_stream_ids = [benchmark_stream_id_decoded]
-                    comment_body = generate_build_finished_pr_comment(
-                        benchmark_stream_ids,
-                        commit_datetime,
-                        commit_summary,
-                        git_branch,
-                        git_hash,
-                        tests_groups_regexp,
-                        tests_priority_lower_limit,
-                        tests_priority_upper_limit,
-                        tests_regexp,
-                    )
+
                     if is_actionable_pr:
+                        logging.info(
+                            f"updating on github that the build finished after {build_duration_secs} seconds"
+                        )
+                        comment_body = generate_build_finished_pr_comment(
+                            benchmark_stream_ids,
+                            commit_datetime,
+                            commit_summary,
+                            git_branch,
+                            git_hash,
+                            tests_groups_regexp,
+                            tests_priority_lower_limit,
+                            tests_priority_upper_limit,
+                            tests_regexp,
+                            build_start_datetime,
+                            build_duration_secs,
+                        )
                         if contains_regression_comment:
                             update_comment_if_needed(
                                 auto_approve_github_comments,
