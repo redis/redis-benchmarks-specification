@@ -153,4 +153,16 @@ def create_self_contained_coordinator_args(project_name):
     parser.add_argument(
         "--arch", type=str, default="amd64", help="arch to build artifacts"
     )
+    parser.add_argument(
+        "--tests-priority-lower-limit",
+        type=int,
+        default=0,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
+        "--tests-priority-upper-limit",
+        type=int,
+        default=100000,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
     return parser

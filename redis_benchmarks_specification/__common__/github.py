@@ -222,21 +222,36 @@ def generate_benchmark_started_pr_comment(
     benchmark_stream_id,
     total_pending,
     total_benchmarks,
+    total_failed,
+    benchmark_suite_start_datetime,
+    benchmark_suite_duration_secs,
 ):
-    comment_body = (
-        "### CE Performance Automation : step 2 of 2 (benchmark) RUNNING...\n\n"
-    )
+    comment_body = "### CE Performance Automation : step 2 of 2 (benchmark) "
+    if total_pending > 0:
+        comment_body += "RUNNING...\n\n"
+    else:
+        comment_body += "FINISHED.\n\n"
+
     comment_body += (
         "This comment was automatically generated given a benchmark was triggered.\n\n"
     )
 
+    comment_body += f"Started benchmark suite at {benchmark_suite_start_datetime} and took {benchmark_suite_duration_secs} seconds "
+    if total_pending == 0:
+        comment_body += "up until now.\n"
+    else:
+        comment_body += "to finish.\n"
+
     completed = total_benchmarks - total_pending
+    successful = completed - total_failed
     comment_body += (
         f"Status: {markdown_progress_bar(completed,total_benchmarks,80)} completed.\n\n"
     )
     comment_body += f"In total will run {total_benchmarks} benchmarks.\n"
     comment_body += f"    - {total_pending} pending.\n"
-    comment_body += f"    - {completed} completed.\n"
+    comment_body += f"    - {completed} completed:\n"
+    comment_body += f"      - {successful} successful.\n"
+    comment_body += f"      - {total_failed} failed.\n"
 
     if not isinstance(benchmark_stream_id, str):
         benchmark_stream_id = benchmark_stream_id.decode()

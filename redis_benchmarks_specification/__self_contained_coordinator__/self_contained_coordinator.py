@@ -204,6 +204,13 @@ def main():
     redis_proc_start_port = args.redis_proc_start_port
     logging.info("Redis Processes start port: {}".format(redis_proc_start_port))
 
+    priority_lower_limit = args.tests_priority_lower_limit
+    priority_upper_limit = args.tests_priority_upper_limit
+
+    logging.info(
+        f"Using priority for test filters [{priority_lower_limit},{priority_upper_limit}]"
+    )
+
     # TODO: confirm we do have enough cores to run the spec
     # availabe_cpus = args.cpu_count
     datasink_push_results_redistimeseries = args.datasink_push_results_redistimeseries
@@ -283,6 +290,8 @@ def main():
             default_metrics,
             arch,
             github_token,
+            priority_lower_limit,
+            priority_upper_limit,
         )
 
 
@@ -307,6 +316,8 @@ def self_contained_coordinator_blocking_read(
     default_metrics=None,
     arch="amd64",
     github_token=None,
+    priority_lower_limit=0,
+    priority_upper_limit=10000,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -354,6 +365,8 @@ def self_contained_coordinator_blocking_read(
             default_metrics,
             arch,
             github_token,
+            priority_lower_limit,
+            priority_upper_limit,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -427,6 +440,8 @@ def process_self_contained_coordinator_stream(
     default_metrics=[],
     arch="amd64",
     github_token=None,
+    priority_lower_limit=0,
+    priority_upper_limit=10000,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -458,6 +473,24 @@ def process_self_contained_coordinator_stream(
                 git_timestamp_ms,
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
+
+            if b"priority_upper_limit" in testDetails:
+                stream_priority_upper_limit = int(
+                    testDetails[b"priority_upper_limit"].decode()
+                )
+                logging.info(
+                    f"detected a priority_upper_limit definition on the streamdata {stream_priority_upper_limit}. will replace the default upper limit of {priority_upper_limit}"
+                )
+                priority_upper_limit = stream_priority_upper_limit
+
+            if b"priority_lower_limit" in testDetails:
+                stream_priority_lower_limit = int(
+                    testDetails[b"priority_lower_limit"].decode()
+                )
+                logging.info(
+                    f"detected a priority_lower_limit definition on the streamdata {stream_priority_lower_limit}. will replace the default lower limit of {priority_lower_limit}"
+                )
+                priority_lower_limit = stream_priority_lower_limit
 
             if b"pull_request" in testDetails:
                 pull_request = testDetails[b"pull_request"].decode()
@@ -517,8 +550,6 @@ def process_self_contained_coordinator_stream(
                     images_loaded = docker_client.images.load(airgap_docker_image_bin)
                     logging.info("Successfully loaded images {}".format(images_loaded))
 
-                filtered_test_files = []
-
                 stream_time_ms = stream_id.split("-")[0]
                 zset_running_platform_benchmarks = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{running_platform}:zset"
                 res = conn.zadd(
@@ -531,50 +562,40 @@ def process_self_contained_coordinator_stream(
 
                 stream_test_list_pending = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_pending"
                 stream_test_list_running = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_running"
+                stream_test_list_failed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_failed"
                 stream_test_list_completed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_completed"
-                for test_file in testsuite_spec_files:
-                    if defaults_filename in test_file:
-                        continue
 
-                    if test_regexp != ".*":
-                        logging.info(
-                            "Filtering all tests via a regular expression: {}".format(
-                                test_regexp
-                            )
-                        )
-                        tags_regex_string = re.compile(test_regexp)
+                filtered_test_files = filter_test_files(
+                    defaults_filename,
+                    priority_lower_limit,
+                    priority_upper_limit,
+                    test_regexp,
+                    testsuite_spec_files,
+                )
 
-                        match_obj = re.search(tags_regex_string, test_file)
-                        if match_obj is None:
-                            logging.info(
-                                "Skipping {} given it does not match regex {}".format(
-                                    test_file, test_regexp
-                                )
-                            )
-                            continue
-
+                for test_file in filtered_test_files:
                     with open(test_file, "r") as stream:
                         (
-                            result,
+                            _,
                             benchmark_config,
                             test_name,
                         ) = get_final_benchmark_config(None, stream, "")
-                        if result is False:
-                            logging.error(
-                                "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
-                                    test_file
-                                )
-                            )
-                            continue
-                        conn.lpush(stream_test_list_pending, test_name)
-                        conn.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
-                        logging.info(
-                            f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
-                        )
-                    filtered_test_files.append(test_file)
+                    conn.lpush(stream_test_list_pending, test_name)
+                    conn.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
+                    logging.info(
+                        f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
+                    )
+
                 pending_tests = len(filtered_test_files)
+                failed_tests = 0
+                benchmark_suite_start_datetime = datetime.datetime.utcnow()
                 comment_body = generate_benchmark_started_pr_comment(
-                    stream_id, pending_tests, len(filtered_test_files)
+                    stream_id,
+                    pending_tests,
+                    len(filtered_test_files),
+                    failed_tests,
+                    benchmark_suite_start_datetime,
+                    0,
                 )
                 # update on github if needed
                 if is_actionable_pr:
@@ -1125,12 +1146,31 @@ def process_self_contained_coordinator_stream(
                     conn.lrem(stream_test_list_running, 1, test_name)
                     conn.lpush(stream_test_list_completed, test_name)
                     conn.expire(stream_test_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    if test_result is False:
+                        conn.lpush(stream_test_list_failed, test_name)
+                        failed_tests = failed_tests + 1
+                        logging.warning(
+                            f"updating key {stream_test_list_failed} with the failed test: {test_name}. Total failed tests {failed_tests}."
+                        )
                     pending_tests = pending_tests - 1
+
+                    benchmark_suite_end_datetime = datetime.datetime.utcnow()
+                    benchmark_suite_duration = (
+                        benchmark_suite_end_datetime - benchmark_suite_start_datetime
+                    )
+                    benchmark_suite_duration_secs = (
+                        benchmark_suite_duration.total_seconds()
+                    )
 
                     # update on github if needed
                     if is_actionable_pr:
                         comment_body = generate_benchmark_started_pr_comment(
-                            stream_id, pending_tests, len(filtered_test_files)
+                            stream_id,
+                            pending_tests,
+                            len(filtered_test_files),
+                            failed_tests,
+                            benchmark_suite_start_datetime,
+                            benchmark_suite_duration_secs,
                         )
                         update_comment_if_needed(
                             auto_approve_github,
@@ -1162,6 +1202,79 @@ def process_self_contained_coordinator_stream(
         print("-" * 60)
         overall_result = False
     return stream_id, overall_result, total_test_suite_runs
+
+
+def filter_test_files(
+    defaults_filename,
+    priority_lower_limit,
+    priority_upper_limit,
+    test_regexp,
+    testsuite_spec_files,
+):
+    filtered_test_files = []
+    for test_file in testsuite_spec_files:
+        if defaults_filename in test_file:
+            continue
+
+        if test_regexp != ".*":
+            logging.info(
+                "Filtering all tests via a regular expression: {}".format(test_regexp)
+            )
+            tags_regex_string = re.compile(test_regexp)
+
+            match_obj = re.search(tags_regex_string, test_file)
+            if match_obj is None:
+                logging.info(
+                    "Skipping {} given it does not match regex {}".format(
+                        test_file, test_regexp
+                    )
+                )
+                continue
+
+        with open(test_file, "r") as stream:
+            (
+                result,
+                benchmark_config,
+                test_name,
+            ) = get_final_benchmark_config(None, stream, "")
+            if result is False:
+                logging.error(
+                    "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
+                        test_file
+                    )
+                )
+                continue
+
+            if "priority" in benchmark_config:
+                priority = benchmark_config["priority"]
+
+                if priority is not None:
+                    if priority > priority_upper_limit:
+                        logging.warning(
+                            "Skipping test {} giving the priority limit ({}) is above the priority value ({})".format(
+                                test_name, priority_upper_limit, priority
+                            )
+                        )
+
+                        continue
+                    if priority < priority_lower_limit:
+                        logging.warning(
+                            "Skipping test {} giving the priority limit ({}) is bellow the priority value ({})".format(
+                                test_name, priority_lower_limit, priority
+                            )
+                        )
+
+                        continue
+                    logging.info(
+                        "Test {} priority ({}) is within the priority limit [{},{}]".format(
+                            test_name,
+                            priority,
+                            priority_lower_limit,
+                            priority_upper_limit,
+                        )
+                    )
+        filtered_test_files.append(test_file)
+    return filtered_test_files
 
 
 def data_prepopulation_step(
