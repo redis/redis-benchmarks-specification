@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import os
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
@@ -18,6 +19,10 @@ from redis_benchmarks_specification.__common__.env import (
     PROFILERS,
     PROFILERS_DEFAULT,
     ALLOWED_PROFILERS,
+)
+from redis_benchmarks_specification.__compare__.args import (
+    START_TIME_NOW_UTC,
+    START_TIME_LAST_SIX_MONTHS_UTC,
 )
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)

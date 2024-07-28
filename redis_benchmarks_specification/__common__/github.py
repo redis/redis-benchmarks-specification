@@ -2,6 +2,17 @@ import logging
 from github import Github
 
 
+def check_regression_comment(comments):
+    res = False
+    pos = -1
+    for n, comment in enumerate(comments):
+        body = comment.body
+        if "Comparison between" in body and "Time Period from" in body:
+            res = True
+            pos = n
+    return res, pos
+
+
 def generate_build_started_pr_comment(
     build_datetime,
     commit_datetime,

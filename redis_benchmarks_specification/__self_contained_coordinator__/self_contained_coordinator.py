@@ -31,6 +31,7 @@ from redis_benchmarks_specification.__common__.github import (
     update_comment_if_needed,
     create_new_pr_comment,
     generate_benchmark_started_pr_comment,
+    check_regression_comment,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -42,8 +43,14 @@ from redis_benchmarks_specification.__common__.runner import (
     exporter_datasink_common,
     execute_init_commands,
 )
+from redis_benchmarks_specification.__compare__.compare import (
+    compute_regression_table,
+    prepare_regression_comment,
+    extract_default_branch_and_metric,
+)
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
+    prepare_memtier_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
@@ -145,7 +152,7 @@ def main():
         )
     )
     try:
-        conn = redis.StrictRedis(
+        gh_event_conn = redis.StrictRedis(
             host=args.event_stream_host,
             port=args.event_stream_port,
             decode_responses=False,  # dont decode due to binary archives
@@ -155,7 +162,7 @@ def main():
             socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             socket_keepalive=True,
         )
-        conn.ping()
+        gh_event_conn.ping()
     except redis.exceptions.ConnectionError as e:
         logging.error(
             "Unable to connect to redis available at: {}:{} to read the event streams".format(
@@ -195,7 +202,7 @@ def main():
 
     logging.info("checking build spec requirements")
     running_platform = args.platform_name
-    build_runners_consumer_group_create(conn, running_platform)
+    build_runners_consumer_group_create(gh_event_conn, running_platform)
     stream_id = None
     docker_client = docker.from_env()
     home = str(Path.home())
@@ -209,6 +216,10 @@ def main():
 
     logging.info(
         f"Using priority for test filters [{priority_lower_limit},{priority_upper_limit}]"
+    )
+
+    default_baseline_branch, default_metrics_str = extract_default_branch_and_metric(
+        args.defaults_filename
     )
 
     # TODO: confirm we do have enough cores to run the spec
@@ -270,7 +281,7 @@ def main():
         stream_id = args.consumer_start_id
     while True:
         _, stream_id, _, _ = self_contained_coordinator_blocking_read(
-            conn,
+            gh_event_conn,
             datasink_push_results_redistimeseries,
             docker_client,
             home,
@@ -292,11 +303,13 @@ def main():
             github_token,
             priority_lower_limit,
             priority_upper_limit,
+            default_baseline_branch,
+            default_metrics_str,
         )
 
 
 def self_contained_coordinator_blocking_read(
-    conn,
+    github_event_conn,
     datasink_push_results_redistimeseries,
     docker_client,
     home,
@@ -312,12 +325,14 @@ def self_contained_coordinator_blocking_read(
     redis_proc_start_port=6379,
     consumer_pos=1,
     docker_air_gap=False,
-    override_test_time=None,
+    override_test_time=1,
     default_metrics=None,
     arch="amd64",
     github_token=None,
     priority_lower_limit=0,
     priority_upper_limit=10000,
+    default_baseline_branch="unstable",
+    default_metrics_str="ALL_STATS.Totals.Ops/sec",
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -330,7 +345,7 @@ def self_contained_coordinator_blocking_read(
             get_runners_consumer_group_name(platform_name), consumer_name
         )
     )
-    newTestInfo = conn.xreadgroup(
+    newTestInfo = github_event_conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
         consumer_name,
         {STREAM_KEYNAME_NEW_BUILD_EVENTS: stream_id},
@@ -345,7 +360,7 @@ def self_contained_coordinator_blocking_read(
             overall_result,
             total_test_suite_runs,
         ) = process_self_contained_coordinator_stream(
-            conn,
+            github_event_conn,
             datasink_push_results_redistimeseries,
             docker_client,
             home,
@@ -361,17 +376,19 @@ def self_contained_coordinator_blocking_read(
             redis_proc_start_port,
             docker_air_gap,
             "defaults.yml",
-            None,
+            override_test_time,
             default_metrics,
             arch,
             github_token,
             priority_lower_limit,
             priority_upper_limit,
+            default_baseline_branch,
+            default_metrics_str,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
         if overall_result is True:
-            ack_reply = conn.xack(
+            ack_reply = github_event_conn.xack(
                 STREAM_KEYNAME_NEW_BUILD_EVENTS,
                 get_runners_consumer_group_name(platform_name),
                 stream_id,
@@ -393,34 +410,35 @@ def self_contained_coordinator_blocking_read(
     return overall_result, stream_id, num_process_streams, num_process_test_suites
 
 
-def prepare_memtier_benchmark_parameters(
-    clientconfig,
-    full_benchmark_path,
-    port,
-    server,
-    local_benchmark_output_filename,
-    oss_cluster_api_enabled,
-):
-    benchmark_command = [
-        full_benchmark_path,
-        "--port",
-        "{}".format(port),
-        "--server",
-        "{}".format(server),
-        "--json-out-file",
-        local_benchmark_output_filename,
-    ]
-    if oss_cluster_api_enabled is True:
-        benchmark_command.append("--cluster-mode")
-    benchmark_command_str = " ".join(benchmark_command)
-    if "arguments" in clientconfig:
-        benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
-
-    return None, benchmark_command_str
+#
+# def prepare_memtier_benchmark_parameters(
+#     clientconfig,
+#     full_benchmark_path,
+#     port,
+#     server,
+#     local_benchmark_output_filename,
+#     oss_cluster_api_enabled,
+# ):
+#     benchmark_command = [
+#         full_benchmark_path,
+#         "--port",
+#         "{}".format(port),
+#         "--server",
+#         "{}".format(server),
+#         "--json-out-file",
+#         local_benchmark_output_filename,
+#     ]
+#     if oss_cluster_api_enabled is True:
+#         benchmark_command.append("--cluster-mode")
+#     benchmark_command_str = " ".join(benchmark_command)
+#     if "arguments" in clientconfig:
+#         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
+#
+#     return None, benchmark_command_str
 
 
 def process_self_contained_coordinator_stream(
-    conn,
+    github_event_conn,
     datasink_push_results_redistimeseries,
     docker_client,
     home,
@@ -436,21 +454,23 @@ def process_self_contained_coordinator_stream(
     redis_proc_start_port=6379,
     docker_air_gap=False,
     defaults_filename="defaults.yml",
-    override_test_time=None,
+    override_test_time=0,
     default_metrics=[],
     arch="amd64",
     github_token=None,
     priority_lower_limit=0,
     priority_upper_limit=10000,
+    default_baseline_branch="unstable",
+    default_metrics_str="ALL_STATS.Totals.Ops/sec",
 ):
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
     # github updates
     is_actionable_pr = False
-    contains_regression_comment = False
+    contains_benchmark_run_comment = False
     github_pr = None
-    old_regression_comment_body = ""
+    old_benchmark_run_comment_body = ""
     pr_link = ""
     regression_comment = None
     pull_request = None
@@ -500,12 +520,12 @@ def process_self_contained_coordinator_stream(
                 verbose = True
                 fn = check_benchmark_running_comment
                 (
-                    contains_regression_comment,
+                    contains_benchmark_run_comment,
                     github_pr,
                     is_actionable_pr,
-                    old_regression_comment_body,
+                    old_benchmark_run_comment_body,
                     pr_link,
-                    regression_comment,
+                    benchmark_run_comment,
                 ) = check_github_available_and_actionable(
                     fn, github_token, pull_request, "redis", "redis", verbose
                 )
@@ -546,13 +566,13 @@ def process_self_contained_coordinator_stream(
                             run_image, airgap_key
                         )
                     )
-                    airgap_docker_image_bin = conn.get(airgap_key)
+                    airgap_docker_image_bin = github_event_conn.get(airgap_key)
                     images_loaded = docker_client.images.load(airgap_docker_image_bin)
                     logging.info("Successfully loaded images {}".format(images_loaded))
 
                 stream_time_ms = stream_id.split("-")[0]
                 zset_running_platform_benchmarks = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{running_platform}:zset"
-                res = conn.zadd(
+                res = github_event_conn.zadd(
                     zset_running_platform_benchmarks,
                     {stream_id: stream_time_ms},
                 )
@@ -580,8 +600,10 @@ def process_self_contained_coordinator_stream(
                             benchmark_config,
                             test_name,
                         ) = get_final_benchmark_config(None, stream, "")
-                    conn.lpush(stream_test_list_pending, test_name)
-                    conn.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
+                    github_event_conn.lpush(stream_test_list_pending, test_name)
+                    github_event_conn.expire(
+                        stream_test_list_pending, REDIS_BINS_EXPIRE_SECS
+                    )
                     logging.info(
                         f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
                     )
@@ -599,16 +621,16 @@ def process_self_contained_coordinator_stream(
                 )
                 # update on github if needed
                 if is_actionable_pr:
-                    if contains_regression_comment:
+                    if contains_benchmark_run_comment:
                         update_comment_if_needed(
                             auto_approve_github,
                             comment_body,
-                            old_regression_comment_body,
-                            regression_comment,
+                            old_benchmark_run_comment_body,
+                            benchmark_run_comment,
                             verbose,
                         )
                     else:
-                        regression_comment = create_new_pr_comment(
+                        benchmark_run_comment = create_new_pr_comment(
                             auto_approve_github, comment_body, github_pr, pr_link
                         )
 
@@ -621,9 +643,11 @@ def process_self_contained_coordinator_stream(
                             benchmark_config,
                             test_name,
                         ) = get_final_benchmark_config(None, stream, "")
-                        conn.lrem(stream_test_list_pending, 1, test_name)
-                        conn.lpush(stream_test_list_running, test_name)
-                        conn.expire(stream_test_list_running, REDIS_BINS_EXPIRE_SECS)
+                        github_event_conn.lrem(stream_test_list_pending, 1, test_name)
+                        github_event_conn.lpush(stream_test_list_running, test_name)
+                        github_event_conn.expire(
+                            stream_test_list_running, REDIS_BINS_EXPIRE_SECS
+                        )
                         logging.info(
                             f"Added test named {test_name} to the pending test list in key {stream_test_list_running}"
                         )
@@ -703,7 +727,10 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 restore_build_artifacts_from_test_details(
-                                    build_artifacts, conn, temporary_dir, testDetails
+                                    build_artifacts,
+                                    github_event_conn,
+                                    temporary_dir,
+                                    testDetails,
                                 )
                                 mnt_point = "/mnt/redis/"
                                 command = generate_standalone_redis_server_args(
@@ -821,13 +848,22 @@ def process_self_contained_coordinator_stream(
                                     (
                                         _,
                                         benchmark_command_str,
+                                        arbitrary_command,
                                     ) = prepare_memtier_benchmark_parameters(
                                         benchmark_config["clientconfig"],
                                         full_benchmark_path,
                                         redis_proc_start_port,
                                         "localhost",
+                                        None,
                                         local_benchmark_output_filename,
-                                        benchmark_tool_workdir,
+                                        False,
+                                        False,
+                                        False,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        override_test_time,
                                     )
 
                                 client_container_image = extract_client_container_image(
@@ -915,7 +951,7 @@ def process_self_contained_coordinator_stream(
                                         tf_github_repo,
                                         git_hash,
                                         overall_tabular_data_map,
-                                        conn,
+                                        github_event_conn,
                                         setup_name,
                                         start_time_ms,
                                         start_time_str,
@@ -1143,11 +1179,13 @@ def process_self_contained_coordinator_stream(
 
                             overall_result &= test_result
 
-                    conn.lrem(stream_test_list_running, 1, test_name)
-                    conn.lpush(stream_test_list_completed, test_name)
-                    conn.expire(stream_test_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    github_event_conn.lrem(stream_test_list_running, 1, test_name)
+                    github_event_conn.lpush(stream_test_list_completed, test_name)
+                    github_event_conn.expire(
+                        stream_test_list_completed, REDIS_BINS_EXPIRE_SECS
+                    )
                     if test_result is False:
-                        conn.lpush(stream_test_list_failed, test_name)
+                        github_event_conn.lpush(stream_test_list_failed, test_name)
                         failed_tests = failed_tests + 1
                         logging.warning(
                             f"updating key {stream_test_list_failed} with the failed test: {test_name}. Total failed tests {failed_tests}."
@@ -1175,12 +1213,126 @@ def process_self_contained_coordinator_stream(
                         update_comment_if_needed(
                             auto_approve_github,
                             comment_body,
-                            old_regression_comment_body,
-                            regression_comment,
+                            old_benchmark_run_comment_body,
+                            benchmark_run_comment,
                             verbose,
                         )
                         logging.info(
-                            f"Updated github comment with latest test info {regression_comment.html_url}"
+                            f"Updated github comment with latest test info {benchmark_run_comment.html_url}"
+                        )
+
+                        ###########################
+                        # regression part
+                        ###########################
+                        fn = check_regression_comment
+                        (
+                            contains_regression_comment,
+                            github_pr,
+                            is_actionable_pr,
+                            old_regression_comment_body,
+                            pr_link,
+                            regression_comment,
+                        ) = check_github_available_and_actionable(
+                            fn,
+                            github_token,
+                            pull_request,
+                            tf_github_org,
+                            tf_github_repo,
+                            verbose,
+                        )
+                        logging.info(
+                            f"Preparing regression info for the data available"
+                        )
+                        print_improvements_only = False
+                        print_regressions_only = False
+                        skip_unstable = False
+                        regressions_percent_lower_limit = 10.0
+                        simplify_table = False
+                        testname_regex = ""
+                        test = ""
+                        last_n_baseline = 1
+                        last_n_comparison = 31
+                        use_metric_context_path = False
+                        baseline_tag = None
+                        baseline_deployment_name = "oss-standalone"
+                        comparison_deployment_name = "oss-standalone"
+                        metric_name = "ALL_STATS.Totals.Ops/sec"
+                        metric_mode = "higher-better"
+                        to_date = datetime.datetime.utcnow()
+                        from_date = to_date - datetime.timedelta(days=180)
+                        baseline_branch = default_baseline_branch
+                        comparison_tag = git_tag
+                        comparison_branch = git_branch
+                        to_ts_ms = None
+                        from_ts_ms = None
+
+                        (
+                            detected_regressions,
+                            table_output,
+                            total_improvements,
+                            total_regressions,
+                            total_stable,
+                            total_unstable,
+                            total_comparison_points,
+                        ) = compute_regression_table(
+                            datasink_conn,
+                            tf_github_org,
+                            tf_github_repo,
+                            tf_triggering_env,
+                            metric_name,
+                            comparison_branch,
+                            baseline_branch,
+                            baseline_tag,
+                            comparison_tag,
+                            baseline_deployment_name,
+                            comparison_deployment_name,
+                            print_improvements_only,
+                            print_regressions_only,
+                            skip_unstable,
+                            regressions_percent_lower_limit,
+                            simplify_table,
+                            test,
+                            testname_regex,
+                            verbose,
+                            last_n_baseline,
+                            last_n_comparison,
+                            metric_mode,
+                            from_date,
+                            from_ts_ms,
+                            to_date,
+                            to_ts_ms,
+                            use_metric_context_path,
+                            running_platform,
+                        )
+                        auto_approve = True
+                        grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
+
+                        prepare_regression_comment(
+                            auto_approve,
+                            baseline_branch,
+                            baseline_tag,
+                            comparison_branch,
+                            comparison_tag,
+                            contains_regression_comment,
+                            github_pr,
+                            grafana_link_base,
+                            is_actionable_pr,
+                            old_regression_comment_body,
+                            pr_link,
+                            regression_comment,
+                            datasink_conn,
+                            running_platform,
+                            table_output,
+                            tf_github_org,
+                            tf_github_repo,
+                            tf_triggering_env,
+                            total_comparison_points,
+                            total_improvements,
+                            total_regressions,
+                            total_stable,
+                            total_unstable,
+                            verbose,
+                            regressions_percent_lower_limit,
                         )
                     logging.info(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
