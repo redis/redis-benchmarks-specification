@@ -237,7 +237,7 @@ def generate_benchmark_started_pr_comment(
     )
 
     comment_body += f"Started benchmark suite at {benchmark_suite_start_datetime} and took {benchmark_suite_duration_secs} seconds "
-    if total_pending == 0:
+    if total_pending > 0:
         comment_body += "up until now.\n"
     else:
         comment_body += "to finish.\n"
