@@ -21,6 +21,8 @@ def generate_build_started_pr_comment(
     )
     comment_body += f"Started building at {build_datetime}\n"
     comment_body += "You can check each build/benchmark progress in grafana:\n"
+    if not isinstance(git_hash, str):
+        git_hash = git_hash.decode()
     comment_body += f"   - git hash: {git_hash}\n"
     comment_body += f"   - git branch: {git_branch}\n"
     comment_body += f"   - commit date and time: {commit_datetime}\n"
@@ -57,6 +59,8 @@ def generate_build_finished_pr_comment(
     )
     comment_body += f"Started building at {build_start_datetime} and took {build_duration_seconds} seconds.\n"
     comment_body += "You can check each build/benchmark progress in grafana:\n"
+    if not isinstance(git_hash, str):
+        git_hash = git_hash.decode()
     comment_body += f"   - git hash: {git_hash}\n"
     comment_body += f"   - git branch: {git_branch}\n"
     comment_body += f"   - commit date and time: {commit_datetime}\n"
