@@ -86,11 +86,13 @@ def create_app(conn, user, test_config=None):
             event_type = "Ignored event from webhook"
             use_event = False
             # Pull request labeled
+            pull_request_number = None
             trigger_label = PULL_REQUEST_TRIGGER_LABEL
             if "pull_request" in request_data:
                 action = request_data["action"]
                 if should_action(action):
                     pull_request_dict = request_data["pull_request"]
+
                     head_dict = pull_request_dict["head"]
                     repo_dict = head_dict["repo"]
                     labels = []
@@ -107,9 +109,8 @@ def create_app(conn, user, test_config=None):
                         label_name = label["name"]
                         if trigger_label == label_name:
                             use_event = True
-                            event_type = "Pull request labeled with '{}'".format(
-                                trigger_label
-                            )
+                            pull_request_number = request_data["number"]
+                            event_type = f"Pull request #{pull_request_number} labeled with '{trigger_label}'"
                             detected_label = True
                     if detected_label is False:
                         app.logger.info(
@@ -161,6 +162,8 @@ def create_app(conn, user, test_config=None):
                     "gh_repo": gh_repo,
                     "gh_org": gh_org,
                 }
+                if pull_request_number is not None:
+                    fields_after["pull_request"] = pull_request_number
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, fields_after
@@ -174,7 +177,6 @@ def create_app(conn, user, test_config=None):
                         event_type, response_data
                     )
                 )
-
             else:
                 app.logger.info(
                     "{}. input json was: {}".format(event_type, request_data)

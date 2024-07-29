@@ -4,7 +4,7 @@
 #  All rights reserved.
 #
 import datetime
-
+import os
 
 from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_HOST,
@@ -18,9 +18,10 @@ from redis_benchmarks_specification.__common__.env import (
 from redisbench_admin.run.common import get_start_time_vars
 
 START_TIME_NOW_UTC, _, _ = get_start_time_vars()
-START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=7)
+START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=90)
 CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
+PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
 def spec_cli_args(parser):
@@ -29,6 +30,30 @@ def spec_cli_args(parser):
         type=str,
         default=SPECS_PATH_TEST_SUITES,
         help="Test suites folder, containing the different test variations",
+    )
+    parser.add_argument(
+        "--tests-regexp",
+        type=str,
+        default=".*",
+        help="Interpret PATTERN as a regular expression to filter test names",
+    )
+    parser.add_argument(
+        "--tests-groups-regexp",
+        type=str,
+        default=".*",
+        help="Interpret PATTERN as a regular expression to filter test group names",
+    )
+    parser.add_argument(
+        "--tests-priority-lower-limit",
+        type=int,
+        default=0,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
+        "--tests-priority-upper-limit",
+        type=int,
+        default=100000,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
     )
     parser.add_argument(
         "--defaults_filename",
@@ -44,6 +69,15 @@ def spec_cli_args(parser):
         default=False,
         action="store_true",
         help="Include modules statistics on commandstats.",
+    )
+    parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
+    parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
+    parser.add_argument(
+        "--auto-approve",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Skip interactive approval of changes to github before applying.",
     )
     parser.add_argument("--summary-csv", type=str, default="")
     parser.add_argument("--group-csv", type=str, default="")
@@ -129,13 +163,25 @@ def spec_cli_args(parser):
     parser.add_argument(
         "--last_n",
         type=int,
-        default=-1,
-        help="Use the last N samples. by default will use all available values",
+        default=1,
+        help="Use the last N samples. by default will use last commit",
     )
     parser.add_argument(
         "--platform",
         type=str,
         default="",
         help="Only trigger tests on the specified platform.",
+    )
+    parser.add_argument(
+        "--wait-build",
+        default=False,
+        action="store_true",
+        help="Wait for build to be finished.",
+    )
+    parser.add_argument(
+        "--wait-build-timeout",
+        type=int,
+        default=-1,
+        help="Wait x sections for build. If -1, waits forever.",
     )
     return parser

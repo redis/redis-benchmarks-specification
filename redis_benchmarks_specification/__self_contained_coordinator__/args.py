@@ -1,5 +1,6 @@
 import argparse
-
+import datetime
+import os
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
     SPECS_PATH_SETUPS,
@@ -19,6 +20,12 @@ from redis_benchmarks_specification.__common__.env import (
     PROFILERS_DEFAULT,
     ALLOWED_PROFILERS,
 )
+from redis_benchmarks_specification.__compare__.args import (
+    START_TIME_NOW_UTC,
+    START_TIME_LAST_SIX_MONTHS_UTC,
+)
+
+PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
 def create_self_contained_coordinator_args(project_name):
@@ -30,6 +37,7 @@ def create_self_contained_coordinator_args(project_name):
     parser.add_argument("--event_stream_port", type=int, default=GH_REDIS_SERVER_PORT)
     parser.add_argument("--event_stream_pass", type=str, default=GH_REDIS_SERVER_AUTH)
     parser.add_argument("--event_stream_user", type=str, default=GH_REDIS_SERVER_USER)
+    parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument(
         "--cpu-count",
         type=int,
@@ -149,5 +157,17 @@ def create_self_contained_coordinator_args(project_name):
     )
     parser.add_argument(
         "--arch", type=str, default="amd64", help="arch to build artifacts"
+    )
+    parser.add_argument(
+        "--tests-priority-lower-limit",
+        type=int,
+        default=0,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
+    )
+    parser.add_argument(
+        "--tests-priority-upper-limit",
+        type=int,
+        default=100000,
+        help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
     )
     return parser

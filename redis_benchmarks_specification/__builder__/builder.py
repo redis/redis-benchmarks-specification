@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import io
 import json
 import logging
@@ -31,10 +32,19 @@ from redis_benchmarks_specification.__common__.env import (
     REDIS_SOCKET_TIMEOUT,
     REDIS_BINS_EXPIRE_SECS,
 )
+from redis_benchmarks_specification.__common__.github import (
+    check_github_available_and_actionable,
+    generate_build_finished_pr_comment,
+    update_comment_if_needed,
+    create_new_pr_comment,
+    generate_build_started_pr_comment,
+)
 from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
     get_version_string,
 )
+
+PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
 class ZipFileWithPermissions(ZipFile):
@@ -80,6 +90,8 @@ def main():
         action="store_true",
         help="Store the docker images in redis keys.",
     )
+    parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
+    parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -138,16 +150,18 @@ def main():
     build_spec_image_prefetch(builders_folder, different_build_specs)
 
     builder_consumer_group_create(conn)
-
+    if args.github_token is not None:
+        logging.info("detected a github token. will update as much as possible!!! =)")
     previous_id = args.consumer_start_id
     while True:
-        previous_id, new_builds_count = builder_process_stream(
+        previous_id, new_builds_count, _ = builder_process_stream(
             builders_folder,
             conn,
             different_build_specs,
             previous_id,
             args.docker_air_gap,
             arch,
+            args.github_token,
         )
 
 
@@ -172,6 +186,17 @@ def builder_consumer_group_create(conn, id="$"):
         )
 
 
+def check_benchmark_build_comment(comments):
+    res = False
+    pos = -1
+    for n, comment in enumerate(comments):
+        body = comment.body
+        if "CE Performance Automation : step 1 of 2" in body:
+            res = True
+            pos = n
+    return res, pos
+
+
 def builder_process_stream(
     builders_folder,
     conn,
@@ -179,8 +204,11 @@ def builder_process_stream(
     previous_id,
     docker_air_gap=False,
     arch="amd64",
+    github_token=None,
 ):
     new_builds_count = 0
+    auto_approve_github_comments = True
+    build_stream_fields_arr = []
     logging.info("Entering blocking read waiting for work.")
     consumer_name = "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1")
     newTestInfo = conn.xreadgroup(
@@ -215,12 +243,58 @@ def builder_process_stream(
             buffer = conn.get(binary_zip_key)
             git_timestamp_ms = None
             use_git_timestamp = False
+            commit_datetime = "n/a"
+            if b"commit_datetime" in testDetails:
+                commit_datetime = testDetails[b"commit_datetime"].decode()
+            commit_summary = "n/a"
+            if b"commit_summary" in testDetails:
+                commit_summary = testDetails[b"commit_summary"].decode()
             git_branch, git_version = get_branch_version_from_test_details(testDetails)
             if b"use_git_timestamp" in testDetails:
                 use_git_timestamp = bool(testDetails[b"use_git_timestamp"])
             if b"git_timestamp_ms" in testDetails:
                 git_timestamp_ms = int(testDetails[b"git_timestamp_ms"].decode())
+            tests_regexp = ".*"
+            if b"tests_regexp" in testDetails:
+                tests_regexp = testDetails[b"tests_regexp"].decode()
+            tests_priority_upper_limit = 10000
+            if b"tests_priority_upper_limit" in testDetails:
+                tests_priority_upper_limit = int(
+                    testDetails[b"tests_priority_upper_limit"].decode()
+                )
+            tests_priority_lower_limit = 0
+            if b"tests_priority_lower_limit" in testDetails:
+                tests_priority_lower_limit = int(
+                    testDetails[b"tests_priority_lower_limit"].decode()
+                )
+            tests_groups_regexp = ".*"
+            if b"tests_groups_regexp" in testDetails:
+                tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
 
+            # github updates
+            is_actionable_pr = False
+            contains_regression_comment = False
+            github_pr = None
+            old_regression_comment_body = ""
+            pr_link = ""
+            regression_comment = ""
+            pull_request = None
+            if b"pull_request" in testDetails:
+                pull_request = testDetails[b"pull_request"].decode()
+                logging.info(f"Detected PR info in builder. PR: {pull_request}")
+                verbose = True
+
+                fn = check_benchmark_build_comment
+                (
+                    contains_regression_comment,
+                    github_pr,
+                    is_actionable_pr,
+                    old_regression_comment_body,
+                    pr_link,
+                    regression_comment,
+                ) = check_github_available_and_actionable(
+                    fn, github_token, pull_request, "redis", "redis", verbose
+                )
             for build_spec in different_build_specs:
                 build_config, id = get_build_config(builders_folder + "/" + build_spec)
                 build_config_metadata = get_build_config_metadata(build_config)
@@ -306,9 +380,41 @@ def builder_process_stream(
                     "redis-server",
                     build_vars_str,
                 )
+                build_start_datetime = datetime.datetime.utcnow()
                 logging.info(
-                    "Using the following build command {}".format(build_command)
+                    "Using the following build command {}.".format(build_command)
                 )
+                if is_actionable_pr:
+                    logging.info(
+                        f"updating on github we'll start the build at {build_start_datetime}"
+                    )
+                    comment_body = generate_build_started_pr_comment(
+                        build_start_datetime,
+                        commit_datetime,
+                        commit_summary,
+                        git_branch,
+                        git_hash,
+                        tests_groups_regexp,
+                        tests_priority_lower_limit,
+                        tests_priority_upper_limit,
+                        tests_regexp,
+                    )
+                    if contains_regression_comment:
+                        update_comment_if_needed(
+                            auto_approve_github_comments,
+                            comment_body,
+                            old_regression_comment_body,
+                            regression_comment,
+                            verbose,
+                        )
+                    else:
+                        regression_comment = create_new_pr_comment(
+                            auto_approve_github_comments,
+                            comment_body,
+                            github_pr,
+                            pr_link,
+                        )
+
                 docker_client.containers.run(
                     image=build_image,
                     volumes={
@@ -319,6 +425,10 @@ def builder_process_stream(
                     working_dir="/mnt/redis/",
                     command=build_command,
                 )
+                build_end_datetime = datetime.datetime.utcnow()
+                build_duration = build_end_datetime - build_start_datetime
+                build_duration_secs = build_duration.total_seconds()
+
                 build_stream_fields = {
                     "id": id,
                     "git_hash": git_hash,
@@ -333,7 +443,13 @@ def builder_process_stream(
                     "build_command": build_command,
                     "metadata": json.dumps(build_config_metadata),
                     "build_artifacts": ",".join(build_artifacts),
+                    "tests_regexp": tests_regexp,
+                    "tests_priority_upper_limit": tests_priority_upper_limit,
+                    "tests_priority_lower_limit": tests_priority_lower_limit,
+                    "tests_groups_regexp": tests_groups_regexp,
                 }
+                if pull_request is not None:
+                    build_stream_fields["pull_request"] = pull_request
                 if git_branch is not None:
                     build_stream_fields["git_branch"] = git_branch
                 if git_version is not None:
@@ -356,16 +472,61 @@ def builder_process_stream(
                 if b"platform" in testDetails:
                     build_stream_fields["platform"] = testDetails[b"platform"]
                 if result is True:
-                    stream_id = conn.xadd(
+                    benchmark_stream_id = conn.xadd(
                         STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
                     )
                     logging.info(
                         "sucessfully built build variant {} for redis git_sha {}. Stream id: {}".format(
-                            id, git_hash, stream_id
+                            id, git_hash, benchmark_stream_id
                         )
                     )
+                    streamId_decoded = streamId.decode()
+                    benchmark_stream_id_decoded = benchmark_stream_id.decode()
+                    builder_list_completed = (
+                        f"builder:{streamId_decoded}:builds_completed"
+                    )
+                    conn.lpush(builder_list_completed, benchmark_stream_id_decoded)
+                    conn.expire(builder_list_completed, REDIS_BINS_EXPIRE_SECS)
+                    logging.info(
+                        f"Adding information of build->benchmark stream info in list {builder_list_completed}. Adding benchmark stream id: {benchmark_stream_id_decoded}"
+                    )
+                    benchmark_stream_ids = [benchmark_stream_id_decoded]
+
+                    if is_actionable_pr:
+                        logging.info(
+                            f"updating on github that the build finished after {build_duration_secs} seconds"
+                        )
+                        comment_body = generate_build_finished_pr_comment(
+                            benchmark_stream_ids,
+                            commit_datetime,
+                            commit_summary,
+                            git_branch,
+                            git_hash,
+                            tests_groups_regexp,
+                            tests_priority_lower_limit,
+                            tests_priority_upper_limit,
+                            tests_regexp,
+                            build_start_datetime,
+                            build_duration_secs,
+                        )
+                        if contains_regression_comment:
+                            update_comment_if_needed(
+                                auto_approve_github_comments,
+                                comment_body,
+                                old_regression_comment_body,
+                                regression_comment,
+                                verbose,
+                            )
+                        else:
+                            create_new_pr_comment(
+                                auto_approve_github_comments,
+                                comment_body,
+                                github_pr,
+                                pr_link,
+                            )
                 shutil.rmtree(temporary_dir, ignore_errors=True)
                 new_builds_count = new_builds_count + 1
+                build_stream_fields_arr.append(build_stream_fields)
             ack_reply = conn.xack(
                 STREAM_KEYNAME_GH_EVENTS_COMMIT,
                 STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
@@ -387,7 +548,7 @@ def builder_process_stream(
                 )
         else:
             logging.error("Missing commit information within received message.")
-    return previous_id, new_builds_count
+    return previous_id, new_builds_count, build_stream_fields_arr
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):

@@ -14,9 +14,14 @@ import humanize
 import datetime as dt
 import os
 from tqdm import tqdm
-from github import Github
-from slack_sdk.webhook import WebhookClient
 import argparse
+
+from redis_benchmarks_specification.__common__.github import (
+    update_comment_if_needed,
+    create_new_pr_comment,
+    check_github_available_and_actionable,
+    check_regression_comment,
+)
 from redis_benchmarks_specification.__compare__.args import create_compare_arguments
 
 
@@ -161,45 +166,9 @@ def compare_command_logic(args, project_name, project_version):
         username=args.redistimeseries_user,
     )
     rts.ping()
-    default_baseline_branch = None
-    default_metrics_str = ""
-    if args.defaults_filename != "" and os.path.exists(args.defaults_filename):
-        logging.info(
-            "Loading configuration from defaults file: {}".format(
-                args.defaults_filename
-            )
-        )
-        with open(args.defaults_filename) as yaml_fd:
-            defaults_dict = yaml.safe_load(yaml_fd)
-            if "exporter" in defaults_dict:
-                exporter_dict = defaults_dict["exporter"]
-                if "comparison" in exporter_dict:
-                    comparison_dict = exporter_dict["comparison"]
-                    if "metrics" in comparison_dict:
-                        metrics = comparison_dict["metrics"]
-                        logging.info("Detected defaults metrics info. reading metrics")
-                        default_metrics = []
-
-                        for metric in metrics:
-                            if metric.startswith("$."):
-                                metric = metric[2:]
-                            logging.info("Will use metric: {}".format(metric))
-                            default_metrics.append(metric)
-                        if len(default_metrics) == 1:
-                            default_metrics_str = default_metrics[0]
-                        if len(default_metrics) > 1:
-                            default_metrics_str = "({})".format(
-                                ",".join(default_metrics)
-                            )
-                        logging.info("Default metrics: {}".format(default_metrics_str))
-
-                    if "baseline-branch" in comparison_dict:
-                        default_baseline_branch = comparison_dict["baseline-branch"]
-                        logging.info(
-                            "Detected baseline branch in defaults file. {}".format(
-                                default_baseline_branch
-                            )
-                        )
+    default_baseline_branch, default_metrics_str = extract_default_branch_and_metric(
+        args.defaults_filename
+    )
 
     tf_github_org = args.github_org
     tf_github_repo = args.github_repo
@@ -277,14 +246,7 @@ def compare_command_logic(args, project_name, project_version):
     auto_approve = args.auto_approve
     running_platform = args.running_platform
     grafana_base_dashboard = args.grafana_base_dashboard
-    # using an access token
-    is_actionable_pr = False
-    contains_regression_comment = False
-    regression_comment = None
-    github_pr = None
-    # slack related
-    webhook_notifications_active = False
-    webhook_client_slack = None
+
     if running_platform is not None:
         logging.info(
             "Using platform named: {} to do the comparison.\n\n".format(
@@ -292,56 +254,18 @@ def compare_command_logic(args, project_name, project_version):
             )
         )
 
-    old_regression_comment_body = ""
-    if github_token is not None:
-        logging.info("Detected github token")
-        g = Github(github_token)
-        if pull_request is not None and pull_request != "":
-            pull_request_n = int(pull_request)
-            github_pr = (
-                g.get_user(tf_github_org)
-                .get_repo(tf_github_repo)
-                .get_issue(pull_request_n)
-            )
-            comments = github_pr.get_comments()
-            pr_link = github_pr.html_url
-            logging.info("Working on github PR already: {}".format(pr_link))
-            is_actionable_pr = True
-            contains_regression_comment, pos = check_regression_comment(comments)
-            if contains_regression_comment:
-                regression_comment = comments[pos]
-                old_regression_comment_body = regression_comment.body
-                logging.info(
-                    "Already contains regression comment. Link: {}".format(
-                        regression_comment.html_url
-                    )
-                )
-                if verbose:
-                    logging.info("Printing old regression comment:")
-                    print("".join(["-" for x in range(1, 80)]))
-                    print(regression_comment.body)
-                    print("".join(["-" for x in range(1, 80)]))
-            else:
-                logging.info("Does not contain regression comment")
-
-    grafana_dashboards_uids = {
-        "redisgraph": "SH9_rQYGz",
-        "redisbloom": "q4-5sRR7k",
-        "redisearch": "3Ejv2wZnk",
-        "redisjson": "UErSC0jGk",
-        "redistimeseries": "2WMw61UGz",
-    }
-    uid = None
-    if tf_github_repo.lower() in grafana_dashboards_uids:
-        uid = grafana_dashboards_uids[tf_github_repo.lower()]
-    grafana_link_base = None
-    if uid is not None:
-        grafana_link_base = "{}/{}".format(grafana_base_dashboard, uid)
-        logging.info(
-            "There is a grafana dashboard for this repo. Base link: {}".format(
-                grafana_link_base
-            )
-        )
+    fn = check_regression_comment
+    (
+        contains_regression_comment,
+        github_pr,
+        is_actionable_pr,
+        old_regression_comment_body,
+        pr_link,
+        regression_comment,
+    ) = check_github_available_and_actionable(
+        fn, github_token, pull_request, tf_github_org, tf_github_repo, verbose
+    )
+    grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
 
     (
         detected_regressions,
@@ -381,7 +305,71 @@ def compare_command_logic(args, project_name, project_version):
         use_metric_context_path,
         running_platform,
     )
-    comment_body = ""
+    prepare_regression_comment(
+        auto_approve,
+        baseline_branch,
+        baseline_tag,
+        comparison_branch,
+        comparison_tag,
+        contains_regression_comment,
+        github_pr,
+        grafana_link_base,
+        is_actionable_pr,
+        old_regression_comment_body,
+        pr_link,
+        regression_comment,
+        rts,
+        running_platform,
+        table_output,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        total_comparison_points,
+        total_improvements,
+        total_regressions,
+        total_stable,
+        total_unstable,
+        verbose,
+        args.regressions_percent_lower_limit,
+    )
+    return (
+        detected_regressions,
+        "",
+        total_improvements,
+        total_regressions,
+        total_stable,
+        total_unstable,
+        total_comparison_points,
+    )
+
+
+def prepare_regression_comment(
+    auto_approve,
+    baseline_branch,
+    baseline_tag,
+    comparison_branch,
+    comparison_tag,
+    contains_regression_comment,
+    github_pr,
+    grafana_link_base,
+    is_actionable_pr,
+    old_regression_comment_body,
+    pr_link,
+    regression_comment,
+    rts,
+    running_platform,
+    table_output,
+    tf_github_org,
+    tf_github_repo,
+    tf_triggering_env,
+    total_comparison_points,
+    total_improvements,
+    total_regressions,
+    total_stable,
+    total_unstable,
+    verbose,
+    regressions_percent_lower_limit,
+):
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
         comment_body += "This comment was automatically generated given there is performance data available.\n\n"
@@ -409,7 +397,7 @@ def compare_command_logic(args, project_name, project_version):
             )
         if total_regressions > 0:
             comparison_summary += "- Detected a total of {} regressions bellow the regression water line {}.\n".format(
-                total_regressions, args.regressions_percent_lower_limit
+                total_regressions, regressions_percent_lower_limit
             )
 
         comment_body += comparison_summary
@@ -453,99 +441,61 @@ def compare_command_logic(args, project_name, project_version):
                     zset_project_pull_request, comparison_branch, res
                 )
             )
-            user_input = "n"
-            html_url = "n/a"
-            regression_count = len(detected_regressions)
-            (
-                baseline_str,
-                by_str_baseline,
-                comparison_str,
-                by_str_comparison,
-            ) = get_by_strings(
-                baseline_branch,
-                comparison_branch,
-                baseline_tag,
-                comparison_tag,
-            )
 
             if contains_regression_comment:
-                same_comment = False
-                if comment_body == old_regression_comment_body:
-                    logging.info(
-                        "The old regression comment is the same as the new comment. skipping..."
-                    )
-                    same_comment = True
-                else:
-                    logging.info(
-                        "The old regression comment is different from the new comment. updating it..."
-                    )
-                    comment_body_arr = comment_body.split("\n")
-                    old_regression_comment_body_arr = old_regression_comment_body.split(
-                        "\n"
-                    )
-                    if verbose:
-                        DF = [
-                            x
-                            for x in comment_body_arr
-                            if x not in old_regression_comment_body_arr
-                        ]
-                        print("---------------------")
-                        print(DF)
-                        print("---------------------")
-                if same_comment is False:
-                    if auto_approve:
-                        print("auto approving...")
-                    else:
-                        user_input = input(
-                            "Do you wish to update the comment {} (y/n): ".format(
-                                regression_comment.html_url
-                            )
-                        )
-                    if user_input.lower() == "y" or auto_approve:
-                        print("Updating comment {}".format(regression_comment.html_url))
-                        regression_comment.edit(comment_body)
-                        html_url = regression_comment.html_url
-                        print(
-                            "Updated comment. Access it via {}".format(
-                                regression_comment.html_url
-                            )
-                        )
-
+                update_comment_if_needed(
+                    auto_approve,
+                    comment_body,
+                    old_regression_comment_body,
+                    regression_comment,
+                    verbose,
+                )
             else:
-                if auto_approve:
-                    print("auto approving...")
-                else:
-                    user_input = input(
-                        "Do you wish to add a comment in {} (y/n): ".format(pr_link)
-                    )
-                if user_input.lower() == "y" or auto_approve:
-                    print("creating an comment in PR {}".format(pr_link))
-                    regression_comment = github_pr.create_comment(comment_body)
-                    html_url = regression_comment.html_url
-                    print("created comment. Access it via {}".format(html_url))
+                create_new_pr_comment(auto_approve, comment_body, github_pr, pr_link)
 
     else:
         logging.error("There was no comparison points to produce a table...")
-    return (
-        detected_regressions,
-        comment_body,
-        total_improvements,
-        total_regressions,
-        total_stable,
-        total_unstable,
-        total_comparison_points,
-    )
 
 
-def check_regression_comment(comments):
-    res = False
-    pos = -1
-    for n, comment in enumerate(comments):
-        body = comment.body
-        if "Comparison between" in body and "Time Period from" in body:
-            res = True
-            pos = n
-    return res, pos
+def extract_default_branch_and_metric(defaults_filename):
+    default_baseline_branch = "unstable"
+    default_metrics_str = ""
+    if defaults_filename != "" and os.path.exists(defaults_filename):
+        logging.info(
+            "Loading configuration from defaults file: {}".format(defaults_filename)
+        )
+        with open(defaults_filename) as yaml_fd:
+            defaults_dict = yaml.safe_load(yaml_fd)
+            if "exporter" in defaults_dict:
+                exporter_dict = defaults_dict["exporter"]
+                if "comparison" in exporter_dict:
+                    comparison_dict = exporter_dict["comparison"]
+                    if "metrics" in comparison_dict:
+                        metrics = comparison_dict["metrics"]
+                        logging.info("Detected defaults metrics info. reading metrics")
+                        default_metrics = []
+
+                        for metric in metrics:
+                            if metric.startswith("$."):
+                                metric = metric[2:]
+                            logging.info("Will use metric: {}".format(metric))
+                            default_metrics.append(metric)
+                        if len(default_metrics) == 1:
+                            default_metrics_str = default_metrics[0]
+                        if len(default_metrics) > 1:
+                            default_metrics_str = "({})".format(
+                                ",".join(default_metrics)
+                            )
+                        logging.info("Default metrics: {}".format(default_metrics_str))
+
+                    if "baseline-branch" in comparison_dict:
+                        default_baseline_branch = comparison_dict["baseline-branch"]
+                        logging.info(
+                            "Detected baseline branch in defaults file. {}".format(
+                                default_baseline_branch
+                            )
+                        )
+    return default_baseline_branch, default_metrics_str
 
 
 def compute_regression_table(
@@ -801,7 +751,6 @@ def from_rts_to_regression_table(
     total_comparison_points = 0
     noise_waterline = 3
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
-    at_comparison = 0
     for test_name in test_names:
         multi_value_baseline = check_multi_value_filter(baseline_str)
         multi_value_comparison = check_multi_value_filter(comparison_str)
@@ -1066,7 +1015,8 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
         test_names.sort()
         final_test_names = []
         for test_name in test_names:
-            test_name = test_name.decode()
+            if not isinstance(test_name, str):
+                test_name = test_name.decode()
             match_obj = re.search(tags_regex_string, test_name)
             if match_obj is not None:
                 final_test_names.append(test_name)
