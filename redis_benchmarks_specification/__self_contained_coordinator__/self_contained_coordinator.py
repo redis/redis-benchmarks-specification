@@ -537,6 +537,13 @@ def process_self_contained_coordinator_stream(
                     f"detected a regexp definition on the streamdata {test_regexp}"
                 )
 
+            command_groups_regexp = None
+            if b"tests_groups_regexp" in testDetails:
+                command_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
+                logging.info(
+                    f"detected a command groups regexp definition on the streamdata {command_groups_regexp}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -591,6 +598,7 @@ def process_self_contained_coordinator_stream(
                     priority_upper_limit,
                     test_regexp,
                     testsuite_spec_files,
+                    command_groups_regexp,
                 )
 
                 for test_file in filtered_test_files:
@@ -611,16 +619,16 @@ def process_self_contained_coordinator_stream(
                 pending_tests = len(filtered_test_files)
                 failed_tests = 0
                 benchmark_suite_start_datetime = datetime.datetime.utcnow()
-                comment_body = generate_benchmark_started_pr_comment(
-                    stream_id,
-                    pending_tests,
-                    len(filtered_test_files),
-                    failed_tests,
-                    benchmark_suite_start_datetime,
-                    0,
-                )
                 # update on github if needed
                 if is_actionable_pr:
+                    comment_body = generate_benchmark_started_pr_comment(
+                        stream_id,
+                        pending_tests,
+                        len(filtered_test_files),
+                        failed_tests,
+                        benchmark_suite_start_datetime,
+                        0,
+                    )
                     if contains_benchmark_run_comment:
                         update_comment_if_needed(
                             auto_approve_github,
@@ -1261,7 +1269,7 @@ def process_self_contained_coordinator_stream(
                         to_date = datetime.datetime.utcnow()
                         from_date = to_date - datetime.timedelta(days=180)
                         baseline_branch = default_baseline_branch
-                        comparison_tag = git_tag
+                        comparison_tag = git_version
                         comparison_branch = git_branch
                         to_ts_ms = None
                         from_ts_ms = None
@@ -1362,6 +1370,7 @@ def filter_test_files(
     priority_upper_limit,
     test_regexp,
     testsuite_spec_files,
+    command_groups_regexp=None,
 ):
     filtered_test_files = []
     for test_file in testsuite_spec_files:
@@ -1396,6 +1405,34 @@ def filter_test_files(
                     )
                 )
                 continue
+
+            if command_groups_regexp is not None:
+                logging.info(
+                    "Filtering all test command groups via a regular expression: {}".format(
+                        command_groups_regexp
+                    )
+                )
+                if "tested-groups" in benchmark_config:
+                    command_groups = benchmark_config["tested-groups"]
+                    logging.info(
+                        f"The file {test_file} (test name = {test_name}) contains the following groups: {command_groups}"
+                    )
+                    groups_regex_string = re.compile(command_groups_regexp)
+                    found = False
+                    for command_group in command_groups:
+                        match_obj = re.search(groups_regex_string, command_group)
+                        if match_obj is not None:
+                            found = True
+                            logging.info(f"found the command group {command_group}")
+                    if found is False:
+                        logging.info(
+                            f"Skipping {test_file} given the following groups: {command_groups} does not match command group regex {command_groups_regexp}"
+                        )
+                        continue
+                else:
+                    logging.warning(
+                        f"The file {test_file} (test name = {test_name}) does not contain the property 'tested-groups'. Cannot filter based uppon groups..."
+                    )
 
             if "priority" in benchmark_config:
                 priority = benchmark_config["priority"]

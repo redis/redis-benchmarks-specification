@@ -322,6 +322,11 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_priority_lower_limit"] = tests_priority_lower_limit
             commit_dict["tests_regexp"] = tests_regexp
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
+            if pull_request is not None:
+                logging.info(
+                    f"Have a pull request info to include in build request {pull_request}"
+                )
+                commit_dict["pull_request"] = pull_request
             git_hash = cdict["git_hash"]
             git_branch = "n/a"
             if "git_branch" in cdict:

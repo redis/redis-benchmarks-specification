@@ -104,6 +104,7 @@ def check_github_available_and_actionable(
     regression_comment = None
     github_pr = None
     old_regression_comment_body = ""
+    pr_link = None
     if github_token is not None:
         logging.info("Detected github token")
         g = Github(github_token)
@@ -134,9 +135,10 @@ def check_github_available_and_actionable(
                     print("".join(["-" for x in range(1, 80)]))
             else:
                 logging.info("Does not contain PR comment")
-    logging.info(
-        f"contains_regression_comment: {contains_regression_comment}, is_actionable_pr: {is_actionable_pr}, pr_link: {pr_link}"
-    )
+            logging.info(
+                f"contains_regression_comment: {contains_regression_comment}, is_actionable_pr: {is_actionable_pr}, pr_link: {pr_link}"
+            )
+
     return (
         contains_regression_comment,
         github_pr,
@@ -226,7 +228,9 @@ def check_benchmark_running_comment(comments):
 
 
 def markdown_progress_bar(current, total, bar_length=40):
-    progress = current / total
+    progress = 1.0
+    if total > 0:
+        progress = current / total
     block = int(round(bar_length * progress))
     bar = "#" * block + "-" * (bar_length - block)
     percentage = round(progress * 100, 2)

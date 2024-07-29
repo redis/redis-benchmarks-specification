@@ -245,10 +245,10 @@ def builder_process_stream(
             use_git_timestamp = False
             commit_datetime = "n/a"
             if b"commit_datetime" in testDetails:
-                commit_datetime = int(testDetails[b"commit_datetime"].decode())
+                commit_datetime = testDetails[b"commit_datetime"].decode()
             commit_summary = "n/a"
             if b"commit_summary" in testDetails:
-                commit_summary = int(testDetails[b"commit_summary"].decode())
+                commit_summary = testDetails[b"commit_summary"].decode()
             git_branch, git_version = get_branch_version_from_test_details(testDetails)
             if b"use_git_timestamp" in testDetails:
                 use_git_timestamp = bool(testDetails[b"use_git_timestamp"])

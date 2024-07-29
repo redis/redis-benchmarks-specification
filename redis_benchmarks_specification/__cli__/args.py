@@ -18,7 +18,7 @@ from redis_benchmarks_specification.__common__.env import (
 from redisbench_admin.run.common import get_start_time_vars
 
 START_TIME_NOW_UTC, _, _ = get_start_time_vars()
-START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=7)
+START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=90)
 CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
@@ -163,8 +163,8 @@ def spec_cli_args(parser):
     parser.add_argument(
         "--last_n",
         type=int,
-        default=-1,
-        help="Use the last N samples. by default will use all available values",
+        default=1,
+        help="Use the last N samples. by default will use last commit",
     )
     parser.add_argument(
         "--platform",
