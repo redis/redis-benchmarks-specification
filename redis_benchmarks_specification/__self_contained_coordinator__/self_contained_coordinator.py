@@ -530,11 +530,11 @@ def process_self_contained_coordinator_stream(
                     fn, github_token, pull_request, "redis", "redis", verbose
                 )
 
-            test_regexp = ".*"
-            if b"test_regexp" in testDetails:
-                test_regexp = testDetails[b"test_regexp"]
+            tests_regexp = ".*"
+            if b"tests_regexp" in testDetails:
+                tests_regexp = testDetails[b"tests_regexp"]
                 logging.info(
-                    f"detected a regexp definition on the streamdata {test_regexp}"
+                    f"detected a regexp definition on the streamdata {tests_regexp}"
                 )
 
             command_groups_regexp = None
@@ -596,7 +596,7 @@ def process_self_contained_coordinator_stream(
                     defaults_filename,
                     priority_lower_limit,
                     priority_upper_limit,
-                    test_regexp,
+                    tests_regexp,
                     testsuite_spec_files,
                     command_groups_regexp,
                 )
@@ -1368,7 +1368,7 @@ def filter_test_files(
     defaults_filename,
     priority_lower_limit,
     priority_upper_limit,
-    test_regexp,
+    tests_regexp,
     testsuite_spec_files,
     command_groups_regexp=None,
 ):
@@ -1377,17 +1377,17 @@ def filter_test_files(
         if defaults_filename in test_file:
             continue
 
-        if test_regexp != ".*":
+        if tests_regexp != ".*":
             logging.info(
-                "Filtering all tests via a regular expression: {}".format(test_regexp)
+                "Filtering all tests via a regular expression: {}".format(tests_regexp)
             )
-            tags_regex_string = re.compile(test_regexp)
+            tags_regex_string = re.compile(tests_regexp)
 
             match_obj = re.search(tags_regex_string, test_file)
             if match_obj is None:
                 logging.info(
                     "Skipping {} given it does not match regex {}".format(
-                        test_file, test_regexp
+                        test_file, tests_regexp
                     )
                 )
                 continue
