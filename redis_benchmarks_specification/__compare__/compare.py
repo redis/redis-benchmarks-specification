@@ -804,6 +804,10 @@ def from_rts_to_regression_table(
     noise_waterline = 3
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
     for test_name in test_names:
+        compare_version = "v0.1.208"
+        github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
+        test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
+        test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
         multi_value_baseline = check_multi_value_filter(baseline_str)
         multi_value_comparison = check_multi_value_filter(comparison_str)
 
@@ -997,7 +1001,7 @@ def from_rts_to_regression_table(
                 comparison_v_str,
                 note,
                 percentage_change,
-                test_name,
+                test_link,
             )
             if detected_regression:
                 table_regressions.append(line)
