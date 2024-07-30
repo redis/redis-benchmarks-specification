@@ -16,6 +16,9 @@ import os
 from tqdm import tqdm
 import argparse
 
+from io import StringIO
+import sys
+
 from redis_benchmarks_specification.__common__.github import (
     update_comment_if_needed,
     create_new_pr_comment,
@@ -583,7 +586,11 @@ def compute_regression_table(
         )
     (
         detected_regressions,
-        table,
+        table_full,
+        table_stable,
+        table_unstable,
+        table_improvements,
+        table_regressions,
         total_improvements,
         total_regressions,
         total_stable,
@@ -619,13 +626,60 @@ def compute_regression_table(
             baseline_str, comparison_str
         )
     )
-    writer = MarkdownTableWriter(
-        table_name="Comparison between {} and {}.\n\nTime Period from {}. (environment used: {})\n".format(
-            baseline_str,
-            comparison_str,
-            from_human_str,
-            baseline_deployment_name,
-        ),
+
+    table_output = "# Comparison between {} and {}.\n\nTime Period from {}. (environment used: {})\n\n".format(
+        baseline_str,
+        comparison_str,
+        from_human_str,
+        baseline_deployment_name,
+    )
+
+    if total_regressions > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Regressions Table\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Test Case",
+                "Baseline {} (median obs. +- std.dev)".format(baseline_str),
+                "Comparison {} (median obs. +- std.dev)".format(comparison_str),
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_regressions,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
+
+    if total_improvements > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Improvements Table\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Test Case",
+                "Baseline {} (median obs. +- std.dev)".format(baseline_str),
+                "Comparison {} (median obs. +- std.dev)".format(comparison_str),
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_improvements,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
+
+    old_stdout = sys.stdout
+    sys.stdout = mystdout = StringIO()
+    writer_full = MarkdownTableWriter(
+        table_name="",
         headers=[
             "Test Case",
             "Baseline {} (median obs. +- std.dev)".format(baseline_str),
@@ -633,21 +687,15 @@ def compute_regression_table(
             "% change ({})".format(metric_mode),
             "Note",
         ],
-        value_matrix=table,
+        value_matrix=table_full,
     )
-    table_output = ""
+    table_output += "<details>\n  <summary>Full Results table:</summary>\n\n"
 
-    from io import StringIO
-    import sys
-
-    old_stdout = sys.stdout
-    sys.stdout = mystdout = StringIO()
-
-    writer.dump(mystdout, False)
+    writer_full.dump(mystdout, False)
 
     sys.stdout = old_stdout
-
-    table_output = mystdout.getvalue()
+    table_output += mystdout.getvalue()
+    table_output += "\n</details>\n"
 
     return (
         detected_regressions,
@@ -742,7 +790,11 @@ def from_rts_to_regression_table(
     running_platform=None,
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
-    table = []
+    table_full = []
+    table_unstable = []
+    table_stable = []
+    table_regressions = []
+    table_improvements = []
     detected_regressions = []
     total_improvements = 0
     total_stable = 0
@@ -752,6 +804,10 @@ def from_rts_to_regression_table(
     noise_waterline = 3
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
     for test_name in test_names:
+        compare_version = "v0.1.208"
+        github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
+        test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
+        test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
         multi_value_baseline = check_multi_value_filter(baseline_str)
         multi_value_comparison = check_multi_value_filter(comparison_str)
 
@@ -940,6 +996,25 @@ def from_rts_to_regression_table(
                 total_unstable += 1
 
             should_add_line = False
+            line = get_line(
+                baseline_v_str,
+                comparison_v_str,
+                note,
+                percentage_change,
+                test_link,
+            )
+            if detected_regression:
+                table_regressions.append(line)
+
+            if detected_improvement:
+                table_improvements.append(line)
+
+            if unstable:
+                table_unstable.append(line)
+            else:
+                if not detected_regression and not detected_improvement:
+                    table_stable.append(line)
+
             if print_regressions_only and detected_regression:
                 should_add_line = True
             if print_improvements_only and detected_improvement:
@@ -951,17 +1026,14 @@ def from_rts_to_regression_table(
 
             if should_add_line:
                 total_comparison_points = total_comparison_points + 1
-                add_line(
-                    baseline_v_str,
-                    comparison_v_str,
-                    note,
-                    percentage_change,
-                    table,
-                    test_name,
-                )
+                table_full.append(line)
     return (
         detected_regressions,
-        table,
+        table_full,
+        table_stable,
+        table_unstable,
+        table_improvements,
+        table_regressions,
         total_improvements,
         total_regressions,
         total_stable,
@@ -1037,6 +1109,23 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
     return test_names
 
 
+def get_line(
+    baseline_v_str,
+    comparison_v_str,
+    note,
+    percentage_change,
+    test_name,
+):
+    percentage_change_str = "{:.1f}% ".format(percentage_change)
+    return [
+        test_name,
+        baseline_v_str,
+        comparison_v_str,
+        percentage_change_str,
+        note.strip(),
+    ]
+
+
 def add_line(
     baseline_v_str,
     comparison_v_str,
@@ -1045,15 +1134,14 @@ def add_line(
     table,
     test_name,
 ):
-    percentage_change_str = "{:.1f}% ".format(percentage_change)
     table.append(
-        [
-            test_name,
+        get_line(
             baseline_v_str,
             comparison_v_str,
-            percentage_change_str,
-            note.strip(),
-        ]
+            note,
+            percentage_change,
+            test_name,
+        )
     )
 
 
