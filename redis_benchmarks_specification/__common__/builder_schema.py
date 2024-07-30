@@ -107,7 +107,8 @@ def get_commit_dict_from_sha(
             commit.commit.author.date.timestamp() * 1000.0
         )
     else:
-        use_git_timestamp = False
+        if "git_timestamp_ms" not in commit_dict:
+            use_git_timestamp = False
     commit_dict["use_git_timestamp"] = str(use_git_timestamp)
     commit_dict["git_hash"] = git_hash
     if gh_branch is not None:
