@@ -532,7 +532,7 @@ def process_self_contained_coordinator_stream(
 
             tests_regexp = ".*"
             if b"tests_regexp" in testDetails:
-                tests_regexp = testDetails[b"tests_regexp"]
+                tests_regexp = testDetails[b"tests_regexp"].decode()
                 logging.info(
                     f"detected a regexp definition on the streamdata {tests_regexp}"
                 )

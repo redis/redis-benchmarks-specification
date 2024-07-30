@@ -73,6 +73,10 @@ def get_commits_by_branch(args, repo):
     commits = []
     for commit in repo.iter_commits():
         commit_datetime = commit.committed_datetime
+        git_timestamp_ms = int(
+            datetime.datetime.utcfromtimestamp(commit_datetime.timestamp()).timestamp()
+            * 1000
+        )
         if (
             args.from_date
             <= datetime.datetime.utcfromtimestamp(commit_datetime.timestamp())
@@ -87,6 +91,7 @@ def get_commits_by_branch(args, repo):
                         "git_branch": repo.active_branch.name,
                         "commit_summary": commit.summary,
                         "commit_datetime": str(commit_datetime),
+                        "git_timestamp_ms": git_timestamp_ms,
                     }
                 )
     return commits, total_commits
@@ -107,6 +112,14 @@ def get_commits_by_tags(args, repo):
 
     tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
     for tag in tags:
+
+        git_timestamp_ms = int(
+            datetime.datetime.utcfromtimestamp(
+                tag.commit.committed_datetime.timestamp()
+            ).timestamp()
+            * 1000
+        )
+
         if (
             args.from_date
             <= datetime.datetime.utcfromtimestamp(
@@ -137,6 +150,7 @@ def get_commits_by_tags(args, repo):
                             "git_version": git_version,
                             "commit_summary": tag.commit.summary,
                             "commit_datetime": commit_datetime,
+                            "git_timestamp_ms": git_timestamp_ms,
                         }
                     )
             except packaging.version.InvalidVersion:
@@ -265,6 +279,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     for cdict in commits:
         commit_hash = cdict["git_hash"]
         commit_summary = cdict["commit_summary"]
+        commit_datetime = cdict["commit_datetime"]
         match_obj = re.search(hash_regexp_string, commit_hash)
         if match_obj is None:
             logging.info(
@@ -274,9 +289,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             )
         else:
             print(
-                "Commit with hash: {} added. summary: {}".format(
-                    commit_hash, commit_summary
-                )
+                f"Commit with hash: {commit_hash} from {commit_datetime} added. summary: {commit_summary}"
             )
             filtered_hash_commits.append(cdict)
 

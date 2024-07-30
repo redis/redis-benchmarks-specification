@@ -92,13 +92,12 @@ def cli_command_logic(args, project_name, project_version):
     total_commits = 0
     if args.use_branch:
         for commit in repo.iter_commits():
-            if (
-                args.from_date
-                <= datetime.datetime.utcfromtimestamp(
-                    commit.committed_datetime.timestamp()
-                )
-                <= args.to_date
-            ):
+
+            commit_datetime_utc = datetime.datetime.utcfromtimestamp(
+                commit.committed_datetime.timestamp()
+            )
+            git_timestamp_ms = int(commit_datetime_utc.timestamp() * 1000)
+            if args.from_date <= commit_datetime_utc <= args.to_date:
                 if (
                     args.last_n > 0 and total_commits < args.last_n
                 ) or args.last_n == -1:
@@ -109,6 +108,7 @@ def cli_command_logic(args, project_name, project_version):
                             "git_hash": commit.hexsha,
                             "git_branch": repo.active_branch.name,
                             "commit_summary": commit.summary,
+                            "git_timestamp_ms": git_timestamp_ms,
                         }
                     )
     if args.use_tags:
