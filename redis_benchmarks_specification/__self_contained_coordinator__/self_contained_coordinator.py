@@ -43,6 +43,9 @@ from redis_benchmarks_specification.__common__.runner import (
     exporter_datasink_common,
     execute_init_commands,
 )
+from redis_benchmarks_specification.__common__.timeseries import (
+    datasink_profile_tabular_data,
+)
 from redis_benchmarks_specification.__compare__.compare import (
     compute_regression_table,
     prepare_regression_comment,
@@ -72,9 +75,7 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
 )
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
-from redisbench_admin.run.redistimeseries import (
-    datasink_profile_tabular_data,
-)
+
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
@@ -452,7 +453,7 @@ def process_self_contained_coordinator_stream(
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
-    docker_air_gap=False,
+    default_docker_air_gap=False,
     defaults_filename="defaults.yml",
     override_test_time=0,
     default_metrics=[],
@@ -475,6 +476,11 @@ def process_self_contained_coordinator_stream(
     regression_comment = None
     pull_request = None
     auto_approve_github = True
+    # defaults
+    default_github_org = "redis"
+    default_github_repo = "redis"
+    restore_build_artifacts = True
+
     try:
         stream_id, testDetails = newTestInfo[0][1][0]
         stream_id = stream_id.decode()
@@ -493,6 +499,55 @@ def process_self_contained_coordinator_stream(
                 git_timestamp_ms,
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
+            tf_github_org = default_github_org
+            if b"github_org" in testDetails:
+                tf_github_org = testDetails[b"github_org"].decode()
+                logging.info(
+                    f"detected a github_org definition on the streamdata: {tf_github_org}. Overriding the default one: {default_github_org}"
+                )
+            tf_github_repo = default_github_repo
+            if b"github_repo" in testDetails:
+                tf_github_repo = testDetails[b"github_repo"].decode()
+                logging.info(
+                    f"detected a github_org definition on the streamdata: {tf_github_repo}. Overriding the default one: {default_github_repo}"
+                )
+
+            mnt_point = "/mnt/redis/"
+            if b"mnt_point" in testDetails:
+                mnt_point = testDetails[b"mnt_point"].decode()
+                logging.info(
+                    f"detected a mnt_point definition on the streamdata: {mnt_point}."
+                )
+
+            executable = f"{mnt_point}/redis-server"
+            if b"executable" in testDetails:
+                executable = testDetails[b"executable"].decode()
+                logging.info(
+                    f"detected a executable definition on the streamdata: {executable}."
+                )
+
+            server_name = "redis"
+            if b"server_name" in testDetails:
+                server_name = testDetails[b"server_name"].decode()
+                logging.info(
+                    f"detected a server_name definition on the streamdata: {server_name}."
+                )
+
+            if b"restore_build_artifacts" in testDetails:
+                restore_build_artifacts = bool(
+                    testDetails[b"restore_build_artifacts"].decode()
+                )
+                logging.info(
+                    f"detected a restore_build_artifacts config {restore_build_artifacts} overriding the default just for this test"
+                )
+
+            test_docker_air_gap = default_docker_air_gap
+            # check if we override the docker air gap on this test details
+            if b"docker_air_gap" in testDetails:
+                test_docker_air_gap = bool(testDetails[b"docker_air_gap"].decode())
+                logging.info(
+                    f"detected a docker air gap config {test_docker_air_gap} overriding the default of {default_docker_air_gap} just for this test"
+                )
 
             if b"priority_upper_limit" in testDetails:
                 stream_priority_upper_limit = int(
@@ -566,7 +621,7 @@ def process_self_contained_coordinator_stream(
             if skip_test is False:
                 overall_result = True
                 profiler_dashboard_links = []
-                if docker_air_gap:
+                if test_docker_air_gap:
                     airgap_key = "docker:air-gap:{}".format(run_image)
                     logging.info(
                         "Restoring docker image: {} from {}".format(
@@ -706,15 +761,14 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir_client
                                     )
                                 )
-                                tf_github_org = "redis"
-                                tf_github_repo = "redis"
+
                                 setup_name = "oss-standalone"
                                 setup_type = "oss-standalone"
                                 tf_triggering_env = "ci"
                                 github_actor = "{}-{}".format(
                                     tf_triggering_env, running_platform
                                 )
-                                dso = "redis-server"
+                                dso = server_name
                                 profilers_artifacts_matrix = []
 
                                 collection_summary_str = ""
@@ -733,16 +787,16 @@ def process_self_contained_coordinator_stream(
                                             collection_summary_str
                                         )
                                     )
+                                if restore_build_artifacts:
+                                    restore_build_artifacts_from_test_details(
+                                        build_artifacts,
+                                        github_event_conn,
+                                        temporary_dir,
+                                        testDetails,
+                                    )
 
-                                restore_build_artifacts_from_test_details(
-                                    build_artifacts,
-                                    github_event_conn,
-                                    temporary_dir,
-                                    testDetails,
-                                )
-                                mnt_point = "/mnt/redis/"
                                 command = generate_standalone_redis_server_args(
-                                    "{}redis-server".format(mnt_point),
+                                    executable,
                                     redis_proc_start_port,
                                     mnt_point,
                                     redis_configuration_parameters,
@@ -1099,6 +1153,7 @@ def process_self_contained_coordinator_stream(
                                         tf_triggering_env,
                                         topology_spec_name,
                                         default_metrics,
+                                        git_hash,
                                     )
                                     r.shutdown(save=False)
 
