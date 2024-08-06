@@ -17,7 +17,6 @@ import packaging
 import redis
 from packaging import version
 import time
-from github import Github
 
 
 from redis_benchmarks_specification.__common__.github import (

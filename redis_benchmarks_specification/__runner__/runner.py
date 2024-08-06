@@ -383,6 +383,7 @@ def process_self_contained_coordinator_stream(
     override_test_runs = args.override_test_runs
     (
         _,
+        _,
         default_metrics,
         _,
         _,
@@ -396,7 +397,7 @@ def process_self_contained_coordinator_stream(
 
         with open(test_file, "r") as stream:
             _, benchmark_config, test_name = get_final_benchmark_config(
-                None, stream, ""
+                None, None, stream, ""
             )
 
             if tls_enabled:
@@ -410,6 +411,7 @@ def process_self_contained_coordinator_stream(
             for topology_spec_name in benchmark_config["redis-topologies"]:
                 test_result = False
                 benchmark_tool_global = ""
+                full_result_path = None
                 try:
                     current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)

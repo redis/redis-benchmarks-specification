@@ -120,6 +120,7 @@ def process_self_contained_coordinator_stream(
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
+    full_result_path = None
     try:
         stream_id, testDetails = newTestInfo[0][1][0]
         stream_id = stream_id.decode()
@@ -163,7 +164,7 @@ def process_self_contained_coordinator_stream(
 
                 with open(test_file, "r") as stream:
                     result, benchmark_config, test_name = get_final_benchmark_config(
-                        None, stream, ""
+                        None, None, stream, ""
                     )
                     if result is False:
                         logging.error(

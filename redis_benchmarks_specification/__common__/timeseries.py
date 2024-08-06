@@ -4,10 +4,10 @@
 #  All rights reserved.
 #
 import datetime
-
+import logging
+from tqdm import tqdm
 import redis
 from jsonpath_ng.parser import JsonPathParser
-from jsonpath_ng.jsonpath import *
 
 
 def parse(string):
@@ -424,45 +424,6 @@ def extract_perversion_timeseries_from_results(
         deployment_type,
         metrics,
         project_version,
-        results_dict,
-        test_name,
-        tf_github_org,
-        tf_github_repo,
-        tf_triggering_env,
-        metadata_tags,
-        build_variant_name,
-        running_platform,
-        testcase_metric_context_paths,
-    )
-    return True, branch_time_series_dict, target_tables
-
-
-def extract_perbranch_timeseries_from_results(
-    datapoints_timestamp: int,
-    metrics: list,
-    results_dict: dict,
-    tf_github_branch: str,
-    tf_github_org: str,
-    tf_github_repo: str,
-    deployment_name: str,
-    deployment_type: str,
-    test_name: str,
-    tf_triggering_env: str,
-    metadata_tags={},
-    build_variant_name=None,
-    running_platform=None,
-    testcase_metric_context_paths=[],
-):
-    break_by_key = "branch"
-    break_by_str = "by.{}".format(break_by_key)
-    (branch_time_series_dict, target_tables) = common_timeseries_extraction(
-        break_by_key,
-        break_by_str,
-        datapoints_timestamp,
-        deployment_name,
-        deployment_type,
-        metrics,
-        tf_github_branch,
         results_dict,
         test_name,
         tf_github_org,

@@ -231,6 +231,7 @@ def main():
     defaults_filename = args.defaults_filename
     (
         _,
+        _,
         default_metrics,
         _,
         _,
@@ -639,7 +640,7 @@ def process_self_contained_coordinator_stream(
                     {stream_id: stream_time_ms},
                 )
                 logging.info(
-                    f"Added stream with id {stream_id} to zset {zset_running_platform_benchmarks}"
+                    f"Added stream with id {stream_id} to zset {zset_running_platform_benchmarks}. res={res}"
                 )
 
                 stream_test_list_pending = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_pending"
@@ -662,7 +663,7 @@ def process_self_contained_coordinator_stream(
                             _,
                             benchmark_config,
                             test_name,
-                        ) = get_final_benchmark_config(None, stream, "")
+                        ) = get_final_benchmark_config(None, None, stream, "")
                     github_event_conn.lpush(stream_test_list_pending, test_name)
                     github_event_conn.expire(
                         stream_test_list_pending, REDIS_BINS_EXPIRE_SECS
@@ -705,7 +706,7 @@ def process_self_contained_coordinator_stream(
                             _,
                             benchmark_config,
                             test_name,
-                        ) = get_final_benchmark_config(None, stream, "")
+                        ) = get_final_benchmark_config(None, None, stream, "")
                         github_event_conn.lrem(stream_test_list_pending, 1, test_name)
                         github_event_conn.lpush(stream_test_list_running, test_name)
                         github_event_conn.expire(
@@ -1303,9 +1304,7 @@ def process_self_contained_coordinator_stream(
                             tf_github_repo,
                             verbose,
                         )
-                        logging.info(
-                            f"Preparing regression info for the data available"
-                        )
+                        logging.info("Preparing regression info for the data available")
                         print_improvements_only = False
                         print_regressions_only = False
                         skip_unstable = False
@@ -1452,7 +1451,7 @@ def filter_test_files(
                 result,
                 benchmark_config,
                 test_name,
-            ) = get_final_benchmark_config(None, stream, "")
+            ) = get_final_benchmark_config(None, None, stream, "")
             if result is False:
                 logging.error(
                     "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
