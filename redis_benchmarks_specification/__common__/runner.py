@@ -174,7 +174,11 @@ def exporter_datasink_common(
         git_hash,
     )
     logging.info("Collecting memory metrics")
-    (_, _, overall_end_time_metrics,) = collect_redis_metrics(
+    (
+        _,
+        _,
+        overall_end_time_metrics,
+    ) = collect_redis_metrics(
         redis_conns,
         ["memory"],
         {

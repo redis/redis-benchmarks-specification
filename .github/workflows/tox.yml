@@ -1,0 +1,48 @@
+name: Run Tests using tox
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  pytest:
+    strategy:
+      matrix:
+        python-version: [ '3.10', '3.11', '3.12' ]
+      fail-fast: false
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+      USING_COVERAGE: "3.10"
+      USING_COVERAGE_OS: "ubuntu-latest"
+
+    runs-on: "ubuntu-latest"
+    name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
+    steps:
+    - uses: actions/checkout@master
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install Dev requirements
+      run: |
+        pip install -U setuptools wheel
+        pip install -r dev_requirements.txt
+
+    - name: Run tox
+      run: |
+        tox
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v2
+      if: contains(env.USING_COVERAGE, matrix.python-version)
+      with:
+        token: ${{secrets.CODECOV_TOKEN}}
+        fail_ci_if_error: true

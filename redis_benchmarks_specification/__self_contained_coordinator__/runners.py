@@ -457,7 +457,10 @@ def process_self_contained_coordinator_stream(
                                 )
                             r.shutdown(save=False)
 
-                            (_, overall_tabular_data_map,) = profilers_stop_if_required(
+                            (
+                                _,
+                                overall_tabular_data_map,
+                            ) = profilers_stop_if_required(
                                 datasink_push_results_redistimeseries,
                                 benchmark_duration_seconds,
                                 collection_summary_str,

@@ -758,7 +758,10 @@ def process_self_contained_coordinator_stream(
                     profiler_frequency = 99
 
                     # start the profile
-                    (profiler_name, profilers_map,) = profilers_start_if_required(
+                    (
+                        profiler_name,
+                        profilers_map,
+                    ) = profilers_start_if_required(
                         profilers_enabled,
                         profilers_list,
                         redis_pids,
@@ -823,7 +826,10 @@ def process_self_contained_coordinator_stream(
                             benchmark_end_time, benchmark_start_time
                         )
                     )
-                    (_, overall_tabular_data_map,) = profilers_stop_if_required(
+                    (
+                        _,
+                        overall_tabular_data_map,
+                    ) = profilers_stop_if_required(
                         datasink_push_results_redistimeseries,
                         benchmark_duration_seconds,
                         collection_summary_str,
@@ -1069,7 +1075,10 @@ def print_results_table_stdout(
     cpu_usage=None,
 ):
     # check which metrics to extract
-    (_, metrics,) = merge_default_and_config_metrics(
+    (
+        _,
+        metrics,
+    ) = merge_default_and_config_metrics(
         benchmark_config,
         default_metrics,
         None,
@@ -1094,7 +1103,10 @@ def prepare_overall_total_test_results(
     benchmark_config, default_metrics, results_dict, test_name, overall_results_matrix
 ):
     # check which metrics to extract
-    (_, metrics,) = merge_default_and_config_metrics(
+    (
+        _,
+        metrics,
+    ) = merge_default_and_config_metrics(
         benchmark_config,
         default_metrics,
         None,

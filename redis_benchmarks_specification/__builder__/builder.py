@@ -465,9 +465,9 @@ def builder_process_stream(
                     assert bin_artifact_len > 0
                     conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
                     build_stream_fields[artifact] = bin_key
-                    build_stream_fields[
-                        "{}_len_bytes".format(artifact)
-                    ] = bin_artifact_len
+                    build_stream_fields["{}_len_bytes".format(artifact)] = (
+                        bin_artifact_len
+                    )
                 result = True
                 if b"platform" in testDetails:
                     build_stream_fields["platform"] = testDetails[b"platform"]

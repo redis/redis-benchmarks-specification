@@ -348,7 +348,11 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             if result is True:
                 stream_id = "n/a"
                 if args.dry_run is False:
-                    (result, reply_fields, error_msg,) = request_build_from_commit_info(
+                    (
+                        result,
+                        reply_fields,
+                        error_msg,
+                    ) = request_build_from_commit_info(
                         conn,
                         commit_dict,
                         {},
