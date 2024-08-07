@@ -73,7 +73,7 @@ def test_commit_schema_to_stream_then_build():
             )
             assert new_builds_count == 1
             assert len(build_stream_fields_arr) == 1
-            assert len(build_stream_fields_arr[0]["tests_regexp"]) == ".*"
+            assert build_stream_fields_arr[0]["tests_regexp"] == ".*"
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             conn.save()
 
