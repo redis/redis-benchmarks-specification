@@ -40,7 +40,8 @@ def test_build_spec_image_prefetch():
 def test_commit_schema_to_stream_then_build():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=6379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")
@@ -72,7 +73,7 @@ def test_commit_schema_to_stream_then_build():
             )
             assert new_builds_count == 1
             assert len(build_stream_fields_arr) == 1
-            assert len(build_stream_fields_arr[0]["test_regexp"]) == ".*"
+            assert len(build_stream_fields_arr[0]["tests_regexp"]) == ".*"
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             conn.save()
 
@@ -91,7 +92,8 @@ def should_run_builder():
 def test_commit_schema_to_stream_then_build_historical_redis():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=6379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")
