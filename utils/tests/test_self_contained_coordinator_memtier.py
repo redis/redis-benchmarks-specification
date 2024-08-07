@@ -35,7 +35,8 @@ def test_self_contained_coordinator_blocking_read():
         if TST_RUNNER_X == "0":
             run_coordinator = False
         if run_coordinator:
-            conn = redis.StrictRedis(port=6379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             expected_datapoint_ts = None
             conn.flushall()
@@ -50,7 +51,7 @@ def test_self_contained_coordinator_blocking_read():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=6379)
+            datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
@@ -197,7 +198,8 @@ def test_self_contained_coordinator_skip_build_variant():
         if TST_RUNNER_X == "0":
             run_coordinator = False
         if run_coordinator:
-            conn = redis.StrictRedis(port=6379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
@@ -213,7 +215,7 @@ def test_self_contained_coordinator_skip_build_variant():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=6379)
+            datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"

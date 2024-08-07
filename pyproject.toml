@@ -48,7 +48,7 @@ wheel = ">=0.43.0"
 docker = ">=7.1.0"
 
 [tool.poetry.group.dev.dependencies]
-tox-poetry-installer = {extras = ["poetry"], version = "^0.10.3"}
+#tox-poetry-installer = {extras = ["poetry"], version = "^0.10.3"}
 docker = "^7.1.0"
 
 [build-system]
