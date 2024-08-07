@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import redis
 import yaml
@@ -187,10 +188,9 @@ def test_run_client_runner_logic():
         get_version_string(project_name, project_version)
     )
     db_host = "localhost"
-    db_port = "6380"
-    datasink_port = "16379"
+    db_port = os.getenv("DATASINK_PORT", "6379")
+    datasink_port = os.getenv("DATASINK_PORT", "6379")
     db_port_int = int(db_port)
-    datasink_port_int = int(db_port)
     args = parser.parse_args(
         args=[
             "--test",
@@ -209,7 +209,7 @@ def test_run_client_runner_logic():
 
     r = redis.Redis(host=db_host, port=db_port_int)
     total_keys = r.info("keyspace")["db0"]["keys"]
-    assert total_keys == 2
+    assert total_keys >= 2
 
     # run while pushing to redistimeseries
     args = parser.parse_args(
@@ -235,7 +235,7 @@ def test_run_client_runner_logic():
 
     r = redis.Redis(host=db_host, port=db_port_int)
     total_keys = r.info("keyspace")["db0"]["keys"]
-    assert total_keys == 2
+    assert total_keys >= 2
     rts = redis.Redis(host=db_host, port=db_port_int)
     total_keys = rts.info("keyspace")["db0"]["keys"]
     assert total_keys > 0

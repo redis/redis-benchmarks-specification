@@ -22,7 +22,7 @@ from utils.tests.test_builder import should_run_builder
 def test_commit_schema_to_stream():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=16379)
+            conn = redis.StrictRedis(port=6379)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")

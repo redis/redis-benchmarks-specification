@@ -96,7 +96,7 @@ def test_self_contained_coordinator_blocking_read():
         if TST_RUNNER_X == "0":
             run_coordinator = False
         if run_coordinator:
-            conn = redis.StrictRedis(port=16379)
+            conn = redis.StrictRedis(port=6379)
             conn.ping()
             expected_datapoint_ts = None
             conn.flushall()
@@ -113,7 +113,7 @@ def test_self_contained_coordinator_blocking_read():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=16379)
+            datasink_conn = redis.StrictRedis(port=6379)
             rts = datasink_conn.ts()
             docker_client = docker.from_env()
             home = str(Path.home())

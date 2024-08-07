@@ -21,7 +21,7 @@ from redis_benchmarks_specification.__common__.env import (
 
 def test_create_app():
     try:
-        conn = redis.StrictRedis(port=16379, decode_responses=True)
+        conn = redis.StrictRedis(port=6379, decode_responses=True)
         conn.ping()
         conn.flushall()
         auth_token = conn.acl_genpass()

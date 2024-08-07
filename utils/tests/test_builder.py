@@ -40,7 +40,7 @@ def test_build_spec_image_prefetch():
 def test_commit_schema_to_stream_then_build():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=16379)
+            conn = redis.StrictRedis(port=6379)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")
@@ -91,7 +91,7 @@ def should_run_builder():
 def test_commit_schema_to_stream_then_build_historical_redis():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=16379)
+            conn = redis.StrictRedis(port=6379)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")
