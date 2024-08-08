@@ -521,22 +521,28 @@ def store_airgap_image_redis(conn, docker_client, run_image):
             run_image, airgap_key
         )
     )
-    run_image_binary_stream = io.BytesIO()
-    run_image_docker = docker_client.images.get(run_image)
-    for chunk in run_image_docker.save():
-        run_image_binary_stream.write(chunk)
     # 7 days expire
     binary_exp_secs = 24 * 60 * 60 * 7
-    res_airgap = conn.set(
-        airgap_key,
-        run_image_binary_stream.getbuffer(),
-        ex=binary_exp_secs,
-    )
-    logging.info(
-        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
-            airgap_key, res_airgap
+    if conn.exists(airgap_key):
+        logging.info(
+            f"DOCKER AIRGAP KEY ALREADY EXISTS: {airgap_key}. Updating only the expire time"
         )
-    )
+        conn.expire(airgap_key, binary_exp_secs)
+    else:
+        run_image_binary_stream = io.BytesIO()
+        run_image_docker = docker_client.images.get(run_image)
+        for chunk in run_image_docker.save():
+            run_image_binary_stream.write(chunk)
+        res_airgap = conn.set(
+            airgap_key,
+            run_image_binary_stream.getbuffer(),
+            ex=binary_exp_secs,
+        )
+        logging.info(
+            "DOCKER AIR GAP: result of set bin data to {}: {}".format(
+                airgap_key, res_airgap
+            )
+        )
 
 
 def generate_benchmark_stream_request(
