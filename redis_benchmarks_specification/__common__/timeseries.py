@@ -283,10 +283,12 @@ def from_metric_kv_to_timeserie(
         tf_triggering_env,
         use_metric_context_path,
     )
+    logging.info(f"Adding timeserie named {ts_name} to time_series_dict.")
     time_series_dict[ts_name] = {
         "labels": timeserie_tags.copy(),
         "data": {datapoints_timestamp: metric_value},
     }
+
     original_ts_name = ts_name
     target_table_keyname = "target_tables:{triggering_env}:ci.benchmarks.redislabs/{break_by_key}/{break_by_str}/{tf_github_org}/{tf_github_repo}/{deployment_type}/{deployment_name}/{test_name}/{metric_name}".format(
         triggering_env=tf_triggering_env,
@@ -361,6 +363,8 @@ def common_timeseries_extraction(
     time_series_dict = {}
     target_tables = {}
     cleaned_metrics_arr = extract_results_table(metrics, results_dict)
+    total_metrics = len(cleaned_metrics_arr)
+    logging.info(f"Total of {total_metrics} cleaned metrics: {cleaned_metrics_arr}")
     for cleaned_metric in cleaned_metrics_arr:
 
         metric_jsonpath = cleaned_metric[0]
@@ -396,6 +400,48 @@ def common_timeseries_extraction(
         target_tables[target_table_keyname] = target_table_dict
 
     return time_series_dict, target_tables
+
+
+def extract_perhash_timeseries_from_results(
+    datapoints_timestamp: int,
+    metrics: list,
+    results_dict: dict,
+    git_hash: str,
+    tf_github_org: str,
+    tf_github_repo: str,
+    deployment_name: str,
+    deployment_type: str,
+    test_name: str,
+    tf_triggering_env: str,
+    metadata_tags={},
+    build_variant_name=None,
+    running_platform=None,
+    testcase_metric_context_paths=[],
+):
+    break_by_key = "hash"
+    break_by_str = "by.{}".format(break_by_key)
+    (
+        time_series_dict,
+        target_tables,
+    ) = common_timeseries_extraction(
+        break_by_key,
+        break_by_str,
+        datapoints_timestamp,
+        deployment_name,
+        deployment_type,
+        metrics,
+        git_hash,
+        results_dict,
+        test_name,
+        tf_github_org,
+        tf_github_repo,
+        tf_triggering_env,
+        metadata_tags,
+        build_variant_name,
+        running_platform,
+        testcase_metric_context_paths,
+    )
+    return True, time_series_dict, target_tables
 
 
 def extract_perversion_timeseries_from_results(
@@ -718,38 +764,46 @@ def common_exporter_logic(
             )
         )
     assert used_ts is not None
-
+    total_break_by_added = 0
     if (git_hash is not None) and (git_hash != ""):
-        break_by_key = "hash"
-        break_by_str = "by.{}".format(break_by_key)
+        # extract per-hash datapoints
         (
+            _,
             per_hash_time_series_dict,
-            hash_target_tables,
-        ) = common_timeseries_extraction(
-            break_by_key,
-            break_by_str,
-            datapoints_timestamp,
-            deployment_name,
-            deployment_type,
+            version_target_tables,
+        ) = extract_perhash_timeseries_from_results(
+            used_ts,
             metrics,
-            git_hash,
             results_dict,
-            test_name,
+            git_hash,
             tf_github_org,
             tf_github_repo,
+            deployment_name,
+            deployment_type,
+            test_name,
             tf_triggering_env,
             metadata_tags,
             build_variant_name,
             running_platform,
             testcase_metric_context_paths,
         )
-
+        total_break_by_added += 1
+    else:
+        logging.warning(
+            "there was no git hash information to push data brokedown by hash"
+        )
     if (
         artifact_version is not None
         and artifact_version != ""
         and artifact_version != "N/A"
     ):
         # extract per-version datapoints
+        total_hs_ts = len(per_hash_time_series_dict.keys())
+        logging.info(
+            f"Extending the by.hash {git_hash} timeseries ({total_hs_ts}) with version info {artifact_version}"
+        )
+        for hash_timeserie in per_hash_time_series_dict.values():
+            hash_timeserie["labels"]["version"] = artifact_version
         (
             _,
             per_version_time_series_dict,
@@ -770,7 +824,18 @@ def common_exporter_logic(
             running_platform,
             testcase_metric_context_paths,
         )
+        total_break_by_added += 1
+    else:
+        logging.warning(
+            "there was no git VERSION information to push data brokedown by VERSION"
+        )
     if tf_github_branch is not None and tf_github_branch != "":
+        total_hs_ts = len(per_hash_time_series_dict.keys())
+        logging.info(
+            f"Extending the by.hash {git_hash} timeseries ({total_hs_ts}) with branch info {tf_github_branch}"
+        )
+        for hash_timeserie in per_hash_time_series_dict.values():
+            hash_timeserie["labels"]["branch"] = tf_github_branch
         # extract per branch datapoints
         (
             _,
@@ -792,10 +857,14 @@ def common_exporter_logic(
             running_platform,
             testcase_metric_context_paths,
         )
+        total_break_by_added += 1
     else:
+        logging.warning(
+            "there was no git BRANCH information to push data brokedown by BRANCH"
+        )
+    if total_break_by_added == 0:
         logging.error(
-            "Requested to push data to RedisTimeSeries but "
-            'no exporter definition was found. Missing "exporter" config.'
+            "There was no BRANCH, HASH, or VERSION info to break this info by in timeseries"
         )
     return (
         per_version_time_series_dict,

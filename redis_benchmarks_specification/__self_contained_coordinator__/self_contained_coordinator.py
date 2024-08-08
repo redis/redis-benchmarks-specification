@@ -11,6 +11,7 @@ import redis
 import os
 from pathlib import Path
 import sys
+import time
 
 from docker.models.containers import Container
 from redisbench_admin.profilers.profilers_local import (
@@ -310,6 +311,12 @@ def main():
         )
 
 
+def check_health(container):
+    logging.info(container.attrs["State"])
+    health_status = container.attrs["State"].get("Health", {}).get("Status")
+    return health_status
+
+
 def self_contained_coordinator_blocking_read(
     github_event_conn,
     datasink_push_results_redistimeseries,
@@ -335,6 +342,8 @@ def self_contained_coordinator_blocking_read(
     priority_upper_limit=10000,
     default_baseline_branch="unstable",
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
+    docker_keep_env=False,
+    restore_build_artifacts_default=True,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -386,6 +395,8 @@ def self_contained_coordinator_blocking_read(
             priority_upper_limit,
             default_baseline_branch,
             default_metrics_str,
+            docker_keep_env,
+            restore_build_artifacts_default,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -399,7 +410,7 @@ def self_contained_coordinator_blocking_read(
                 ack_reply = ack_reply.decode()
             if ack_reply == "1" or ack_reply == 1:
                 logging.info(
-                    "Sucessfully acknowledge build variation stream with id {}.".format(
+                    "Sucessfully acknowledge BENCHMARK variation stream with id {}.".format(
                         stream_id
                     )
                 )
@@ -464,6 +475,8 @@ def process_self_contained_coordinator_stream(
     priority_upper_limit=10000,
     default_baseline_branch="unstable",
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
+    docker_keep_env=False,
+    restore_build_artifacts_default=True,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -480,14 +493,14 @@ def process_self_contained_coordinator_stream(
     # defaults
     default_github_org = "redis"
     default_github_repo = "redis"
-    restore_build_artifacts = True
+    restore_build_artifacts = restore_build_artifacts_default
 
     try:
         stream_id, testDetails = newTestInfo[0][1][0]
         stream_id = stream_id.decode()
         logging.info("Received work . Stream id {}.".format(stream_id))
 
-        if b"git_hash" in testDetails:
+        if b"run_image" in testDetails:
             (
                 build_variant_name,
                 metadata,
@@ -520,7 +533,7 @@ def process_self_contained_coordinator_stream(
                     f"detected a mnt_point definition on the streamdata: {mnt_point}."
                 )
 
-            executable = f"{mnt_point}/redis-server"
+            executable = f"{mnt_point}redis-server"
             if b"executable" in testDetails:
                 executable = testDetails[b"executable"].decode()
                 logging.info(
@@ -811,14 +824,19 @@ def process_self_contained_coordinator_stream(
                                         run_image, db_cpuset_cpus, command_str
                                     )
                                 )
-                                redis_container = docker_client.containers.run(
-                                    image=run_image,
-                                    volumes={
+                                volumes = {}
+                                working_dir = "/"
+                                if mnt_point != "":
+                                    volumes = {
                                         temporary_dir: {
                                             "bind": mnt_point,
                                             "mode": "rw",
                                         },
-                                    },
+                                    }
+                                    working_dir = mnt_point
+                                redis_container = docker_client.containers.run(
+                                    image=run_image,
+                                    volumes=volumes,
                                     auto_remove=True,
                                     privileged=True,
                                     working_dir=mnt_point,
@@ -827,7 +845,11 @@ def process_self_contained_coordinator_stream(
                                     detach=True,
                                     cpuset_cpus=db_cpuset_cpus,
                                     pid_mode="host",
+                                    publish_all_ports=True,
                                 )
+
+                                time.sleep(5)
+
                                 redis_containers.append(redis_container)
 
                                 r = redis.StrictRedis(port=redis_proc_start_port)
@@ -835,7 +857,27 @@ def process_self_contained_coordinator_stream(
                                 redis_conns = [r]
                                 reset_commandstats(redis_conns)
                                 redis_pids = []
-                                first_redis_pid = r.info()["process_id"]
+                                redis_info = r.info()
+                                first_redis_pid = redis_info["process_id"]
+                                if git_hash is None and "redis_git_sha1" in redis_info:
+                                    git_hash = redis_info["redis_git_sha1"]
+                                    if (
+                                        git_hash == "" or git_hash == 0
+                                    ) and "redis_build_id" in redis_info:
+                                        git_hash = redis_info["redis_build_id"]
+                                    logging.info(
+                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
+                                    )
+
+                                server_version_keyname = f"{server_name}_version"
+                                if (
+                                    git_version is None
+                                    and server_version_keyname in redis_info
+                                ):
+                                    git_version = redis_info[server_version_keyname]
+                                    logging.info(
+                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
+                                    )
                                 redis_pids.append(first_redis_pid)
                                 ceil_client_cpu_limit = extract_client_cpu_limit(
                                     benchmark_config
@@ -1210,36 +1252,38 @@ def process_self_contained_coordinator_stream(
                                 test_result = False
                             # tear-down
                             logging.info("Tearing down setup")
-                            for redis_container in redis_containers:
-                                try:
-                                    redis_container.stop()
-                                except docker.errors.NotFound:
-                                    logging.info(
-                                        "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                            redis_container.id, redis_container.image
-                                        )
-                                    )
-                                    pass
-
-                            for redis_container in client_containers:
-                                if type(redis_container) == Container:
+                            if docker_keep_env is False:
+                                for redis_container in redis_containers:
                                     try:
                                         redis_container.stop()
                                     except docker.errors.NotFound:
                                         logging.info(
-                                            "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                            "When trying to stop DB container with id {} and image {} it was already stopped".format(
                                                 redis_container.id,
                                                 redis_container.image,
                                             )
                                         )
                                         pass
-                            logging.info(
-                                "Removing temporary dirs {} and {}".format(
-                                    temporary_dir, temporary_dir_client
+
+                                for redis_container in client_containers:
+                                    if type(redis_container) == Container:
+                                        try:
+                                            redis_container.stop()
+                                        except docker.errors.NotFound:
+                                            logging.info(
+                                                "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                                    redis_container.id,
+                                                    redis_container.image,
+                                                )
+                                            )
+                                            pass
+                                logging.info(
+                                    "Removing temporary dirs {} and {}".format(
+                                        temporary_dir, temporary_dir_client
+                                    )
                                 )
-                            )
-                            shutil.rmtree(temporary_dir, ignore_errors=True)
-                            shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                                shutil.rmtree(temporary_dir, ignore_errors=True)
+                                shutil.rmtree(temporary_dir_client, ignore_errors=True)
 
                             overall_result &= test_result
 
@@ -1400,7 +1444,7 @@ def process_self_contained_coordinator_stream(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
                     )
         else:
-            logging.error("Missing commit information within received message.")
+            logging.error("Missing run image information within received message.")
 
     except Exception as e:
         logging.critical(

@@ -211,7 +211,7 @@ def prepare_memtier_benchmark_parameters(
     server,
     password,
     local_benchmark_output_filename,
-    oss_cluster_api_enabled,
+    oss_cluster_api_enabled=False,
     tls_enabled=False,
     tls_skip_verify=False,
     tls_cert=None,

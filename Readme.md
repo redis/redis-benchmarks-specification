@@ -389,6 +389,12 @@ To run a specific test:
 $ tox -- utils/tests/test_runner.py
 ```
 
+To run a specific test with verbose logging:
+
+```sh
+$ tox -- -vv --log-cli-level=INFO utils/tests/test_runner.py
+```
+
 ## License
 
 redis-benchmarks-specification is distributed under the BSD3 license - see [LICENSE](LICENSE)
