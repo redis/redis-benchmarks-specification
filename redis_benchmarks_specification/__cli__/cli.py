@@ -18,7 +18,9 @@ import redis
 from packaging import version
 import time
 
-
+from redis_benchmarks_specification.__builder__.builder import (
+    generate_benchmark_stream_request,
+)
 from redis_benchmarks_specification.__common__.github import (
     update_comment_if_needed,
     create_new_pr_comment,
@@ -38,6 +40,7 @@ from redis_benchmarks_specification.__common__.env import (
     REDIS_BINS_EXPIRE_SECS,
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+    STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -50,6 +53,54 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+
+def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_version):
+    logging.info(
+        "Using: {project_name} {project_version}".format(
+            project_name=project_name, project_version=project_version
+        )
+    )
+    logging.info(
+        "Checking connection to redis with user: {}, host: {}, port: {}".format(
+            args.redis_user,
+            args.redis_host,
+            args.redis_port,
+        )
+    )
+    conn = redis.StrictRedis(
+        host=args.redis_host,
+        port=args.redis_port,
+        password=args.redis_pass,
+        username=args.redis_user,
+        decode_responses=False,
+    )
+    conn.ping()
+    testDetails = {}
+    build_stream_fields, result = generate_benchmark_stream_request(
+        args.id,
+        conn,
+        args.run_image,
+        args.build_arch,
+        testDetails,
+        "n/a",
+    )
+    build_stream_fields["github_repo"] = args.gh_repo
+    build_stream_fields["github_org"] = args.gh_org
+    server_name = args.gh_repo
+    if args.server_name is not None:
+        server_name = args.server_name
+    build_stream_fields["server_name"] = server_name
+    build_stream_fields["mnt_point"] = args.mnt_point
+    if result is True:
+        benchmark_stream_id = conn.xadd(
+            STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+        )
+        logging.info(
+            "sucessfully requested a new run {}. Stream id: {}".format(
+                build_stream_fields, benchmark_stream_id
+            )
+        )
 
 
 def main():
@@ -65,6 +116,8 @@ def main():
         trigger_tests_cli_command_logic(args, project_name, project_version)
     if args.tool == "stats":
         generate_stats_cli_command_logic(args, project_name, project_version)
+    if args.tool == "dockerhub":
+        trigger_tests_dockerhub_cli_command_logic(args, project_name, project_version)
 
 
 def get_commits_by_branch(args, repo):
