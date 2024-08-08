@@ -26,7 +26,7 @@ def test_commit_schema_to_stream():
     assert result == False
     assert error_msg is not None
     try:
-        conn = redis.StrictRedis(port=16379)
+        conn = redis.StrictRedis(port=6379)
         conn.ping()
         conn.flushall()
         result, reply_fields, error_msg = commit_schema_to_stream(

@@ -1,0 +1,24 @@
+
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Misses/sec"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."WORST RUN RESULTS".Totals."Ops/sec"
+    - $."WORST RUN RESULTS".Totals."Latency"
+    - $."WORST RUN RESULTS".Totals."Misses/sec"
+    - $."WORST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Ops/sec"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Latency"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Misses/sec"
+    - $."AGGREGATED AVERAGE RESULTS (5 runs)".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"

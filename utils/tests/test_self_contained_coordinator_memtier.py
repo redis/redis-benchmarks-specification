@@ -4,10 +4,19 @@ import docker
 import redis
 import yaml
 from pathlib import Path
+import logging
 
+from redisbench_admin.utils.benchmark_config import get_defaults
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
 
+from redis_benchmarks_specification.__builder__.builder import (
+    generate_benchmark_stream_request,
+)
+from redis_benchmarks_specification.__cli__.args import spec_cli_args
+from redis_benchmarks_specification.__cli__.cli import (
+    trigger_tests_dockerhub_cli_command_logic,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
 )
@@ -30,12 +39,9 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 def test_self_contained_coordinator_blocking_read():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
-            conn = redis.StrictRedis(port=16379)
+        if run_coordinator_tests():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             expected_datapoint_ts = None
             conn.flushall()
@@ -50,7 +56,7 @@ def test_self_contained_coordinator_blocking_read():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=16379)
+            datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
@@ -79,6 +85,20 @@ def test_self_contained_coordinator_blocking_read():
                 running_platform,
                 False,
                 [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                1,
+                None,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
             )
             assert result == True
             assert number_processed_streams == 1
@@ -190,14 +210,540 @@ def test_self_contained_coordinator_blocking_read():
         pass
 
 
+def run_coordinator_tests():
+    run_coordinator = True
+    TST_RUNNER_X = os.getenv("TST_RUNNER_X", "0")
+    if TST_RUNNER_X == "0":
+        run_coordinator = False
+    return run_coordinator
+
+
+def run_coordinator_tests_dockerhub():
+    run_coordinator = True
+    TST_RUNNER_X = os.getenv("TST_RUNNER_DOCKERHUB_X", "1")
+    if TST_RUNNER_X == "0":
+        run_coordinator = False
+    return run_coordinator
+
+
+def test_self_contained_coordinator_dockerhub():
+    try:
+        if run_coordinator_tests_dockerhub():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "7.4.0"
+            run_image = f"redis:{redis_version}"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+            build_stream_fields, result = generate_benchmark_stream_request(
+                id,
+                conn,
+                run_image,
+                build_arch,
+                testDetails,
+                build_os,
+            )
+            build_stream_fields["mnt_point"] = ""
+            if result is True:
+                benchmark_stream_id = conn.xadd(
+                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                )
+                logging.info(
+                    "sucessfully requested a new run {}. Stream id: {}".format(
+                        build_stream_fields, benchmark_stream_id
+                    )
+                )
+
+            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            expected_datapoint_ts = None
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(conn, running_platform, "0")
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+            ]
+            defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+            (
+                _,
+                _,
+                default_metrics,
+                _,
+                _,
+                _,
+            ) = get_defaults(defaults_filename)
+
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                5,
+                default_metrics,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+                False,
+            )
+
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 1
+            by_version_key = f"ci.benchmarks.redislabs/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+            assert datasink_conn.exists(by_version_key)
+            rts = datasink_conn.ts()
+            # check we have by version metrics
+            assert "version" in rts.info(by_version_key).labels
+            assert redis_version == rts.info(by_version_key).labels["version"]
+
+            # get all keys
+            all_keys = datasink_conn.keys("*")
+            by_hash_keys = []
+            for key in all_keys:
+                if "/by.hash/" in key.decode():
+                    by_hash_keys.append(key)
+
+            # ensure we have by hash keys
+            assert len(by_hash_keys) > 0
+            for hash_key in by_hash_keys:
+                # ensure we have both version and hash info on the key
+                assert "version" in rts.info(hash_key).labels
+                assert "hash" in rts.info(hash_key).labels
+                assert redis_version == rts.info(hash_key).labels["version"]
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_self_contained_coordinator_dockerhub_valkey():
+    try:
+        if run_coordinator_tests_dockerhub():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "7.2.6"
+            run_image = f"valkey/valkey:{redis_version}-bookworm"
+            github_org = "valkey"
+            github_repo = "valkey"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+            build_stream_fields, result = generate_benchmark_stream_request(
+                id,
+                conn,
+                run_image,
+                build_arch,
+                testDetails,
+                build_os,
+            )
+            build_stream_fields["github_repo"] = github_repo
+            build_stream_fields["github_org"] = github_org
+            build_stream_fields["server_name"] = github_repo
+            build_stream_fields["mnt_point"] = ""
+            if result is True:
+                benchmark_stream_id = conn.xadd(
+                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                )
+                logging.info(
+                    "sucessfully requested a new run {}. Stream id: {}".format(
+                        build_stream_fields, benchmark_stream_id
+                    )
+                )
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(conn, running_platform, "0")
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+            ]
+            defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+            (
+                _,
+                _,
+                default_metrics,
+                _,
+                _,
+                _,
+            ) = get_defaults(defaults_filename)
+
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                5,
+                default_metrics,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+                False,
+            )
+
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 1
+            by_version_key = f"ci.benchmarks.redislabs/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+            assert datasink_conn.exists(by_version_key)
+            rts = datasink_conn.ts()
+            # check we have by version metrics
+            assert "version" in rts.info(by_version_key).labels
+            assert redis_version == rts.info(by_version_key).labels["version"]
+
+            # get all keys
+            all_keys = datasink_conn.keys("*")
+            by_hash_keys = []
+            for key in all_keys:
+                if "/by.hash/" in key.decode():
+                    by_hash_keys.append(key)
+
+            # ensure we have by hash keys
+            assert len(by_hash_keys) > 0
+            for hash_key in by_hash_keys:
+                # ensure we have both version and hash info on the key
+                assert "version" in rts.info(hash_key).labels
+                assert "hash" in rts.info(hash_key).labels
+                assert redis_version == rts.info(hash_key).labels["version"]
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_dockerhub_via_cli():
+    if run_coordinator_tests_dockerhub():
+        import argparse
+
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port)
+        conn.ping()
+        conn.flushall()
+        redis_version = "7.2.6"
+        run_image = f"valkey/valkey:{redis_version}-bookworm"
+        github_org = "valkey"
+        github_repo = "valkey"
+
+        db_port = os.getenv("DATASINK_PORT", "6379")
+
+        # should error due to missing --use-tags or --use-branch
+        parser = argparse.ArgumentParser(
+            description="test",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser = spec_cli_args(parser)
+        run_args = [
+            "--docker-dont-air-gap",
+            "--server_name",
+            "valkey",
+            "--run_image",
+            run_image,
+            "--gh_org",
+            github_org,
+            "--gh_repo",
+            github_repo,
+            "--redis_port",
+            "{}".format(db_port),
+        ]
+        args = parser.parse_args(
+            args=run_args,
+        )
+        try:
+            trigger_tests_dockerhub_cli_command_logic(args, "tool", "v0")
+        except SystemExit as e:
+            assert e.code == 0
+
+        # confirm request was made via the cli
+        assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+        assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+        running_platform = "fco-ThinkPad-T490"
+
+        build_runners_consumer_group_create(conn, running_platform, "0")
+        datasink_conn = redis.StrictRedis(port=db_port)
+        docker_client = docker.from_env()
+        home = str(Path.home())
+        stream_id = ">"
+        topologies_map = get_topologies(
+            "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+        )
+        # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+        # and we need 1 core for DB and another for CLIENT
+        testsuite_spec_files = [
+            "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+        ]
+        defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+        (
+            _,
+            _,
+            default_metrics,
+            _,
+            _,
+            _,
+        ) = get_defaults(defaults_filename)
+
+        (
+            result,
+            stream_id,
+            number_processed_streams,
+            num_process_test_suites,
+        ) = self_contained_coordinator_blocking_read(
+            conn,
+            True,
+            docker_client,
+            home,
+            stream_id,
+            datasink_conn,
+            testsuite_spec_files,
+            topologies_map,
+            running_platform,
+            False,
+            [],
+            "",
+            0,
+            6399,
+            1,
+            False,
+            5,
+            default_metrics,
+            "amd64",
+            None,
+            0,
+            10000,
+            "unstable",
+            "",
+            True,
+            False,
+        )
+
+        assert result == True
+        assert number_processed_streams == 1
+        assert num_process_test_suites == 1
+        by_version_key = f"ci.benchmarks.redislabs/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+        assert datasink_conn.exists(by_version_key)
+        rts = datasink_conn.ts()
+        # check we have by version metrics
+        assert "version" in rts.info(by_version_key).labels
+        assert redis_version == rts.info(by_version_key).labels["version"]
+
+        # get all keys
+        all_keys = datasink_conn.keys("*")
+        by_hash_keys = []
+        for key in all_keys:
+            if "/by.hash/" in key.decode():
+                by_hash_keys.append(key)
+
+        # ensure we have by hash keys
+        assert len(by_hash_keys) > 0
+        for hash_key in by_hash_keys:
+            # ensure we have both version and hash info on the key
+            assert "version" in rts.info(hash_key).labels
+            assert "hash" in rts.info(hash_key).labels
+            assert redis_version == rts.info(hash_key).labels["version"]
+
+
+def test_dockerhub_via_cli_airgap():
+    if run_coordinator_tests_dockerhub():
+        import argparse
+
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port)
+        conn.ping()
+        conn.flushall()
+        redis_version = "7.2.6"
+        run_image = f"valkey/valkey:{redis_version}-bookworm"
+        github_org = "valkey"
+        github_repo = "valkey"
+
+        db_port = os.getenv("DATASINK_PORT", "6379")
+
+        # should error due to missing --use-tags or --use-branch
+        parser = argparse.ArgumentParser(
+            description="test",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser = spec_cli_args(parser)
+        run_args = [
+            "--server_name",
+            "valkey",
+            "--run_image",
+            run_image,
+            "--gh_org",
+            github_org,
+            "--gh_repo",
+            github_repo,
+            "--redis_port",
+            "{}".format(db_port),
+        ]
+        args = parser.parse_args(
+            args=run_args,
+        )
+        try:
+            trigger_tests_dockerhub_cli_command_logic(args, "tool", "v0")
+        except SystemExit as e:
+            assert e.code == 0
+
+        # confirm request was made via the cli
+        assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+        assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+        running_platform = "fco-ThinkPad-T490"
+
+        build_runners_consumer_group_create(conn, running_platform, "0")
+        datasink_conn = redis.StrictRedis(port=db_port)
+        docker_client = docker.from_env()
+        home = str(Path.home())
+        stream_id = ">"
+        topologies_map = get_topologies(
+            "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+        )
+        # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+        # and we need 1 core for DB and another for CLIENT
+        testsuite_spec_files = [
+            "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+        ]
+        defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+        (
+            _,
+            _,
+            default_metrics,
+            _,
+            _,
+            _,
+        ) = get_defaults(defaults_filename)
+
+        (
+            result,
+            stream_id,
+            number_processed_streams,
+            num_process_test_suites,
+        ) = self_contained_coordinator_blocking_read(
+            conn,
+            True,
+            docker_client,
+            home,
+            stream_id,
+            datasink_conn,
+            testsuite_spec_files,
+            topologies_map,
+            running_platform,
+            False,
+            [],
+            "",
+            0,
+            6399,
+            1,
+            True,
+            5,
+            default_metrics,
+            "amd64",
+            None,
+            0,
+            10000,
+            "unstable",
+            "",
+            True,
+            False,
+        )
+
+        assert result == True
+        assert number_processed_streams == 1
+        assert num_process_test_suites == 1
+        by_version_key = f"ci.benchmarks.redislabs/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+        assert datasink_conn.exists(by_version_key)
+        rts = datasink_conn.ts()
+        # check we have by version metrics
+        assert "version" in rts.info(by_version_key).labels
+        assert redis_version == rts.info(by_version_key).labels["version"]
+
+        # get all keys
+        all_keys = datasink_conn.keys("*")
+        by_hash_keys = []
+        for key in all_keys:
+            if "/by.hash/" in key.decode():
+                by_hash_keys.append(key)
+
+        # ensure we have by hash keys
+        assert len(by_hash_keys) > 0
+        for hash_key in by_hash_keys:
+            # ensure we have both version and hash info on the key
+            assert "version" in rts.info(hash_key).labels
+            assert "hash" in rts.info(hash_key).labels
+            assert redis_version == rts.info(hash_key).labels["version"]
+
+
 def test_self_contained_coordinator_skip_build_variant():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
-            conn = redis.StrictRedis(port=16379)
+        if run_coordinator_tests():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
             expected_datapoint_ts = None
@@ -213,7 +759,7 @@ def test_self_contained_coordinator_skip_build_variant():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=16379)
+            datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
             stream_id = ">"
@@ -261,7 +807,10 @@ def test_prepare_memtier_benchmark_parameters():
         assert client_tool == "memtier_benchmark"
         local_benchmark_output_filename = "1.json"
         oss_api_enabled = False
-        (_, benchmark_command_str,) = prepare_memtier_benchmark_parameters(
+        (
+            _,
+            benchmark_command_str,
+        ) = prepare_memtier_benchmark_parameters(
             benchmark_config["clientconfig"],
             client_tool,
             12000,
@@ -274,7 +823,10 @@ def test_prepare_memtier_benchmark_parameters():
             == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
         )
         oss_api_enabled = True
-        (_, benchmark_command_str,) = prepare_memtier_benchmark_parameters(
+        (
+            _,
+            benchmark_command_str,
+        ) = prepare_memtier_benchmark_parameters(
             benchmark_config["clientconfig"],
             client_tool,
             12000,

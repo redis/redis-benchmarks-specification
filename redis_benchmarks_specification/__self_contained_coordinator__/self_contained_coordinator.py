@@ -11,6 +11,7 @@ import redis
 import os
 from pathlib import Path
 import sys
+import time
 
 from docker.models.containers import Container
 from redisbench_admin.profilers.profilers_local import (
@@ -43,6 +44,9 @@ from redis_benchmarks_specification.__common__.runner import (
     exporter_datasink_common,
     execute_init_commands,
 )
+from redis_benchmarks_specification.__common__.timeseries import (
+    datasink_profile_tabular_data,
+)
 from redis_benchmarks_specification.__compare__.compare import (
     compute_regression_table,
     prepare_regression_comment,
@@ -72,9 +76,7 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
 )
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
-from redisbench_admin.run.redistimeseries import (
-    datasink_profile_tabular_data,
-)
+
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
@@ -230,6 +232,7 @@ def main():
     defaults_filename = args.defaults_filename
     (
         _,
+        _,
         default_metrics,
         _,
         _,
@@ -308,6 +311,12 @@ def main():
         )
 
 
+def check_health(container):
+    logging.info(container.attrs["State"])
+    health_status = container.attrs["State"].get("Health", {}).get("Status")
+    return health_status
+
+
 def self_contained_coordinator_blocking_read(
     github_event_conn,
     datasink_push_results_redistimeseries,
@@ -333,6 +342,8 @@ def self_contained_coordinator_blocking_read(
     priority_upper_limit=10000,
     default_baseline_branch="unstable",
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
+    docker_keep_env=False,
+    restore_build_artifacts_default=True,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -384,6 +395,8 @@ def self_contained_coordinator_blocking_read(
             priority_upper_limit,
             default_baseline_branch,
             default_metrics_str,
+            docker_keep_env,
+            restore_build_artifacts_default,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -397,7 +410,7 @@ def self_contained_coordinator_blocking_read(
                 ack_reply = ack_reply.decode()
             if ack_reply == "1" or ack_reply == 1:
                 logging.info(
-                    "Sucessfully acknowledge build variation stream with id {}.".format(
+                    "Sucessfully acknowledge BENCHMARK variation stream with id {}.".format(
                         stream_id
                     )
                 )
@@ -452,7 +465,7 @@ def process_self_contained_coordinator_stream(
     grafana_profile_dashboard="",
     cpuset_start_pos=0,
     redis_proc_start_port=6379,
-    docker_air_gap=False,
+    default_docker_air_gap=False,
     defaults_filename="defaults.yml",
     override_test_time=0,
     default_metrics=[],
@@ -462,6 +475,8 @@ def process_self_contained_coordinator_stream(
     priority_upper_limit=10000,
     default_baseline_branch="unstable",
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
+    docker_keep_env=False,
+    restore_build_artifacts_default=True,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -475,12 +490,17 @@ def process_self_contained_coordinator_stream(
     regression_comment = None
     pull_request = None
     auto_approve_github = True
+    # defaults
+    default_github_org = "redis"
+    default_github_repo = "redis"
+    restore_build_artifacts = restore_build_artifacts_default
+
     try:
         stream_id, testDetails = newTestInfo[0][1][0]
         stream_id = stream_id.decode()
         logging.info("Received work . Stream id {}.".format(stream_id))
 
-        if b"git_hash" in testDetails:
+        if b"run_image" in testDetails:
             (
                 build_variant_name,
                 metadata,
@@ -493,6 +513,55 @@ def process_self_contained_coordinator_stream(
                 git_timestamp_ms,
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
+            tf_github_org = default_github_org
+            if b"github_org" in testDetails:
+                tf_github_org = testDetails[b"github_org"].decode()
+                logging.info(
+                    f"detected a github_org definition on the streamdata: {tf_github_org}. Overriding the default one: {default_github_org}"
+                )
+            tf_github_repo = default_github_repo
+            if b"github_repo" in testDetails:
+                tf_github_repo = testDetails[b"github_repo"].decode()
+                logging.info(
+                    f"detected a github_org definition on the streamdata: {tf_github_repo}. Overriding the default one: {default_github_repo}"
+                )
+
+            mnt_point = "/mnt/redis/"
+            if b"mnt_point" in testDetails:
+                mnt_point = testDetails[b"mnt_point"].decode()
+                logging.info(
+                    f"detected a mnt_point definition on the streamdata: {mnt_point}."
+                )
+
+            executable = f"{mnt_point}redis-server"
+            if b"executable" in testDetails:
+                executable = testDetails[b"executable"].decode()
+                logging.info(
+                    f"detected a executable definition on the streamdata: {executable}."
+                )
+
+            server_name = "redis"
+            if b"server_name" in testDetails:
+                server_name = testDetails[b"server_name"].decode()
+                logging.info(
+                    f"detected a server_name definition on the streamdata: {server_name}."
+                )
+
+            if b"restore_build_artifacts" in testDetails:
+                restore_build_artifacts = bool(
+                    testDetails[b"restore_build_artifacts"].decode()
+                )
+                logging.info(
+                    f"detected a restore_build_artifacts config {restore_build_artifacts} overriding the default just for this test"
+                )
+
+            test_docker_air_gap = default_docker_air_gap
+            # check if we override the docker air gap on this test details
+            if b"docker_air_gap" in testDetails:
+                test_docker_air_gap = bool(testDetails[b"docker_air_gap"].decode())
+                logging.info(
+                    f"detected a docker air gap config {test_docker_air_gap} overriding the default of {default_docker_air_gap} just for this test"
+                )
 
             if b"priority_upper_limit" in testDetails:
                 stream_priority_upper_limit = int(
@@ -566,7 +635,7 @@ def process_self_contained_coordinator_stream(
             if skip_test is False:
                 overall_result = True
                 profiler_dashboard_links = []
-                if docker_air_gap:
+                if test_docker_air_gap:
                     airgap_key = "docker:air-gap:{}".format(run_image)
                     logging.info(
                         "Restoring docker image: {} from {}".format(
@@ -584,7 +653,7 @@ def process_self_contained_coordinator_stream(
                     {stream_id: stream_time_ms},
                 )
                 logging.info(
-                    f"Added stream with id {stream_id} to zset {zset_running_platform_benchmarks}"
+                    f"Added stream with id {stream_id} to zset {zset_running_platform_benchmarks}. res={res}"
                 )
 
                 stream_test_list_pending = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_pending"
@@ -607,7 +676,7 @@ def process_self_contained_coordinator_stream(
                             _,
                             benchmark_config,
                             test_name,
-                        ) = get_final_benchmark_config(None, stream, "")
+                        ) = get_final_benchmark_config(None, None, stream, "")
                     github_event_conn.lpush(stream_test_list_pending, test_name)
                     github_event_conn.expire(
                         stream_test_list_pending, REDIS_BINS_EXPIRE_SECS
@@ -650,7 +719,7 @@ def process_self_contained_coordinator_stream(
                             _,
                             benchmark_config,
                             test_name,
-                        ) = get_final_benchmark_config(None, stream, "")
+                        ) = get_final_benchmark_config(None, None, stream, "")
                         github_event_conn.lrem(stream_test_list_pending, 1, test_name)
                         github_event_conn.lpush(stream_test_list_running, test_name)
                         github_event_conn.expire(
@@ -706,15 +775,14 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir_client
                                     )
                                 )
-                                tf_github_org = "redis"
-                                tf_github_repo = "redis"
+
                                 setup_name = "oss-standalone"
                                 setup_type = "oss-standalone"
                                 tf_triggering_env = "ci"
                                 github_actor = "{}-{}".format(
                                     tf_triggering_env, running_platform
                                 )
-                                dso = "redis-server"
+                                dso = server_name
                                 profilers_artifacts_matrix = []
 
                                 collection_summary_str = ""
@@ -733,16 +801,16 @@ def process_self_contained_coordinator_stream(
                                             collection_summary_str
                                         )
                                     )
+                                if restore_build_artifacts:
+                                    restore_build_artifacts_from_test_details(
+                                        build_artifacts,
+                                        github_event_conn,
+                                        temporary_dir,
+                                        testDetails,
+                                    )
 
-                                restore_build_artifacts_from_test_details(
-                                    build_artifacts,
-                                    github_event_conn,
-                                    temporary_dir,
-                                    testDetails,
-                                )
-                                mnt_point = "/mnt/redis/"
                                 command = generate_standalone_redis_server_args(
-                                    "{}redis-server".format(mnt_point),
+                                    executable,
                                     redis_proc_start_port,
                                     mnt_point,
                                     redis_configuration_parameters,
@@ -756,14 +824,19 @@ def process_self_contained_coordinator_stream(
                                         run_image, db_cpuset_cpus, command_str
                                     )
                                 )
-                                redis_container = docker_client.containers.run(
-                                    image=run_image,
-                                    volumes={
+                                volumes = {}
+                                working_dir = "/"
+                                if mnt_point != "":
+                                    volumes = {
                                         temporary_dir: {
                                             "bind": mnt_point,
                                             "mode": "rw",
                                         },
-                                    },
+                                    }
+                                    working_dir = mnt_point
+                                redis_container = docker_client.containers.run(
+                                    image=run_image,
+                                    volumes=volumes,
                                     auto_remove=True,
                                     privileged=True,
                                     working_dir=mnt_point,
@@ -772,7 +845,11 @@ def process_self_contained_coordinator_stream(
                                     detach=True,
                                     cpuset_cpus=db_cpuset_cpus,
                                     pid_mode="host",
+                                    publish_all_ports=True,
                                 )
+
+                                time.sleep(5)
+
                                 redis_containers.append(redis_container)
 
                                 r = redis.StrictRedis(port=redis_proc_start_port)
@@ -780,7 +857,27 @@ def process_self_contained_coordinator_stream(
                                 redis_conns = [r]
                                 reset_commandstats(redis_conns)
                                 redis_pids = []
-                                first_redis_pid = r.info()["process_id"]
+                                redis_info = r.info()
+                                first_redis_pid = redis_info["process_id"]
+                                if git_hash is None and "redis_git_sha1" in redis_info:
+                                    git_hash = redis_info["redis_git_sha1"]
+                                    if (
+                                        git_hash == "" or git_hash == 0
+                                    ) and "redis_build_id" in redis_info:
+                                        git_hash = redis_info["redis_build_id"]
+                                    logging.info(
+                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
+                                    )
+
+                                server_version_keyname = f"{server_name}_version"
+                                if (
+                                    git_version is None
+                                    and server_version_keyname in redis_info
+                                ):
+                                    git_version = redis_info[server_version_keyname]
+                                    logging.info(
+                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
+                                    )
                                 redis_pids.append(first_redis_pid)
                                 ceil_client_cpu_limit = extract_client_cpu_limit(
                                     benchmark_config
@@ -1099,6 +1196,7 @@ def process_self_contained_coordinator_stream(
                                         tf_triggering_env,
                                         topology_spec_name,
                                         default_metrics,
+                                        git_hash,
                                     )
                                     r.shutdown(save=False)
 
@@ -1154,36 +1252,38 @@ def process_self_contained_coordinator_stream(
                                 test_result = False
                             # tear-down
                             logging.info("Tearing down setup")
-                            for redis_container in redis_containers:
-                                try:
-                                    redis_container.stop()
-                                except docker.errors.NotFound:
-                                    logging.info(
-                                        "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                            redis_container.id, redis_container.image
-                                        )
-                                    )
-                                    pass
-
-                            for redis_container in client_containers:
-                                if type(redis_container) == Container:
+                            if docker_keep_env is False:
+                                for redis_container in redis_containers:
                                     try:
                                         redis_container.stop()
                                     except docker.errors.NotFound:
                                         logging.info(
-                                            "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                            "When trying to stop DB container with id {} and image {} it was already stopped".format(
                                                 redis_container.id,
                                                 redis_container.image,
                                             )
                                         )
                                         pass
-                            logging.info(
-                                "Removing temporary dirs {} and {}".format(
-                                    temporary_dir, temporary_dir_client
+
+                                for redis_container in client_containers:
+                                    if type(redis_container) == Container:
+                                        try:
+                                            redis_container.stop()
+                                        except docker.errors.NotFound:
+                                            logging.info(
+                                                "When trying to stop Client container with id {} and image {} it was already stopped".format(
+                                                    redis_container.id,
+                                                    redis_container.image,
+                                                )
+                                            )
+                                            pass
+                                logging.info(
+                                    "Removing temporary dirs {} and {}".format(
+                                        temporary_dir, temporary_dir_client
+                                    )
                                 )
-                            )
-                            shutil.rmtree(temporary_dir, ignore_errors=True)
-                            shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                                shutil.rmtree(temporary_dir, ignore_errors=True)
+                                shutil.rmtree(temporary_dir_client, ignore_errors=True)
 
                             overall_result &= test_result
 
@@ -1248,9 +1348,7 @@ def process_self_contained_coordinator_stream(
                             tf_github_repo,
                             verbose,
                         )
-                        logging.info(
-                            f"Preparing regression info for the data available"
-                        )
+                        logging.info("Preparing regression info for the data available")
                         print_improvements_only = False
                         print_regressions_only = False
                         skip_unstable = False
@@ -1346,7 +1444,7 @@ def process_self_contained_coordinator_stream(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
                     )
         else:
-            logging.error("Missing commit information within received message.")
+            logging.error("Missing run image information within received message.")
 
     except Exception as e:
         logging.critical(
@@ -1397,7 +1495,7 @@ def filter_test_files(
                 result,
                 benchmark_config,
                 test_name,
-            ) = get_final_benchmark_config(None, stream, "")
+            ) = get_final_benchmark_config(None, None, stream, "")
             if result is False:
                 logging.error(
                     "Skipping {} given there were errors while calling get_final_benchmark_config()".format(
@@ -1495,7 +1593,10 @@ def data_prepopulation_step(
     full_benchmark_path = "/usr/local/bin/{}".format(preload_tool)
     client_mnt_point = "/mnt/client/"
     if "memtier_benchmark" in preload_tool:
-        (_, preload_command_str,) = prepare_memtier_benchmark_parameters(
+        (
+            _,
+            preload_command_str,
+        ) = prepare_memtier_benchmark_parameters(
             benchmark_config["dbconfig"]["preload_tool"],
             full_benchmark_path,
             port,

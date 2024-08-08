@@ -312,28 +312,7 @@ def builder_process_stream(
                 if "run_image" in build_config:
                     run_image = build_config["run_image"]
                 if docker_air_gap:
-                    airgap_key = "docker:air-gap:{}".format(run_image)
-                    logging.info(
-                        "DOCKER AIR GAP: storing run image named: {} in redis key {}".format(
-                            run_image, airgap_key
-                        )
-                    )
-                    run_image_binary_stream = io.BytesIO()
-                    run_image_docker = docker_client.images.get(run_image)
-                    for chunk in run_image_docker.save():
-                        run_image_binary_stream.write(chunk)
-                    # 7 days expire
-                    binary_exp_secs = 24 * 60 * 60 * 7
-                    res_airgap = conn.set(
-                        airgap_key,
-                        run_image_binary_stream.getbuffer(),
-                        ex=binary_exp_secs,
-                    )
-                    logging.info(
-                        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
-                            airgap_key, res_airgap
-                        )
-                    )
+                    store_airgap_image_redis(conn, docker_client, run_image)
 
                 compiler = build_config["compiler"]
                 cpp_compiler = build_config["cpp_compiler"]
@@ -429,48 +408,32 @@ def builder_process_stream(
                 build_duration = build_end_datetime - build_start_datetime
                 build_duration_secs = build_duration.total_seconds()
 
-                build_stream_fields = {
-                    "id": id,
-                    "git_hash": git_hash,
-                    "use_git_timestamp": str(use_git_timestamp),
-                    "build_image": build_image,
-                    "run_image": run_image,
-                    "compiler": compiler,
-                    "cpp_compiler": cpp_compiler,
-                    "os": build_os,
-                    "arch": build_arch,
-                    "build_vars": build_vars_str,
-                    "build_command": build_command,
-                    "metadata": json.dumps(build_config_metadata),
-                    "build_artifacts": ",".join(build_artifacts),
-                    "tests_regexp": tests_regexp,
-                    "tests_priority_upper_limit": tests_priority_upper_limit,
-                    "tests_priority_lower_limit": tests_priority_lower_limit,
-                    "tests_groups_regexp": tests_groups_regexp,
-                }
-                if pull_request is not None:
-                    build_stream_fields["pull_request"] = pull_request
-                if git_branch is not None:
-                    build_stream_fields["git_branch"] = git_branch
-                if git_version is not None:
-                    build_stream_fields["git_version"] = git_version
-                if git_timestamp_ms is not None:
-                    build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
-                for artifact in build_artifacts:
-                    bin_key = "zipped:artifacts:{}:{}.zip".format(id, artifact)
-                    bin_artifact = open(
-                        "{}src/{}".format(redis_temporary_dir, artifact), "rb"
-                    ).read()
-                    bin_artifact_len = len(bytes(bin_artifact))
-                    assert bin_artifact_len > 0
-                    conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
-                    build_stream_fields[artifact] = bin_key
-                    build_stream_fields[
-                        "{}_len_bytes".format(artifact)
-                    ] = bin_artifact_len
-                result = True
-                if b"platform" in testDetails:
-                    build_stream_fields["platform"] = testDetails[b"platform"]
+                build_stream_fields, result = generate_benchmark_stream_request(
+                    id,
+                    conn,
+                    run_image,
+                    build_arch,
+                    testDetails,
+                    build_os,
+                    build_artifacts,
+                    build_command,
+                    build_config_metadata,
+                    build_image,
+                    build_vars_str,
+                    compiler,
+                    cpp_compiler,
+                    git_branch,
+                    git_hash,
+                    git_timestamp_ms,
+                    git_version,
+                    pull_request,
+                    redis_temporary_dir,
+                    tests_groups_regexp,
+                    tests_priority_lower_limit,
+                    tests_priority_upper_limit,
+                    tests_regexp,
+                    use_git_timestamp,
+                )
                 if result is True:
                     benchmark_stream_id = conn.xadd(
                         STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
@@ -549,6 +512,109 @@ def builder_process_stream(
         else:
             logging.error("Missing commit information within received message.")
     return previous_id, new_builds_count, build_stream_fields_arr
+
+
+def store_airgap_image_redis(conn, docker_client, run_image):
+    airgap_key = "docker:air-gap:{}".format(run_image)
+    logging.info(
+        "DOCKER AIR GAP: storing run image named: {} in redis key {}".format(
+            run_image, airgap_key
+        )
+    )
+    run_image_binary_stream = io.BytesIO()
+    run_image_docker = docker_client.images.get(run_image)
+    for chunk in run_image_docker.save():
+        run_image_binary_stream.write(chunk)
+    # 7 days expire
+    binary_exp_secs = 24 * 60 * 60 * 7
+    res_airgap = conn.set(
+        airgap_key,
+        run_image_binary_stream.getbuffer(),
+        ex=binary_exp_secs,
+    )
+    logging.info(
+        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
+            airgap_key, res_airgap
+        )
+    )
+
+
+def generate_benchmark_stream_request(
+    id,
+    conn,
+    run_image,
+    build_arch,
+    testDetails,
+    build_os,
+    build_artifacts=[],
+    build_command=None,
+    build_config_metadata=None,
+    build_image=None,
+    build_vars_str=None,
+    compiler=None,
+    cpp_compiler=None,
+    git_branch=None,
+    git_hash=None,
+    git_timestamp_ms=None,
+    git_version=None,
+    pull_request=None,
+    redis_temporary_dir=None,
+    tests_groups_regexp=".*",
+    tests_priority_lower_limit=0,
+    tests_priority_upper_limit=10000,
+    tests_regexp=".*",
+    use_git_timestamp=False,
+):
+    build_stream_fields = {
+        "id": id,
+        "use_git_timestamp": str(use_git_timestamp),
+        "run_image": run_image,
+        "os": build_os,
+        "arch": build_arch,
+        "build_artifacts": ",".join(build_artifacts),
+        "tests_regexp": tests_regexp,
+        "tests_priority_upper_limit": tests_priority_upper_limit,
+        "tests_priority_lower_limit": tests_priority_lower_limit,
+        "tests_groups_regexp": tests_groups_regexp,
+    }
+    if build_config_metadata is not None:
+        build_stream_fields["metadata"] = json.dumps(build_config_metadata)
+    if compiler is not None:
+        build_stream_fields["compiler"] = compiler
+    if cpp_compiler is not None:
+        build_stream_fields["cpp_compiler"] = cpp_compiler
+    if build_vars_str is not None:
+        build_stream_fields["build_vars"] = build_vars_str
+    if build_command is not None:
+        build_stream_fields["build_command"] = build_command
+    if build_image is not None:
+        build_stream_fields["build_image"] = build_image
+    else:
+        build_stream_fields["build_image"] = run_image
+    if git_hash is not None:
+        build_stream_fields["git_hash"] = git_hash
+    if pull_request is not None:
+        build_stream_fields["pull_request"] = pull_request
+    if git_branch is not None:
+        build_stream_fields["git_branch"] = git_branch
+    if git_version is not None:
+        build_stream_fields["git_version"] = git_version
+    if git_timestamp_ms is not None:
+        build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
+    for artifact in build_artifacts:
+        bin_key = "zipped:artifacts:{}:{}.zip".format(id, artifact)
+        bin_artifact = open(
+            "{}src/{}".format(redis_temporary_dir, artifact), "rb"
+        ).read()
+        bin_artifact_len = len(bytes(bin_artifact))
+        assert bin_artifact_len > 0
+        conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
+        build_stream_fields[artifact] = bin_key
+        build_stream_fields["{}_len_bytes".format(artifact)] = bin_artifact_len
+    result = True
+    if b"platform" in testDetails:
+        build_stream_fields["platform"] = testDetails[b"platform"]
+    return build_stream_fields, result
 
 
 def build_spec_image_prefetch(builders_folder, different_build_specs):

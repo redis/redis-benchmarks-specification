@@ -19,9 +19,7 @@ from redis_benchmarks_specification.__common__.spec import (
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
 )
-from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
-    prepare_memtier_benchmark_parameters,
-)
+
 from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
     build_runners_consumer_group_create,
     get_runners_consumer_group_name,
@@ -89,14 +87,18 @@ def test_generate_cpuset_cpus():
     assert db_cpuset_cpus == "2,3,4"
 
 
+def run_coordinator_tests():
+    run_coordinator = True
+    TST_RUNNER_X = os.getenv("TST_RUNNER_X", "0")
+    if TST_RUNNER_X == "0":
+        run_coordinator = False
+    return run_coordinator
+
+
 def test_self_contained_coordinator_blocking_read():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
-            conn = redis.StrictRedis(port=16379)
+        if run_coordinator_tests():
+            conn = redis.StrictRedis(port=6379)
             conn.ping()
             expected_datapoint_ts = None
             conn.flushall()
@@ -113,7 +115,7 @@ def test_self_contained_coordinator_blocking_read():
             running_platform = "fco-ThinkPad-T490"
 
             build_runners_consumer_group_create(conn, running_platform, "0")
-            datasink_conn = redis.StrictRedis(port=16379)
+            datasink_conn = redis.StrictRedis(port=6379)
             rts = datasink_conn.ts()
             docker_client = docker.from_env()
             home = str(Path.home())

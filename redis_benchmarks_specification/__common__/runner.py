@@ -6,8 +6,11 @@ import re
 
 import redis
 from redisbench_admin.run.metrics import collect_redis_metrics
-from redisbench_admin.run.redistimeseries import timeseries_test_sucess_flow
 from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
+from redis_benchmarks_specification.__common__.timeseries import (
+    timeseries_test_sucess_flow,
+)
 
 
 def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
@@ -144,8 +147,11 @@ def exporter_datasink_common(
     tf_triggering_env,
     topology_spec_name,
     default_metrics=None,
+    git_hash=None,
 ):
-    logging.info("Using datapoint_time_ms: {}".format(datapoint_time_ms))
+    logging.info(
+        f"Using datapoint_time_ms: {datapoint_time_ms}. git_has={git_hash}, git_branch={git_branch}, git_version={git_version}"
+    )
     timeseries_test_sucess_flow(
         datasink_push_results_redistimeseries,
         git_version,
@@ -167,9 +173,15 @@ def exporter_datasink_common(
         metadata,
         build_variant_name,
         running_platform,
+        None,
+        git_hash,
     )
     logging.info("Collecting memory metrics")
-    (_, _, overall_end_time_metrics,) = collect_redis_metrics(
+    (
+        _,
+        _,
+        overall_end_time_metrics,
+    ) = collect_redis_metrics(
         redis_conns,
         ["memory"],
         {

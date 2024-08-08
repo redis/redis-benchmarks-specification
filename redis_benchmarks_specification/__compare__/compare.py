@@ -248,7 +248,6 @@ def compare_command_logic(args, project_name, project_version):
     testname_regex = args.testname_regex
     auto_approve = args.auto_approve
     running_platform = args.running_platform
-    grafana_base_dashboard = args.grafana_base_dashboard
 
     if running_platform is not None:
         logging.info(

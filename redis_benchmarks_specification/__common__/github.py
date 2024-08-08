@@ -24,9 +24,7 @@ def generate_build_started_pr_comment(
     tests_priority_upper_limit,
     tests_regexp,
 ):
-    comment_body = (
-        f"### CE Performance Automation : step 1 of 2 (build) STARTING...\n\n"
-    )
+    comment_body = "### CE Performance Automation : step 1 of 2 (build) STARTING...\n\n"
     comment_body += (
         "This comment was automatically generated given a benchmark was triggered.\n"
     )
@@ -38,7 +36,7 @@ def generate_build_started_pr_comment(
     comment_body += f"   - git branch: {git_branch}\n"
     comment_body += f"   - commit date and time: {commit_datetime}\n"
     comment_body += f"   - commit summary: {commit_summary}\n"
-    comment_body += f"   - test filters:\n"
+    comment_body += "   - test filters:\n"
     comment_body += (
         f"       - command priority lower limit: {tests_priority_lower_limit}\n"
     )
@@ -64,7 +62,7 @@ def generate_build_finished_pr_comment(
     build_duration_seconds,
 ):
     build_duration_seconds = int(build_duration_seconds)
-    comment_body = f"### CE Performance Automation : step 1 of 2 (build) DONE.\n\n"
+    comment_body = "### CE Performance Automation : step 1 of 2 (build) DONE.\n\n"
     comment_body += (
         "This comment was automatically generated given a benchmark was triggered.\n"
     )
@@ -76,7 +74,7 @@ def generate_build_finished_pr_comment(
     comment_body += f"   - git branch: {git_branch}\n"
     comment_body += f"   - commit date and time: {commit_datetime}\n"
     comment_body += f"   - commit summary: {commit_summary}\n"
-    comment_body += f"   - test filters:\n"
+    comment_body += "   - test filters:\n"
     comment_body += (
         f"       - command priority lower limit: {tests_priority_lower_limit}\n"
     )
@@ -197,12 +195,10 @@ def update_comment_if_needed(
                 )
             )
         if user_input.lower() == "y" or auto_approve:
-            print("Updating comment {}".format(regression_comment.html_url))
-            regression_comment.edit(comment_body)
             html_url = regression_comment.html_url
-            print(
-                "Updated comment. Access it via {}".format(regression_comment.html_url)
-            )
+            print("Updating comment {}".format(html_url))
+            regression_comment.edit(comment_body)
+            print("Updated comment. Access it via {}".format(html_url))
 
 
 def check_benchmark_build_comment(comments):

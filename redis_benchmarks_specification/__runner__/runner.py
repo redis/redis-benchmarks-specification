@@ -211,7 +211,7 @@ def prepare_memtier_benchmark_parameters(
     server,
     password,
     local_benchmark_output_filename,
-    oss_cluster_api_enabled,
+    oss_cluster_api_enabled=False,
     tls_enabled=False,
     tls_skip_verify=False,
     tls_cert=None,
@@ -383,6 +383,7 @@ def process_self_contained_coordinator_stream(
     override_test_runs = args.override_test_runs
     (
         _,
+        _,
         default_metrics,
         _,
         _,
@@ -396,7 +397,7 @@ def process_self_contained_coordinator_stream(
 
         with open(test_file, "r") as stream:
             _, benchmark_config, test_name = get_final_benchmark_config(
-                None, stream, ""
+                None, None, stream, ""
             )
 
             if tls_enabled:
@@ -410,6 +411,7 @@ def process_self_contained_coordinator_stream(
             for topology_spec_name in benchmark_config["redis-topologies"]:
                 test_result = False
                 benchmark_tool_global = ""
+                full_result_path = None
                 try:
                     current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)
@@ -756,7 +758,10 @@ def process_self_contained_coordinator_stream(
                     profiler_frequency = 99
 
                     # start the profile
-                    (profiler_name, profilers_map,) = profilers_start_if_required(
+                    (
+                        profiler_name,
+                        profilers_map,
+                    ) = profilers_start_if_required(
                         profilers_enabled,
                         profilers_list,
                         redis_pids,
@@ -821,7 +826,10 @@ def process_self_contained_coordinator_stream(
                             benchmark_end_time, benchmark_start_time
                         )
                     )
-                    (_, overall_tabular_data_map,) = profilers_stop_if_required(
+                    (
+                        _,
+                        overall_tabular_data_map,
+                    ) = profilers_stop_if_required(
                         datasink_push_results_redistimeseries,
                         benchmark_duration_seconds,
                         collection_summary_str,
@@ -1067,7 +1075,10 @@ def print_results_table_stdout(
     cpu_usage=None,
 ):
     # check which metrics to extract
-    (_, metrics,) = merge_default_and_config_metrics(
+    (
+        _,
+        metrics,
+    ) = merge_default_and_config_metrics(
         benchmark_config,
         default_metrics,
         None,
@@ -1092,7 +1103,10 @@ def prepare_overall_total_test_results(
     benchmark_config, default_metrics, results_dict, test_name, overall_results_matrix
 ):
     # check which metrics to extract
-    (_, metrics,) = merge_default_and_config_metrics(
+    (
+        _,
+        metrics,
+    ) = merge_default_and_config_metrics(
         benchmark_config,
         default_metrics,
         None,

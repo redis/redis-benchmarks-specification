@@ -22,8 +22,8 @@ clientconfig:
   arguments: '"--data-size" "10" --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
-      cpus: '4'
-      memory: 2g
+      cpus: "1"
+      memory: "2g"
 
 tested-groups:
 - string

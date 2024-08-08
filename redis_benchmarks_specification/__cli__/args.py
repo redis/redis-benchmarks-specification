@@ -21,6 +21,7 @@ START_TIME_NOW_UTC, _, _ = get_start_time_vars()
 START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=90)
 CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
+CLI_TOOL_DOCKERHUB = "dockerhub"
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
@@ -109,7 +110,7 @@ def spec_cli_args(parser):
         type=str,
         default=CLI_TOOL_TRIGGER,
         help="subtool to use. One of '{}' ".format(
-            ",".join([CLI_TOOL_STATS, CLI_TOOL_TRIGGER])
+            ",".join([CLI_TOOL_STATS, CLI_TOOL_TRIGGER, CLI_TOOL_DOCKERHUB])
         ),
     )
     parser.add_argument("--gh_token", type=str, default=GH_TOKEN)
@@ -129,7 +130,18 @@ def spec_cli_args(parser):
     parser.add_argument("--redis_repo", type=str, default=None)
     parser.add_argument("--gh_org", type=str, default="redis")
     parser.add_argument("--gh_repo", type=str, default="redis")
+    parser.add_argument("--server_name", type=str, default=None)
+    parser.add_argument("--run_image", type=str, default="redis")
+    parser.add_argument("--build_arch", type=str, default="amd64")
+    parser.add_argument("--id", type=str, default="dockerhub")
+    parser.add_argument("--mnt_point", type=str, default="")
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
+    parser.add_argument(
+        "--docker-dont-air-gap",
+        default=False,
+        action="store_true",
+        help="Dont store the docker images in redis keys.",
+    )
     parser.add_argument(
         "--use-tags",
         default=False,

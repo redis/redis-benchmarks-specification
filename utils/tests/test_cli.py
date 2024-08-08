@@ -28,6 +28,7 @@ def test_run_local_command_logic_oss_cluster():
         trigger_tests_cli_command_logic(args, "tool", "v0")
     except SystemExit as e:
         assert e.code == 1
+    db_port = os.getenv("DATASINK_PORT", "6379")
 
     # should error due to missing --use-tags or --use-branch
     parser = argparse.ArgumentParser(
@@ -36,7 +37,11 @@ def test_run_local_command_logic_oss_cluster():
     )
     parser = spec_cli_args(parser)
     TST_REDIS_DIR = os.getenv("TST_REDIS_DIR", None)
-    run_args = ["--use-tags"]
+    run_args = [
+        "--use-tags",
+        "--redis_port",
+        "{}".format(db_port),
+    ]
     if TST_REDIS_DIR is not None:
         run_args.extend(["--redis_repo", TST_REDIS_DIR])
     args = parser.parse_args(

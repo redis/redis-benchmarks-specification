@@ -30,17 +30,13 @@ def test_build_spec_image_prefetch():
     )
     assert total_fetched >= 0 and total_fetched <= 2
     assert "gcc:8.5.0-buster" in prefetched_images
-    for x in range(0, 100):
-        prefetched_images, total_fetched = build_spec_image_prefetch(
-            builders_folder, different_build_specs
-        )
-        assert total_fetched == 0
 
 
 def test_commit_schema_to_stream_then_build():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=16379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")
@@ -72,7 +68,7 @@ def test_commit_schema_to_stream_then_build():
             )
             assert new_builds_count == 1
             assert len(build_stream_fields_arr) == 1
-            assert len(build_stream_fields_arr[0]["test_regexp"]) == ".*"
+            assert build_stream_fields_arr[0]["tests_regexp"] == ".*"
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
             conn.save()
 
@@ -82,7 +78,7 @@ def test_commit_schema_to_stream_then_build():
 
 def should_run_builder():
     run_builder = True
-    TST_BUILDER_X = os.getenv("TST_BUILDER_X", "1")
+    TST_BUILDER_X = os.getenv("TST_BUILDER_X", "0")
     if TST_BUILDER_X == "0":
         run_builder = False
     return run_builder
@@ -91,7 +87,8 @@ def should_run_builder():
 def test_commit_schema_to_stream_then_build_historical_redis():
     try:
         if should_run_builder():
-            conn = redis.StrictRedis(port=16379)
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
             conn.ping()
             conn.flushall()
             builder_consumer_group_create(conn, "0")

@@ -10,11 +10,13 @@ def extract_build_info_from_streamdata(testDetails):
     arch = "amd64"
     use_git_timestamp = False
     git_timestamp_ms = None
-    metadata = None
+    metadata = {}
     build_variant_name = None
     fields = [fieldname.decode() for fieldname in testDetails.keys()]
-    logging.info("Fields on stream {}".format(fields))
-    git_hash = testDetails[b"git_hash"]
+    logging.info("Fields on stream {}".format(testDetails))
+    git_hash = None
+    if b"git_hash" in testDetails:
+        git_hash = testDetails[b"git_hash"].decode()
     if b"use_git_timestamp" in testDetails:
         use_git_timestamp = bool(testDetails[b"use_git_timestamp"].decode())
     if b"git_timestamp_ms" in testDetails:

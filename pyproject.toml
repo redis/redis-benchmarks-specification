@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.209"
+version = "0.1.210"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4.0"
+python = "^3.10.0"
 Flask = "^2.0.3"
 flask-restx = "^0.5.0"
 redis = "^4.2.0"
@@ -15,7 +15,7 @@ argparse = "^1.4.0"
 Flask-HTTPAuth = "^4.4.0"
 PyYAML = "^6.0"
 docker = "^7.1.0"
-redisbench-admin = "^0.9.23"
+redisbench-admin = "^0.11.1"
 psutil = "^5.9.4"
 PyGithub = "^1.55"
 GitPython = "^3.1.20"
@@ -23,13 +23,33 @@ semver = "^2.13.0"
 node-semver = "^0.8.1"
 typed-ast = "^1.5.0"
 oyaml = "^1.0"
+pandas = "^2.1.2"
+numpy = "^2.0.0"
+jsonpath-ng = "^1.6.1"
 
 [tool.poetry.dev-dependencies]
-pytest = "^7.2.0"
-pytest-cov = "^4.0.0"
-black = "22.10.0"
-flake8 = "^6.0.0"
-tox-poetry-installer = {extras = ["poetry"], version = "^0.10.3"}
+click = "8.1.7"
+black = "24.4.2"
+flake8 = "7.1.0"
+flynt = "~0.69.0"
+isort = "5.10.1"
+mock = "4.0.3"
+packaging = ">=20.4"
+pytest = "8.2.2"
+pytest-timeout = "2.3.1"
+pytest-asyncio = ">=0.23.7"
+tox = ">=4.16.0"
+tox-docker = ">=5.0.0"
+invoke = "2.2.0"
+pytest-cov = ">=5.0.0"
+vulture = ">=2.3.0"
+ujson = ">=4.2.0"
+wheel = ">=0.43.0"
+docker = ">=7.1.0"
+
+[tool.poetry.group.dev.dependencies]
+#tox-poetry-installer = {extras = ["poetry"], version = "^0.10.3"}
+docker = "^7.1.0"
 
 [build-system]
 requires = ["poetry_core>=1.0.0"]
