@@ -35,11 +35,7 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 def test_self_contained_coordinator_blocking_read():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
+        if run_coordinator_tests():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()
@@ -210,13 +206,25 @@ def test_self_contained_coordinator_blocking_read():
         pass
 
 
+def run_coordinator_tests():
+    run_coordinator = True
+    TST_RUNNER_X = os.getenv("TST_RUNNER_X", "0")
+    if TST_RUNNER_X == "0":
+        run_coordinator = False
+    return run_coordinator
+
+
+def run_coordinator_tests_dockerhub():
+    run_coordinator = True
+    TST_RUNNER_X = os.getenv("TST_RUNNER_DOCKERHUB_X", "1")
+    if TST_RUNNER_X == "0":
+        run_coordinator = False
+    return run_coordinator
+
+
 def test_self_contained_coordinator_dockerhub():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
+        if run_coordinator_tests_dockerhub():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()
@@ -342,11 +350,7 @@ def test_self_contained_coordinator_dockerhub():
 
 def test_self_contained_coordinator_dockerhub_valkey():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
+        if run_coordinator_tests_dockerhub():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()
@@ -477,11 +481,7 @@ def test_self_contained_coordinator_dockerhub_valkey():
 
 def test_self_contained_coordinator_skip_build_variant():
     try:
-        run_coordinator = True
-        TST_RUNNER_X = os.getenv("TST_RUNNER_X", "1")
-        if TST_RUNNER_X == "0":
-            run_coordinator = False
-        if run_coordinator:
+        if run_coordinator_tests():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()

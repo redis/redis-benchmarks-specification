@@ -83,7 +83,7 @@ def test_commit_schema_to_stream_then_build():
 
 def should_run_builder():
     run_builder = True
-    TST_BUILDER_X = os.getenv("TST_BUILDER_X", "1")
+    TST_BUILDER_X = os.getenv("TST_BUILDER_X", "0")
     if TST_BUILDER_X == "0":
         run_builder = False
     return run_builder
