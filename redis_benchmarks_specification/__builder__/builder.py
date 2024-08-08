@@ -521,7 +521,6 @@ def store_airgap_image_redis(conn, docker_client, run_image):
             run_image, airgap_key
         )
     )
-
     # 7 days expire
     binary_exp_secs = 24 * 60 * 60 * 7
     if conn.exists(airgap_key):
@@ -544,6 +543,7 @@ def store_airgap_image_redis(conn, docker_client, run_image):
                 airgap_key, res_airgap
             )
         )
+
 
 
 def generate_benchmark_stream_request(
