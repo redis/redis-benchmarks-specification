@@ -30,11 +30,11 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="XREAD STREAMS key-1 key-2 0 0"  --hide-histogram --test-time 5
+  arguments: --command="XREAD STREAMS key-1 key-2 0 0" -t 1 -c 1 --hide-histogram --test-time 5
   resources:
     requests:
-      cpus: '4'
-      memory: 2g
+      cpus: "1"
+      memory: "2g"
 
 tested-groups:
 - stream
