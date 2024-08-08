@@ -90,6 +90,7 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org
+    build_stream_fields["restore_build_artifacts"] = "False"
     server_name = args.gh_repo
     if args.server_name is not None:
         server_name = args.server_name
