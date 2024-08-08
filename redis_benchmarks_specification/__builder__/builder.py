@@ -545,7 +545,6 @@ def store_airgap_image_redis(conn, docker_client, run_image):
         )
 
 
-
 def generate_benchmark_stream_request(
     id,
     conn,

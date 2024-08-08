@@ -21,5 +21,7 @@ def restore_build_artifacts_from_test_details(
                 os.chmod(artifact_fname, 755)
 
             logging.info(
-                "Successfully restored {} into {}".format(build_artifact, artifact_fname)
+                "Successfully restored {} into {}".format(
+                    build_artifact, artifact_fname
+                )
             )
