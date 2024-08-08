@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+import docker
 import git
 import packaging
 import redis
@@ -20,6 +22,7 @@ import time
 
 from redis_benchmarks_specification.__builder__.builder import (
     generate_benchmark_stream_request,
+    store_airgap_image_redis,
 )
 from redis_benchmarks_specification.__common__.github import (
     update_comment_if_needed,
@@ -92,6 +95,10 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         server_name = args.server_name
     build_stream_fields["server_name"] = server_name
     build_stream_fields["mnt_point"] = args.mnt_point
+    if args.docker_dont_air_gap is False:
+        docker_client = docker.from_env()
+        store_airgap_image_redis(conn, docker_client, args.run_image)
+
     if result is True:
         benchmark_stream_id = conn.xadd(
             STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields

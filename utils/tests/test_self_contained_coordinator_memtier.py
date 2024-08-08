@@ -502,6 +502,7 @@ def test_dockerhub_via_cli():
         )
         parser = spec_cli_args(parser)
         run_args = [
+            "--docker-dont-air-gap",
             "--server_name",
             "valkey",
             "--run_image",
@@ -571,6 +572,135 @@ def test_dockerhub_via_cli():
             6399,
             1,
             False,
+            5,
+            default_metrics,
+            "amd64",
+            None,
+            0,
+            10000,
+            "unstable",
+            "",
+            True,
+            False,
+        )
+
+        assert result == True
+        assert number_processed_streams == 1
+        assert num_process_test_suites == 1
+        by_version_key = f"ci.benchmarks.redislabs/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+        assert datasink_conn.exists(by_version_key)
+        rts = datasink_conn.ts()
+        # check we have by version metrics
+        assert "version" in rts.info(by_version_key).labels
+        assert redis_version == rts.info(by_version_key).labels["version"]
+
+        # get all keys
+        all_keys = datasink_conn.keys("*")
+        by_hash_keys = []
+        for key in all_keys:
+            if "/by.hash/" in key.decode():
+                by_hash_keys.append(key)
+
+        # ensure we have by hash keys
+        assert len(by_hash_keys) > 0
+        for hash_key in by_hash_keys:
+            # ensure we have both version and hash info on the key
+            assert "version" in rts.info(hash_key).labels
+            assert "hash" in rts.info(hash_key).labels
+            assert redis_version == rts.info(hash_key).labels["version"]
+
+
+def test_dockerhub_via_cli_airgap():
+    if run_coordinator_tests_dockerhub():
+        import argparse
+
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port)
+        conn.ping()
+        conn.flushall()
+        redis_version = "7.2.6"
+        run_image = f"valkey/valkey:{redis_version}-bookworm"
+        github_org = "valkey"
+        github_repo = "valkey"
+
+        db_port = os.getenv("DATASINK_PORT", "6379")
+
+        # should error due to missing --use-tags or --use-branch
+        parser = argparse.ArgumentParser(
+            description="test",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser = spec_cli_args(parser)
+        run_args = [
+            "--server_name",
+            "valkey",
+            "--run_image",
+            run_image,
+            "--gh_org",
+            github_org,
+            "--gh_repo",
+            github_repo,
+            "--redis_port",
+            "{}".format(db_port),
+        ]
+        args = parser.parse_args(
+            args=run_args,
+        )
+        try:
+            trigger_tests_dockerhub_cli_command_logic(args, "tool", "v0")
+        except SystemExit as e:
+            assert e.code == 0
+
+        # confirm request was made via the cli
+        assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+        assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+        running_platform = "fco-ThinkPad-T490"
+
+        build_runners_consumer_group_create(conn, running_platform, "0")
+        datasink_conn = redis.StrictRedis(port=db_port)
+        docker_client = docker.from_env()
+        home = str(Path.home())
+        stream_id = ">"
+        topologies_map = get_topologies(
+            "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+        )
+        # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+        # and we need 1 core for DB and another for CLIENT
+        testsuite_spec_files = [
+            "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+        ]
+        defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+        (
+            _,
+            _,
+            default_metrics,
+            _,
+            _,
+            _,
+        ) = get_defaults(defaults_filename)
+
+        (
+            result,
+            stream_id,
+            number_processed_streams,
+            num_process_test_suites,
+        ) = self_contained_coordinator_blocking_read(
+            conn,
+            True,
+            docker_client,
+            home,
+            stream_id,
+            datasink_conn,
+            testsuite_spec_files,
+            topologies_map,
+            running_platform,
+            False,
+            [],
+            "",
+            0,
+            6399,
+            1,
+            True,
             5,
             default_metrics,
             "amd64",

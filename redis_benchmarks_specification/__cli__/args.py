@@ -137,6 +137,12 @@ def spec_cli_args(parser):
     parser.add_argument("--mnt_point", type=str, default="")
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
     parser.add_argument(
+        "--docker-dont-air-gap",
+        default=False,
+        action="store_true",
+        help="Dont store the docker images in redis keys.",
+    )
+    parser.add_argument(
         "--use-tags",
         default=False,
         action="store_true",

@@ -312,28 +312,7 @@ def builder_process_stream(
                 if "run_image" in build_config:
                     run_image = build_config["run_image"]
                 if docker_air_gap:
-                    airgap_key = "docker:air-gap:{}".format(run_image)
-                    logging.info(
-                        "DOCKER AIR GAP: storing run image named: {} in redis key {}".format(
-                            run_image, airgap_key
-                        )
-                    )
-                    run_image_binary_stream = io.BytesIO()
-                    run_image_docker = docker_client.images.get(run_image)
-                    for chunk in run_image_docker.save():
-                        run_image_binary_stream.write(chunk)
-                    # 7 days expire
-                    binary_exp_secs = 24 * 60 * 60 * 7
-                    res_airgap = conn.set(
-                        airgap_key,
-                        run_image_binary_stream.getbuffer(),
-                        ex=binary_exp_secs,
-                    )
-                    logging.info(
-                        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
-                            airgap_key, res_airgap
-                        )
-                    )
+                    store_airgap_image_redis(conn, docker_client, run_image)
 
                 compiler = build_config["compiler"]
                 cpp_compiler = build_config["cpp_compiler"]
@@ -533,6 +512,31 @@ def builder_process_stream(
         else:
             logging.error("Missing commit information within received message.")
     return previous_id, new_builds_count, build_stream_fields_arr
+
+
+def store_airgap_image_redis(conn, docker_client, run_image):
+    airgap_key = "docker:air-gap:{}".format(run_image)
+    logging.info(
+        "DOCKER AIR GAP: storing run image named: {} in redis key {}".format(
+            run_image, airgap_key
+        )
+    )
+    run_image_binary_stream = io.BytesIO()
+    run_image_docker = docker_client.images.get(run_image)
+    for chunk in run_image_docker.save():
+        run_image_binary_stream.write(chunk)
+    # 7 days expire
+    binary_exp_secs = 24 * 60 * 60 * 7
+    res_airgap = conn.set(
+        airgap_key,
+        run_image_binary_stream.getbuffer(),
+        ex=binary_exp_secs,
+    )
+    logging.info(
+        "DOCKER AIR GAP: result of set bin data to {}: {}".format(
+            airgap_key, res_airgap
+        )
+    )
 
 
 def generate_benchmark_stream_request(
