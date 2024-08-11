@@ -255,6 +255,7 @@ def prepare_memtier_benchmark_parameters(
 
     if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
+    logging.info(f"Preparing the benchmark parameters. {benchmark_command}.")
     benchmark_command_str = " ".join(benchmark_command)
     if "arguments" in clientconfig:
         benchmark_command_str = benchmark_command_str + " " + clientconfig["arguments"]
