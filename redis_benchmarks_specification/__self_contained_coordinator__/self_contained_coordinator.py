@@ -1596,11 +1596,13 @@ def data_prepopulation_step(
         (
             _,
             preload_command_str,
+            _,
         ) = prepare_memtier_benchmark_parameters(
             benchmark_config["dbconfig"]["preload_tool"],
             full_benchmark_path,
             port,
             "localhost",
+            None,
             local_benchmark_output_filename,
             False,
         )
