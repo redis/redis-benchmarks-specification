@@ -248,6 +248,8 @@ def compare_command_logic(args, project_name, project_version):
     testname_regex = args.testname_regex
     auto_approve = args.auto_approve
     running_platform = args.running_platform
+    baseline_target_version = args.baseline_target_version
+    comparison_target_version = args.comparison_target_version
 
     if running_platform is not None:
         logging.info(
@@ -306,6 +308,8 @@ def compare_command_logic(args, project_name, project_version):
         to_ts_ms,
         use_metric_context_path,
         running_platform,
+        baseline_target_version,
+        comparison_target_version,
     )
     prepare_regression_comment(
         auto_approve,
@@ -529,6 +533,8 @@ def compute_regression_table(
     to_ts_ms=None,
     use_metric_context_path=None,
     running_platform=None,
+    baseline_target_version=None,
+    comparison_target_version=None,
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -552,7 +558,11 @@ def compute_regression_table(
         comparison_branch,
         baseline_tag,
         comparison_tag,
+        baseline_target_version,
+        comparison_target_version,
     )
+    logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
+    logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
     (
         prefix,
         testcases_setname,
@@ -712,6 +722,8 @@ def get_by_strings(
     comparison_branch,
     baseline_tag,
     comparison_tag,
+    baseline_target_version=None,
+    comparison_target_version=None,
 ):
     baseline_covered = False
     comparison_covered = False
@@ -738,6 +750,16 @@ def get_by_strings(
         by_str_baseline = "version"
         baseline_str = baseline_tag
 
+    if baseline_target_version is not None:
+        if comparison_covered:
+            logging.error(
+                "--baseline-branch, --baseline-tag and --baseline-target-version are mutually exclusive. Pick one..."
+            )
+            exit(1)
+        baseline_covered = True
+        by_str_baseline = "target+version"
+        baseline_str = baseline_target_version
+
     if comparison_tag is not None:
         # check if we had already covered comparison
         if comparison_covered:
@@ -748,16 +770,27 @@ def get_by_strings(
         comparison_covered = True
         by_str_comparison = "version"
         comparison_str = comparison_tag
+    if comparison_target_version is not None:
+        # check if we had already covered comparison
+        if comparison_covered:
+            logging.error(
+                "--comparison-branch, --comparison-tag, and --comparison-target-table are mutually exclusive. Pick one..."
+            )
+            exit(1)
+        comparison_covered = True
+        by_str_comparison = "target+version"
+        comparison_str = comparison_target_version
 
     if baseline_covered is False:
         logging.error(
-            "You need to provider either " + "( --baseline-branch or --baseline-tag ) "
+            "You need to provider either "
+            + "( --baseline-branch, --baseline-tag, or --baseline-target-version ) "
         )
         exit(1)
     if comparison_covered is False:
         logging.error(
             "You need to provider either "
-            + "( --comparison-branch or --comparison-tag ) "
+            + "( --comparison-branch, --comparison-tag, or --comparison-target-version ) "
         )
         exit(1)
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
@@ -822,6 +855,7 @@ def from_rts_to_regression_table(
         filters_comparison = [
             "{}={}".format(by_str_comparison, comparison_str),
             "metric={}".format(metric_name),
+            "hash==",
             "{}={}".format(test_filter, test_name),
             "deployment_name={}".format(comparison_deployment_name),
             "triggering_env={}".format(tf_triggering_env),
