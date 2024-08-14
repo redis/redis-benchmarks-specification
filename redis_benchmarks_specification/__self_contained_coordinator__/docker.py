@@ -8,7 +8,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 
 
 def generate_standalone_redis_server_args(
-    binary, port, dbdir, configuration_parameters=None
+    binary, port, dbdir, configuration_parameters=None, redis_arguments=""
 ):
     added_params = ["port", "protected-mode", "dir"]
     # start redis-server
@@ -30,6 +30,10 @@ def generate_standalone_redis_server_args(
                         parameter_value,
                     ]
                 )
+    if redis_arguments != "":
+        redis_arguments_arr = redis_arguments.split(" ")
+        logging.info(f"adding redis arguments {redis_arguments_arr}")
+        command.extend(redis_arguments_arr)
     return command
 
 

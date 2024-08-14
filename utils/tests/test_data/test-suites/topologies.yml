@@ -1,0 +1,22 @@
+spec:
+  setups:
+  - name: oss-standalone
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    resources:
+      requests:
+        cpus: "1"
+        memory: "10g"
+
+  - name: oss-standalone-02-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 2 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "1"
+        memory: "10g"

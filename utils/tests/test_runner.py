@@ -258,7 +258,7 @@ def test_extract_testsuites():
         ]
     )
     tests = extract_testsuites(args)
-    assert len(tests) == 7
+    assert len(tests) == 9
 
     args = parser.parse_args(
         args=[
@@ -269,7 +269,7 @@ def test_extract_testsuites():
         ]
     )
     tests = extract_testsuites(args)
-    assert len(tests) == 7
+    assert len(tests) == 9
 
     args = parser.parse_args(
         args=[

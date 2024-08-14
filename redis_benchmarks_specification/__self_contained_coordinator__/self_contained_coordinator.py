@@ -80,7 +80,6 @@ from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
-    extract_redis_dbconfig_parameters,
     get_defaults,
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
@@ -95,6 +94,8 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_tool,
     extract_client_container_image,
+    extract_redis_dbconfig_parameters,
+    extract_redis_configuration_from_topology,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
     restore_build_artifacts_from_test_details,
@@ -756,12 +757,25 @@ def process_self_contained_coordinator_stream(
                                     )
                                 )
                         for topology_spec_name in benchmark_config["redis-topologies"]:
+                            setup_name = topology_spec_name
+                            setup_type = "oss-standalone"
+                            if topology_spec_name in topologies_map:
+                                topology_spec = topologies_map[topology_spec_name]
+                                setup_type = topology_spec["type"]
+                            logging.info(
+                                f"Running topology named {topology_spec_name} of type {setup_type}"
+                            )
                             test_result = False
                             redis_container = None
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
+                                )
+                                redis_arguments = (
+                                    extract_redis_configuration_from_topology(
+                                        topologies_map, topology_spec_name
+                                    )
                                 )
                                 temporary_dir = tempfile.mkdtemp(dir=home)
                                 temporary_dir_client = tempfile.mkdtemp(dir=home)
@@ -776,8 +790,6 @@ def process_self_contained_coordinator_stream(
                                     )
                                 )
 
-                                setup_name = "oss-standalone"
-                                setup_type = "oss-standalone"
                                 tf_triggering_env = "ci"
                                 github_actor = "{}-{}".format(
                                     tf_triggering_env, running_platform
@@ -814,6 +826,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     mnt_point,
                                     redis_configuration_parameters,
+                                    redis_arguments,
                                 )
                                 command_str = " ".join(command)
                                 db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -926,7 +939,7 @@ def process_self_contained_coordinator_stream(
                                         start_time_str,
                                         git_hash,
                                         test_name,
-                                        "oss-standalone",
+                                        setup_name,
                                     )
                                 )
                                 logging.info(

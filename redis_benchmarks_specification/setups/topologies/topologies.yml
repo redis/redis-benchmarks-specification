@@ -10,6 +10,71 @@ spec:
         cpus: "1"
         memory: "10g"
 
+  - name: oss-standalone-02-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 2 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "3"
+        memory: "10g"
+
+  - name: oss-standalone-04-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 4 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "5"
+        memory: "10g"
+
+  - name: oss-standalone-08-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 8 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "9"
+        memory: "10g"
+
+  - name: oss-standalone-16-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 16 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "17"
+        memory: "10g"
+
+  - name: oss-standalone-32-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 32 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "33"
+        memory: "10g"
+
+  - name: oss-standalone-64-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 64 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "65"
+        memory: "10g"
   - name: oss-standalone-1replica
     type: oss-standalone
     redis_topology:
