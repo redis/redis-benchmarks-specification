@@ -478,6 +478,133 @@ def test_self_contained_coordinator_dockerhub():
         pass
 
 
+def test_self_contained_coordinator_dockerhub_iothreads():
+    try:
+        if run_coordinator_tests_dockerhub():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "7.4.0"
+            run_image = f"redis:{redis_version}"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+            build_stream_fields, result = generate_benchmark_stream_request(
+                id,
+                conn,
+                run_image,
+                build_arch,
+                testDetails,
+                build_os,
+            )
+            build_stream_fields["mnt_point"] = ""
+            if result is True:
+                benchmark_stream_id = conn.xadd(
+                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                )
+                logging.info(
+                    "sucessfully requested a new run {}. Stream id: {}".format(
+                        build_stream_fields, benchmark_stream_id
+                    )
+                )
+
+            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            expected_datapoint_ts = None
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(conn, running_platform, "0")
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./utils/tests/test_data/test-suites/topologies.yml"
+            )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/test-memtier-dockerhub-iothreads.yml"
+            ]
+            defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+            (
+                _,
+                _,
+                default_metrics,
+                _,
+                _,
+                _,
+            ) = get_defaults(defaults_filename)
+
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                5,
+                default_metrics,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+                False,
+            )
+
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 1
+            by_version_key = f"ci.benchmarks.redislabs/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone-02-io-threads/memory_maxmemory"
+            assert datasink_conn.exists(by_version_key)
+            rts = datasink_conn.ts()
+            # check we have by version metrics
+            assert "version" in rts.info(by_version_key).labels
+            assert redis_version == rts.info(by_version_key).labels["version"]
+
+            # get all keys
+            all_keys = datasink_conn.keys("*")
+            by_hash_keys = []
+            for key in all_keys:
+                if "/by.hash/" in key.decode():
+                    by_hash_keys.append(key)
+
+            # ensure we have by hash keys
+            assert len(by_hash_keys) > 0
+            for hash_key in by_hash_keys:
+                # ensure we have both version and hash info on the key
+                assert "version" in rts.info(hash_key).labels
+                assert "oss-standalone-02-io-threads" in hash_key.decode()
+                assert "hash" in rts.info(hash_key).labels
+                assert redis_version == rts.info(hash_key).labels["version"]
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
 def test_self_contained_coordinator_dockerhub_valkey():
     try:
         if run_coordinator_tests_dockerhub():

@@ -263,3 +263,7 @@ def test_self_contained_coordinator_blocking_read():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_extract_redis_configuration_from_topology():
+    assert False

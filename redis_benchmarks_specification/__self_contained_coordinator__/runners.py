@@ -32,7 +32,6 @@ from redisbench_admin.run.redistimeseries import (
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
-    extract_redis_dbconfig_parameters,
 )
 from redisbench_admin.utils.local import get_local_run_full_filename
 from redisbench_admin.utils.results import post_process_benchmark_results
@@ -47,6 +46,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_tool,
     extract_client_container_image,
+    extract_redis_dbconfig_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
     restore_build_artifacts_from_test_details,
