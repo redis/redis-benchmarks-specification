@@ -21,4 +21,4 @@ def test_extract_redis_configuration_from_topology():
         topologies_map, "oss-standalone-04-io-threads"
     )
     assert res != ""
-    assert "--io-threads 4 io-threads-do-reads yes" in res
+    assert "--io-threads 4 --io-threads-do-reads yes" in res
