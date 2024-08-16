@@ -846,6 +846,9 @@ def process_self_contained_coordinator_stream(
                                             "mode": "rw",
                                         },
                                     }
+                                    logging.info(
+                                        f"setting volume as follow: {volumes}. working_dir={mnt_point}"
+                                    )
                                     working_dir = mnt_point
                                 redis_container = docker_client.containers.run(
                                     image=run_image,
@@ -1253,7 +1256,7 @@ def process_self_contained_coordinator_stream(
                                         )
                                     except docker.errors.NotFound:
                                         logging.info(
-                                            "When trying to stop DB container with id {} and image {} it was already stopped".format(
+                                            "When trying to fetch logs from DB container with id {} and image {} it was already stopped".format(
                                                 redis_container.id,
                                                 redis_container.image,
                                             )
@@ -1295,6 +1298,7 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir, temporary_dir_client
                                     )
                                 )
+
                                 shutil.rmtree(temporary_dir, ignore_errors=True)
                                 shutil.rmtree(temporary_dir_client, ignore_errors=True)
 
