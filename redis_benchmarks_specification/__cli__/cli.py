@@ -87,6 +87,23 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         args.build_arch,
         testDetails,
         "n/a",
+        [],
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ".*",
+        0,
+        10000,
+        args.tests_regexp,
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org

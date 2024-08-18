@@ -204,7 +204,7 @@ def test_self_contained_coordinator_blocking_read():
             assert len(datasink_conn.smembers(running_platforms_setname)) == 1
             assert len(datasink_conn.smembers(testcases_setname)) == 1
             assert len(datasink_conn.smembers(project_branches_setname)) == 1
-            assert len(datasink_conn.smembers(project_versions_setname)) == 0
+            assert len(datasink_conn.smembers(project_versions_setname)) == 1
 
     except redis.exceptions.ConnectionError:
         pass

@@ -20,7 +20,7 @@ def generate_standalone_redis_server_args(
         "{}".format(port),
     ]
     if dbdir != "":
-        command.extend(["--dbdir", dbdir])
+        command.extend(["--dir", dbdir])
     if configuration_parameters is not None:
         for parameter, parameter_value in configuration_parameters.items():
             if parameter not in added_params:
