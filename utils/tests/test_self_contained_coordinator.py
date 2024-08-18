@@ -7,6 +7,7 @@ from pathlib import Path
 
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
 from redisbench_admin.utils.utils import get_ts_metric_name
+import logging
 
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
@@ -18,6 +19,7 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
+    start_redis_container,
 )
 
 from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
@@ -29,6 +31,11 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_checks
+
+
+from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    generate_standalone_redis_server_args,
+)
 
 
 def test_extract_client_cpu_limit():
@@ -263,3 +270,51 @@ def test_self_contained_coordinator_blocking_read():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_start_redis_container():
+    temporary_dir = os.getenv("TST_BINARY_REDIS_DIR", "")
+    if temporary_dir == "":
+        return
+
+    mnt_point = "/mnt/redis/"
+    executable = f"{mnt_point}redis-server"
+    redis_proc_start_port = 6379
+    current_cpu_pos = 0
+    ceil_db_cpu_limit = 1
+    redis_configuration_parameters = None
+    redis_arguments = ""
+    docker_client = docker.from_env()
+    redis_containers = []
+
+    command = generate_standalone_redis_server_args(
+        executable,
+        redis_proc_start_port,
+        mnt_point,
+        redis_configuration_parameters,
+        redis_arguments,
+    )
+    command_str = " ".join(command)
+    db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
+        ceil_db_cpu_limit, current_cpu_pos
+    )
+    run_image = "gcc:8.5"
+    redis_container = start_redis_container(
+        command_str,
+        db_cpuset_cpus,
+        docker_client,
+        mnt_point,
+        redis_containers,
+        run_image,
+        temporary_dir,
+    )
+    r = redis.StrictRedis(port=redis_proc_start_port)
+    try:
+        r.ping()
+    except redis.exceptions.ConnectionError:
+        # Access and print the logs
+        logs = redis_container.logs().decode("utf-8")
+        logging.error("Container failed. Here are the logs:")
+        logging.error(logs)
+        raise
+    redis_container.remove()

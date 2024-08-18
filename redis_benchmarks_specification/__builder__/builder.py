@@ -343,6 +343,8 @@ def builder_process_stream(
                     "linenoise",
                     "lua",
                 ]
+                if "fast_float" in deps_dir:
+                    deps_list.append("fast_float")
                 if "hdr_histogram" in deps_dir:
                     deps_list.append("hdr_histogram")
                 if "fpconv" in deps_dir:
