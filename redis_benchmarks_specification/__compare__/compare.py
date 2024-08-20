@@ -250,6 +250,10 @@ def compare_command_logic(args, project_name, project_version):
     running_platform = args.running_platform
     baseline_target_version = args.baseline_target_version
     comparison_target_version = args.comparison_target_version
+    baseline_github_repo = args.baseline_github_repo
+    comparison_github_repo = args.comparison_github_repo
+    baseline_hash = args.baseline_hash
+    comparison_hash = args.comparison_hash
 
     if running_platform is not None:
         logging.info(
@@ -310,6 +314,10 @@ def compare_command_logic(args, project_name, project_version):
         running_platform,
         baseline_target_version,
         comparison_target_version,
+        baseline_hash,
+        comparison_hash,
+        baseline_github_repo,
+        comparison_github_repo,
     )
     prepare_regression_comment(
         auto_approve,
@@ -535,6 +543,10 @@ def compute_regression_table(
     running_platform=None,
     baseline_target_version=None,
     comparison_target_version=None,
+    comparison_hash=None,
+    baseline_hash=None,
+    baseline_github_repo="redis",
+    comparison_github_repo="redis",
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -560,6 +572,8 @@ def compute_regression_table(
         comparison_tag,
         baseline_target_version,
         comparison_target_version,
+        comparison_hash,
+        baseline_hash,
     )
     logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
     logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
@@ -605,6 +619,8 @@ def compute_regression_table(
         total_stable,
         total_unstable,
         total_comparison_points,
+        regressions_list,
+        improvements_list,
     ) = from_rts_to_regression_table(
         baseline_deployment_name,
         comparison_deployment_name,
@@ -629,6 +645,8 @@ def compute_regression_table(
         tf_triggering_env,
         verbose,
         running_platform,
+        baseline_github_repo,
+        comparison_github_repo,
     )
     logging.info(
         "Printing differential analysis between {} and {}".format(
@@ -661,6 +679,8 @@ def compute_regression_table(
         writer_regressions.dump(mystdout, False)
         table_output += mystdout.getvalue()
         table_output += "\n\n"
+        test_names_str = "|".join(regressions_list)
+        table_output += f"Regressions test regexp names: {test_names_str}\n\n"
         mystdout.close()
         sys.stdout = old_stdout
 
@@ -682,6 +702,8 @@ def compute_regression_table(
         writer_regressions.dump(mystdout, False)
         table_output += mystdout.getvalue()
         table_output += "\n\n"
+        test_names_str = "|".join(improvements_list)
+        table_output += f"Improvements test regexp names: {test_names_str}\n\n"
         mystdout.close()
         sys.stdout = old_stdout
 
@@ -724,6 +746,8 @@ def get_by_strings(
     comparison_tag,
     baseline_target_version=None,
     comparison_target_version=None,
+    baseline_hash=None,
+    comparison_hash=None,
 ):
     baseline_covered = False
     comparison_covered = False
@@ -760,6 +784,16 @@ def get_by_strings(
         by_str_baseline = "target+version"
         baseline_str = baseline_target_version
 
+    if baseline_hash is not None:
+        if comparison_covered:
+            logging.error(
+                "--baseline-branch, --baseline-tag, --baseline-hash, and --baseline-target-version are mutually exclusive. Pick one..."
+            )
+            exit(1)
+        baseline_covered = True
+        by_str_baseline = "hash"
+        baseline_str = baseline_hash
+
     if comparison_tag is not None:
         # check if we had already covered comparison
         if comparison_covered:
@@ -781,16 +815,27 @@ def get_by_strings(
         by_str_comparison = "target+version"
         comparison_str = comparison_target_version
 
+    if comparison_hash is not None:
+        # check if we had already covered comparison
+        if comparison_covered:
+            logging.error(
+                "--comparison-branch, --comparison-tag, --comparison-hash, and --comparison-target-table are mutually exclusive. Pick one..."
+            )
+            exit(1)
+        comparison_covered = True
+        by_str_comparison = "hash"
+        comparison_str = comparison_hash
+
     if baseline_covered is False:
         logging.error(
             "You need to provider either "
-            + "( --baseline-branch, --baseline-tag, or --baseline-target-version ) "
+            + "( --baseline-branch, --baseline-tag, --baseline-hash, or --baseline-target-version ) "
         )
         exit(1)
     if comparison_covered is False:
         logging.error(
             "You need to provider either "
-            + "( --comparison-branch, --comparison-tag, or --comparison-target-version ) "
+            + "( --comparison-branch, --comparison-tag, --comparison-hash, or --comparison-target-version ) "
         )
         exit(1)
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
@@ -820,6 +865,8 @@ def from_rts_to_regression_table(
     tf_triggering_env,
     verbose,
     running_platform=None,
+    baseline_github_repo="redis",
+    comparison_github_repo="redis",
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
     table_full = []
@@ -835,6 +882,8 @@ def from_rts_to_regression_table(
     total_comparison_points = 0
     noise_waterline = 3
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
+    regressions_list = []
+    improvements_list = []
     for test_name in test_names:
         compare_version = "v0.1.208"
         github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
@@ -848,6 +897,7 @@ def from_rts_to_regression_table(
             "metric={}".format(metric_name),
             "{}={}".format(test_filter, test_name),
             "deployment_name={}".format(baseline_deployment_name),
+            "github_repo={}".format(baseline_github_repo),
             "triggering_env={}".format(tf_triggering_env),
         ]
         if running_platform is not None:
@@ -855,11 +905,15 @@ def from_rts_to_regression_table(
         filters_comparison = [
             "{}={}".format(by_str_comparison, comparison_str),
             "metric={}".format(metric_name),
-            "hash==",
             "{}={}".format(test_filter, test_name),
             "deployment_name={}".format(comparison_deployment_name),
+            "github_repo={}".format(comparison_github_repo),
             "triggering_env={}".format(tf_triggering_env),
         ]
+        if "hash" not in by_str_baseline:
+            filters_baseline.append("hash==")
+        if "hash" not in by_str_comparison:
+            filters_comparison.append("hash==")
         if running_platform is not None:
             filters_comparison.append("running_platform={}".format(running_platform))
         baseline_timeseries = rts.ts().queryindex(filters_baseline)
@@ -1037,9 +1091,11 @@ def from_rts_to_regression_table(
                 test_link,
             )
             if detected_regression:
+                regressions_list.append(test_name)
                 table_regressions.append(line)
 
             if detected_improvement:
+                improvements_list.append(test_name)
                 table_improvements.append(line)
 
             if unstable:
@@ -1072,6 +1128,8 @@ def from_rts_to_regression_table(
         total_stable,
         total_unstable,
         total_comparison_points,
+        regressions_list,
+        improvements_list,
     )
 
 

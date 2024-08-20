@@ -174,6 +174,10 @@ def get_branch_version_from_test_details(testDetails):
             git_branch = git_branch.decode()
         if git_branch.startswith("/refs/heads/"):
             git_branch = git_branch.replace("/refs/heads/", "")
+        if git_branch.startswith("refs/heads/"):
+            git_branch = git_branch.replace("refs/heads/", "")
+        if git_branch.startswith("/"):
+            git_branch = git_branch[1:]
     if git_version is not None:
         if type(git_version) == bytes:
             git_version = git_version.decode()
