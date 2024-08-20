@@ -547,6 +547,11 @@ def process_self_contained_coordinator_stream(
                 logging.info(
                     f"detected a server_name definition on the streamdata: {server_name}."
                 )
+                new_executable = f"{mnt_point}{server_name}-server"
+                logging.info(
+                    "changing executable from {executable} to {new_executable}"
+                )
+                executable = new_executable
 
             if b"restore_build_artifacts" in testDetails:
                 restore_build_artifacts = bool(

@@ -102,8 +102,6 @@ def test_self_contained_coordinator_blocking_read():
             )
             assert result == True
             assert number_processed_streams == 1
-            tf_github_org = "redis"
-            tf_github_repo = "redis"
             test_name = "memtier_benchmark-1Mkeys-100B-expire-use-case"
             tf_triggering_env = "ci"
             deployment_name = "oss-standalone"
@@ -628,11 +626,16 @@ def test_self_contained_coordinator_dockerhub_valkey():
                 build_arch,
                 testDetails,
                 build_os,
+                [],
+                "sudo bash -c 'make -j'",
             )
             build_stream_fields["github_repo"] = github_repo
             build_stream_fields["github_org"] = github_org
             build_stream_fields["server_name"] = github_repo
             build_stream_fields["mnt_point"] = ""
+            logging.info(
+                f"requesting stream with following info: {build_stream_fields}"
+            )
             if result is True:
                 benchmark_stream_id = conn.xadd(
                     STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
@@ -1091,3 +1094,192 @@ def test_prepare_memtier_benchmark_parameters():
             benchmark_command_str
             == 'memtier_benchmark --port 12000 --server localhost --json-out-file 1.json --cluster-mode "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
         )
+
+
+def test_self_contained_coordinator_blocking_read_valkey():
+    try:
+        if run_coordinator_tests():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            expected_datapoint_ts = None
+            conn.flushall()
+            gh_org = "valkey-io"
+            gh_repo = "valkey"
+            build_spec_name = "gcc:8.5.0-amd64-debian-buster-default"
+            git_hash = "7795152fff06f8200f5e4239ff612b240f638e14"
+            git_branch = "unstable"
+            build_artifacts = ["valkey-server"]
+
+            build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(
+                conn,
+                build_spec_name,
+                gh_org,
+                gh_repo,
+                git_hash,
+                git_branch,
+                "sh -c 'make -j'",
+                build_artifacts,
+                "valkey",
+            )
+            if b"git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields[b"git_timestamp_ms"].decode())
+            if "git_timestamp_ms" in reply_fields:
+                expected_datapoint_ts = int(reply_fields["git_timestamp_ms"])
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(conn, running_platform, "0")
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+            # and we need 1 core for DB and another for CLIENT
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/memtier_benchmark-1Mkeys-100B-expire-use-case.yml"
+            ]
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                _,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                1,
+                None,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+            )
+            assert result == True
+            assert number_processed_streams == 1
+
+            test_name = "memtier_benchmark-1Mkeys-100B-expire-use-case"
+            tf_triggering_env = "ci"
+            deployment_name = "oss-standalone"
+            deployment_type = "oss-standalone"
+            use_metric_context_path = False
+            metric_context_path = None
+            for metric_name in ["ALL_STATS.Totals.Latency", "ALL_STATS.Totals.Ops/sec"]:
+                ts_key_name = get_ts_metric_name(
+                    "by.branch",
+                    "unstable",
+                    gh_org,
+                    gh_repo,
+                    deployment_name,
+                    deployment_type,
+                    test_name,
+                    tf_triggering_env,
+                    metric_name,
+                    metric_context_path,
+                    use_metric_context_path,
+                    build_variant_name,
+                    running_platform,
+                )
+                rts = datasink_conn.ts()
+                assert ts_key_name.encode() in conn.keys()
+                assert len(rts.range(ts_key_name, 0, "+")) == 1
+                if expected_datapoint_ts is not None:
+                    assert rts.range(ts_key_name, 0, "+")[0][0] == expected_datapoint_ts
+            (
+                prefix,
+                testcases_setname,
+                deployment_name_setname,
+                tsname_project_total_failures,
+                tsname_project_total_success,
+                running_platforms_setname,
+                build_variant_setname,
+                testcases_metric_context_path_setname,
+                testcases_and_metric_context_path_setname,
+                project_archs_setname,
+                project_oss_setname,
+                project_branches_setname,
+                project_versions_setname,
+                project_compilers_setname,
+            ) = get_overall_dashboard_keynames(
+                gh_org,
+                gh_repo,
+                tf_triggering_env,
+                build_variant_name,
+                running_platform,
+                test_name,
+            )
+
+            assert datasink_conn.exists(testcases_setname)
+            assert datasink_conn.exists(running_platforms_setname)
+            assert datasink_conn.exists(build_variant_setname)
+            assert datasink_conn.exists(testcases_and_metric_context_path_setname)
+            assert datasink_conn.exists(testcases_metric_context_path_setname)
+            assert build_variant_name.encode() in datasink_conn.smembers(
+                build_variant_setname
+            )
+            assert test_name.encode() in datasink_conn.smembers(testcases_setname)
+            assert running_platform.encode() in datasink_conn.smembers(
+                running_platforms_setname
+            )
+            testcases_and_metric_context_path_members = [
+                x.decode()
+                for x in datasink_conn.smembers(
+                    testcases_and_metric_context_path_setname
+                )
+            ]
+            metric_context_path_members = [
+                x.decode()
+                for x in datasink_conn.smembers(testcases_metric_context_path_setname)
+            ]
+            assert len(testcases_and_metric_context_path_members) == len(
+                metric_context_path_members
+            )
+
+            assert [x.decode() for x in datasink_conn.smembers(testcases_setname)] == [
+                test_name
+            ]
+
+            assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
+            assert "debian-buster".encode() in datasink_conn.smembers(
+                project_oss_setname
+            )
+            assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)
+            assert build_variant_name.encode() in datasink_conn.smembers(
+                build_variant_setname
+            )
+            assert running_platform.encode() in datasink_conn.smembers(
+                running_platforms_setname
+            )
+
+            assert len(datasink_conn.smembers(project_archs_setname)) == 1
+            assert len(datasink_conn.smembers(project_oss_setname)) == 1
+            assert len(datasink_conn.smembers(project_compilers_setname)) == 1
+            assert len(datasink_conn.smembers(build_variant_setname)) == 1
+            assert len(datasink_conn.smembers(running_platforms_setname)) == 1
+            assert len(datasink_conn.smembers(testcases_setname)) == 1
+            assert len(datasink_conn.smembers(project_branches_setname)) == 1
+            assert len(datasink_conn.smembers(project_versions_setname)) == 1
+
+    except redis.exceptions.ConnectionError:
+        pass
