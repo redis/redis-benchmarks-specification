@@ -422,7 +422,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
             commit_dict["github_org"] = args.gh_org
             commit_dict["github_repo"] = args.gh_repo
-            if args.server_name != "":
+            if args.server_name is not None and args.server_name != "":
                 commit_dict["server_name"] = args.server_name
             if args.build_artifacts != "":
                 commit_dict["build_artifacts"] = args.build_artifacts
