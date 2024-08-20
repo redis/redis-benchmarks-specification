@@ -234,6 +234,7 @@ def builder_process_stream(
         if b"git_hash" in testDetails:
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))
+            logging.info(f"Received the following build stream: {testDetails}.")
             binary_zip_key = testDetails[b"zip_archive_key"]
             logging.info(
                 "Retriving zipped source from key {}.".format(
@@ -270,6 +271,16 @@ def builder_process_stream(
             tests_groups_regexp = ".*"
             if b"tests_groups_regexp" in testDetails:
                 tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
+
+            github_org = "redis"
+            if b"github_org" in testDetails:
+                github_org = testDetails[b"github_org"].decode()
+                logging.info(f"detected github_org info on build stream {github_org}")
+
+            github_repo = "redis"
+            if b"github_repo" in testDetails:
+                github_repo = testDetails[b"github_repo"].decode()
+                logging.info(f"detected github_repo info on build stream {github_repo}")
 
             # github updates
             is_actionable_pr = False
@@ -321,6 +332,14 @@ def builder_process_stream(
                 build_artifacts = ["redis-server"]
                 if "build_artifacts" in build_config:
                     build_artifacts = build_config["build_artifacts"]
+                if b"build_artifacts" in testDetails:
+                    new_build_artifacts = (
+                        testDetails[b"build_artifacts"].decode().split(",")
+                    )
+                    logging.info(
+                        f"overriding default build artifacts {build_artifacts} by {new_build_artifacts}"
+                    )
+                    build_artifacts = new_build_artifacts
                 build_vars_str = ""
                 if "env" in build_config:
                     if build_config["env"] is not None:
@@ -361,6 +380,12 @@ def builder_process_stream(
                     "redis-server",
                     build_vars_str,
                 )
+                if b"build_command" in testDetails:
+                    build_command = testDetails[b"build_command"].decode()
+                server_name = "redis"
+                if b"server_name" in testDetails:
+                    server_name = testDetails[b"server_name"].decode()
+
                 build_start_datetime = datetime.datetime.utcnow()
                 logging.info(
                     "Using the following build command {}.".format(build_command)
@@ -435,6 +460,9 @@ def builder_process_stream(
                     tests_priority_upper_limit,
                     tests_regexp,
                     use_git_timestamp,
+                    server_name,
+                    github_org,
+                    github_repo,
                 )
                 if result is True:
                     benchmark_stream_id = conn.xadd(
@@ -572,6 +600,9 @@ def generate_benchmark_stream_request(
     tests_priority_upper_limit=10000,
     tests_regexp=".*",
     use_git_timestamp=False,
+    server_name="redis",
+    github_org="redis",
+    github_repo="redis",
 ):
     build_stream_fields = {
         "id": id,
@@ -584,6 +615,9 @@ def generate_benchmark_stream_request(
         "tests_priority_upper_limit": tests_priority_upper_limit,
         "tests_priority_lower_limit": tests_priority_lower_limit,
         "tests_groups_regexp": tests_groups_regexp,
+        "server_name": server_name,
+        "github_org": github_org,
+        "github_repo": github_repo,
     }
     if build_config_metadata is not None:
         build_stream_fields["metadata"] = json.dumps(build_config_metadata)
@@ -594,6 +628,7 @@ def generate_benchmark_stream_request(
     if build_vars_str is not None:
         build_stream_fields["build_vars"] = build_vars_str
     if build_command is not None:
+        logging.info(f"adding build_command: {build_command}")
         build_stream_fields["build_command"] = build_command
     if build_image is not None:
         build_stream_fields["build_image"] = build_image

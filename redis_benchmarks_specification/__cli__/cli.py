@@ -355,6 +355,14 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     filtered_hash_commits = []
     for cdict in commits:
         commit_hash = cdict["git_hash"]
+        if args.git_hash != "":
+            if args.git_hash != commit_hash:
+                logging.info(
+                    "Skipping {} given it does not match commit hash {}".format(
+                        commit_hash, args.git_hash
+                    )
+                )
+                continue
         commit_summary = cdict["commit_summary"]
         commit_datetime = cdict["commit_datetime"]
         match_obj = re.search(hash_regexp_string, commit_hash)
@@ -412,6 +420,14 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_priority_lower_limit"] = tests_priority_lower_limit
             commit_dict["tests_regexp"] = tests_regexp
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
+            commit_dict["github_org"] = args.gh_org
+            commit_dict["github_repo"] = args.gh_repo
+            if args.server_name != "":
+                commit_dict["server_name"] = args.server_name
+            if args.build_artifacts != "":
+                commit_dict["build_artifacts"] = args.build_artifacts
+            if args.build_command != "":
+                commit_dict["build_command"] = args.build_command
             if pull_request is not None:
                 logging.info(
                     f"Have a pull request info to include in build request {pull_request}"

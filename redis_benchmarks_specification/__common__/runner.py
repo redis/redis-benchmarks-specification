@@ -150,7 +150,7 @@ def exporter_datasink_common(
     git_hash=None,
 ):
     logging.info(
-        f"Using datapoint_time_ms: {datapoint_time_ms}. git_has={git_hash}, git_branch={git_branch}, git_version={git_version}"
+        f"Using datapoint_time_ms: {datapoint_time_ms}. git_hash={git_hash}, git_branch={git_branch}, git_version={git_version}. gh_org={tf_github_org}, gh_repo={tf_github_repo}"
     )
     timeseries_test_sucess_flow(
         datasink_push_results_redistimeseries,

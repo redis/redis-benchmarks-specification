@@ -167,6 +167,21 @@ def spec_cli_args(parser):
         help="Iterate over the git commits.",
     )
     parser.add_argument(
+        "--build_artifacts",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--build_command",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--git_hash",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
         "--dry-run",
         default=False,
         action="store_true",
