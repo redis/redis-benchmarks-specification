@@ -154,9 +154,7 @@ def test_get_branch_version_from_test_details():
 
 def test_cli_build():
     try:
-        # if should_run_builder():
-        if True:
-
+        if should_run_builder():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()

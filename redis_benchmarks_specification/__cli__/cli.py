@@ -351,16 +351,22 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 hash_regexp
             )
         )
+    enable_hash_filtering = False
+    hash_filters = []
+    if args.git_hash != "":
+        enable_hash_filtering = True
+        hash_filters = args.git_hash.split(",")
+        logging.info(
+            f"There is a total of {len(hash_filters)} commit hash fitlers: {hash_filters}"
+        )
     hash_regexp_string = re.compile(hash_regexp)
     filtered_hash_commits = []
     for cdict in commits:
         commit_hash = cdict["git_hash"]
-        if args.git_hash != "":
-            if args.git_hash != commit_hash:
+        if enable_hash_filtering:
+            if commit_hash not in hash_filters:
                 logging.info(
-                    "Skipping {} given it does not match commit hash {}".format(
-                        commit_hash, args.git_hash
-                    )
+                    f"Skipping {commit_hash} given it does not match any commit hash in {hash_filters}"
                 )
                 continue
         commit_summary = cdict["commit_summary"]
