@@ -17,6 +17,7 @@ tested-groups:
 - set
 tested-commands:
 - sadd
+- sismember
 redis-topologies:
 - oss-standalone
 build-variants:
