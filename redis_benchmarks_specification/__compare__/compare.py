@@ -203,6 +203,8 @@ def compare_command_logic(args, project_name, project_version):
             )
         )
         baseline_branch = default_baseline_branch
+    if baseline_branch == "":
+        baseline_branch = None
     comparison_branch = args.comparison_branch
     simplify_table = args.simple_table
     print_regressions_only = args.print_regressions_only
@@ -250,6 +252,8 @@ def compare_command_logic(args, project_name, project_version):
     running_platform = args.running_platform
     baseline_target_version = args.baseline_target_version
     comparison_target_version = args.comparison_target_version
+    baseline_target_branch = args.baseline_target_branch
+    comparison_target_branch = args.comparison_target_branch
     baseline_github_repo = args.baseline_github_repo
     comparison_github_repo = args.comparison_github_repo
     baseline_hash = args.baseline_hash
@@ -318,6 +322,8 @@ def compare_command_logic(args, project_name, project_version):
         comparison_hash,
         baseline_github_repo,
         comparison_github_repo,
+        baseline_target_branch,
+        comparison_target_branch,
     )
     prepare_regression_comment(
         auto_approve,
@@ -547,6 +553,8 @@ def compute_regression_table(
     baseline_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
+    baseline_target_branch=None,
+    comparison_target_branch=None,
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -574,6 +582,8 @@ def compute_regression_table(
         comparison_target_version,
         comparison_hash,
         baseline_hash,
+        baseline_target_branch,
+        comparison_target_branch,
     )
     logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
     logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
@@ -739,6 +749,11 @@ def compute_regression_table(
     )
 
 
+def get_by_error(name, by_str_arr):
+    by_string = ",".join(by_str_arr)
+    return f"--{name}-branch, --{name}-tag, --{name}-target-branch, --{name}-hash, and --{name}-target-version are mutually exclusive. You selected a total of {len(by_str_arr)}: {by_string}. Pick one..."
+
+
 def get_by_strings(
     baseline_branch,
     comparison_branch,
@@ -748,6 +763,8 @@ def get_by_strings(
     comparison_target_version=None,
     baseline_hash=None,
     comparison_hash=None,
+    baseline_target_branch=None,
+    comparison_target_branch=None,
 ):
     baseline_covered = False
     comparison_covered = False
@@ -755,50 +772,64 @@ def get_by_strings(
     by_str_comparison = ""
     baseline_str = ""
     comparison_str = ""
+    baseline_by_arr = []
+    comparison_by_arr = []
+
+    ################# BASELINE BY ....
+
     if baseline_branch is not None:
-        baseline_covered = True
         by_str_baseline = "branch"
+        baseline_covered = True
         baseline_str = baseline_branch
-    if comparison_branch is not None:
-        comparison_covered = True
-        by_str_comparison = "branch"
-        comparison_str = comparison_branch
+        baseline_by_arr.append(by_str_baseline)
 
     if baseline_tag is not None:
-        if comparison_covered:
-            logging.error(
-                "--baseline-branch and --baseline-tag are mutually exclusive. Pick one..."
-            )
+        by_str_baseline = "version"
+        if baseline_covered:
+            baseline_by_arr.append(by_str_baseline)
+            logging.error(get_by_error("baseline", baseline_by_arr))
             exit(1)
         baseline_covered = True
-        by_str_baseline = "version"
         baseline_str = baseline_tag
 
     if baseline_target_version is not None:
-        if comparison_covered:
-            logging.error(
-                "--baseline-branch, --baseline-tag and --baseline-target-version are mutually exclusive. Pick one..."
-            )
+        by_str_baseline = "target+version"
+        if baseline_covered:
+            baseline_by_arr.append(by_str_baseline)
+            logging.error(get_by_error("baseline", baseline_by_arr))
             exit(1)
         baseline_covered = True
-        by_str_baseline = "target+version"
         baseline_str = baseline_target_version
 
     if baseline_hash is not None:
-        if comparison_covered:
-            logging.error(
-                "--baseline-branch, --baseline-tag, --baseline-hash, and --baseline-target-version are mutually exclusive. Pick one..."
-            )
+        by_str_baseline = "hash"
+        if baseline_covered:
+            baseline_by_arr.append(by_str_baseline)
+            logging.error(get_by_error("baseline", baseline_by_arr))
             exit(1)
         baseline_covered = True
-        by_str_baseline = "hash"
         baseline_str = baseline_hash
+    if baseline_target_branch is not None:
+        by_str_baseline = "target+branch"
+        if baseline_covered:
+            baseline_by_arr.append(by_str_baseline)
+            logging.error(get_by_error("baseline", baseline_by_arr))
+            exit(1)
+        baseline_covered = True
+        baseline_str = baseline_target_branch
+
+    ################# COMPARISON BY ....
+
+    if comparison_branch is not None:
+        by_str_comparison = "branch"
+        comparison_covered = True
+        comparison_str = comparison_branch
 
     if comparison_tag is not None:
         # check if we had already covered comparison
         if comparison_covered:
             logging.error(
-                "--comparison-branch and --comparison-tag are mutually exclusive. Pick one..."
+                "--comparison-branch and --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
             )
             exit(1)
         comparison_covered = True
@@ -808,18 +839,29 @@ def get_by_strings(
         # check if we had already covered comparison
         if comparison_covered:
             logging.error(
-                "--comparison-branch, --comparison-tag, and --comparison-target-table are mutually exclusive. Pick one..."
+                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
             )
             exit(1)
         comparison_covered = True
         by_str_comparison = "target+version"
         comparison_str = comparison_target_version
 
+    if comparison_target_branch is not None:
+        # check if we had already covered comparison
+        if comparison_covered:
+            logging.error(
+                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
+            )
+            exit(1)
+        comparison_covered = True
+        by_str_comparison = "target+branch"
+        comparison_str = comparison_target_branch
+
     if comparison_hash is not None:
         # check if we had already covered comparison
         if comparison_covered:
             logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, and --comparison-target-table are mutually exclusive. Pick one..."
+                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
             )
             exit(1)
         comparison_covered = True
@@ -829,13 +871,13 @@ def get_by_strings(
     if baseline_covered is False:
         logging.error(
             "You need to provider either "
-            + "( --baseline-branch, --baseline-tag, --baseline-hash, or --baseline-target-version ) "
+            + "( --baseline-branch, --baseline-tag, --baseline-hash, --baseline-target-branch or --baseline-target-version ) "
         )
         exit(1)
     if comparison_covered is False:
         logging.error(
             "You need to provider either "
-            + "( --comparison-branch, --comparison-tag, --comparison-hash, or --comparison-target-version ) "
+            + "( --comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch or --comparison-target-version ) "
         )
         exit(1)
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
@@ -1252,9 +1294,9 @@ def get_v_pct_change_and_largest_var(
             if last_n < 0 or (last_n > 0 and len(comparison_values) < last_n):
                 comparison_values.append(tuple[1])
         comparison_df = pd.DataFrame(comparison_values)
-        comparison_median = float(comparison_df.median())
+        comparison_median = float(comparison_df.median().iloc[0])
         comparison_v = comparison_median
-        comparison_std = float(comparison_df.std())
+        comparison_std = float(comparison_df.std().iloc[0])
         if verbose:
             logging.info(
                 "comparison_datapoints: {} value: {}; std-dev: {}; median: {}".format(

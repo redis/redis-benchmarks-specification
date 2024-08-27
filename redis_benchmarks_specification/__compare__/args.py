@@ -96,6 +96,9 @@ def create_compare_arguments(parser):
     parser.add_argument(
         "--baseline-target-version", type=str, default=None, required=False
     )
+    parser.add_argument(
+        "--baseline-target-branch", type=str, default=None, required=False
+    )
     parser.add_argument("--comparison-branch", type=str, default=None, required=False)
     parser.add_argument(
         "--baseline-github-repo", type=str, default="redis", required=False
@@ -107,6 +110,9 @@ def create_compare_arguments(parser):
     parser.add_argument("--comparison-hash", type=str, default=None, required=False)
     parser.add_argument(
         "--comparison-target-version", type=str, default=None, required=False
+    )
+    parser.add_argument(
+        "--comparison-target-branch", type=str, default=None, required=False
     )
     parser.add_argument("--print-regressions-only", type=bool, default=False)
     parser.add_argument("--print-improvements-only", type=bool, default=False)
