@@ -937,7 +937,7 @@ def from_rts_to_regression_table(
     regressions_list = []
     improvements_list = []
     for test_name in test_names:
-        compare_version = "v0.1.208"
+        compare_version = "main"
         github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
         test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
         test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
@@ -965,7 +965,7 @@ def from_rts_to_regression_table(
             "triggering_env={}".format(tf_triggering_env),
         ]
         if comparison_github_org != "":
-            filters_baseline.append(f"github_org={comparison_github_org}")
+            filters_comparison.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
             filters_baseline.append("hash==")
         if "hash" not in by_str_comparison:
