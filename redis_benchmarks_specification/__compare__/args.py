@@ -44,6 +44,8 @@ def create_compare_arguments(parser):
     )
     parser.add_argument("--github_repo", type=str, default="redis")
     parser.add_argument("--github_org", type=str, default="redis")
+    parser.add_argument("--baseline_github_org", type=str, default="")
+    parser.add_argument("--comparison_github_org", type=str, default="")
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")

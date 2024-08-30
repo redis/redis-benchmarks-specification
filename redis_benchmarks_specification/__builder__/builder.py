@@ -644,11 +644,11 @@ def generate_benchmark_stream_request(
         build_stream_fields["git_version"] = git_version
     if git_timestamp_ms is not None:
         build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
+
+    prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
     for artifact in build_artifacts:
-        bin_key = "zipped:artifacts:{}:{}.zip".format(id, artifact)
-        bin_artifact = open(
-            "{}src/{}".format(redis_temporary_dir, artifact), "rb"
-        ).read()
+        bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
+        bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
         bin_artifact_len = len(bytes(bin_artifact))
         assert bin_artifact_len > 0
         conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)

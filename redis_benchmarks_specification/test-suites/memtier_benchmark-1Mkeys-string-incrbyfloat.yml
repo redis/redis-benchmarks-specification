@@ -1,18 +1,16 @@
 version: 0.4
-name: memtier_benchmark-connection-hello
-description: 'Runs memtier_benchmark, for no keyspace, benchmarking the connection setup scenario using HELLO command.'
+name: memtier_benchmark-1Mkeys-string-incrbyfloat
+description: Runs memtier_benchmark, for a keyspace length of 1M keys doing incrby of 0.01.
 dbconfig:
   configuration-parameters:
     save: '""'
-  check:
-    keyspacelen: 0
   resources:
     requests:
       memory: 1g
 tested-groups:
-- connection
+- string
 tested-commands:
-- hello
+- incrbyfloat
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -21,10 +19,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: -c 50 -t 4 --command="HELLO 2 SETNAME __key__"  --hide-histogram --test-time 120
+  arguments: --test-time 120 --command "INCRBYFLOAT __key__ 0.01" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
       memory: 2g
 
-priority: 1
+priority: 21

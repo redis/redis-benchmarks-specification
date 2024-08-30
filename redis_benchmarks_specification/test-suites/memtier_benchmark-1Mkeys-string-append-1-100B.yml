@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-append-1-100B
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 1 Bytes for each key initially. Then we append to the same keys with values ranging from 1 to 100B.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "1" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- append
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 --data-size-range=1-100 --command "APPEND __key__ __data__" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+tested-groups:
+- string
+priority: 1
