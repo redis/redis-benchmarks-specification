@@ -256,6 +256,8 @@ def compare_command_logic(args, project_name, project_version):
     comparison_target_branch = args.comparison_target_branch
     baseline_github_repo = args.baseline_github_repo
     comparison_github_repo = args.comparison_github_repo
+    baseline_github_org = args.baseline_github_org
+    comparison_github_org = args.comparison_github_org
     baseline_hash = args.baseline_hash
     comparison_hash = args.comparison_hash
 
@@ -324,6 +326,8 @@ def compare_command_logic(args, project_name, project_version):
         comparison_github_repo,
         baseline_target_branch,
         comparison_target_branch,
+        baseline_github_org,
+        comparison_github_org,
     )
     prepare_regression_comment(
         auto_approve,
@@ -555,6 +559,8 @@ def compute_regression_table(
     comparison_github_repo="redis",
     baseline_target_branch=None,
     comparison_target_branch=None,
+    baseline_github_org="redis",
+    comparison_github_org="redis",
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -657,6 +663,8 @@ def compute_regression_table(
         running_platform,
         baseline_github_repo,
         comparison_github_repo,
+        baseline_github_org,
+        comparison_github_org,
     )
     logging.info(
         "Printing differential analysis between {} and {}".format(
@@ -909,6 +917,8 @@ def from_rts_to_regression_table(
     running_platform=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
+    baseline_github_org="redis",
+    comparison_github_org="redis",
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
     table_full = []
@@ -942,6 +952,8 @@ def from_rts_to_regression_table(
             "github_repo={}".format(baseline_github_repo),
             "triggering_env={}".format(tf_triggering_env),
         ]
+        if baseline_github_org != "":
+            filters_baseline.append(f"github_org={baseline_github_org}")
         if running_platform is not None:
             filters_baseline.append("running_platform={}".format(running_platform))
         filters_comparison = [
@@ -952,6 +964,8 @@ def from_rts_to_regression_table(
             "github_repo={}".format(comparison_github_repo),
             "triggering_env={}".format(tf_triggering_env),
         ]
+        if comparison_github_org != "":
+            filters_baseline.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
             filters_baseline.append("hash==")
         if "hash" not in by_str_comparison:
