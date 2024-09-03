@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-load-set-intset-with-100-elements
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading SETs with 100 integer elements.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- sadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 -c 50 -t 4 --command "SADD __key__ 436858 768277 10664 860016 865292 841848 313147 896678 386308 977048 203069 283373 593503 457419 169542 391186 130304 916639 453967 273773 589383 657683 182813 641487 580095 195884 372142 774005 768470 95729 556839 771113 432139 613472 528415 174665 155343 215707 753892 81624 199200 877732 358153 337683 24664 481128 356011 28176 535519 724263 780697 435661 3623 6998 985912 696150 913066 171765 808279 608289 187563 300496 104333 684239 434669 111037 928553 714514 606168 190478 772363 393219 243921 549032 624950 743846 957491 864902 345918 846332 42207 243593 125622 915607 523476 226892 773003 840853 792775 582050 702242 194856 270254 617201 454742 543414 960526 136178 43558 172112" --command-key-pattern="P" --key-minimum=1 --key-maximum 1000000 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+
+tested-groups:
+- set
+priority: 12

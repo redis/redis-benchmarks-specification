@@ -124,6 +124,12 @@ def create_compare_arguments(parser):
     parser.add_argument("--use_metric_context_path", type=bool, default=False)
     parser.add_argument("--testname_regex", type=str, default=".*", required=False)
     parser.add_argument(
+        "--regression_str", type=str, default="REGRESSION", required=False
+    )
+    parser.add_argument(
+        "--improvement_str", type=str, default="IMPROVEMENT", required=False
+    )
+    parser.add_argument(
         "--regressions-percent-lower-limit",
         type=float,
         default=5.0,
