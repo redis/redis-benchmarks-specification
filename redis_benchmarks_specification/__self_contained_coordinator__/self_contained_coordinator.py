@@ -1375,7 +1375,7 @@ def process_self_contained_coordinator_stream(
                             detected_regressions,
                             table_output,
                             total_improvements,
-                            total_regressions,
+                            regressions_list,
                             total_stable,
                             total_unstable,
                             total_comparison_points,
@@ -1409,6 +1409,7 @@ def process_self_contained_coordinator_stream(
                             use_metric_context_path,
                             running_platform,
                         )
+                        total_regressions = len(regressions_list)
                         auto_approve = True
                         grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
 
@@ -1438,6 +1439,7 @@ def process_self_contained_coordinator_stream(
                             total_unstable,
                             verbose,
                             regressions_percent_lower_limit,
+                            regressions_list,
                         )
                     logging.info(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"

@@ -285,7 +285,7 @@ def compare_command_logic(args, project_name, project_version):
         detected_regressions,
         table_output,
         total_improvements,
-        total_regressions,
+        regressions_list,
         total_stable,
         total_unstable,
         total_comparison_points,
@@ -328,7 +328,10 @@ def compare_command_logic(args, project_name, project_version):
         comparison_target_branch,
         baseline_github_org,
         comparison_github_org,
+        args.regression_str,
+        args.improvement_str,
     )
+    total_regressions = len(regressions_list)
     prepare_regression_comment(
         auto_approve,
         baseline_branch,
@@ -355,6 +358,7 @@ def compare_command_logic(args, project_name, project_version):
         total_unstable,
         verbose,
         args.regressions_percent_lower_limit,
+        regressions_list,
     )
     return (
         detected_regressions,
@@ -393,6 +397,7 @@ def prepare_regression_comment(
     total_unstable,
     verbose,
     regressions_percent_lower_limit,
+    regressions_list=[],
 ):
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
@@ -423,6 +428,14 @@ def prepare_regression_comment(
             comparison_summary += "- Detected a total of {} regressions bellow the regression water line {}.\n".format(
                 total_regressions, regressions_percent_lower_limit
             )
+            if len(regressions_list) > 0:
+                regression_values = [l[1] for l in regressions_list]
+                regression_df = pd.DataFrame(regression_values)
+                median_regression = round(float(regression_df.median().iloc[0]), 2)
+                max_regression = round(float(regression_df.max().iloc[0]), 2)
+                min_regression = round(float(regression_df.min().iloc[0]), 2)
+
+                comparison_summary += f"   - Median/Common-Case regression was {median_regression}%% and ranged from [{min_regression},{max_regression}] %%.\n"
 
         comment_body += comparison_summary
         comment_body += "\n"
@@ -561,6 +574,8 @@ def compute_regression_table(
     comparison_target_branch=None,
     baseline_github_org="redis",
     comparison_github_org="redis",
+    regression_str="REGRESSION",
+    improvement_str="IMPROVEMENT",
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -665,6 +680,8 @@ def compute_regression_table(
         comparison_github_repo,
         baseline_github_org,
         comparison_github_org,
+        regression_str,
+        improvement_str,
     )
     logging.info(
         "Printing differential analysis between {} and {}".format(
@@ -697,7 +714,7 @@ def compute_regression_table(
         writer_regressions.dump(mystdout, False)
         table_output += mystdout.getvalue()
         table_output += "\n\n"
-        test_names_str = "|".join(regressions_list)
+        test_names_str = "|".join([l[0] for l in regressions_list])
         table_output += f"Regressions test regexp names: {test_names_str}\n\n"
         mystdout.close()
         sys.stdout = old_stdout
@@ -750,7 +767,7 @@ def compute_regression_table(
         detected_regressions,
         table_output,
         total_improvements,
-        total_regressions,
+        regressions_list,
         total_stable,
         total_unstable,
         total_comparison_points,
@@ -919,6 +936,8 @@ def from_rts_to_regression_table(
     comparison_github_repo="redis",
     baseline_github_org="redis",
     comparison_github_org="redis",
+    regression_str="REGRESSION",
+    improvement_str="IMPROVEMENT",
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
     table_full = []
@@ -937,7 +956,7 @@ def from_rts_to_regression_table(
     regressions_list = []
     improvements_list = []
     for test_name in test_names:
-        compare_version = "v0.1.208"
+        compare_version = "main"
         github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
         test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
         test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
@@ -965,7 +984,7 @@ def from_rts_to_regression_table(
             "triggering_env={}".format(tf_triggering_env),
         ]
         if comparison_github_org != "":
-            filters_baseline.append(f"github_org={comparison_github_org}")
+            filters_comparison.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
             filters_baseline.append("hash==")
         if "hash" not in by_str_comparison:
@@ -1103,27 +1122,27 @@ def from_rts_to_regression_table(
         if baseline_v != "N/A" or comparison_v != "N/A":
             detected_regression = False
             detected_improvement = False
-            if percentage_change < 0.0 and not unstable:
+            if percentage_change < 0.0:
                 if -waterline >= percentage_change:
                     detected_regression = True
                     total_regressions = total_regressions + 1
-                    note = note + " REGRESSION"
+                    note = note + f" {regression_str}"
                     detected_regressions.append(test_name)
                 elif percentage_change < -noise_waterline:
                     if simplify_table is False:
-                        note = note + " potential REGRESSION"
+                        note = note + f" potential {regression_str}"
                 else:
                     if simplify_table is False:
                         note = note + " No Change"
 
-            if percentage_change > 0.0 and not unstable:
+            if percentage_change > 0.0:
                 if percentage_change > waterline:
                     detected_improvement = True
                     total_improvements = total_improvements + 1
-                    note = note + " IMPROVEMENT"
+                    note = note + f" {improvement_str}"
                 elif percentage_change > noise_waterline:
                     if simplify_table is False:
-                        note = note + " potential IMPROVEMENT"
+                        note = note + f" potential {improvement_str}"
                 else:
                     if simplify_table is False:
                         note = note + " No Change"
@@ -1147,7 +1166,7 @@ def from_rts_to_regression_table(
                 test_link,
             )
             if detected_regression:
-                regressions_list.append(test_name)
+                regressions_list.append([test_name, percentage_change])
                 table_regressions.append(line)
 
             if detected_improvement:
