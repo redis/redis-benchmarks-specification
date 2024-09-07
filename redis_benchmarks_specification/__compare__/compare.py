@@ -284,7 +284,7 @@ def compare_command_logic(args, project_name, project_version):
     (
         detected_regressions,
         table_output,
-        total_improvements,
+        improvements_list,
         regressions_list,
         total_stable,
         total_unstable,
@@ -332,6 +332,7 @@ def compare_command_logic(args, project_name, project_version):
         args.improvement_str,
     )
     total_regressions = len(regressions_list)
+    total_improvements = len(improvements_list)
     prepare_regression_comment(
         auto_approve,
         baseline_branch,
@@ -359,6 +360,7 @@ def compare_command_logic(args, project_name, project_version):
         verbose,
         args.regressions_percent_lower_limit,
         regressions_list,
+        improvements_list,
     )
     return (
         detected_regressions,
@@ -398,6 +400,7 @@ def prepare_regression_comment(
     verbose,
     regressions_percent_lower_limit,
     regressions_list=[],
+    improvements_list=[],
 ):
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
@@ -424,6 +427,15 @@ def prepare_regression_comment(
             comparison_summary += "- Detected a total of {} improvements above the improvement water line.\n".format(
                 total_improvements
             )
+            if len(improvements_list) > 0:
+                regression_values = [l[1] for l in improvements_list]
+                regression_df = pd.DataFrame(regression_values)
+                median_regression = round(float(regression_df.median().iloc[0]), 1)
+                max_regression = round(float(regression_df.max().iloc[0]), 1)
+                min_regression = round(float(regression_df.min().iloc[0]), 1)
+
+                comparison_summary += f"   - Median/Common-Case improvement was {median_regression}% and ranged from [{min_regression}%,{max_regression}%].\n"
+
         if total_regressions > 0:
             comparison_summary += "- Detected a total of {} regressions bellow the regression water line {}.\n".format(
                 total_regressions, regressions_percent_lower_limit
@@ -431,11 +443,11 @@ def prepare_regression_comment(
             if len(regressions_list) > 0:
                 regression_values = [l[1] for l in regressions_list]
                 regression_df = pd.DataFrame(regression_values)
-                median_regression = round(float(regression_df.median().iloc[0]), 2)
-                max_regression = round(float(regression_df.max().iloc[0]), 2)
-                min_regression = round(float(regression_df.min().iloc[0]), 2)
+                median_regression = round(float(regression_df.median().iloc[0]), 1)
+                max_regression = round(float(regression_df.max().iloc[0]), 1)
+                min_regression = round(float(regression_df.min().iloc[0]), 1)
 
-                comparison_summary += f"   - Median/Common-Case regression was {median_regression}%% and ranged from [{min_regression},{max_regression}] %%.\n"
+                comparison_summary += f"   - Median/Common-Case regression was {median_regression}% and ranged from [{min_regression}%,{max_regression}%].\n"
 
         comment_body += comparison_summary
         comment_body += "\n"
@@ -542,7 +554,7 @@ def compute_regression_table(
     tf_triggering_env,
     metric_name,
     comparison_branch,
-    baseline_branch="master",
+    baseline_branch="unstable",
     baseline_tag=None,
     comparison_tag=None,
     baseline_deployment_name="oss-standalone",
@@ -704,8 +716,8 @@ def compute_regression_table(
             table_name="",
             headers=[
                 "Test Case",
-                "Baseline {} (median obs. +- std.dev)".format(baseline_str),
-                "Comparison {} (median obs. +- std.dev)".format(comparison_str),
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
                 "% change ({})".format(metric_mode),
                 "Note",
             ],
@@ -727,8 +739,8 @@ def compute_regression_table(
             table_name="",
             headers=[
                 "Test Case",
-                "Baseline {} (median obs. +- std.dev)".format(baseline_str),
-                "Comparison {} (median obs. +- std.dev)".format(comparison_str),
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
                 "% change ({})".format(metric_mode),
                 "Note",
             ],
@@ -737,7 +749,7 @@ def compute_regression_table(
         writer_regressions.dump(mystdout, False)
         table_output += mystdout.getvalue()
         table_output += "\n\n"
-        test_names_str = "|".join(improvements_list)
+        test_names_str = "|".join([l[0] for l in improvements_list])
         table_output += f"Improvements test regexp names: {test_names_str}\n\n"
         mystdout.close()
         sys.stdout = old_stdout
@@ -748,8 +760,8 @@ def compute_regression_table(
         table_name="",
         headers=[
             "Test Case",
-            "Baseline {} (median obs. +- std.dev)".format(baseline_str),
-            "Comparison {} (median obs. +- std.dev)".format(comparison_str),
+            f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+            f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
             "% change ({})".format(metric_mode),
             "Note",
         ],
@@ -766,7 +778,7 @@ def compute_regression_table(
     return (
         detected_regressions,
         table_output,
-        total_improvements,
+        improvements_list,
         regressions_list,
         total_stable,
         total_unstable,
@@ -1098,7 +1110,12 @@ def from_rts_to_regression_table(
             logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
             pass
         unstable = False
-        if baseline_v != "N/A" and comparison_v != "N/A":
+        if (
+            baseline_v != "N/A"
+            and comparison_pct_change != "N/A"
+            and comparison_v != "N/A"
+            and baseline_pct_change != "N/A"
+        ):
             if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
                 note = "UNSTABLE (very high variance)"
                 unstable = True
@@ -1119,6 +1136,10 @@ def from_rts_to_regression_table(
                 percentage_change = (
                     float(baseline_v) / float(comparison_v) - 1
                 ) * 100.0
+        else:
+            logging.warn(
+                f"Missing data for test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
+            )
         if baseline_v != "N/A" or comparison_v != "N/A":
             detected_regression = False
             detected_improvement = False
@@ -1170,7 +1191,7 @@ def from_rts_to_regression_table(
                 table_regressions.append(line)
 
             if detected_improvement:
-                improvements_list.append(test_name)
+                improvements_list.append([test_name, percentage_change])
                 table_improvements.append(line)
 
             if unstable:
@@ -1325,23 +1346,25 @@ def get_v_pct_change_and_largest_var(
         _, comparison_v = comparison_datapoints[0]
         for tuple in comparison_datapoints:
             if last_n < 0 or (last_n > 0 and len(comparison_values) < last_n):
-                comparison_values.append(tuple[1])
-        comparison_df = pd.DataFrame(comparison_values)
-        comparison_median = float(comparison_df.median().iloc[0])
-        comparison_v = comparison_median
-        comparison_std = float(comparison_df.std().iloc[0])
-        if verbose:
-            logging.info(
-                "comparison_datapoints: {} value: {}; std-dev: {}; median: {}".format(
-                    comparison_datapoints,
-                    comparison_v,
-                    comparison_std,
-                    comparison_median,
+                if tuple[1] > 0.0:
+                    comparison_values.append(tuple[1])
+        if len(comparison_values) > 0:
+            comparison_df = pd.DataFrame(comparison_values)
+            comparison_median = float(comparison_df.median().iloc[0])
+            comparison_v = comparison_median
+            comparison_std = float(comparison_df.std().iloc[0])
+            if verbose:
+                logging.info(
+                    "comparison_datapoints: {} value: {}; std-dev: {}; median: {}".format(
+                        comparison_datapoints,
+                        comparison_v,
+                        comparison_std,
+                        comparison_median,
+                    )
                 )
-            )
-        comparison_pct_change = (comparison_std / comparison_median) * 100.0
-        if comparison_pct_change > largest_variance:
-            largest_variance = comparison_pct_change
+            comparison_pct_change = (comparison_std / comparison_median) * 100.0
+            if comparison_pct_change > largest_variance:
+                largest_variance = comparison_pct_change
     return comparison_pct_change, comparison_v, largest_variance
 
 

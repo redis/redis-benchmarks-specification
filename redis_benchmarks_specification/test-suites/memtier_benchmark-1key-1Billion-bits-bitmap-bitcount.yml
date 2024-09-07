@@ -1,0 +1,37 @@
+version: 0.4
+name: memtier_benchmark-1key-1Billion-bits-bitmap-bitcount
+description: Runs memtier_benchmark, for a keyspace length of 1 keys focusing on BITCOUNT performance. The bitmap has a size of 1 Billion bits and approximately 20M bits are set. The size of it is ~140MB
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  init_commands:
+   - '"SETBIT" "users" "1000000000" "1"'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --command "SETBIT users __key__ 1" --key-maximum 1000000000 --key-minimum 1 -n 100000 --key-prefix "" --command-key-pattern R --distinct-client-seed --pipeline 10
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-commands:
+- bitcount
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BITCOUNT users __key__ -1" --key-maximum 1000000000 --key-minimum 1 --key-prefix "" --command-key-pattern R --distinct-client-seed --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+
+priority: 19
