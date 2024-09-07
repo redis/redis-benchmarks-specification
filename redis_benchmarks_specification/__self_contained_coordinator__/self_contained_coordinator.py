@@ -1387,8 +1387,8 @@ def process_self_contained_coordinator_stream(
                             metric_name,
                             comparison_branch,
                             baseline_branch,
-                            baseline_tag,
-                            comparison_tag,
+                            None,  # we only compare by branch on CI automation
+                            None,  # we only compare by branch on CI automation
                             baseline_deployment_name,
                             comparison_deployment_name,
                             print_improvements_only,

@@ -554,7 +554,7 @@ def compute_regression_table(
     tf_triggering_env,
     metric_name,
     comparison_branch,
-    baseline_branch="master",
+    baseline_branch="unstable",
     baseline_tag=None,
     comparison_tag=None,
     baseline_deployment_name="oss-standalone",
