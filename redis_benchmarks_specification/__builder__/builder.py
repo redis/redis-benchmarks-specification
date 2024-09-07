@@ -370,16 +370,17 @@ def builder_process_stream(
                     deps_list.append("fpconv")
                 redis_temporary_dir = temporary_dir + "/" + redis_dir + "/"
                 logging.info("Using redis temporary dir {}".format(redis_temporary_dir))
-                build_command = "bash -c 'make Makefile.dep && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j'".format(
-                    cpp_compiler,
-                    compiler,
-                    " ".join(deps_list),
-                    build_vars_str,
-                    cpp_compiler,
-                    compiler,
-                    "redis-server",
-                    build_vars_str,
-                )
+                # build_command = "bash -c 'make Makefile.dep && cd ./deps && CXX={} CC={} make {} {} -j && cd .. && CXX={} CC={} make {} {} -j'".format(
+                #     cpp_compiler,
+                #     compiler,
+                #     " ".join(deps_list),
+                #     build_vars_str,
+                #     cpp_compiler,
+                #     compiler,
+                #     "redis-server",
+                #     build_vars_str,
+                # )
+                build_command = "sh -c 'make -j'"
                 if b"build_command" in testDetails:
                     build_command = testDetails[b"build_command"].decode()
                 server_name = "redis"

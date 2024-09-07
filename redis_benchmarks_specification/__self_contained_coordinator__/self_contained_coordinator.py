@@ -1374,7 +1374,7 @@ def process_self_contained_coordinator_stream(
                         (
                             detected_regressions,
                             table_output,
-                            total_improvements,
+                            improvement_list,
                             regressions_list,
                             total_stable,
                             total_unstable,
@@ -1410,37 +1410,44 @@ def process_self_contained_coordinator_stream(
                             running_platform,
                         )
                         total_regressions = len(regressions_list)
+                        total_improvements = len(improvement_list)
                         auto_approve = True
                         grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
-
-                        prepare_regression_comment(
-                            auto_approve,
-                            baseline_branch,
-                            baseline_tag,
-                            comparison_branch,
-                            comparison_tag,
-                            contains_regression_comment,
-                            github_pr,
-                            grafana_link_base,
-                            is_actionable_pr,
-                            old_regression_comment_body,
-                            pr_link,
-                            regression_comment,
-                            datasink_conn,
-                            running_platform,
-                            table_output,
-                            tf_github_org,
-                            tf_github_repo,
-                            tf_triggering_env,
-                            total_comparison_points,
-                            total_improvements,
-                            total_regressions,
-                            total_stable,
-                            total_unstable,
-                            verbose,
-                            regressions_percent_lower_limit,
-                            regressions_list,
-                        )
+                        try:
+                            prepare_regression_comment(
+                                auto_approve,
+                                baseline_branch,
+                                baseline_tag,
+                                comparison_branch,
+                                comparison_tag,
+                                contains_regression_comment,
+                                github_pr,
+                                grafana_link_base,
+                                is_actionable_pr,
+                                old_regression_comment_body,
+                                pr_link,
+                                regression_comment,
+                                datasink_conn,
+                                running_platform,
+                                table_output,
+                                tf_github_org,
+                                tf_github_repo,
+                                tf_triggering_env,
+                                total_comparison_points,
+                                total_improvements,
+                                total_regressions,
+                                total_stable,
+                                total_unstable,
+                                verbose,
+                                regressions_percent_lower_limit,
+                                regressions_list,
+                            )
+                        except Exception as e:
+                            logging.error(
+                                "Failed to produce regression comment but continuing... Error: {}".format(
+                                    e.__str__()
+                                )
+                            )
                     logging.info(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
                     )
