@@ -1,0 +1,35 @@
+version: 0.4
+name: memtier_benchmark-1key-list-10K-elements-linsert-lrem-string
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10000 string elements in it and we query it using LINSERT / LREM in the middle of the list. Given we add and delete right after the performance and list lenght over the test should be constant (meaning running for 60secs or 600secs wont change the list size) '
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --command "RPUSH strlist __key__" --key-maximum 10000 --key-minimum 1 -n allkeys --key-prefix "hello" --command-key-pattern S -c 1 -t 1 --pipeline 10
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- list
+tested-commands:
+- linsert
+- lrem
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="LINSERT strlist AFTER hello5000 hello5000-new" --command="LREM strlist 1 hello5000-new"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
