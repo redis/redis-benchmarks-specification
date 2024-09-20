@@ -5,7 +5,7 @@
 #
 import datetime
 import os
-
+from distutils.util import strtobool
 from redis_benchmarks_specification.__common__.env import (
     GH_REDIS_SERVER_HOST,
     GH_TOKEN,
@@ -70,6 +70,12 @@ def spec_cli_args(parser):
         default=False,
         action="store_true",
         help="Include modules statistics on commandstats.",
+    )
+    parser.add_argument(
+        "--use-git-timestamp",
+        type=lambda x: bool(strtobool(x)),
+        default=True,
+        help="Use git timestamp",
     )
     parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")

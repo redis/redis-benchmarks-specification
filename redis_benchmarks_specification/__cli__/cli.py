@@ -445,6 +445,15 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 git_branch = cdict["git_branch"]
             commit_datetime = cdict["commit_datetime"]
             commit_summary = cdict["commit_summary"]
+            reply_fields = {}
+            use_git_timestamp = args.use_git_timestamp
+            if use_git_timestamp is False:
+                reply_fields["use_git_timestamp"] = str(use_git_timestamp)
+
+            logging.info(
+                f"Setting use use_git_timestamp={use_git_timestamp}. ({args.use_git_timestamp})"
+            )
+
             if result is True:
                 stream_id = "n/a"
                 if args.dry_run is False:
@@ -455,7 +464,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                     ) = request_build_from_commit_info(
                         conn,
                         commit_dict,
-                        {},
+                        reply_fields,
                         binary_key,
                         binary_value,
                         REDIS_BINS_EXPIRE_SECS,

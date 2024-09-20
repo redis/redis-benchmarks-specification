@@ -664,6 +664,10 @@ def compute_regression_table(
         total_comparison_points,
         regressions_list,
         improvements_list,
+        unstable_list,
+        baseline_only_list,
+        comparison_only_list,
+        no_datapoints_list,
     ) = from_rts_to_regression_table(
         baseline_deployment_name,
         comparison_deployment_name,
@@ -707,6 +711,29 @@ def compute_regression_table(
         from_human_str,
         baseline_deployment_name,
     )
+
+    if total_unstable > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Unstable Table\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Test Case",
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_unstable,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        test_names_str = "|".join([l[0] for l in unstable_list])
+        table_output += f"Unstable test regexp names: {test_names_str}\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
 
     if total_regressions > 0:
         old_stdout = sys.stdout
@@ -774,6 +801,27 @@ def compute_regression_table(
     sys.stdout = old_stdout
     table_output += mystdout.getvalue()
     table_output += "\n</details>\n"
+    len_baseline_only_list = len(baseline_only_list)
+    if len_baseline_only_list > 0:
+        table_output += f"\n  WARNING: There were {len_baseline_only_list} benchmarks with datapoints only on baseline.\n\n"
+        baseline_only_test_names_str = "|".join([l[0] for l in baseline_only_list])
+        table_output += (
+            f"  Baseline only test regexp names: {baseline_only_test_names_str}\n\n"
+        )
+    len_comparison_only_list = len(comparison_only_list)
+    if len_comparison_only_list > 0:
+        table_output += f"\n  WARNING: There were {len_comparison_only_list} benchmarks with datapoints only on comparison.\n\n"
+        comparison_only_test_names_str = "|".join([l[0] for l in comparison_only_list])
+        table_output += (
+            f"  Comparison only test regexp names: {comparison_only_test_names_str}\n\n"
+        )
+    len_no_datapoints = len(no_datapoints_list)
+    if len_no_datapoints > 0:
+        table_output += f"\n  WARNING: There were {len_no_datapoints} benchmarks with NO datapoints for both baseline and comparison.\n\n"
+        no_datapoints_test_names_str = "|".join([l[0] for l in no_datapoints_list])
+        table_output += (
+            f"  NO DATAPOINTS test regexp names: {no_datapoints_test_names_str}\n\n"
+        )
 
     return (
         detected_regressions,
@@ -967,6 +1015,10 @@ def from_rts_to_regression_table(
     progress = tqdm(unit="benchmark time-series", total=len(test_names))
     regressions_list = []
     improvements_list = []
+    unstable_list = []
+    baseline_only_list = []
+    comparison_only_list = []
+    no_datapoints_list = []
     for test_name in test_names:
         compare_version = "main"
         github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
@@ -1110,6 +1162,17 @@ def from_rts_to_regression_table(
             logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
             pass
         unstable = False
+
+        if baseline_v != "N/A" and comparison_v == "N/A":
+            logging.warning(
+                "Baseline contains datapoints but comparison not for test: {test_name}"
+            )
+            baseline_only_list.append(test_name)
+        if comparison_v != "N/A" and baseline_v == "N/A":
+            logging.warning(
+                "Comparison contains datapoints but baseline not for test: {test_name}"
+            )
+            comparison_only_list.append(test_name)
         if (
             baseline_v != "N/A"
             and comparison_pct_change != "N/A"
@@ -1119,6 +1182,7 @@ def from_rts_to_regression_table(
             if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
                 note = "UNSTABLE (very high variance)"
                 unstable = True
+                unstable_list.append([test_name, "n/a"])
 
             baseline_v_str = prepare_value_str(
                 baseline_pct_change, baseline_v, baseline_values, simplify_table
@@ -1212,6 +1276,21 @@ def from_rts_to_regression_table(
             if should_add_line:
                 total_comparison_points = total_comparison_points + 1
                 table_full.append(line)
+        else:
+            logging.warning(
+                "There were no datapoints both for baseline and comparison for test: {test_name}"
+            )
+            no_datapoints_list.append(test_name)
+    logging.warning(
+        f"There is a total of {len(no_datapoints_list)} tests without datapoints for baseline AND comparison"
+    )
+    logging.info(
+        f"There is a total of {len(comparison_only_list)} tests without datapoints for baseline"
+    )
+    logging.info(
+        f"There is a total of {len(baseline_only_list)} tests without datapoints for comparison"
+    )
+    logging.info(f"There is a total of {len(unstable_list)} UNSTABLE tests")
     return (
         detected_regressions,
         table_full,
@@ -1226,6 +1305,10 @@ def from_rts_to_regression_table(
         total_comparison_points,
         regressions_list,
         improvements_list,
+        unstable_list,
+        baseline_only_list,
+        comparison_only_list,
+        no_datapoints_list,
     )
 
 
