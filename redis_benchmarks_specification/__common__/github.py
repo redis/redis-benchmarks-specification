@@ -107,32 +107,37 @@ def check_github_available_and_actionable(
         logging.info("Detected github token")
         g = Github(github_token)
         if pull_request is not None and pull_request != "":
-            pull_request_n = int(pull_request)
-            github_pr = (
-                g.get_user(tf_github_org)
-                .get_repo(tf_github_repo)
-                .get_issue(pull_request_n)
-            )
-            comments = github_pr.get_comments()
-            pr_link = github_pr.html_url
-            logging.info("Working on github PR already: {}".format(pr_link))
-            is_actionable_pr = True
-            contains_regression_comment, pos = fn(comments)
-            if contains_regression_comment:
-                regression_comment = comments[pos]
-                old_regression_comment_body = regression_comment.body
-                logging.info(
-                    "Already contains PR comment. Link: {}".format(
-                        regression_comment.html_url
-                    )
+            try:
+                pull_request_n = int(pull_request)
+                github_pr = (
+                    g.get_user(tf_github_org)
+                    .get_repo(tf_github_repo)
+                    .get_issue(pull_request_n)
                 )
-                if verbose:
-                    logging.info("Printing old PR comment:")
-                    print("".join(["-" for x in range(1, 80)]))
-                    print(regression_comment.body)
-                    print("".join(["-" for x in range(1, 80)]))
-            else:
-                logging.info("Does not contain PR comment")
+                comments = github_pr.get_comments()
+                pr_link = github_pr.html_url
+                logging.info("Working on github PR already: {}".format(pr_link))
+                is_actionable_pr = True
+                contains_regression_comment, pos = fn(comments)
+                if contains_regression_comment:
+                    regression_comment = comments[pos]
+                    old_regression_comment_body = regression_comment.body
+                    logging.info(
+                        "Already contains PR comment. Link: {}".format(
+                            regression_comment.html_url
+                        )
+                    )
+                    if verbose:
+                        logging.info("Printing old PR comment:")
+                        print("".join(["-" for x in range(1, 80)]))
+                        print(regression_comment.body)
+                        print("".join(["-" for x in range(1, 80)]))
+                else:
+                    logging.info("Does not contain PR comment")
+            except Exception as e:
+                logging.error(
+                    f"an error occured when checking github info. {e.__str__()}. proceeding..."
+                )
             logging.info(
                 f"contains_regression_comment: {contains_regression_comment}, is_actionable_pr: {is_actionable_pr}, pr_link: {pr_link}"
             )
