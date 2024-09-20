@@ -170,7 +170,7 @@ def main():
 
                 original_config_path = f"../redis_benchmarks_specification/test-suites/{test_name}.yml"  # Original test config file
                 new_test_name = f"latency-rate-limited-{rate}_qps-{test_name}"
-                new_config_path = f"../redis_benchmarks_specification/test-suites/{new_test_name}.yaml"  # New test config file
+                new_config_path = f"../redis_benchmarks_specification/test-suites/{new_test_name}.yml"  # New test config file
                 success = create_new_test_config(
                     original_config_path,
                     new_config_path,
