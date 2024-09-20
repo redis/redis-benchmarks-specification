@@ -16,7 +16,7 @@ dbconfig:
 tested-groups:
 - hash
 tested-commands:
-- hgetall
+- hscan
 redis-topologies:
 - oss-standalone
 build-variants:

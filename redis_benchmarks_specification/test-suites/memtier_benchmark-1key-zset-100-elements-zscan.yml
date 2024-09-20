@@ -14,7 +14,7 @@ dbconfig:
 tested-groups:
 - sorted-set
 tested-commands:
-- zrange
+- zscan
 redis-topologies:
 - oss-standalone
 build-variants:
