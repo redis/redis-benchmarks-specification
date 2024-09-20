@@ -1,0 +1,64 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-1key-zset-100-elements-zrange-all-elements
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 100 elements in it and we query it using ZRANGE BYSCORE with
+  a range of all elements.  Rate limited to 10000 ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"ZADD" "zset:100" "0.306275" "lysbgqqfqw" "0.486004" "mtccjerdon" "0.941626"
+    "jekkafodvk" "0.602656" "nmgxcctxpn" "0.630771" "vyqqkuszzh" "0.406379" "pytrnqdhvs"
+    "0.521814" "oguwnmniig" "0.182854" "gekntrykfh" "0.657658" "nhfnbxqgol" "0.218066"
+    "cgoeihlnei" "0.366328" "kgqrovsxce" "0.520723" "imyizmhzjk" "0.426630" "urvgxwbiiz"
+    "0.878001" "onzjrteqmu" "0.126097" "alqlzsvuuz" "0.562698" "lgrkndhekf" "0.357487"
+    "tcjvjofxtd" "0.395563" "ouuybhtvyb" "0.745796" "owbbdezgxn" "0.165356" "ksqpdywgdd"
+    "0.757214" "qrosceblyo" "0.346153" "agsdggdghc" "0.297342" "gfdqdrondm" "0.668749"
+    "oapbvnisyq" "0.281552" "htvbwmfyic" "0.013874" "vyoomgwuzv" "0.052023" "pcxdhdjwnf"
+    "0.648518" "ibhohmfxzt" "0.967245" "erxulvebrj" "0.971791" "qwxrsgafzy" "0.154577"
+    "whmotknaff" "0.404082" "ueyrvldzwl" "0.324634" "nsxaigrnje" "0.342459" "xsepfhdizi"
+    "0.988925" "exvhmqxvvp" "0.345154" "owtkxlzaci" "0.728413" "ypfeltycpy" "0.406783"
+    "qbiwbqiubb" "0.714527" "wqiwdbncmt" "0.760975" "dapacykoah" "0.212614" "hhjclfbbka"
+    "0.445330" "ujrxcmpvsq" "0.576866" "lbtpbknelm" "0.764225" "wvcnqbvlnf" "0.281427"
+    "mibvtmqxcy" "0.596978" "aovfsvbwjg" "0.650632" "qbyhorvill" "0.948063" "ypekeuutef"
+    "0.028779" "xamjodnbpf" "0.678338" "hhniikmtsx" "0.757806" "sahqeskveq" "0.671949"
+    "bqntlsaqjb" "0.190314" "luemuetmia" "0.219219" "zwnitejtpg" "0.212301" "ncjfckgkcl"
+    "0.730613" "qjyeqcfhjj" "0.657992" "wkbasfyzqz" "0.556851" "ccagtnjilc" "0.543822"
+    "pqyurbvifk" "0.101854" "djetcyfxuc" "0.878471" "vpmpffdoqz" "0.696931" "hlpdstpvzw"
+    "0.662898" "imdqxmkzdj" "0.887214" "eouliovvra" "0.193298" "gxephxbdru" "0.978115"
+    "dlsjwmqzhx" "0.743150" "uapsgmizgh" "0.181609" "gorgpnnqwr" "0.638726" "rojeolnopp"
+    "0.561627" "mbxohpancs" "0.223001" "upodnpqenn" "0.957952" "dlbqcynhrn" "0.586659"
+    "ichqzmiyot" "0.813623" "ulbrotlhze" "0.111318" "licotqplim" "0.525834" "mxwgdcutnb"
+    "0.405858" "vpbkvwgxsf" "0.129768" "ijsmoyesvd" "0.591274" "mbgehjiauu" "0.718370"
+    "vymjzlzqcn" "0.189343" "rjkknoigmu" "0.566307" "jxoxtnzujs" "0.563082" "eqlgkwosie"
+    "0.040883" "ljcgdooafo" "0.326765" "cwaveajmcz" "0.423381" "ssjqrsluod" "0.865798"
+    "fhuvzpxjbc" "0.784445" "perfwnpvkl" "0.659790" "mjjuylgssm" "0.918901" "vxcbagyymm"
+    "0.282908" "nxcdcaqgit" "0.030110" "ewomnmugfa" "0.164237" "rkaznetutk" "0.281729"
+    "rqvryfvlie" "0.877790" "holjcdpijr" "0.878293" "pquewclxuy" "0.674968" "ocrcszcznp"
+    "0.520069" "xczfmrxrja" "0.314841" "nxzsnkmxvi" "0.719988" "hhjchwjlmc"'
+tested-groups:
+- sorted-set
+tested-commands:
+- zrange
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: "--command=\"ZRANGE zset:100 0 1 BYSCORE WITHSCORES\"  --hide-histogram
+    --test-time 180 --rate-limiting 50"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 53

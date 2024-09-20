@@ -1,0 +1,39 @@
+version: 0.4
+name: latency-rate-limited-10000_qps-memtier_benchmark-1Mkeys-string-decr
+description: Runs memtier_benchmark, for a keyspace length of 1M keys testing use
+  embedded string object encoding on the string and doing decr command. Rate limited
+  to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: ' --command "SET __key__ 9223372036854775807" --command-key-pattern="P"
+      -n 5000 --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- decr
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: "--test-time 180 --command \"DECR __key__\" --command-key-pattern=\"\
+    R\" --key-minimum=1 --key-maximum 1000000 -c 4 -t 4 --hide-histogram --rate-limiting
+    625"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+tested-groups:
+- string
+priority: 98
