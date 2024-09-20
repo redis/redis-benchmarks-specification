@@ -19,7 +19,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--test-time 180 -c 50 -t 4 --command \"ZADD __key__ 0.652540306855235
     UaZtxmrKBkxhBqJOlNJlwVUfHVALGkjnUemvubDvbGSVAaaQkXLlsg 0.8731899671198792 RKlVyoHMTvZcoh

@@ -10,7 +10,7 @@ dbconfig:
   check:
     keyspacelen: 1
   preload_tool:
-    run_image: redislabs/memtier_benchmark:edge
+    run_image: redislabs/memtier_benchmark:2.1.0
     tool: memtier_benchmark
     arguments: --hide-histogram --command "RPUSH intlist __key__" --key-maximum 10000
       --key-minimum 1 -n allkeys --key-prefix "" --command-key-pattern S -c 1 -t 1
@@ -29,7 +29,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--command=\"LINDEX intlist 5000\"  --hide-histogram --test-time 120
     --rate-limiting 50"

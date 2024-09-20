@@ -29,7 +29,7 @@ dbconfig:
     requests:
       memory: 1g
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "\"--data-size\" \"100\" --command=MULTI --command-key-pattern=S --command=\"\
     HSETNX __key__ __key__ __data__\" --command-key-pattern=S --command=\"HEXISTS

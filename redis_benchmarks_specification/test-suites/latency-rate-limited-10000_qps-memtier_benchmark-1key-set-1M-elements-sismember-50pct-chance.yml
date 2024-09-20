@@ -13,7 +13,7 @@ dbconfig:
     requests:
       memory: 1g
   preload_tool:
-    run_image: redislabs/memtier_benchmark:edge
+    run_image: redislabs/memtier_benchmark:2.1.0
     tool: memtier_benchmark
     arguments: --command="SADD set:1M:elements __key__" --command-key-pattern=P --key-maximum
       1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1
@@ -28,7 +28,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--command=\"SISMEMBER set:1M:elements __key__\"  --key-maximum 2000000
     --key-prefix \"\"  --hide-histogram --test-time 180 --rate-limiting 50"

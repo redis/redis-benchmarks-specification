@@ -24,7 +24,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--command=\"eval \\\"redis.call('hset', 'h1', 'k', 'v');redis.call('hset',
     'h2', 'k', 'v');redis.call('expire', 'h1', 3600);redis.call('expire', 'h2', 3600);return

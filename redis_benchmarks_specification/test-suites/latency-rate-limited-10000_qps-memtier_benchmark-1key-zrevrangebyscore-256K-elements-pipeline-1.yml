@@ -10,7 +10,7 @@ dbconfig:
   check:
     keyspacelen: 1
   preload_tool:
-    run_image: redislabs/memtier_benchmark:edge
+    run_image: redislabs/memtier_benchmark:2.1.0
     tool: memtier_benchmark
     arguments: --command="ZADD key1 __key__  __data__" --command-key-pattern=P --key-maximum
       262144 --key-prefix "" -R --data-size=1024 -n 262144 --hide-histogram -t 1 -c
@@ -28,7 +28,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--command=\"ZREVRANGEBYSCORE key1 262144 1 WITHSCORES LIMIT 1 10\" --hide-histogram
     --test-time 180 --pipeline 1 --rate-limiting 50"

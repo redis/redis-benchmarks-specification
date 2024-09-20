@@ -9,7 +9,7 @@ dbconfig:
   check:
     keyspacelen: 1000000
   preload_tool:
-    run_image: redislabs/memtier_benchmark:edge
+    run_image: redislabs/memtier_benchmark:2.1.0
     tool: memtier_benchmark
     arguments: '"--data-size" "1000" "--command" "SET __key__ __data__" "--command-key-pattern"
       "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
@@ -31,7 +31,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "\"--data-size\" \"4000\" --command \"SETEX __key__ 10 __data__\" --command-key-pattern=\"\
     R\" --command \"SET __key__ __data__\" --command-key-pattern=\"R\" --command \"\

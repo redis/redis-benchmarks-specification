@@ -24,7 +24,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "-c 2 -t 4 --command=\"GEOSEARCH key FROMLONLAT 7.0 55.0 BYBOX 200 200
     KM\"  --hide-histogram --test-time 180 --rate-limiting 1250"

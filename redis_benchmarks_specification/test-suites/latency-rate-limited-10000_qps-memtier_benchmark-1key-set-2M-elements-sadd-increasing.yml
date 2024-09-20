@@ -21,7 +21,7 @@ build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub
 clientconfig:
-  run_image: redislabs/memtier_benchmark:edge
+  run_image: redislabs/memtier_benchmark:2.1.0
   tool: memtier_benchmark
   arguments: "--command=\"SADD myset __key__\" --command-key-pattern=P --key-maximum
     2000000 --key-prefix \"\" -n 1000000 -c 5 -t 4 --hide-histogram --rate-limiting
