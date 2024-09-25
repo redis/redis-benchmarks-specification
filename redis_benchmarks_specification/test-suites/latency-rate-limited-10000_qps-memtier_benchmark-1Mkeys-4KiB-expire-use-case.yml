@@ -1,0 +1,45 @@
+version: 0.4
+name: latency-rate-limited-10000_qps-memtier_benchmark-1Mkeys-4KiB-expire-use-case
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 4KiB Bytes for each key, which 50% of the keys have expiration set during
+  the benchmark. Rate limited to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:2.1.0
+    tool: memtier_benchmark
+    arguments: '"--data-size" "1000" "--command" "SET __key__ __data__" "--command-key-pattern"
+      "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+  resources:
+    requests:
+      memory: 3g
+tested-groups:
+- string
+- generic
+tested-commands:
+- set
+- setx
+- get
+- del
+- setex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "\"--data-size\" \"4000\" --command \"SETEX __key__ 10 __data__\" --command-key-pattern=\"\
+    R\" --command \"SET __key__ __data__\" --command-key-pattern=\"R\" --command \"\
+    GET __key__\" --command-key-pattern=\"R\" --command \"DEL __key__\" --command-key-pattern=\"\
+    R\"  -c 50 -t 2 --hide-histogram --test-time 300 --rate-limiting 100"
+  resources:
+    requests:
+      cpus: '3'
+      memory: 2g
+
+priority: 33

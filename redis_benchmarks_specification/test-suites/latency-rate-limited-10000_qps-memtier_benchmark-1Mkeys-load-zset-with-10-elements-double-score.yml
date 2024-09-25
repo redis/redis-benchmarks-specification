@@ -1,0 +1,36 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-1Mkeys-load-zset-with-10-elements-double-score
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading ZSETs
+  with 10 elements. Rate limited to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- zadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--test-time 180 -c 50 -t 4 --command \"ZADD __key__ 0.306275 lysbgqqfqw
+    0.486004 mtccjerdon 0.941626 jekkafodvk 0.602656 nmgxcctxpn 0.630771 vyqqkuszzh
+    0.406379 pytrnqdhvs 0.521814 oguwnmniig 0.182854 gekntrykfh 0.657658 nhfnbxqgol
+    0.218066 cgoeihlnei\" --command-key-pattern=\"P\" --key-minimum=1 --key-maximum
+    1000000 --hide-histogram --rate-limiting 50"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+
+tested-groups:
+- sorted-set
+priority: 12

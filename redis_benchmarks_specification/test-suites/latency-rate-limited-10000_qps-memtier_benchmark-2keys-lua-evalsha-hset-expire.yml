@@ -1,0 +1,42 @@
+version: 0.4
+name: latency-rate-limited-10000_qps-memtier_benchmark-2keys-lua-evalsha-hset-expire
+description: 'Runs memtier_benchmark, for a keyspace length of 2 HASH keys. This benchmark
+  invokes the execution of a server-side Lua script doing 2 HSET commands and doing
+  EXPIRE on those keys.  Rate limited to 10000 ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - - SCRIPT
+    - LOAD
+    - redis.call('hset', 'h1', 'k', 'v');redis.call('hset', 'h2', 'k', 'v');redis.call('expire',
+      'h1', 3600);redis.call('expire', 'h2', 3600);return
+
+redis-topologies:
+- oss-standalone
+tested-groups:
+- scripting
+tested-commands:
+- evalsha
+- hset
+- expire
+- ping
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--command=\"EVALSHA 5664e4cac3c4cb86682722a5e3cf03e2f83ce7a1 0\"  --hide-histogram
+    --test-time 180 --rate-limiting 50"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 24

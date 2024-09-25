@@ -1,0 +1,56 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-2keys-set-10-100-elements-sunion
+description: 'Runs memtier_benchmark, for a keyspace length of 2 SET key. The first
+  SET contains 10 elements ( set:10 ) The second SET contains 100 elements ( set:100
+  ) The SET with set:10 is a subset of the set:100 We query their union using SUNION
+  that returns 100 elements.  Rate limited to 10000 ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
+    "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  - '"SADD" "set:100" "vyoomgwuzv" "xamjodnbpf" "ewomnmugfa" "ljcgdooafo" "pcxdhdjwnf"
+    "djetcyfxuc" "licotqplim" "alqlzsvuuz" "ijsmoyesvd" "whmotknaff" "rkaznetutk"
+    "ksqpdywgdd" "gorgpnnqwr" "gekntrykfh" "rjkknoigmu" "luemuetmia" "gxephxbdru"
+    "ncjfckgkcl" "hhjclfbbka" "cgoeihlnei" "zwnitejtpg" "upodnpqenn" "mibvtmqxcy"
+    "htvbwmfyic" "rqvryfvlie" "nxcdcaqgit" "gfdqdrondm" "lysbgqqfqw" "nxzsnkmxvi"
+    "nsxaigrnje" "cwaveajmcz" "xsepfhdizi" "owtkxlzaci" "agsdggdghc" "tcjvjofxtd"
+    "kgqrovsxce" "ouuybhtvyb" "ueyrvldzwl" "vpbkvwgxsf" "pytrnqdhvs" "qbiwbqiubb"
+    "ssjqrsluod" "urvgxwbiiz" "ujrxcmpvsq" "mtccjerdon" "xczfmrxrja" "imyizmhzjk"
+    "oguwnmniig" "mxwgdcutnb" "pqyurbvifk" "ccagtnjilc" "mbxohpancs" "lgrkndhekf"
+    "eqlgkwosie" "jxoxtnzujs" "lbtpbknelm" "ichqzmiyot" "mbgehjiauu" "aovfsvbwjg"
+    "nmgxcctxpn" "vyqqkuszzh" "rojeolnopp" "ibhohmfxzt" "qbyhorvill" "nhfnbxqgol"
+    "wkbasfyzqz" "mjjuylgssm" "imdqxmkzdj" "oapbvnisyq" "bqntlsaqjb" "ocrcszcznp"
+    "hhniikmtsx" "hlpdstpvzw" "wqiwdbncmt" "vymjzlzqcn" "hhjchwjlmc" "ypfeltycpy"
+    "qjyeqcfhjj" "uapsgmizgh" "owbbdezgxn" "qrosceblyo" "sahqeskveq" "dapacykoah"
+    "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr" "onzjrteqmu"
+    "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk" "ypekeuutef"
+    "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
+tested-commands:
+- smembers
+- sunion
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--command=\"SUNION set:100 set:10\"  --hide-histogram --test-time 180
+    --rate-limiting 50"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+tested-groups:
+- set
+priority: 104

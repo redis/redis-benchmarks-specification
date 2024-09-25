@@ -1,0 +1,40 @@
+version: 0.4
+name: 
+  latency-rate-limited-1000_qps-memtier_benchmark-1key-list-10K-elements-lpos-string
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
+  contains 10000 string elements in it and we query it using LPOS of a element that
+  we know it is in the middle of the list.  Rate limited to 1000 ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:2.1.0
+    tool: memtier_benchmark
+    arguments: --hide-histogram --command "RPUSH strlist __key__" --key-maximum 10000
+      --key-minimum 1 -n allkeys --key-prefix "hello" --command-key-pattern S -c 1
+      -t 1 --pipeline 10
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- list
+tested-commands:
+- lpos
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--command=\"LPOS strlist hello5000\"  --hide-histogram --test-time 120
+    --rate-limiting 5"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

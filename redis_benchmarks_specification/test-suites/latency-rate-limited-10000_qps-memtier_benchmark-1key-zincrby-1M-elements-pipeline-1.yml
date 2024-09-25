@@ -1,0 +1,40 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-1key-zincrby-1M-elements-pipeline-1
+description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 1M elements and we increment the score of memebers using ZINCRBY.
+  Rate limited to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:2.1.0
+    tool: memtier_benchmark
+    arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum
+      1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1
+  resources:
+    requests:
+      memory: 1g
+tested-groups:
+- sorted-set
+tested-commands:
+- zincrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--command=\"ZINCRBY key1 1 __key__\" --key-maximum 1000000 --command-key-pattern=R
+    --key-prefix \"\" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1 --rate-limiting
+    10000"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 67

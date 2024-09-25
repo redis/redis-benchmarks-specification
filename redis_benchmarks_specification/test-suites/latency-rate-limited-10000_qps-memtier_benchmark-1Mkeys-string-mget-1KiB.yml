@@ -1,0 +1,38 @@
+version: 0.4
+name: latency-rate-limited-10000_qps-memtier_benchmark-1Mkeys-string-mget-1KiB
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 1000 Bytes for each key. Rate limited to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:2.1.0
+    tool: memtier_benchmark
+    arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET
+      __key__ __data__"  --command-key-pattern P --key-minimum 1 --hide-histogram
+      -t 2 -c 100
+  resources:
+    requests:
+      memory: 2g
+tested-commands:
+- mget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--key-prefix \"\" --command \"MGET __key__ 1 2 3 4 5 6 7 8 9\" -c 50
+    -t 2 --hide-histogram --test-time 180 --rate-limiting 100"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+
+tested-groups:
+- string
+priority: 13

@@ -1,0 +1,46 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-100Kkeys-load-hash-50-fields-with-100B-values
+description: Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES
+  with 50 fields each. Each field value has a data size of 100 Bytes. Rate limited
+  to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 6g
+tested-groups:
+- hash
+tested-commands:
+- hset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--test-time 120 --distinct-client-seed \"--data-size\" \"100\" --command
+    \"HSET __key__ field:1 __data__ field:2 __data__ field:3 __data__ field:4 __data__
+    field:5 __data__ field:6 __data__ field:7 __data__ field:8 __data__ field:9 __data__
+    field:10 __data__ field:11 __data__ field:12 __data__ field:13 __data__ field:14
+    __data__ field:15 __data__ field:16 __data__ field:17 __data__ field:18 __data__
+    field:19 __data__ field:20 __data__ field:21 __data__ field:22 __data__ field:23
+    __data__ field:24 __data__ field:25 __data__ field:26 __data__ field:27 __data__
+    field:28 __data__ field:29 __data__ field:30 __data__ field:31 __data__ field:32
+    __data__ field:33 __data__ field:34 __data__ field:35 __data__ field:36 __data__
+    field:37 __data__ field:38 __data__ field:39 __data__ field:40 __data__ field:41
+    __data__ field:42 __data__ field:43 __data__ field:44 __data__ field:45 __data__
+    field:46 __data__ field:47 __data__ field:48 __data__ field:49 __data__ field:50
+    __data__\" --command-key-pattern=\"R\" --key-minimum=1 --key-maximum 100000 -c
+    50 -t 4 --hide-histogram --rate-limiting 50"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 5

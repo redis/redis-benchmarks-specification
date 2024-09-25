@@ -1,0 +1,33 @@
+version: 0.4
+name: 
+  latency-rate-limited-10000_qps-memtier_benchmark-1key-pfadd-4KB-values-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1 HyperLogLog key. Continuously
+  add 4KB sized random elements using the PFADD command. Rate limited to 10000 ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- hyperloglog
+tested-commands:
+- pfadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:2.1.0
+  tool: memtier_benchmark
+  arguments: "--pipeline 10 -c 2 -t 2 --command=\"PFADD hll  __data__\" -R --data-size=4096\
+    \   --hide-histogram --test-time 180 --rate-limiting 2500"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 61
