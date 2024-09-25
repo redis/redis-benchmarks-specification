@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-mixed-20-80-with-512B-values-pipeline-10-5200_conns
+description: Runs memtier_benchmark, for a keyspace length of 3M keys loading STRINGs in which the value has a data size of 1000 Bytes, with 400 clients running random GET commands.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 3000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 512 --ratio 1:0 -n allkeys --pipeline 10 --key-maximum 3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
+  resources:
+    requests:
+      memory: 3g
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "512" --distinct-client-seed --ratio 1:4 --key-pattern R:R --key-minimum=1 --key-maximum 3000000 --test-time 180 -c 520 -t 10 --hide-histogram'
+  resources:
+    requests:
+      cpus: '10'
+      memory: 3g
+
+tested-groups:
+- string
+priority: 17
