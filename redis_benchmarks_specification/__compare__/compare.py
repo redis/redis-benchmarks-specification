@@ -1019,8 +1019,13 @@ def from_rts_to_regression_table(
     baseline_only_list = []
     comparison_only_list = []
     no_datapoints_list = []
+    no_datapoints_baseline_list = []
+    no_datapoints_comparison_list = []
+    original_metric_mode = metric_mode
     for test_name in test_names:
+        metric_mode = original_metric_mode
         compare_version = "main"
+        # GE
         github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
         test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
         test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
@@ -1075,6 +1080,22 @@ def from_rts_to_regression_table(
             )
         if len(baseline_timeseries) > 1 and multi_value_baseline is False:
             baseline_timeseries = get_only_Totals(baseline_timeseries)
+
+        if len(baseline_timeseries) == 0:
+            logging.warning(
+                f"No datapoints for test={test_name} for baseline timeseries {baseline_timeseries}"
+            )
+            no_datapoints_baseline_list.append(test_name)
+            if test_name not in no_datapoints_list:
+                no_datapoints_list.append(test_name)
+
+        if len(comparison_timeseries) == 0:
+            logging.warning(
+                f"No datapoints for test={test_name} for comparison timeseries {comparison_timeseries}"
+            )
+            no_datapoints_comparison_list.append(test_name)
+            if test_name not in no_datapoints_list:
+                no_datapoints_list.append(test_name)
 
         if len(baseline_timeseries) != 1 and multi_value_baseline is False:
             if verbose:
@@ -1152,11 +1173,14 @@ def from_rts_to_regression_table(
             )
 
             waterline = regressions_percent_lower_limit
-            if regressions_percent_lower_limit < largest_variance:
-                note = "waterline={:.1f}%.".format(largest_variance)
-                waterline = largest_variance
+            # if regressions_percent_lower_limit < largest_variance:
+            #     note = "waterline={:.1f}%.".format(largest_variance)
+            #     waterline = largest_variance
 
-        except redis.exceptions.ResponseError:
+        except redis.exceptions.ResponseError as e:
+            logging.error(
+                "Detected a redis.exceptions.ResponseError. {}".format(e.__str__())
+            )
             pass
         except ZeroDivisionError as e:
             logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
@@ -1198,7 +1222,7 @@ def from_rts_to_regression_table(
             else:
                 # lower-better
                 percentage_change = (
-                    float(baseline_v) / float(comparison_v) - 1
+                    -(float(baseline_v) - float(comparison_v)) / float(baseline_v)
                 ) * 100.0
         else:
             logging.warn(
@@ -1280,15 +1304,26 @@ def from_rts_to_regression_table(
             logging.warning(
                 "There were no datapoints both for baseline and comparison for test: {test_name}"
             )
-            no_datapoints_list.append(test_name)
+            if test_name not in no_datapoints_list:
+                no_datapoints_list.append(test_name)
     logging.warning(
         f"There is a total of {len(no_datapoints_list)} tests without datapoints for baseline AND comparison"
     )
     logging.info(
         f"There is a total of {len(comparison_only_list)} tests without datapoints for baseline"
     )
+    print(
+        "No datapoint baseline regex={test_names_str}".format(
+            test_names_str="|".join(no_datapoints_baseline_list)
+        )
+    )
     logging.info(
         f"There is a total of {len(baseline_only_list)} tests without datapoints for comparison"
+    )
+    print(
+        "No datapoint comparison regex={test_names_str}".format(
+            test_names_str="|".join(no_datapoints_comparison_list)
+        )
     )
     logging.info(f"There is a total of {len(unstable_list)} UNSTABLE tests")
     return (
