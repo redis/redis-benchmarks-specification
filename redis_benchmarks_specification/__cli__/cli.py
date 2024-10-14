@@ -243,6 +243,7 @@ def get_commits_by_tags(args, repo):
 def get_repo(args):
     redisDirPath = args.redis_repo
     cleanUp = False
+    last_n = args.last_n
     if redisDirPath is None:
         cleanUp = True
         redisDirPath = tempfile.mkdtemp()
@@ -250,7 +251,10 @@ def get_repo(args):
         logging.info(
             f"Retrieving redis repo from remote {remote_url} into {redisDirPath}. Using branch {args.branch}."
         )
-        cmd = f"git clone {remote_url} {redisDirPath} --branch {args.branch}\n"
+        depth_str = ""
+        if last_n > 0:
+            depth_str = f" --depth {last_n}"
+        cmd = f"git clone {remote_url} {redisDirPath} --branch {args.branch} {depth_str}\n"
         process = subprocess.Popen(
             "/bin/bash", stdin=subprocess.PIPE, stdout=subprocess.PIPE
         )
