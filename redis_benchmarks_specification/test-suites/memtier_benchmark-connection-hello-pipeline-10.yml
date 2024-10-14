@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-connection-hello-pipeline-10
+description: 'Runs memtier_benchmark, for no keyspace, benchmarking the connection setup scenario using HELLO command.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+tested-groups:
+- connection
+tested-commands:
+- hello
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: -c 50 -t 4 --pipeline 10 --command="HELLO 2 SETNAME __key__"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1
