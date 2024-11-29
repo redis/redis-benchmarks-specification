@@ -23,7 +23,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="LRANGE list:100:ints 0 -1"  --hide-histogram --test-time 180
+  arguments: --pipeline 10 --command="LRANGE list:100:ints 0 -1"  --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '4'
