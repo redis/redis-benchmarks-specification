@@ -56,6 +56,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.build_info im
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
     prepare_memtier_benchmark_parameters,
+    prepare_vector_db_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     extract_db_cpu_limit,
@@ -347,9 +348,12 @@ def process_self_contained_coordinator_stream(
                             # backwards compatible
                             if benchmark_tool is None:
                                 benchmark_tool = "redis-benchmark"
-                            full_benchmark_path = "/usr/local/bin/{}".format(
-                                benchmark_tool
-                            )
+                            if benchmark_tool == "vector_db_benchmark":
+                                full_benchmark_path = "python /code/run.py"
+                            else:
+                                full_benchmark_path = "/usr/local/bin/{}".format(
+                                    benchmark_tool
+                                )
 
                             # setup the benchmark
                             (
@@ -370,7 +374,29 @@ def process_self_contained_coordinator_stream(
                                     local_benchmark_output_filename
                                 )
                             )
-                            if "memtier_benchmark" not in benchmark_tool:
+                            if "memtier_benchmark" in benchmark_tool:
+                                (
+                                    _,
+                                    benchmark_command_str,
+                                ) = prepare_memtier_benchmark_parameters(
+                                    benchmark_config["clientconfig"],
+                                    full_benchmark_path,
+                                    redis_proc_start_port,
+                                    "localhost",
+                                    local_benchmark_output_filename,
+                                    benchmark_tool_workdir,
+                                )
+                            elif "vector_db_benchmark" in benchmark_tool:
+                                (
+                                    _,
+                                    benchmark_command_str,
+                                ) = prepare_vector_db_benchmark_parameters(
+                                    benchmark_config["clientconfig"],
+                                    full_benchmark_path,
+                                    redis_proc_start_port,
+                                    "localhost",
+                                )
+                            else:
                                 # prepare the benchmark command
                                 (
                                     benchmark_command,
@@ -385,18 +411,7 @@ def process_self_contained_coordinator_stream(
                                     benchmark_tool_workdir,
                                     False,
                                 )
-                            else:
-                                (
-                                    _,
-                                    benchmark_command_str,
-                                ) = prepare_memtier_benchmark_parameters(
-                                    benchmark_config["clientconfig"],
-                                    full_benchmark_path,
-                                    redis_proc_start_port,
-                                    "localhost",
-                                    local_benchmark_output_filename,
-                                    benchmark_tool_workdir,
-                                )
+
 
                             client_container_image = extract_client_container_image(
                                 benchmark_config

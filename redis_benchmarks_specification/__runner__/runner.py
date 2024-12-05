@@ -210,17 +210,18 @@ def prepare_vector_db_benchmark_parameters(
     server,
     password,
 ):
+    logging.info(f"Marcin debug prepare_vdb: {full_benchmark_path}")
     benchmark_command = []
-    if port is not None:
-        benchmark_command.extend(["REDIS_PORT={}".format(port)])
-    if password is not None:
-        benchmark_command.extend(["REDIS_AUTH={}".format(password)])
+    # if port is not None:
+    #     benchmark_command.extend(["REDIS_PORT={}".format(port)])
+    # if password is not None:
+    #     benchmark_command.extend(["REDIS_AUTH={}".format(password)])
     benchmark_command.extend([
         full_benchmark_path,
         "--host",
         f"{server}",
     ])
-    benchmark_command.extend(["--engines", clientconfig.get("engines", "redis-m-8-ef-16")])
+    benchmark_command.extend(["--engines", clientconfig.get("engines", "redis-hnsw-m-16-ef-128")])
     benchmark_command.extend(["--datasets", clientconfig.get("datasets", "glove-100-angular")])
     benchmark_command_str = " ".join(benchmark_command)
     return None, benchmark_command_str

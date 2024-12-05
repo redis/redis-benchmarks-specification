@@ -381,6 +381,9 @@ def builder_process_stream(
                 #     build_vars_str,
                 # )
                 build_command = "sh -c 'make -j'"
+                print(f"Marcin debug: build_config: {build_config}")
+                if "build_command" in build_config:
+                    build_command = build_config["build_command"]
                 if b"build_command" in testDetails:
                     build_command = testDetails[b"build_command"].decode()
                 server_name = "redis"
@@ -427,7 +430,7 @@ def builder_process_stream(
                     volumes={
                         redis_temporary_dir: {"bind": "/mnt/redis/", "mode": "rw"},
                     },
-                    auto_remove=True,
+                    auto_remove=False,
                     privileged=True,
                     working_dir="/mnt/redis/",
                     command=build_command,
@@ -647,9 +650,13 @@ def generate_benchmark_stream_request(
         build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
 
     prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
+    print(f"Marcin debug: build_artifacts: {build_artifacts}")
     for artifact in build_artifacts:
         bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
-        bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
+        if artifact == "redisearch.so":
+            bin_artifact = open(f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}", "rb").read()
+        else:
+            bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
         bin_artifact_len = len(bytes(bin_artifact))
         assert bin_artifact_len > 0
         conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
