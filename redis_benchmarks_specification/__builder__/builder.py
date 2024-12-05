@@ -430,7 +430,7 @@ def builder_process_stream(
                     volumes={
                         redis_temporary_dir: {"bind": "/mnt/redis/", "mode": "rw"},
                     },
-                    auto_remove=False,
+                    auto_remove=True,
                     privileged=True,
                     working_dir="/mnt/redis/",
                     command=build_command,
