@@ -16,7 +16,7 @@ tested-commands:
 redis-topologies:
 - oss-standalone-with-redisearch
 build-variants:
-- gcc:11.5.0-amd64-debian-bullseye-redisearch
+- gcc:10.5.0-amd64-debian-bullseye-redisearch
 - dockerhub
 clientconfig:
   run_image: vector-db-benchmark:test

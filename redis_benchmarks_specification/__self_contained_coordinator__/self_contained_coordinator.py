@@ -15,6 +15,7 @@ import sys
 import time
 
 from docker.models.containers import Container
+from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import post_process_vector_db
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
 )
@@ -823,6 +824,7 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                 if restore_build_artifacts:
+                                    print(f"Marcin debug1: Restoring build artifacts")
                                     restore_build_artifacts_from_test_details(
                                         build_artifacts,
                                         github_event_conn,
@@ -968,6 +970,7 @@ def process_self_contained_coordinator_stream(
                                         redis_proc_start_port,
                                         "localhost",
                                         None,
+                                        client_mnt_point,
                                     )
                                 else:
                                     (
@@ -1155,6 +1158,10 @@ def process_self_contained_coordinator_stream(
                                     and git_timestamp_ms is not None
                                 ):
                                     datapoint_time_ms = git_timestamp_ms
+                                if "vector_db_benchmark" in benchmark_tool:
+                                    print(f"Debug: Post-processing vector-db-benchmark results")
+                                    vdb_results = post_process_vector_db(temporary_dir_client)
+                                    print(f"Debug: results: {vdb_results}")
                                 post_process_benchmark_results(
                                     benchmark_tool,
                                     local_benchmark_output_filename,

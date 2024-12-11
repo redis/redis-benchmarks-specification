@@ -15,7 +15,7 @@ spec:
     redis_topology:
       primaries: 1
       replicas: 0
-    redis_arguments: --loadmodule /mnt/redis/modules/redisearch/src/bin/linux-x64-release/search-community/redisearch.so
+    redis_arguments: --loadmodule /mnt/redis/redisearch.so
     resources:
       requests:
         cpus: "1"
