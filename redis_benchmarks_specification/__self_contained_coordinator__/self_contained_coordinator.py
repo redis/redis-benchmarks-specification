@@ -1160,41 +1160,42 @@ def process_self_contained_coordinator_stream(
                                     datapoint_time_ms = git_timestamp_ms
                                 if "vector_db_benchmark" in benchmark_tool:
                                     print(f"Debug: Post-processing vector-db-benchmark results")
-                                    vdb_results = post_process_vector_db(temporary_dir_client)
-                                    print(f"Debug: results: {vdb_results}")
-                                post_process_benchmark_results(
-                                    benchmark_tool,
-                                    local_benchmark_output_filename,
-                                    datapoint_time_ms,
-                                    start_time_str,
-                                    client_container_stdout,
-                                    None,
-                                )
-                                full_result_path = local_benchmark_output_filename
-                                if "memtier_benchmark" in benchmark_tool:
-                                    full_result_path = "{}/{}".format(
-                                        temporary_dir_client,
+                                    results_dict = post_process_vector_db(temporary_dir_client)
+                                    print(f"Debug: results: {results_dict}")
+                                else:
+                                    post_process_benchmark_results(
+                                        benchmark_tool,
                                         local_benchmark_output_filename,
-                                    )
-                                logging.info(
-                                    "Reading results json from {}".format(
-                                        full_result_path
-                                    )
-                                )
-
-                                with open(
-                                    full_result_path,
-                                    "r",
-                                ) as json_file:
-                                    results_dict = json.load(json_file)
-                                    print_results_table_stdout(
-                                        benchmark_config,
-                                        default_metrics,
-                                        results_dict,
-                                        setup_type,
-                                        test_name,
+                                        datapoint_time_ms,
+                                        start_time_str,
+                                        client_container_stdout,
                                         None,
                                     )
+                                    full_result_path = local_benchmark_output_filename
+                                    if "memtier_benchmark" in benchmark_tool:
+                                        full_result_path = "{}/{}".format(
+                                            temporary_dir_client,
+                                            local_benchmark_output_filename,
+                                        )
+                                    logging.info(
+                                        "Reading results json from {}".format(
+                                            full_result_path
+                                        )
+                                    )
+
+                                    with open(
+                                        full_result_path,
+                                        "r",
+                                    ) as json_file:
+                                        results_dict = json.load(json_file)
+                                        print_results_table_stdout(
+                                            benchmark_config,
+                                            default_metrics,
+                                            results_dict,
+                                            setup_type,
+                                            test_name,
+                                            None,
+                                        )
 
                                 dataset_load_duration_seconds = 0
                                 try:
