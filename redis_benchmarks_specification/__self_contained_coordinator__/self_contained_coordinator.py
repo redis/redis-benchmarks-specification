@@ -15,7 +15,9 @@ import sys
 import time
 
 from docker.models.containers import Container
-from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import post_process_vector_db
+from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import (
+    post_process_vector_db,
+)
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
 )
@@ -1025,7 +1027,7 @@ def process_self_contained_coordinator_stream(
                                                 "mode": "rw",
                                             },
                                         },
-                                        #auto_remove=True,
+                                        auto_remove=True,
                                         privileged=True,
                                         working_dir=benchmark_tool_workdir,
                                         command=benchmark_command_str,
@@ -1034,8 +1036,16 @@ def process_self_contained_coordinator_stream(
                                         cpuset_cpus=client_cpuset_cpus,
                                     )
                                 except docker.errors.ContainerError as e:
-                                    logging.info("stdout: {}".format(e.container.logs(stdout=True)))
-                                    logging.info("stderr: {}".format(e.container.logs(stderr=True)))
+                                    logging.info(
+                                        "stdout: {}".format(
+                                            e.container.logs(stdout=True)
+                                        )
+                                    )
+                                    logging.info(
+                                        "stderr: {}".format(
+                                            e.container.logs(stderr=True)
+                                        )
+                                    )
                                     raise e
 
                                 benchmark_end_time = datetime.datetime.now()
@@ -1159,8 +1169,12 @@ def process_self_contained_coordinator_stream(
                                 ):
                                     datapoint_time_ms = git_timestamp_ms
                                 if "vector_db_benchmark" in benchmark_tool:
-                                    print(f"Debug: Post-processing vector-db-benchmark results")
-                                    results_dict = post_process_vector_db(temporary_dir_client)
+                                    print(
+                                        f"Debug: Post-processing vector-db-benchmark results"
+                                    )
+                                    results_dict = post_process_vector_db(
+                                        temporary_dir_client
+                                    )
                                     print(f"Debug: results: {results_dict}")
                                 else:
                                     post_process_benchmark_results(

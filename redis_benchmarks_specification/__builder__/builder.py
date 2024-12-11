@@ -654,7 +654,10 @@ def generate_benchmark_stream_request(
     for artifact in build_artifacts:
         bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
         if artifact == "redisearch.so":
-            bin_artifact = open(f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}", "rb").read()
+            bin_artifact = open(
+                f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}",
+                "rb",
+            ).read()
         else:
             bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
         bin_artifact_len = len(bytes(bin_artifact))

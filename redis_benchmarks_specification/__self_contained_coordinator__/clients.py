@@ -33,12 +33,18 @@ def prepare_vector_db_benchmark_parameters(
     benchmark_command = []
     if port is not None:
         benchmark_command.extend(["REDIS_PORT={}".format(port)])
-    benchmark_command.extend([
-        full_benchmark_path,
-        "--host",
-        f"{server}",
-    ])
-    benchmark_command.extend(["--engines", clientconfig.get("engines", "redis-m-8-ef-16")])
-    benchmark_command.extend(["--datasets", clientconfig.get("datasets", "glove-100-angular")])
+    benchmark_command.extend(
+        [
+            full_benchmark_path,
+            "--host",
+            f"{server}",
+        ]
+    )
+    benchmark_command.extend(
+        ["--engines", clientconfig.get("engines", "redis-m-8-ef-16")]
+    )
+    benchmark_command.extend(
+        ["--datasets", clientconfig.get("datasets", "glove-100-angular")]
+    )
     benchmark_command_str = " ".join(benchmark_command)
     return None, benchmark_command_str

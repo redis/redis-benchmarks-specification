@@ -412,7 +412,6 @@ def process_self_contained_coordinator_stream(
                                     False,
                                 )
 
-
                             client_container_image = extract_client_container_image(
                                 benchmark_config
                             )
