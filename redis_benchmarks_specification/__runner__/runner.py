@@ -204,30 +204,6 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     )
 
 
-def prepare_vector_db_benchmark_parameters(
-    clientconfig, full_benchmark_path, port, server, password, client_mnt_point
-):
-    benchmark_command = []
-    # if port is not None:
-    #     benchmark_command.extend(["REDIS_PORT={}".format(port)])
-    # if password is not None:
-    #     benchmark_command.extend(["REDIS_AUTH={}".format(password)])
-    benchmark_command.extend(
-        [
-            full_benchmark_path,
-            "--host",
-            f"{server}",
-        ]
-    )
-    benchmark_command.extend(["--engines", clientconfig.get("engines", "redis-test")])
-    benchmark_command.extend(
-        ["--datasets", clientconfig.get("datasets", "glove-100-angular")]
-    )
-    benchmark_command_str = " ".join(benchmark_command)
-    benchmark_command_str = f"bash -c 'ITERATIONS=1 {benchmark_command_str} && mv /code/results {client_mnt_point}.'"
-    return None, benchmark_command_str
-
-
 def prepare_memtier_benchmark_parameters(
     clientconfig,
     full_benchmark_path,
@@ -723,7 +699,22 @@ def process_self_contained_coordinator_stream(
                     )
                     arbitrary_command = False
 
-                    if "memtier_benchmark" in benchmark_tool:
+                    if "memtier_benchmark" not in benchmark_tool:
+                        # prepare the benchmark command
+                        (
+                            benchmark_command,
+                            benchmark_command_str,
+                        ) = prepare_benchmark_parameters(
+                            benchmark_config,
+                            full_benchmark_path,
+                            port,
+                            host,
+                            local_benchmark_output_filename,
+                            False,
+                            benchmark_tool_workdir,
+                            False,
+                        )
+                    else:
                         (
                             _,
                             benchmark_command_str,
@@ -744,32 +735,6 @@ def process_self_contained_coordinator_stream(
                             resp_version,
                             override_memtier_test_time,
                             override_test_runs,
-                        )
-                    elif "vector_db_benchmark" in benchmark_tool:
-                        (
-                            _,
-                            benchmark_command_str,
-                        ) = prepare_vector_db_benchmark_parameters(
-                            benchmark_config["clientconfig"],
-                            full_benchmark_path,
-                            port,
-                            host,
-                            password,
-                        )
-                    else:
-                        # prepare the benchmark command
-                        (
-                            benchmark_command,
-                            benchmark_command_str,
-                        ) = prepare_benchmark_parameters(
-                            benchmark_config,
-                            full_benchmark_path,
-                            port,
-                            host,
-                            local_benchmark_output_filename,
-                            False,
-                            benchmark_tool_workdir,
-                            False,
                         )
 
                     if (
