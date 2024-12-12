@@ -41,7 +41,7 @@ def prepare_vector_db_benchmark_parameters(
         ]
     )
     benchmark_command.extend(
-        ["--engines", clientconfig.get("engines", "redis-m-8-ef-16")]
+        ["--engines", clientconfig.get("engines", "redis-test")]
     )
     benchmark_command.extend(
         ["--datasets", clientconfig.get("datasets", "glove-100-angular")]
