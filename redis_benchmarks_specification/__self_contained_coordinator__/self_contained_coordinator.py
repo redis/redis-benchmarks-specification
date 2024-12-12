@@ -59,7 +59,6 @@ from redis_benchmarks_specification.__compare__.compare import (
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
     prepare_memtier_benchmark_parameters,
-    prepare_vector_db_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
@@ -111,6 +110,9 @@ from redis_benchmarks_specification.__self_contained_coordinator__.build_info im
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     extract_db_cpu_limit,
     generate_cpuset_cpus,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+    prepare_vector_db_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
