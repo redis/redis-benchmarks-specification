@@ -1019,21 +1019,23 @@ def process_self_contained_coordinator_stream(
                                 # run the benchmark
                                 benchmark_start_time = datetime.datetime.now()
                                 try:
-                                    client_container_stdout = docker_client.containers.run(
-                                        image=client_container_image,
-                                        volumes={
-                                            temporary_dir_client: {
-                                                "bind": client_mnt_point,
-                                                "mode": "rw",
+                                    client_container_stdout = (
+                                        docker_client.containers.run(
+                                            image=client_container_image,
+                                            volumes={
+                                                temporary_dir_client: {
+                                                    "bind": client_mnt_point,
+                                                    "mode": "rw",
+                                                },
                                             },
-                                        },
-                                        auto_remove=True,
-                                        privileged=True,
-                                        working_dir=benchmark_tool_workdir,
-                                        command=benchmark_command_str,
-                                        network_mode="host",
-                                        detach=False,
-                                        cpuset_cpus=client_cpuset_cpus,
+                                            auto_remove=True,
+                                            privileged=True,
+                                            working_dir=benchmark_tool_workdir,
+                                            command=benchmark_command_str,
+                                            network_mode="host",
+                                            detach=False,
+                                            cpuset_cpus=client_cpuset_cpus,
+                                        )
                                     )
                                 except docker.errors.ContainerError as e:
                                     logging.info(
