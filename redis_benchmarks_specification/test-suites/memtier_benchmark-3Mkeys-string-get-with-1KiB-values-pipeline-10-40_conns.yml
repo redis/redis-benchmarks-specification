@@ -17,6 +17,10 @@ tested-commands:
 - set
 redis-topologies:
 - oss-standalone
+- oss-standalone-02-io-threads
+- oss-standalone-04-io-threads
+- oss-standalone-08-io-threads
+- oss-standalone-16-io-threads
 build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub

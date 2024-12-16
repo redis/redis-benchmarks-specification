@@ -1,0 +1,32 @@
+version: 0.4
+name: memtier_benchmark-1key-list-100-elements-int-lrange-all-elements-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 100 integer elements (across all 6 encoding types, meaning 7BIT_UINT 13BIT_INT 16BIT_INT 24BIT_INT 32BIT_INT 64BIT_INT) in it and we query it using LRANGE with a range of all elements. '
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+   - '"LPUSH" "list:100:ints" "0" "7" "14" "21" "28" "35" "42" "49" "56" "63" "70" "77" "84" "91" "98" "105" "112" "-4096" "-3585" "-3074" "-2563" "-2052" "-1541" "-1030" "-519" "-8" "503" "1014" "1525" "2036" "2547" "3058" "3569" "4080" "-32768" "-28673" "-24578" "-20483" "-16388" "-12293" "-8198" "-4103" "-8" "4087" "8182" "12277" "16372" "20467" "24562" "28657" "32752" "-8388608" "-7340033" "-6291458" "-5242883" "-4194308" "-3145733" "-2097158" "-1048583" "-8" "1048567" "2097142" "3145717" "4194292" "5242867" "6291442" "7340017" "8388592" "-2147483648" "-1861152495" "-1574821342" "-1288490189" "-1002159036" "-715827883" "-429496730" "-143165577" "143165576" "429496729" "715827882" "1002159035" "1288490188" "1574821341" "1861152494" "2147483647" "-9223372036854775808" "-7993589098607472367" "-6763806160360168926" "-5534023222112865485" "-4304240283865562044" "-3074457345618258603" "-1844674407370955162" "-614891469123651721" "614891469123651720" "1844674407370955161" "3074457345618258602" "4304240283865562043" "5534023222112865484" "6763806160360168925" "7993589098607472366" "9223372036854775807"'
+tested-groups:
+- list
+tested-commands:
+- lrange
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="LRANGE list:100:ints 0 -1"  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 34
