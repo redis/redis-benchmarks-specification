@@ -804,21 +804,22 @@ def compute_regression_table(
     len_baseline_only_list = len(baseline_only_list)
     if len_baseline_only_list > 0:
         table_output += f"\n  WARNING: There were {len_baseline_only_list} benchmarks with datapoints only on baseline.\n\n"
-        baseline_only_test_names_str = "|".join([l[0] for l in baseline_only_list])
+        baseline_only_test_names_str = "|".join([l for l in baseline_only_list])
         table_output += (
             f"  Baseline only test regexp names: {baseline_only_test_names_str}\n\n"
         )
     len_comparison_only_list = len(comparison_only_list)
     if len_comparison_only_list > 0:
         table_output += f"\n  WARNING: There were {len_comparison_only_list} benchmarks with datapoints only on comparison.\n\n"
-        comparison_only_test_names_str = "|".join([l[0] for l in comparison_only_list])
+        comparison_only_test_names_str = "|".join([l for l in comparison_only_list])
         table_output += (
             f"  Comparison only test regexp names: {comparison_only_test_names_str}\n\n"
         )
     len_no_datapoints = len(no_datapoints_list)
     if len_no_datapoints > 0:
         table_output += f"\n  WARNING: There were {len_no_datapoints} benchmarks with NO datapoints for both baseline and comparison.\n\n"
-        no_datapoints_test_names_str = "|".join([l[0] for l in no_datapoints_list])
+        no_datapoints_test_names_str = "|".join([l for l in no_datapoints_list])
+        
         table_output += (
             f"  NO DATAPOINTS test regexp names: {no_datapoints_test_names_str}\n\n"
         )
