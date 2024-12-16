@@ -381,7 +381,6 @@ def builder_process_stream(
                 #     build_vars_str,
                 # )
                 build_command = "sh -c 'make -j'"
-                print(f"Marcin debug: build_config: {build_config}")
                 if "build_command" in build_config:
                     build_command = build_config["build_command"]
                 if b"build_command" in testDetails:
@@ -650,7 +649,6 @@ def generate_benchmark_stream_request(
         build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
 
     prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
-    print(f"Marcin debug: build_artifacts: {build_artifacts}")
     for artifact in build_artifacts:
         bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
         if artifact == "redisearch.so":
