@@ -364,7 +364,6 @@ def self_contained_coordinator_blocking_read(
             get_runners_consumer_group_name(platform_name), consumer_name
         )
     )
-    logging.info(f"Marcin Debug githubevent_conn {github_event_conn}")
     newTestInfo = github_event_conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
         consumer_name,
@@ -828,7 +827,6 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                 if restore_build_artifacts:
-                                    print(f"Marcin debug1: Restoring build artifacts")
                                     restore_build_artifacts_from_test_details(
                                         build_artifacts,
                                         github_event_conn,
@@ -1173,13 +1171,9 @@ def process_self_contained_coordinator_stream(
                                 ):
                                     datapoint_time_ms = git_timestamp_ms
                                 if "vector_db_benchmark" in benchmark_tool:
-                                    print(
-                                        f"Debug: Post-processing vector-db-benchmark results"
-                                    )
                                     results_dict = post_process_vector_db(
                                         temporary_dir_client
                                     )
-                                    print(f"Debug: results: {results_dict}")
                                 else:
                                     post_process_benchmark_results(
                                         benchmark_tool,
