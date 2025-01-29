@@ -9,7 +9,6 @@ import csv
 from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
 
 
-
 # logging settings
 logging.basicConfig(
     format="%(asctime)s %(levelname)-4s %(message)s",
@@ -19,7 +18,7 @@ logging.basicConfig(
 
 
 def clean_number(value):
-    """ Cleans and converts numeric values from CSV, handling B (billion), M (million), K (thousand). """
+    """Cleans and converts numeric values from CSV, handling B (billion), M (million), K (thousand)."""
     try:
         value = value.replace(",", "").strip()  # Remove commas and spaces
 
@@ -39,6 +38,7 @@ def clean_number(value):
     except ValueError:
         logging.error(f"Skipping invalid count value: {value}")
         return 0  # Default to 0 if invalid
+
 
 def get_arg_value(args, flag, default):
     """Extract integer values safely from CLI arguments"""
@@ -207,12 +207,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
                         group = command_json["group"]
                         if group not in tested_groups:
-                            
+
                             tested_groups.append(group)
                         if group not in tracked_groups:
                             tracked_groups.append(group)
-                            tracked_groups_hist[group]=0
-                        tracked_groups_hist[group]=tracked_groups_hist[group]+1
+                            tracked_groups_hist[group] = 0
+                        tracked_groups_hist[group] = tracked_groups_hist[group] + 1
 
                 # Calculate total connections
                 total_connections = clients * threads
@@ -562,11 +562,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
         logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
         if len(top_30_missing) > 0:
-            logging.info(f"\t\tTotal missing for Top 30: {len(top_30_missing)}. {top_30_missing}")
+            logging.info(
+                f"\t\tTotal missing for Top 30: {len(top_30_missing)}. {top_30_missing}"
+            )
 
         logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
         if len(top_50_missing) > 0:
-            logging.info(f"\t\tTotal missing for Top 50: {len(top_50_missing)}. {top_50_missing}")
+            logging.info(
+                f"\t\tTotal missing for Top 50: {len(top_50_missing)}. {top_50_missing}"
+            )
 
     if overall_result is False and fail_on_required_diff:
         logging.error(
