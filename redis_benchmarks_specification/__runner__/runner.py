@@ -9,7 +9,7 @@ import tempfile
 import traceback
 from pathlib import Path
 import re
-
+import tqdm
 import docker
 import redis
 from docker.models.containers import Container
@@ -391,7 +391,7 @@ def process_self_contained_coordinator_stream(
         _,
     ) = get_defaults(defaults_filename)
 
-    for test_file in testsuite_spec_files:
+    for test_file in tqdm.tqdm(testsuite_spec_files):
         if defaults_filename in test_file:
             continue
         client_containers = []
@@ -596,6 +596,19 @@ def process_self_contained_coordinator_stream(
                             if args.run_tests_with_dataset is False:
                                 logging.warning(
                                     "Skipping test {} giving it implies dataset preload".format(
+                                        test_name
+                                    )
+                                )
+                                delete_temporary_files(
+                                    temporary_dir_client=temporary_dir_client,
+                                    full_result_path=None,
+                                    benchmark_tool_global=benchmark_tool_global,
+                                )
+                                continue
+                        if "preload_tool" in benchmark_config["dbconfig"]:
+                            if args.skip_tests_with_preload_via_tool is False:
+                                logging.warning(
+                                    "Skipping test {} giving it implies dataset preload via tool".format(
                                         test_name
                                     )
                                 )

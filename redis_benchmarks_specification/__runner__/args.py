@@ -147,6 +147,12 @@ def create_client_runner_args(project_name):
         help="Run tests that contain a dbconfig with dataset",
     )
     parser.add_argument(
+        "--skip-tests-with-preload-via-tool",
+        default=False,
+        action="store_true",
+        help="Run tests that contain a dbconfig with dataset",
+    )
+    parser.add_argument(
         "--client_aggregated_results_folder",
         type=str,
         default="",

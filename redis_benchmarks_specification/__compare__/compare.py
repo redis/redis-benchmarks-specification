@@ -27,6 +27,7 @@ from redis_benchmarks_specification.__common__.github import (
 )
 from redis_benchmarks_specification.__compare__.args import create_compare_arguments
 
+from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
 
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -268,6 +269,40 @@ def compare_command_logic(args, project_name, project_version):
             )
         )
 
+    testsuites_folder = os.path.abspath(args.test_suites_folder)
+    logging.info("Using test-suites folder dir {}".format(testsuites_folder))
+    testsuite_spec_files = get_benchmark_specs(testsuites_folder)
+    logging.info(
+        "There are a total of {} test-suites being run in folder {}".format(
+            len(testsuite_spec_files), testsuites_folder
+        )
+    )
+    tests_with_config = {}
+    for test_file in testsuite_spec_files:
+        if args.defaults_filename in test_file:
+            continue
+        benchmark_config = {}
+        with open(test_file, "r") as stream:
+            try:
+                benchmark_config = yaml.safe_load(stream)
+                test_name = benchmark_config["name"]
+                tests_with_config[test_name] = benchmark_config
+                if "tested-groups" in benchmark_config:
+                    origin_tested_groups = benchmark_config["tested-groups"]
+                else:
+                    logging.warn("dont have test groups in {}".format(test_name))
+                if "tested-commands" in benchmark_config:
+                    origin_tested_commands = benchmark_config["tested-commands"]
+                else:
+                    logging.warn("dont have test commands in {}".format(test_name))
+            except Exception as e:
+                logging.error(
+                    "while loading file {} and error was returned: {}".format(
+                        test_file, e.__str__()
+                    )
+                )
+                pass
+
     fn = check_regression_comment
     (
         contains_regression_comment,
@@ -330,6 +365,7 @@ def compare_command_logic(args, project_name, project_version):
         comparison_github_org,
         args.regression_str,
         args.improvement_str,
+        tests_with_config,
     )
     total_regressions = len(regressions_list)
     total_improvements = len(improvements_list)
@@ -588,6 +624,7 @@ def compute_regression_table(
     comparison_github_org="redis",
     regression_str="REGRESSION",
     improvement_str="IMPROVEMENT",
+    tests_with_config={},
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -668,6 +705,8 @@ def compute_regression_table(
         baseline_only_list,
         comparison_only_list,
         no_datapoints_list,
+        group_change,
+        command_change,
     ) = from_rts_to_regression_table(
         baseline_deployment_name,
         comparison_deployment_name,
@@ -698,6 +737,7 @@ def compute_regression_table(
         comparison_github_org,
         regression_str,
         improvement_str,
+        tests_with_config,
     )
     logging.info(
         "Printing differential analysis between {} and {}".format(
@@ -711,6 +751,22 @@ def compute_regression_table(
         from_human_str,
         baseline_deployment_name,
     )
+
+    table_output += "<details>\n  <summary>By GROUP change csv:</summary>\n\n"
+    table_output += "\ncommand_group,min_change,max_change  \n"
+    for group_name, changes_list in group_change.items():
+        max_change = max(changes_list)
+        min_change = min(changes_list)
+        table_output += f"{group_name},{min_change:.3f},{max_change:.3f}\n"
+    table_output += "\n</details>\n"
+    table_output += "\n\n"
+    table_output += "<details>\n  <summary>By COMMAND change csv:</summary>\n\n"
+    table_output += "\ncommand,min_change,max_change  \n"
+    for command_name, changes_list in command_change.items():
+        max_change = max(changes_list)
+        min_change = min(changes_list)
+        table_output += f"{command_name},{min_change:.3f},{max_change:.3f}\n"
+    table_output += "\n</details>\n"
 
     if total_unstable > 0:
         old_stdout = sys.stdout
@@ -999,6 +1055,7 @@ def from_rts_to_regression_table(
     comparison_github_org="redis",
     regression_str="REGRESSION",
     improvement_str="IMPROVEMENT",
+    tests_with_config={},
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
     table_full = []
@@ -1022,8 +1079,20 @@ def from_rts_to_regression_table(
     no_datapoints_list = []
     no_datapoints_baseline_list = []
     no_datapoints_comparison_list = []
+    group_change = {}
+    command_change = {}
     original_metric_mode = metric_mode
     for test_name in test_names:
+        tested_groups = []
+        tested_commands = []
+        if test_name in tests_with_config:
+            test_spec = tests_with_config[test_name]
+            if "tested-groups" in test_spec:
+                tested_groups = test_spec["tested-groups"]
+            if "tested-commands" in test_spec:
+                tested_commands = test_spec["tested-commands"]
+        else:
+            logging.error(f"Test does not contain spec info: {test_name}")
         metric_mode = original_metric_mode
         compare_version = "main"
         # GE
@@ -1257,6 +1326,16 @@ def from_rts_to_regression_table(
                     if simplify_table is False:
                         note = note + " No Change"
 
+            for test_group in tested_groups:
+                if test_group not in group_change:
+                    group_change[test_group] = []
+                group_change[test_group].append(percentage_change)
+
+            for test_command in tested_commands:
+                if test_command not in command_change:
+                    command_change[test_command] = []
+                command_change[test_command].append(percentage_change)
+
             if (
                 detected_improvement is False
                 and detected_regression is False
@@ -1345,6 +1424,8 @@ def from_rts_to_regression_table(
         baseline_only_list,
         comparison_only_list,
         no_datapoints_list,
+        group_change,
+        command_change,
     )
 
 

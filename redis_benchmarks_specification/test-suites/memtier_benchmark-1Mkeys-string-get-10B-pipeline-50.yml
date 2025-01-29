@@ -1,6 +1,6 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-string-get-100B-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 100 Bytes for each key.
+name: memtier_benchmark-1Mkeys-string-get-10B-pipeline-50
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 10 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,7 +9,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--key-maximum" "1000000" "-n" "allkeys" "--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
   resources:
     requests:
       memory: 1g
@@ -23,10 +23,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--pipeline 10 --data-size 100 --ratio 0:1 --key-pattern R:R -c 25 -t 4 --hide-histogram --test-time 180'
+  arguments: '"--pipeline" "50"  --distinct-client-seed "--data-size" "10" --ratio 0:1 --key-pattern R:R -c 10 -t 10 --hide-histogram --test-time 120'
   resources:
     requests:
-      cpus: '4'
+      cpus: '10'
       memory: 2g
 
 tested-groups:

@@ -8,6 +8,10 @@
 import datetime
 import os
 
+from redis_benchmarks_specification.__common__.env import (
+    SPECS_PATH_TEST_SUITES,
+)
+
 
 def get_start_time_vars(start_time=None):
     if start_time is None:
@@ -30,6 +34,12 @@ START_TIME_LAST_SIX_MONTHS_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=18
 
 
 def create_compare_arguments(parser):
+    parser.add_argument(
+        "--test-suites-folder",
+        type=str,
+        default=SPECS_PATH_TEST_SUITES,
+        help="Test suites folder, containing the different test variations",
+    )
     parser.add_argument(
         "--test",
         type=str,
