@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-load-string-with-10B-values-pipeline-10
+name: memtier_benchmark-1Mkeys-load-string-with-10B-values-pipeline-100
 description: Runs memtier_benchmark, for a keyspace length of 1M keys loading STRINGs in which the value has a data size of 10 Bytes.
 dbconfig:
   configuration-parameters:
@@ -19,7 +19,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "10" "--data-size" "10" --distinct-client-seed --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 120 -c 10 -t 10 --hide-histogram'
+  arguments: '"--pipeline" "100" "--data-size" "10" --distinct-client-seed --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 120 -c 10 -t 10 --hide-histogram'
   resources:
     requests:
       cpus: '10'

@@ -8,12 +8,49 @@ import csv
 
 from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
 
+
 # logging settings
 logging.basicConfig(
     format="%(asctime)s %(levelname)-4s %(message)s",
     level=logging.INFO,
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+
+def clean_number(value):
+    """Cleans and converts numeric values from CSV, handling B (billion), M (million), K (thousand)."""
+    try:
+        value = value.replace(",", "").strip()  # Remove commas and spaces
+
+        # Determine the scale factor
+        multiplier = 1
+        if value.endswith("B"):
+            multiplier = 1_000_000_000  # Billion
+            value = value[:-1]  # Remove "B"
+        elif value.endswith("M"):
+            multiplier = 1_000_000  # Million
+            value = value[:-1]  # Remove "M"
+        elif value.endswith("K"):
+            multiplier = 1_000  # Thousand
+            value = value[:-1]  # Remove "K"
+
+        return int(float(value) * multiplier)  # Convert to full number
+    except ValueError:
+        logging.error(f"Skipping invalid count value: {value}")
+        return 0  # Default to 0 if invalid
+
+
+def get_arg_value(args, flag, default):
+    """Extract integer values safely from CLI arguments"""
+    if flag in args:
+        try:
+            val = (
+                args[args.index(flag) + 1].lstrip("=").strip()
+            )  # Remove any leading '='
+            return int(val)  # Convert to integer safely
+        except (IndexError, ValueError):
+            logging.error(f"Failed to extract {flag}, using default: {default}")
+    return default  # Return default if not found or invalid
 
 
 def generate_stats_cli_command_logic(args, project_name, project_version):
@@ -55,10 +92,14 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             )
             priority_json = json.load(fd)
     tracked_groups = []
+    tracked_groups_hist = {}
     override_enabled = args.override_tests
     fail_on_required_diff = args.fail_on_required_diff
     overall_result = True
     test_names = []
+    pipelines = {}
+    connections = {}
+    data_sizes = {}
     defaults_filename = args.defaults_filename
 
     for test_file in testsuite_spec_files:
@@ -83,6 +124,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 test_names.append(test_name)
                 group = ""
                 is_memtier = False
+
+                ## defaults
+                pipeline_size = 1
+                clients = 50
+                threads = 4
+                data_size = 32
+
                 if "memtier" in test_name:
                     is_memtier = True
                 tested_groups = []
@@ -101,6 +149,32 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     tested_commands.append(tested_command.lower())
                 if is_memtier:
                     arguments = benchmark_config["clientconfig"]["arguments"]
+                    arg_list = (
+                        benchmark_config["clientconfig"]["arguments"]
+                        .replace('"', "")
+                        .split()
+                    )
+
+                    data_size = get_arg_value(arg_list, "--data-size", data_size)
+                    data_size = get_arg_value(arg_list, "-d", data_size)
+
+                    # Extract values using the safer parsing function
+                    pipeline_size = get_arg_value(arg_list, "--pipeline", pipeline_size)
+                    pipeline_size = get_arg_value(
+                        arg_list, "-P", pipeline_size
+                    )  # Support short form
+
+                    # Extract values using the safer parsing function
+                    clients = get_arg_value(arg_list, "--clients", clients)
+                    clients = get_arg_value(
+                        arg_list, "-c", clients
+                    )  # Support short form
+
+                    threads = get_arg_value(arg_list, "--threads", threads)
+                    threads = get_arg_value(
+                        arg_list, "-t", threads
+                    )  # Support short form
+
                     arguments_split = arguments.split("--command")
 
                     if len(arguments_split) == 1:
@@ -133,9 +207,27 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
                         group = command_json["group"]
                         if group not in tested_groups:
+
                             tested_groups.append(group)
                         if group not in tracked_groups:
                             tracked_groups.append(group)
+                            tracked_groups_hist[group] = 0
+                        tracked_groups_hist[group] = tracked_groups_hist[group] + 1
+
+                # Calculate total connections
+                total_connections = clients * threads
+
+                if pipeline_size not in pipelines:
+                    pipelines[pipeline_size] = 0
+                pipelines[pipeline_size] = pipelines[pipeline_size] + 1
+
+                if total_connections not in connections:
+                    connections[total_connections] = 0
+                connections[total_connections] = connections[total_connections] + 1
+
+                if data_size not in data_sizes:
+                    data_sizes[data_size] = 0
+                data_sizes[data_size] = data_sizes[data_size] + 1
 
                 if tested_commands != origin_tested_commands:
                     requires_override = True
@@ -281,10 +373,10 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 if "cmdstat_" not in cmdstat:
                     continue
                 cmdstat = cmdstat.replace("cmdstat_", "")
-                count = int(row[1])
+                count = clean_number(row[1])
                 usecs = None
                 if len(row) > 2:
-                    usecs = int(row[2])
+                    usecs = clean_number(row[2])
                     total_usecs += usecs
                 if count == 0:
                     continue
@@ -470,11 +562,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         logging.info("Top 10 fully tracked?: {}".format(len(top_10_missing) == 0))
         logging.info("Top 30 fully tracked?: {}".format(len(top_30_missing) == 0))
         if len(top_30_missing) > 0:
-            logging.info("\t\tTotal missing for Top 30: {}".format(len(top_30_missing)))
+            logging.info(
+                f"\t\tTotal missing for Top 30: {len(top_30_missing)}. {top_30_missing}"
+            )
 
         logging.info("Top 50 fully tracked?: {}".format(len(top_50_missing) == 0))
         if len(top_50_missing) > 0:
-            logging.info("\t\tTotal missing for Top 50: {}".format(len(top_50_missing)))
+            logging.info(
+                f"\t\tTotal missing for Top 50: {len(top_50_missing)}. {top_50_missing}"
+            )
 
     if overall_result is False and fail_on_required_diff:
         logging.error(
@@ -500,3 +596,71 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             conn.sadd(tested_groups_key, group)
         for command in list(tracked_commands_json.keys()):
             conn.sadd(tested_commands_key, command)
+
+    logging.info(f"There is a total of : {len(tracked_groups)} tracked command groups.")
+    logging.info(
+        f"There is a total of : {len(list(tracked_commands_json.keys()))} tracked commands."
+    )
+    # Save pipeline count to CSV
+    csv_filename = "memtier_pipeline_count.csv"
+    with open(csv_filename, "w", newline="") as csvfile:
+        fieldnames = ["pipeline", "count"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for pipeline_size in sorted(pipelines.keys()):
+            writer.writerow(
+                {"pipeline": pipeline_size, "count": pipelines[pipeline_size]}
+            )
+
+    logging.info(f"Pipeline count data saved to {csv_filename}")
+
+    csv_filename = "memtier_connection_count.csv"
+    with open(csv_filename, "w", newline="") as csvfile:
+        fieldnames = ["connections", "count"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        # Sort connections dictionary by keys before writing
+        for connection_count in sorted(connections.keys()):
+            writer.writerow(
+                {
+                    "connections": connection_count,
+                    "count": connections[connection_count],
+                }
+            )
+
+    logging.info(f"Sorted connection count data saved to {csv_filename}")
+
+    csv_filename = "memtier_data_size_histogram.csv"
+    with open(csv_filename, "w", newline="") as csvfile:
+        fieldnames = ["data_size", "count"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        # Sort connections dictionary by keys before writing
+        for data_size in sorted(data_sizes.keys()):
+            writer.writerow(
+                {
+                    "data_size": data_size,
+                    "count": data_sizes[data_size],
+                }
+            )
+
+    logging.info(f"Sorted data size count data saved to {csv_filename}")
+
+    csv_filename = "memtier_groups_histogram.csv"
+    with open(csv_filename, "w", newline="") as csvfile:
+        fieldnames = ["group", "count"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        # Sort connections dictionary by keys before writing
+        for group in sorted(tracked_groups_hist.keys()):
+            writer.writerow(
+                {
+                    "group": group,
+                    "count": tracked_groups_hist[group],
+                }
+            )
+
+    logging.info(f"Sorted command groups count data saved to {csv_filename}")
