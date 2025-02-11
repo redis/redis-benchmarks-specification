@@ -214,4 +214,9 @@ def create_client_runner_args(project_name):
         action="store_true",
         help="Run client in cluster mode.",
     )
+    parser.add_argument(
+        "--unix-socket",
+        default="",
+        help="UNIX Domain socket name",
+    )
     return parser

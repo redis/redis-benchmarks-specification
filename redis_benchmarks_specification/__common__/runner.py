@@ -106,11 +106,16 @@ def extract_testsuites(args):
     testsuite_spec_files = get_benchmark_specs(
         testsuites_folder, args.test, args.tests_regexp
     )
+    testsuite_spec_files.sort()
     logging.info(
         "There are a total of {} test-suites in folder {}".format(
             len(testsuite_spec_files), testsuites_folder
         )
     )
+    if len(testsuite_spec_files) < 11:
+        for test in testsuite_spec_files:
+            logging.info(f"Test {test}")
+
     return testsuite_spec_files
 
 

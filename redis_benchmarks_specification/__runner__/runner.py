@@ -220,17 +220,26 @@ def prepare_memtier_benchmark_parameters(
     resp_version=None,
     override_memtier_test_time=0,
     override_test_runs=1,
+    unix_socket="",
 ):
     arbitrary_command = False
     benchmark_command = [
         full_benchmark_path,
-        "--port",
-        f"{port}",
-        "--server",
-        f"{server}",
         "--json-out-file",
         local_benchmark_output_filename,
     ]
+    if unix_socket != "":
+        benchmark_command.extend(["--unix-socket", unix_socket])
+        logging.info(f"Using UNIX SOCKET to connect {unix_socket}")
+    else:
+        benchmark_command.extend(
+            [
+                "--port",
+                f"{port}",
+                "--server",
+                f"{server}",
+            ]
+        )
     if password is not None:
         benchmark_command.extend(["--authenticate", password])
     if tls_enabled:
@@ -430,6 +439,7 @@ def process_self_contained_coordinator_stream(
 
                     port = args.db_server_port
                     host = args.db_server_host
+                    unix_socket = args.unix_socket
                     password = args.db_server_password
                     oss_cluster_api_enabled = args.cluster_mode
                     ssl_cert_reqs = "required"
@@ -606,7 +616,7 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
                         if "preload_tool" in benchmark_config["dbconfig"]:
-                            if args.skip_tests_with_preload_via_tool is False:
+                            if args.skip_tests_with_preload_via_tool is True:
                                 logging.warning(
                                     "Skipping test {} giving it implies dataset preload via tool".format(
                                         test_name
@@ -648,6 +658,7 @@ def process_self_contained_coordinator_stream(
                                 args.benchmark_local_install,
                                 password,
                                 oss_cluster_api_enabled,
+                                unix_socket,
                             )
                             if res is False:
                                 logging.warning(
@@ -748,6 +759,7 @@ def process_self_contained_coordinator_stream(
                             resp_version,
                             override_memtier_test_time,
                             override_test_runs,
+                            unix_socket,
                         )
 
                     if (
@@ -1151,6 +1163,7 @@ def data_prepopulation_step(
     benchmark_local_install=False,
     password=None,
     oss_cluster_api_enabled=False,
+    unix_socket="",
 ):
     result = True
     # setup the benchmark
@@ -1193,6 +1206,8 @@ def data_prepopulation_step(
             tls_cacert,
             resp_version,
             override_memtier_test_time_preload,
+            1,
+            unix_socket,
         )
         if arbitrary_command is True and oss_cluster_api_enabled:
             logging.warning(
