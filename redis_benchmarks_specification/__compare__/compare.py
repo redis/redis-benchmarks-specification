@@ -874,11 +874,12 @@ def compute_regression_table(
     len_no_datapoints = len(no_datapoints_list)
     if len_no_datapoints > 0:
         table_output += f"\n  WARNING: There were {len_no_datapoints} benchmarks with NO datapoints for both baseline and comparison.\n\n"
+        table_output += "<details>\n  <summary>NO datapoints for both baseline and comparison:</summary>\n\n"
         no_datapoints_test_names_str = "|".join([l for l in no_datapoints_list])
-
         table_output += (
             f"  NO DATAPOINTS test regexp names: {no_datapoints_test_names_str}\n\n"
         )
+        table_output += "\n</details>\n"
 
     return (
         detected_regressions,
