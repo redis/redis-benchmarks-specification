@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-600K-elements-zrangestore-1K-elements
+description: Runs memtier_benchmark, for a keyspace length of 1 key doing zrangestore on a high cardinality sorted set
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '-n allkeys "--data-size" "10" --key-prefix "" "--command" "ZADD zset __key__ __key__" "--command-key-pattern" "P" "-c" "1" "-t" "1" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "600001"'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- zrangestore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 -c 1 -t 1 --command "ZRANGESTORE zset1 zset 0 1000" --command-key-pattern="P" --key-minimum=1 --key-maximum 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+
+tested-groups:
+- sorted-set
+priority: 12
