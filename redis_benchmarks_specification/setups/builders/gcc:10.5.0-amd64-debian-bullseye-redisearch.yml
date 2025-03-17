@@ -1,0 +1,24 @@
+version: 0.1
+id: gcc:10.5.0-amd64-debian-bullseye-redisearch
+os: debian-bullseye
+arch: amd64
+compiler: "gcc"
+cpp_compiler: "g++"
+kind: docker
+build_image: gcc:10.5.0-bullseye 
+run_image: debian:bullseye
+description: "Using GNU Compiler Containers (https://hub.docker.com/_/gcc?tab=description)
+              pre-configured environment with all the tools required to build with gcc."
+build_artifacts:
+  - redisearch.so
+  - redis-server
+build_command: "sh -c 'apt update && apt install python3-pip -y && BUILD_WITH_MODULES=yes make --ignore-errors -j && cd modules/redisearch/src && make setup && make build && cd -'"
+metadata:
+  compiler: "gcc"
+  compiler_version: "10.5.0"
+  os: debian-bullseye
+  arch: amd64
+
+env:
+  REDIS_CFLAGS: "-g -fno-omit-frame-pointer"
+
