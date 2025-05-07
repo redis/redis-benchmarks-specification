@@ -116,6 +116,7 @@ def process_self_contained_coordinator_stream(
     docker_air_gap=False,
     verbose=False,
     run_tests_with_dataset=False,
+    args=None,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -197,6 +198,17 @@ def process_self_contained_coordinator_stream(
                                 )
                             )
                     for topology_spec_name in benchmark_config["redis-topologies"]:
+                        # Filter by topology if specified
+                        if (
+                            args.topology
+                            and args.topology != ""
+                            and topology_spec_name != args.topology
+                        ):
+                            logging.info(
+                                f"Skipping topology {topology_spec_name} as it doesn't match the requested topology {args.topology}"
+                            )
+                            continue
+
                         test_result = False
                         try:
                             current_cpu_pos = cpuset_start_pos

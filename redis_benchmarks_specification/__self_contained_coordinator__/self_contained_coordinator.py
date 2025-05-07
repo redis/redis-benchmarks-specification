@@ -367,6 +367,13 @@ def self_contained_coordinator_blocking_read(
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
         stream_id = ">"
     else:
+        # Create args object with topology parameter
+        class Args:
+            def __init__(self):
+                self.topology = ""
+
+        args = Args()
+
         (
             stream_id,
             overall_result,
@@ -398,6 +405,7 @@ def self_contained_coordinator_blocking_read(
             default_metrics_str,
             docker_keep_env,
             restore_build_artifacts_default,
+            args,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
