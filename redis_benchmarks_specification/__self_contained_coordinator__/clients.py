@@ -7,8 +7,6 @@ def prepare_memtier_benchmark_parameters(
     oss_cluster_api_enabled,
 ):
     benchmark_command = [
-        "--json-out-file",
-        local_benchmark_output_filename,
         full_benchmark_path,
         "--json-out-file",
         local_benchmark_output_filename,
