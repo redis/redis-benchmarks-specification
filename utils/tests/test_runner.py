@@ -265,7 +265,7 @@ def test_extract_testsuites():
             "--test-suites-folder",
             "./utils/tests/test_data/test-suites",
             "--tests-regex",
-            ".*\.yml",
+            r".*\.yml",
         ]
     )
     tests = extract_testsuites(args)

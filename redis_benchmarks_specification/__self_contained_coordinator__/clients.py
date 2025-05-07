@@ -10,6 +10,8 @@ def prepare_memtier_benchmark_parameters(
         "--json-out-file",
         local_benchmark_output_filename,
         full_benchmark_path,
+        "--json-out-file",
+        local_benchmark_output_filename,
         "--port",
         "{}".format(port),
         "--server",
