@@ -381,6 +381,8 @@ def builder_process_stream(
                 #     build_vars_str,
                 # )
                 build_command = "sh -c 'make -j'"
+                if "build_command" in build_config:
+                    build_command = build_config["build_command"]
                 if b"build_command" in testDetails:
                     build_command = testDetails[b"build_command"].decode()
                 server_name = "redis"
@@ -649,7 +651,13 @@ def generate_benchmark_stream_request(
     prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
     for artifact in build_artifacts:
         bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
-        bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
+        if artifact == "redisearch.so":
+            bin_artifact = open(
+                f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}",
+                "rb",
+            ).read()
+        else:
+            bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
         bin_artifact_len = len(bytes(bin_artifact))
         assert bin_artifact_len > 0
         conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
