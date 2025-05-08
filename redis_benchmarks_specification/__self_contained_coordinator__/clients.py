@@ -8,12 +8,12 @@ def prepare_memtier_benchmark_parameters(
 ):
     benchmark_command = [
         full_benchmark_path,
+        "--json-out-file",
+        local_benchmark_output_filename,
         "--port",
         "{}".format(port),
         "--server",
         "{}".format(server),
-        "--json-out-file",
-        local_benchmark_output_filename,
     ]
     if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
