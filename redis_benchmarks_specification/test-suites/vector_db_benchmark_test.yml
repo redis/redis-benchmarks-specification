@@ -10,9 +10,10 @@ dbconfig:
     requests:
       memory: 1g
 tested-groups:
-- redisearch
-tested-commands:
 - search
+tested-commands:
+- hset
+- ft.search
 redis-topologies:
 - oss-standalone-with-redisearch
 build-variants:
