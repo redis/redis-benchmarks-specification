@@ -108,6 +108,8 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
         benchmark_config = {}
         requires_override = False
         test_result = True
+        tested_groups_match_origin = True
+
         with open(test_file, "r") as stream:
 
             try:
@@ -291,7 +293,7 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     )
 
                 if tested_groups != origin_tested_groups:
-                    requires_override = True
+                    tested_groups_match_origin = False
                     benchmark_config["tested-groups"] = tested_groups
                     logging.warn(
                         "there is a difference between specified test-groups in the yaml (name={}) and the ones we've detected {}!={}".format(
@@ -312,7 +314,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             test_result = False
         overall_result &= test_result
 
-        if requires_override and override_enabled:
+        if not tested_groups_match_origin:
+            if len(tested_groups) > 0:
+                overall_result = False
+            else:
+                logging.warn(
+                    "difference between specified and detected test-groups was ignored since command info is not available in this benchmark version"
+                )
+
+        if (requires_override or not tested_groups_match_origin) and override_enabled:
             logging.info(
                 "Saving a new version of the file {} with the overrided data".format(
                     test_file

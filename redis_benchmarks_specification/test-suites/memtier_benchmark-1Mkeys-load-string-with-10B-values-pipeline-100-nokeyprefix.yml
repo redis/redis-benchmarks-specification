@@ -1,30 +1,28 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-string-with-10B-values-pipeline-100-nokeyprefix
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading STRINGs in which the value has a data size of 10 Bytes.
+description: memtier_benchmark, 1M keys, string SET, 10B value size, pipeline=100, no key prefix
 dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 0
+    keyspacelen: 1000000
   resources:
     requests:
       memory: 1g
+tested-groups:
+- string
 tested-commands:
 - set
 redis-topologies:
 - oss-standalone
-build-variants:
-- gcc:8.5.0-amd64-debian-buster-default
-- dockerhub
+- oss-cluster-3-primaries
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "100" "--data-size" "10" --distinct-client-seed --key-prefix "" --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 120 -c 10 -t 10 --hide-histogram'
+  arguments: '"--data-size" "10" --command "SET __key__ __data__" --command-key-pattern="R" --key-prefix="" -c 50 -t 2 --pipeline 100 --hide-histogram --test-time 180'
   resources:
     requests:
-      cpus: '10'
+      cpus: '3'
       memory: 2g
 
-tested-groups:
-- string
-priority: 17
+priority: 33

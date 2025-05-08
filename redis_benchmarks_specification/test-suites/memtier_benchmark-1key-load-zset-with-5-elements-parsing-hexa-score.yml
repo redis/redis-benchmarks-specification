@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-1key-load-zset-with-5-elements-parsing-hexa-score
+description: Runs memtier_benchmark, for a keyspace length of 1 key loading the sorted set with 5 elements with different valid hexadecimal floating-point numbers, gradually increasing in length of the string to parse.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- zadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 -c 50 -t 4 --command "ZADD zset 0x1p+1 element-1-simple-score 0x1.fp+5 element-2-medium-score 0x1.fffffffffffffp+10 element-3-long-score 0x1.ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffp+100 element-4-very-long-score 0x1.fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffp+200 element-5-extra-large-score" --command-key-pattern="P" --key-minimum=1 --key-maximum 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+
+tested-groups:
+- sorted-set
+priority: 12
