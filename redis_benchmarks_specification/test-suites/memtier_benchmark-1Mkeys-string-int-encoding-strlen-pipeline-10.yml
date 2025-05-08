@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-int-encoding-strlen-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M keys int encoded, checking STRLEN command performance.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 999998
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: ' --command "SET __key__ __key__" --key-prefix "" --command-key-pattern="S"  --key-minimum=2 --key-maximum 1000000 -c 1 -t 1 --pipeline 100 --hide-histogram -n allkeys'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- strlen
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "STRLEN __key__" --key-prefix "" --command-key-pattern="G"  --key-minimum=2 --key-maximum 1000000 -c 50 -t 4 --pipeline 10 --hide-histogram --test-time 60
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+tested-groups:
+- string
+priority: 98

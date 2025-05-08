@@ -19,10 +19,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "10" "--data-size" "10" --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+  arguments: '"--pipeline" "10" "--data-size" "10" --distinct-client-seed --ratio 1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 120 -c 10 -t 10 --hide-histogram'
   resources:
     requests:
-      cpus: '4'
+      cpus: '10'
       memory: 2g
 
 tested-groups:

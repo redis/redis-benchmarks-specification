@@ -17,8 +17,6 @@ redis-topologies:
 - oss-standalone-04-io-threads
 - oss-standalone-08-io-threads
 - oss-standalone-16-io-threads
-- oss-standalone-32-io-threads
-- oss-standalone-64-io-threads
 build-variants:
 - gcc:8.5.0-amd64-debian-buster-default
 - dockerhub

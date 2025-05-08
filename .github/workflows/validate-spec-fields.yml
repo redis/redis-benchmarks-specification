@@ -8,7 +8,7 @@ on:
 jobs:
   pytest:
     name: Validate SPEC fields
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
     steps:

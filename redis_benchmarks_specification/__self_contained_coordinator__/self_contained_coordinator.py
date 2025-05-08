@@ -7,6 +7,7 @@ import tempfile
 import traceback
 import re
 import docker
+import docker.errors
 import redis
 import os
 from pathlib import Path
@@ -14,6 +15,9 @@ import sys
 import time
 
 from docker.models.containers import Container
+from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import (
+    post_process_vector_db,
+)
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
 )
@@ -106,6 +110,9 @@ from redis_benchmarks_specification.__self_contained_coordinator__.build_info im
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     extract_db_cpu_limit,
     generate_cpuset_cpus,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+    prepare_vector_db_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
@@ -364,6 +371,7 @@ def self_contained_coordinator_blocking_read(
         count=1,
         block=0,
     )
+    logging.info(f"New test info: {newTestInfo}")
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
         stream_id = ">"
     else:
@@ -557,7 +565,7 @@ def process_self_contained_coordinator_stream(
                 )
                 new_executable = f"{mnt_point}{server_name}-server"
                 logging.info(
-                    "changing executable from {executable} to {new_executable}"
+                    f"changing executable from {executable} to {new_executable}"
                 )
                 executable = new_executable
 
@@ -914,9 +922,12 @@ def process_self_contained_coordinator_stream(
                                 # backwards compatible
                                 if benchmark_tool is None:
                                     benchmark_tool = "redis-benchmark"
-                                full_benchmark_path = "/usr/local/bin/{}".format(
-                                    benchmark_tool
-                                )
+                                if benchmark_tool == "vector_db_benchmark":
+                                    full_benchmark_path = "python /code/run.py"
+                                else:
+                                    full_benchmark_path = "/usr/local/bin/{}".format(
+                                        benchmark_tool
+                                    )
 
                                 # setup the benchmark
                                 (
@@ -937,22 +948,8 @@ def process_self_contained_coordinator_stream(
                                         local_benchmark_output_filename
                                     )
                                 )
-                                if "memtier_benchmark" not in benchmark_tool:
+                                if "memtier_benchmark" in benchmark_tool:
                                     # prepare the benchmark command
-                                    (
-                                        benchmark_command,
-                                        benchmark_command_str,
-                                    ) = prepare_benchmark_parameters(
-                                        benchmark_config,
-                                        full_benchmark_path,
-                                        redis_proc_start_port,
-                                        "localhost",
-                                        local_benchmark_output_filename,
-                                        False,
-                                        benchmark_tool_workdir,
-                                        False,
-                                    )
-                                else:
                                     (
                                         _,
                                         benchmark_command_str,
@@ -972,6 +969,32 @@ def process_self_contained_coordinator_stream(
                                         None,
                                         None,
                                         override_test_time,
+                                    )
+                                elif "vector_db_benchmark" in benchmark_tool:
+                                    (
+                                        _,
+                                        benchmark_command_str,
+                                    ) = prepare_vector_db_benchmark_parameters(
+                                        benchmark_config["clientconfig"],
+                                        full_benchmark_path,
+                                        redis_proc_start_port,
+                                        "localhost",
+                                        None,
+                                        client_mnt_point,
+                                    )
+                                else:
+                                    (
+                                        benchmark_command,
+                                        benchmark_command_str,
+                                    ) = prepare_benchmark_parameters(
+                                        benchmark_config,
+                                        full_benchmark_path,
+                                        redis_proc_start_port,
+                                        "localhost",
+                                        local_benchmark_output_filename,
+                                        False,
+                                        benchmark_tool_workdir,
+                                        False,
                                     )
 
                                 client_container_image = extract_client_container_image(
@@ -1003,23 +1026,37 @@ def process_self_contained_coordinator_stream(
                                 )
                                 # run the benchmark
                                 benchmark_start_time = datetime.datetime.now()
-
-                                client_container_stdout = docker_client.containers.run(
-                                    image=client_container_image,
-                                    volumes={
-                                        temporary_dir_client: {
-                                            "bind": client_mnt_point,
-                                            "mode": "rw",
-                                        },
-                                    },
-                                    auto_remove=True,
-                                    privileged=True,
-                                    working_dir=benchmark_tool_workdir,
-                                    command=benchmark_command_str,
-                                    network_mode="host",
-                                    detach=False,
-                                    cpuset_cpus=client_cpuset_cpus,
-                                )
+                                try:
+                                    client_container_stdout = (
+                                        docker_client.containers.run(
+                                            image=client_container_image,
+                                            volumes={
+                                                temporary_dir_client: {
+                                                    "bind": client_mnt_point,
+                                                    "mode": "rw",
+                                                },
+                                            },
+                                            auto_remove=True,
+                                            privileged=True,
+                                            working_dir=benchmark_tool_workdir,
+                                            command=benchmark_command_str,
+                                            network_mode="host",
+                                            detach=False,
+                                            cpuset_cpus=client_cpuset_cpus,
+                                        )
+                                    )
+                                except docker.errors.ContainerError as e:
+                                    logging.info(
+                                        "stdout: {}".format(
+                                            e.container.logs(stdout=True)
+                                        )
+                                    )
+                                    logging.info(
+                                        "stderr: {}".format(
+                                            e.container.logs(stderr=True)
+                                        )
+                                    )
+                                    raise e
 
                                 benchmark_end_time = datetime.datetime.now()
                                 benchmark_duration_seconds = (
@@ -1141,39 +1178,44 @@ def process_self_contained_coordinator_stream(
                                     and git_timestamp_ms is not None
                                 ):
                                     datapoint_time_ms = git_timestamp_ms
-                                post_process_benchmark_results(
-                                    benchmark_tool,
-                                    local_benchmark_output_filename,
-                                    datapoint_time_ms,
-                                    start_time_str,
-                                    client_container_stdout,
-                                    None,
-                                )
-                                full_result_path = local_benchmark_output_filename
-                                if "memtier_benchmark" in benchmark_tool:
-                                    full_result_path = "{}/{}".format(
-                                        temporary_dir_client,
+                                if "vector_db_benchmark" in benchmark_tool:
+                                    results_dict = post_process_vector_db(
+                                        temporary_dir_client
+                                    )
+                                else:
+                                    post_process_benchmark_results(
+                                        benchmark_tool,
                                         local_benchmark_output_filename,
-                                    )
-                                logging.info(
-                                    "Reading results json from {}".format(
-                                        full_result_path
-                                    )
-                                )
-
-                                with open(
-                                    full_result_path,
-                                    "r",
-                                ) as json_file:
-                                    results_dict = json.load(json_file)
-                                    print_results_table_stdout(
-                                        benchmark_config,
-                                        default_metrics,
-                                        results_dict,
-                                        setup_type,
-                                        test_name,
+                                        datapoint_time_ms,
+                                        start_time_str,
+                                        client_container_stdout,
                                         None,
                                     )
+                                    full_result_path = local_benchmark_output_filename
+                                    if "memtier_benchmark" in benchmark_tool:
+                                        full_result_path = "{}/{}".format(
+                                            temporary_dir_client,
+                                            local_benchmark_output_filename,
+                                        )
+                                    logging.info(
+                                        "Reading results json from {}".format(
+                                            full_result_path
+                                        )
+                                    )
+
+                                    with open(
+                                        full_result_path,
+                                        "r",
+                                    ) as json_file:
+                                        results_dict = json.load(json_file)
+                                        print_results_table_stdout(
+                                            benchmark_config,
+                                            default_metrics,
+                                            results_dict,
+                                            setup_type,
+                                            test_name,
+                                            None,
+                                        )
 
                                 dataset_load_duration_seconds = 0
                                 try:

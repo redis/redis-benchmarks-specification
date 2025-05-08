@@ -12,7 +12,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="SADD myset __key__" --command-key-pattern=P --key-maximum 200000 --key-prefix "" -n 200000 --hide-histogram -t 1 -c 1
+    arguments: --command="SADD myset __key__" --command-key-pattern=P --pipeline 100 --key-maximum 200000 --key-prefix "" -n 200000 --hide-histogram -t 1 -c 1
 tested-groups:
 - set
 tested-commands:
