@@ -215,11 +215,6 @@ def create_client_runner_args(project_name):
         help="Run client in cluster mode.",
     )
     parser.add_argument(
-        "--topology",
-        default="",
-        help="Filter tests to run only with the specified topology (e.g. oss-standalone)",
-    )
-    parser.add_argument(
         "--unix-socket",
         default="",
         help="UNIX Domain socket name",
