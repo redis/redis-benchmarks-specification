@@ -165,4 +165,10 @@ def create_self_contained_coordinator_args(project_name):
         default=100000,
         help="Run a subset of the tests based uppon a preset priority. By default runs all tests.",
     )
+    parser.add_argument(
+        "--topology",
+        type=str,
+        default="",
+        help="Filter tests to run only with the specified topology (e.g. oss-standalone)",
+    )
     return parser

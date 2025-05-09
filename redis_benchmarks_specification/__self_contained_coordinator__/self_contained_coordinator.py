@@ -375,6 +375,13 @@ def self_contained_coordinator_blocking_read(
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
         stream_id = ">"
     else:
+        # Create args object with topology parameter
+        class Args:
+            def __init__(self):
+                self.topology = ""
+
+        args = Args()
+
         (
             stream_id,
             overall_result,
@@ -406,6 +413,7 @@ def self_contained_coordinator_blocking_read(
             default_metrics_str,
             docker_keep_env,
             restore_build_artifacts_default,
+            args,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -486,6 +494,7 @@ def process_self_contained_coordinator_stream(
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
     docker_keep_env=False,
     restore_build_artifacts_default=True,
+    args=None,
 ):
     stream_id = "n/a"
     overall_result = False
@@ -772,6 +781,18 @@ def process_self_contained_coordinator_stream(
                         for topology_spec_name in benchmark_config["redis-topologies"]:
                             setup_name = topology_spec_name
                             setup_type = "oss-standalone"
+
+                            # Filter by topology if specified
+                            if (
+                                args is not None
+                                and args.topology
+                                and topology_spec_name != args.topology
+                            ):
+                                logging.info(
+                                    f"Skipping topology {topology_spec_name} as it doesn't match the requested topology {args.topology}"
+                                )
+                                continue
+
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]
                                 setup_type = topology_spec["type"]
