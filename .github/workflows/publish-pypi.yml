@@ -4,7 +4,7 @@ on:
     types: [ published ]
 
 jobs:
-  pytest:
+  pypi:
     name: Publish to PyPi
     runs-on: ubuntu-latest
     env:
@@ -17,7 +17,7 @@ jobs:
       with:
         python-version: '3.10'
 
-    - uses: docker-practice/actions-setup-docker@master
+    - uses: docker/setup-docker-action@v4
 
     - name: Install Poetry
       run: |
