@@ -5,6 +5,7 @@ import redis
 import yaml
 from pathlib import Path
 import logging
+import datetime
 
 from redisbench_admin.utils.benchmark_config import get_defaults
 from redisbench_admin.utils.remote import get_overall_dashboard_keynames
@@ -1280,6 +1281,132 @@ def test_self_contained_coordinator_blocking_read_valkey():
             assert len(datasink_conn.smembers(testcases_setname)) == 1
             assert len(datasink_conn.smembers(project_branches_setname)) == 1
             assert len(datasink_conn.smembers(project_versions_setname)) == 1
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_self_contained_coordinator_duplicated_ts():
+    try:
+        if run_coordinator_tests_dockerhub():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "7.4.0"
+            run_image = f"redis:{redis_version}"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+
+            # generate 2 stream requests with the same timestamp
+            timestamp = int(datetime.datetime.now().timestamp())
+            for _ in range(0, 2):
+                build_stream_fields, result = generate_benchmark_stream_request(
+                    id,
+                    conn,
+                    run_image,
+                    build_arch,
+                    testDetails,
+                    build_os,
+                    git_timestamp_ms=timestamp,
+                    use_git_timestamp=True,
+                )
+                build_stream_fields["mnt_point"] = ""
+                if result is True:
+                    benchmark_stream_id = conn.xadd(
+                        STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                    )
+                    logging.info(
+                        "sucessfully requested a new run {}. Stream id: {}".format(
+                            build_stream_fields, benchmark_stream_id
+                        )
+                    )
+
+            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
+            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) == 2
+
+            running_platform = "fco-ThinkPad-T490"
+
+            # process the 2 stream requests
+            for _ in range(0, 2):
+
+                build_runners_consumer_group_create(conn, running_platform, "0")
+                datasink_conn = redis.StrictRedis(port=db_port)
+                docker_client = docker.from_env()
+                home = str(Path.home())
+                stream_id = ">"
+                topologies_map = get_topologies(
+                    "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+                )
+                # we use a benchmark spec with smaller CPU limit for client given github machines only contain 2 cores
+                # and we need 1 core for DB and another for CLIENT
+                testsuite_spec_files = [
+                    "./utils/tests/test_data/test-suites/test-memtier-dockerhub.yml"
+                ]
+                defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+                (
+                    _,
+                    _,
+                    default_metrics,
+                    _,
+                    _,
+                    _,
+                ) = get_defaults(defaults_filename)
+
+                (
+                    result,
+                    stream_id,
+                    number_processed_streams,
+                    num_process_test_suites,
+                ) = self_contained_coordinator_blocking_read(
+                    conn,
+                    True,
+                    docker_client,
+                    home,
+                    stream_id,
+                    datasink_conn,
+                    testsuite_spec_files,
+                    topologies_map,
+                    running_platform,
+                    False,
+                    [],
+                    "",
+                    0,
+                    6399,
+                    1,
+                    False,
+                    5,
+                    default_metrics,
+                    "amd64",
+                    None,
+                    0,
+                    10000,
+                    "unstable",
+                    "",
+                    True,
+                    False,
+                )
+                assert result == True
+                assert number_processed_streams == 1
+                assert num_process_test_suites == 1
+
+            stat_key = f"ci.benchmarks.redislabs/by.version/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/dockerhub/{running_platform}/oss-standalone/{redis_version}/ALL_STATS.Totals.Ops/sec"
+            assert datasink_conn.exists(stat_key)
+            rts = datasink_conn.ts()
+
+            rts_info = rts.info(stat_key)
+
+            # we have two datapoints
+            assert rts_info.total_samples == 2
+
+            # first was inserted on the original timestamp
+            assert rts_info.first_timestamp == timestamp
+
+            # the second has clashed, so it was resolved by adding 1ms to the timestamp
+            assert rts_info.last_timestamp == timestamp + 1
 
     except redis.exceptions.ConnectionError:
         pass
