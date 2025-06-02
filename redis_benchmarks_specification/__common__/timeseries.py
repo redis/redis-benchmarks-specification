@@ -495,39 +495,47 @@ def push_data_to_redistimeseries(rts, time_series_dict: dict, expire_msecs=0):
         )
         for timeseries_name, time_series in time_series_dict.items():
             exporter_create_ts(rts, time_series, timeseries_name)
-            for timestamp, value in time_series["data"].items():
-                try:
-                    if timestamp is None:
-                        logging.warning("The provided timestamp is null. Using auto-ts")
-                        rts.ts().add(
-                            timeseries_name,
-                            value,
-                            duplicate_policy="last",
-                        )
-                    else:
+            for orig_timestamp, value in time_series["data"].items():
+                if orig_timestamp is None:
+                    logging.warning("The provided timestamp is null. Using auto-ts")
+                    timestamp = "*"
+                else:
+                    timestamp = orig_timestamp
+
+                try_to_insert = True
+                retry_count = 0
+                while try_to_insert and retry_count < 100:
+                    # (try to) insert the datapoint in given timestamp
+                    try_to_insert = False
+
+                    try:
                         rts.ts().add(
                             timeseries_name,
                             timestamp,
                             value,
-                            duplicate_policy="last",
+                            duplicate_policy="block",
                         )
-                    datapoint_inserts += 1
-                except redis.exceptions.DataError:
-                    logging.warning(
-                        "Error while inserting datapoint ({} : {}) in timeseries named {}. ".format(
-                            timestamp, value, timeseries_name
+                        datapoint_inserts += 1
+                    except redis.exceptions.DataError:
+                        logging.warning(
+                            "Error while inserting datapoint ({} : {}) in timeseries named {}. ".format(
+                                timestamp, value, timeseries_name
+                            )
                         )
-                    )
-                    datapoint_errors += 1
-                    pass
-                except redis.exceptions.ResponseError:
-                    logging.warning(
-                        "Error while inserting datapoint ({} : {}) in timeseries named {}. ".format(
-                            timestamp, value, timeseries_name
-                        )
-                    )
-                    datapoint_errors += 1
-                    pass
+                        datapoint_errors += 1
+                    except redis.exceptions.ResponseError as e:
+                        if "DUPLICATE_POLICY" in e.__str__():
+                            # duplicate timestamp: try to insert again, but in the next milisecond
+                            timestamp += 1
+                            try_to_insert = True
+                            retry_count += 1
+                        else:
+                            logging.warning(
+                                "Error while inserting datapoint ({} : {}) in timeseries named {}. ".format(
+                                    timestamp, value, timeseries_name
+                                )
+                            )
+                            datapoint_errors += 1
             if expire_msecs > 0:
                 rts.pexpire(timeseries_name, expire_msecs)
             progress.update()
