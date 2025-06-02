@@ -1296,6 +1296,7 @@ def process_self_contained_coordinator_stream(
                                                 stdout=True, stderr=True
                                             )
                                         )
+                                        redis_container.stop()
                                         redis_container.remove()
                                     except docker.errors.NotFound:
                                         logging.info(

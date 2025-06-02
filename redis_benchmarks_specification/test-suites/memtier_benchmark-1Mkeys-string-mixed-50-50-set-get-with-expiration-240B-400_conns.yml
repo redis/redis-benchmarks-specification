@@ -1,0 +1,36 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-mixed-50-50-set-get-with-expiration-240B-400_conns
+description: Runs memtier_benchmark, for a keyspace of 1M keys with 400 clients doing 50% SETs and 50% GETs (mixed) with very short expiration time, in which the value has a data size of 240 Bytes.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--pipeline 100 --data-size 240 --command "SET __key__ __data__ EX 5" --command-key-pattern P -c 50 -t 2 --hide-histogram --key-minimum 1'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- set
+- get
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+- oss-standalone-02-io-threads
+- oss-standalone-04-io-threads
+- oss-standalone-08-io-threads
+- oss-standalone-16-io-threads
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --data-size 240 --command "SET __key__ __data__ EX 5" --command "GET __key__" -c 50 -t 8 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+
+priority: 11
