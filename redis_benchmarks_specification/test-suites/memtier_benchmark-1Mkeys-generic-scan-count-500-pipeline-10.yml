@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-generic-scan-count-500-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on SCAN performance with COUNT.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on SCAN performance with large COUNT.
 dbconfig:
   configuration-parameters:
     save: '""'
