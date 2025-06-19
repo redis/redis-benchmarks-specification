@@ -16,6 +16,7 @@ dbconfig:
 tested-commands:
 - setex
 - get
+- set
 tested-groups:
 - string
 redis-topologies:
