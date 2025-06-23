@@ -27,7 +27,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "512" --distinct-client-seed --ratio 1:4 --key-pattern R:R --key-minimum=1 --key-maximum 3000000 --test-time 180 -c 520 -t 10 --hide-histogram'
+  arguments: '"--data-size" "512" --pipeline 10 --distinct-client-seed --ratio 1:4 --key-pattern R:R --key-minimum=1 --key-maximum 3000000 --test-time 180 -c 520 -t 10 --hide-histogram'
   resources:
     requests:
       cpus: '10'
