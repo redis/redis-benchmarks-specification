@@ -23,10 +23,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command "SET __key__ BBB EX 120" --command "SET __key__ BBB EX 120" --command "DEL __key__" -c 1 -t 1 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 50000000 -n allkeys'
+  arguments: '--command "SET __key__ BBB EX 120" --command "SET __key__ BBB EX 120" --command "DEL __key__" -c 50 -t 4 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 50000000 -n allkeys'
   resources:
     requests:
-      cpus: '2'
+      cpus: '4'
       memory: 2g
 
 priority: 1
