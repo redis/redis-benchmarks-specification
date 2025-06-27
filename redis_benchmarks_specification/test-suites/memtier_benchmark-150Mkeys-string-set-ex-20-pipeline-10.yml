@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-150Mkeys-string-set-ex-20-pipeline-10
+description: Runs memtier_benchmark, for a keyspace of 150M keys with SET EX 20 commands and pipeline 10. Tests medium TTL expiration performance.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 20g
+tested-commands:
+- set
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SET __key__ BBB EX 20" -c 50 -t 4 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 150000000 -n allkeys'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1

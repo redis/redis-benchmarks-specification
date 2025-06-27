@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-50Mkeys-string-set-ex-random-range-pipeline-10
+description: Runs memtier_benchmark with SET EX using random TTL range from 20 seconds to 30 days. Worst-case test for ebuckets with wide TTL distribution. Note - requires memtier_benchmark modification to support __data__ placeholder for EX values.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 10g
+tested-commands:
+- set
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SET __key__ BBB EX __data__" -c 50 -t 4 --data-size-range=20-2592000 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 50000000 -n allkeys --key-prefix=1'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1

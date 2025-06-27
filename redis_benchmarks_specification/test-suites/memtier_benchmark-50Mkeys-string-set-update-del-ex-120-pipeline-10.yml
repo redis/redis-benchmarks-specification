@@ -1,0 +1,32 @@
+version: 0.4
+name: memtier_benchmark-50Mkeys-string-set-update-del-ex-120-pipeline-10
+description: Multi-step test - SET EX 120, then update same keys with SET EX 120, then DEL. Tests command throughput without active expiration (120s TTL prevents expiration during test).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 10g
+tested-commands:
+- set
+- del
+tested-groups:
+- string
+- generic
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SET __key__ BBB EX 120" --command "SET __key__ BBB EX 120" --command "DEL __key__" -c 50 -t 4 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 50000000 -n allkeys'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1

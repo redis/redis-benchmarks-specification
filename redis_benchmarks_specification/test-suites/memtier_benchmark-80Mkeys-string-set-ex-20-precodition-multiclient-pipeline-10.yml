@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-80Mkeys-string-set-ex-20-precodition-multiclient-pipeline-10
+description: Multi-step AWS test - Precondition SET EX 10000 for 20M keys, then SET EX 20 for 80M keys with 4 clients and 2 threads. Tests multi-client expiration performance.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--command "SET __key__ XXX EX 10000" --command-key-pattern=P -c 50 -t 4 --pipeline 10 --hide-histogram --key-maximum 20000000 -n allkeys --key-prefix=1'
+  resources:
+    requests:
+      memory: 15g
+tested-commands:
+- set
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SET __key__ XXX EX 20" --command-key-pattern=P -c 4 -t 2 --pipeline 10 --hide-histogram --key-maximum 80000000 -n allkeys --key-prefix=2'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+
+priority: 1

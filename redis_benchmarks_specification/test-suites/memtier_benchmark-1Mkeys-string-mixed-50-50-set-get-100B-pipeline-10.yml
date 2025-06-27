@@ -1,0 +1,35 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-mixed-50-50-set-get-100B-pipeline-10
+description: Runs memtier_benchmark, for a keyspace of 1M keys with 50% SETs and 50% GETs (mixed) with a data size of 100 Bytes and pipeline 10.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys"'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- set
+- get
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "100" --distinct-client-seed --ratio 1:1 --key-pattern R:R --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 25 -t 4 --hide-histogram --pipeline 10'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1

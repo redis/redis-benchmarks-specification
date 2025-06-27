@@ -1,0 +1,30 @@
+version: 0.4
+name: memtier_benchmark-50Mkeys-string-set-ex-3-pipeline-10
+description: Runs memtier_benchmark, for a keyspace of 50M keys with SET EX 3 commands and pipeline 10. Tests short TTL expiration performance.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 10g
+tested-commands:
+- set
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SET __key__ BBB EX 3" -c 50 -t 4 --command-key-pattern=P --pipeline 10 --hide-histogram --key-maximum 50000000 -n allkeys --key-prefix=1'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 1
