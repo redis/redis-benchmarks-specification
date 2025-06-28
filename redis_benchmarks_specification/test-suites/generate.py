@@ -75,7 +75,13 @@ for yml_filename in files:
                     keyspace_value = dbconfig["check"]["keyspacelen"]
             if "preload_tool" in dbconfig:
                 precommand = dbconfig["preload_tool"]["arguments"]
-            command = benchmark_config["clientconfig"]["arguments"]
+            # Handle both clientconfig and clientconfigs formats
+            if "clientconfigs" in benchmark_config:
+                # For multiple configs, use the first one for generation
+                command = benchmark_config["clientconfigs"][0]["arguments"]
+            else:
+                # Legacy single clientconfig format
+                command = benchmark_config["clientconfig"]["arguments"]
             check_dict = {"keyspacelen": keyspace_value}
 
             test_definition = {

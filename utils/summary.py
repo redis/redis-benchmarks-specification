@@ -131,8 +131,16 @@ def summarize_yaml_file(yaml_file_path, command_summary, command_group_summary):
         command_group = categorize_command(command)
         command_group_summary[command_group] += 1
 
-    # Extract command from 'clientconfig.arguments'
-    arguments = config.get("clientconfig", {}).get("arguments", "")
+    # Extract command from client configuration - handle both formats
+    arguments = ""
+    if "clientconfigs" in config:
+        # Multiple client configs - use first one for summary
+        if config["clientconfigs"] and "arguments" in config["clientconfigs"][0]:
+            arguments = config["clientconfigs"][0]["arguments"]
+    elif "clientconfig" in config:
+        # Single client config
+        arguments = config.get("clientconfig", {}).get("arguments", "")
+
     if arguments:
         command = parse_arguments(arguments)
         if command:

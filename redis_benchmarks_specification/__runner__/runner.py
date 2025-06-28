@@ -57,6 +57,9 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
     extract_client_cpu_limit,
     extract_client_tool,
+    extract_client_configs,
+    extract_client_container_images,
+    extract_client_tools,
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
@@ -86,6 +89,321 @@ def parse_size(size):
     m = re.match(r"^([\d\.]+)\s*([a-zA-Z]{0,3})$", str(size).strip())
     number, unit = float(m.group(1)), m.group(2).upper()
     return int(number * units[unit])
+
+
+def run_multiple_clients(
+    benchmark_config,
+    docker_client,
+    temporary_dir_client,
+    client_mnt_point,
+    benchmark_tool_workdir,
+    client_cpuset_cpus,
+    port,
+    host,
+    password,
+    oss_cluster_api_enabled,
+    tls_enabled,
+    tls_skip_verify,
+    test_tls_cert,
+    test_tls_key,
+    test_tls_cacert,
+    resp_version,
+    override_memtier_test_time,
+    override_test_runs,
+    unix_socket,
+    args,
+):
+    """
+    Run multiple client configurations simultaneously and aggregate results.
+    Returns aggregated stdout and list of individual results.
+    """
+    client_configs = extract_client_configs(benchmark_config)
+    client_images = extract_client_container_images(benchmark_config)
+    client_tools = extract_client_tools(benchmark_config)
+
+    if not client_configs:
+        raise ValueError("No client configurations found")
+
+    containers = []
+    results = []
+
+    # Start all containers simultaneously (detached)
+    for client_index, (client_config, client_tool, client_image) in enumerate(
+        zip(client_configs, client_tools, client_images)
+    ):
+        try:
+            local_benchmark_output_filename = f"benchmark_output_{client_index}.json"
+
+            # Prepare benchmark command for this client
+            if "memtier_benchmark" in client_tool:
+                (
+                    _,
+                    benchmark_command_str,
+                    arbitrary_command,
+                ) = prepare_memtier_benchmark_parameters(
+                    client_config,
+                    client_tool,
+                    port,
+                    host,
+                    password,
+                    local_benchmark_output_filename,
+                    oss_cluster_api_enabled,
+                    tls_enabled,
+                    tls_skip_verify,
+                    test_tls_cert,
+                    test_tls_key,
+                    test_tls_cacert,
+                    resp_version,
+                    override_memtier_test_time,
+                    override_test_runs,
+                    unix_socket,
+                )
+            elif "pubsub-sub-bench" in client_tool:
+                (
+                    _,
+                    benchmark_command_str,
+                    arbitrary_command,
+                ) = prepare_pubsub_sub_bench_parameters(
+                    client_config,
+                    client_tool,
+                    port,
+                    host,
+                    password,
+                    local_benchmark_output_filename,
+                    oss_cluster_api_enabled,
+                    tls_enabled,
+                    tls_skip_verify,
+                    test_tls_cert,
+                    test_tls_key,
+                    test_tls_cacert,
+                    resp_version,
+                    override_memtier_test_time,
+                    unix_socket,
+                    None,  # username
+                )
+            else:
+                # Handle other benchmark tools
+                (
+                    benchmark_command,
+                    benchmark_command_str,
+                ) = prepare_benchmark_parameters(
+                    {**benchmark_config, "clientconfig": client_config},
+                    client_tool,
+                    port,
+                    host,
+                    local_benchmark_output_filename,
+                    False,
+                    benchmark_tool_workdir,
+                    False,
+                )
+
+            # Calculate container timeout
+            container_timeout = 300  # 5 minutes default
+            buffer_timeout = (
+                args.container_timeout_buffer
+            )  # Configurable buffer from command line
+            if "test-time" in benchmark_command_str:
+                # Try to extract test time and add buffer
+                import re
+
+                # Handle both --test-time (memtier) and -test-time (pubsub-sub-bench)
+                test_time_match = re.search(
+                    r"--?test-time[=\s]+(\d+)", benchmark_command_str
+                )
+                if test_time_match:
+                    test_time = int(test_time_match.group(1))
+                    container_timeout = test_time + buffer_timeout
+                    logging.info(
+                        f"Client {client_index}: Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
+                    )
+
+            logging.info(
+                f"Starting client {client_index} with docker image {client_image} (cpuset={client_cpuset_cpus}) with args: {benchmark_command_str}"
+            )
+
+            # Start container (detached)
+            import os
+
+            container = docker_client.containers.run(
+                image=client_image,
+                volumes={
+                    temporary_dir_client: {
+                        "bind": client_mnt_point,
+                        "mode": "rw",
+                    },
+                },
+                auto_remove=False,
+                privileged=True,
+                working_dir=benchmark_tool_workdir,
+                command=benchmark_command_str,
+                network_mode="host",
+                detach=True,
+                cpuset_cpus=client_cpuset_cpus,
+                user=f"{os.getuid()}:{os.getgid()}",  # Run as current user to fix permissions
+            )
+
+            containers.append(
+                {
+                    "container": container,
+                    "client_index": client_index,
+                    "client_tool": client_tool,
+                    "client_image": client_image,
+                    "benchmark_command_str": benchmark_command_str,
+                    "timeout": container_timeout,
+                }
+            )
+
+        except Exception as e:
+            error_msg = f"Error starting client {client_index}: {e}"
+            logging.error(error_msg)
+            logging.error(f"Image: {client_image}, Tool: {client_tool}")
+            logging.error(f"Command: {benchmark_command_str}")
+            # Fail fast on container startup errors
+            raise RuntimeError(f"Failed to start client {client_index}: {e}")
+
+    # Wait for all containers to complete
+    logging.info(f"Waiting for {len(containers)} containers to complete...")
+
+    for container_info in containers:
+        container = container_info["container"]
+        client_index = container_info["client_index"]
+        client_tool = container_info["client_tool"]
+        client_image = container_info["client_image"]
+        benchmark_command_str = container_info["benchmark_command_str"]
+
+        try:
+            # Wait for container to complete
+            exit_code = container.wait(timeout=container_info["timeout"])
+            client_stdout = container.logs().decode("utf-8")
+
+            # Check if container succeeded
+            if exit_code.get("StatusCode", 1) != 0:
+                logging.error(
+                    f"Client {client_index} failed with exit code: {exit_code}"
+                )
+                logging.error(f"Client {client_index} stdout/stderr:")
+                logging.error(client_stdout)
+                # Fail fast on container execution errors
+                raise RuntimeError(
+                    f"Client {client_index} ({client_tool}) failed with exit code {exit_code}"
+                )
+
+            logging.info(
+                f"Client {client_index} completed successfully with exit code: {exit_code}"
+            )
+
+            results.append(
+                {
+                    "client_index": client_index,
+                    "stdout": client_stdout,
+                    "config": client_configs[client_index],
+                    "tool": client_tool,
+                    "image": client_image,
+                }
+            )
+
+        except Exception as e:
+            # Get logs even if wait failed
+            try:
+                client_stdout = container.logs().decode("utf-8")
+                logging.error(f"Client {client_index} logs:")
+                logging.error(client_stdout)
+            except:
+                logging.error(f"Could not retrieve logs for client {client_index}")
+
+            raise RuntimeError(f"Client {client_index} ({client_tool}) failed: {e}")
+
+        finally:
+            # Clean up container
+            try:
+                container.remove(force=True)
+            except Exception as cleanup_error:
+                logging.warning(f"Client {client_index} cleanup error: {cleanup_error}")
+
+    logging.info(f"Successfully completed {len(containers)} client configurations")
+
+    # Aggregate results by reading JSON output files
+    aggregated_stdout = ""
+    successful_results = [r for r in results if "error" not in r]
+
+    if successful_results:
+        # Try to read and aggregate JSON output files
+        import json
+        import os
+
+        aggregated_json = {}
+        memtier_json = None
+        pubsub_json = None
+
+        for result in successful_results:
+            client_index = result["client_index"]
+            tool = result["tool"]
+
+            # Look for JSON output file
+            json_filename = f"benchmark_output_{client_index}.json"
+            json_filepath = os.path.join(temporary_dir_client, json_filename)
+
+            if os.path.exists(json_filepath):
+                try:
+                    with open(json_filepath, "r") as f:
+                        client_json = json.load(f)
+
+                    if "memtier_benchmark" in tool:
+                        # Store memtier JSON
+                        memtier_json = client_json
+                        logging.info(
+                            f"Successfully read memtier JSON output from client {client_index}"
+                        )
+                    elif "pubsub-sub-bench" in tool:
+                        # Store pubsub JSON
+                        pubsub_json = client_json
+                        logging.info(
+                            f"Successfully read pubsub-sub-bench JSON output from client {client_index}"
+                        )
+
+                    logging.info(
+                        f"Successfully read JSON output from client {client_index} ({tool})"
+                    )
+
+                except Exception as e:
+                    logging.warning(
+                        f"Failed to read JSON from client {client_index}: {e}"
+                    )
+                    # Fall back to stdout
+                    pass
+            else:
+                logging.warning(
+                    f"JSON output file not found for client {client_index}: {json_filepath}"
+                )
+
+        # Merge JSON outputs from both tools
+        if memtier_json and pubsub_json:
+            # Use memtier as base and add pubsub metrics
+            aggregated_json = memtier_json.copy()
+            # Add pubsub metrics to the aggregated result
+            aggregated_json.update(pubsub_json)
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info(
+                "Using merged JSON results from memtier and pubsub-sub-bench clients"
+            )
+        elif memtier_json:
+            # Only memtier available
+            aggregated_json = memtier_json
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info("Using JSON results from memtier client only")
+        elif pubsub_json:
+            # Only pubsub available
+            aggregated_json = pubsub_json
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info("Using JSON results from pubsub-sub-bench client only")
+        else:
+            # Fall back to concatenated stdout
+            aggregated_stdout = "\n".join([r["stdout"] for r in successful_results])
+            logging.warning(
+                "No JSON results found, falling back to concatenated stdout"
+            )
+
+    return aggregated_stdout, results
 
 
 def main():
@@ -347,6 +665,96 @@ def prepare_memtier_benchmark_parameters(
     return None, benchmark_command_str, arbitrary_command
 
 
+def prepare_pubsub_sub_bench_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    password,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled=False,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
+    resp_version=None,
+    override_test_time=0,
+    unix_socket="",
+    username=None,
+):
+    """
+    Prepare pubsub-sub-bench command parameters
+    """
+    arbitrary_command = False
+
+    benchmark_command = [
+        # full_benchmark_path,
+        "-json-out-file",
+        local_benchmark_output_filename,
+    ]
+
+    # Connection parameters
+    if unix_socket != "":
+        # pubsub-sub-bench doesn't support unix sockets directly
+        # Fall back to host/port
+        logging.warning(
+            "pubsub-sub-bench doesn't support unix sockets, using host/port"
+        )
+        benchmark_command.extend(["-host", server, "-port", str(port)])
+    else:
+        benchmark_command.extend(["-host", server, "-port", str(port)])
+
+    # Authentication
+    if username and password:
+        # ACL style authentication
+        benchmark_command.extend(["-user", username, "-a", password])
+    elif password:
+        # Password-only authentication
+        benchmark_command.extend(["-a", password])
+
+    # TLS support (if the tool supports it in future versions)
+    if tls_enabled:
+        logging.warning("pubsub-sub-bench TLS support not implemented yet")
+
+    # RESP version
+    if resp_version:
+        if resp_version == "3":
+            benchmark_command.extend(["-resp", "3"])
+        elif resp_version == "2":
+            benchmark_command.extend(["-resp", "2"])
+
+    # Cluster mode
+    if oss_cluster_api_enabled:
+        benchmark_command.append("-oss-cluster-api-distribute-subscribers")
+
+    logging.info(f"Preparing pubsub-sub-bench parameters: {benchmark_command}")
+    benchmark_command_str = " ".join(benchmark_command)
+
+    # Append user-defined arguments from YAML
+    user_arguments = ""
+    if "arguments" in clientconfig:
+        user_arguments = clientconfig["arguments"]
+
+    # Test time override - handle after user arguments to avoid conflicts
+    if override_test_time and override_test_time > 0:
+        # Remove any existing -test-time from user arguments
+        import re
+
+        user_arguments = re.sub(r"-test-time\s+\d+", "", user_arguments)
+        # Add our override test time
+        benchmark_command_str = (
+            benchmark_command_str + " -test-time " + str(override_test_time)
+        )
+        logging.info(f"Applied test-time override: {override_test_time}s")
+
+    # Add cleaned user arguments
+    if user_arguments.strip():
+        benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
+
+    return benchmark_command, benchmark_command_str, arbitrary_command
+
+
 def process_self_contained_coordinator_stream(
     args,
     datasink_push_results_redistimeseries,
@@ -376,7 +784,7 @@ def process_self_contained_coordinator_stream(
         if preserve_temporary_client_dirs is True:
             logging.info(f"Preserving temporary client dir {temporary_dir_client}")
         else:
-            if "redis-benchmark" in benchmark_tool_global:
+            if benchmark_tool_global and "redis-benchmark" in benchmark_tool_global:
                 if full_result_path is not None:
                     os.remove(full_result_path)
                     logging.info("Removing temporary JSON file")
@@ -723,45 +1131,6 @@ def process_self_contained_coordinator_stream(
                     )
                     arbitrary_command = False
 
-                    if "memtier_benchmark" not in benchmark_tool:
-                        # prepare the benchmark command
-                        (
-                            benchmark_command,
-                            benchmark_command_str,
-                        ) = prepare_benchmark_parameters(
-                            benchmark_config,
-                            full_benchmark_path,
-                            port,
-                            host,
-                            local_benchmark_output_filename,
-                            False,
-                            benchmark_tool_workdir,
-                            False,
-                        )
-                    else:
-                        (
-                            _,
-                            benchmark_command_str,
-                            arbitrary_command,
-                        ) = prepare_memtier_benchmark_parameters(
-                            benchmark_config["clientconfig"],
-                            full_benchmark_path,
-                            port,
-                            host,
-                            password,
-                            local_benchmark_output_filename,
-                            oss_cluster_api_enabled,
-                            tls_enabled,
-                            tls_skip_verify,
-                            test_tls_cert,
-                            test_tls_key,
-                            test_tls_cacert,
-                            resp_version,
-                            override_memtier_test_time,
-                            override_test_runs,
-                            unix_socket,
-                        )
-
                     if (
                         arbitrary_command
                         and oss_cluster_api_enabled
@@ -777,9 +1146,83 @@ def process_self_contained_coordinator_stream(
                         )
                         continue
 
-                    client_container_image = extract_client_container_image(
-                        benchmark_config
-                    )
+                    # Check if we have multiple client configurations
+                    client_configs = extract_client_configs(benchmark_config)
+                    is_multiple_clients = len(client_configs) > 1
+
+                    if is_multiple_clients:
+                        logging.info(
+                            f"Running test with {len(client_configs)} client configurations"
+                        )
+                    else:
+                        # Legacy single client mode - prepare benchmark parameters
+                        client_container_image = extract_client_container_image(
+                            benchmark_config
+                        )
+                        benchmark_tool = extract_client_tool(benchmark_config)
+
+                        # Prepare benchmark command for single client
+                        if "memtier_benchmark" in benchmark_tool:
+                            (
+                                _,
+                                benchmark_command_str,
+                                arbitrary_command,
+                            ) = prepare_memtier_benchmark_parameters(
+                                benchmark_config["clientconfig"],
+                                full_benchmark_path,
+                                port,
+                                host,
+                                password,
+                                local_benchmark_output_filename,
+                                oss_cluster_api_enabled,
+                                tls_enabled,
+                                tls_skip_verify,
+                                test_tls_cert,
+                                test_tls_key,
+                                test_tls_cacert,
+                                resp_version,
+                                override_memtier_test_time,
+                                override_test_runs,
+                                unix_socket,
+                            )
+                        elif "pubsub-sub-bench" in benchmark_tool:
+                            (
+                                _,
+                                benchmark_command_str,
+                                arbitrary_command,
+                            ) = prepare_pubsub_sub_bench_parameters(
+                                benchmark_config["clientconfig"],
+                                full_benchmark_path,
+                                port,
+                                host,
+                                password,
+                                local_benchmark_output_filename,
+                                oss_cluster_api_enabled,
+                                tls_enabled,
+                                tls_skip_verify,
+                                test_tls_cert,
+                                test_tls_key,
+                                test_tls_cacert,
+                                resp_version,
+                                override_memtier_test_time,
+                                unix_socket,
+                                None,  # username
+                            )
+                        else:
+                            # prepare the benchmark command for other tools
+                            (
+                                benchmark_command,
+                                benchmark_command_str,
+                            ) = prepare_benchmark_parameters(
+                                benchmark_config,
+                                full_benchmark_path,
+                                port,
+                                host,
+                                local_benchmark_output_filename,
+                                False,
+                                benchmark_tool_workdir,
+                                False,
+                            )
                     profiler_call_graph_mode = "dwarf"
                     profiler_frequency = 99
 
@@ -801,50 +1244,106 @@ def process_self_contained_coordinator_stream(
                     # run the benchmark
                     benchmark_start_time = datetime.datetime.now()
 
-                    if args.benchmark_local_install:
-                        logging.info("Running memtier benchmark outside of docker")
-                        benchmark_command_str = (
-                            "taskset -c "
-                            + client_cpuset_cpus
-                            + " "
-                            + benchmark_command_str
+                    if is_multiple_clients:
+                        # Run multiple client configurations
+                        logging.info(
+                            "Running multiple client configurations simultaneously"
+                        )
+                        client_container_stdout, client_results = run_multiple_clients(
+                            benchmark_config,
+                            docker_client,
+                            temporary_dir_client,
+                            client_mnt_point,
+                            benchmark_tool_workdir,
+                            client_cpuset_cpus,
+                            port,
+                            host,
+                            password,
+                            oss_cluster_api_enabled,
+                            tls_enabled,
+                            tls_skip_verify,
+                            test_tls_cert,
+                            test_tls_key,
+                            test_tls_cacert,
+                            resp_version,
+                            override_memtier_test_time,
+                            override_test_runs,
+                            unix_socket,
+                            args,
                         )
                         logging.info(
-                            "Running memtier benchmark command {}".format(
-                                benchmark_command_str
-                            )
+                            f"Completed {len(client_results)} client configurations"
                         )
-                        stream = os.popen(benchmark_command_str)
-                        client_container_stdout = stream.read()
-                        move_command = "mv {} {}".format(
-                            local_benchmark_output_filename, temporary_dir_client
-                        )
-                        os.system(move_command)
                     else:
-                        logging.info(
-                            "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
-                                client_container_image,
-                                client_cpuset_cpus,
-                                benchmark_command_str,
+                        # Legacy single client execution
+                        if args.benchmark_local_install:
+                            logging.info("Running memtier benchmark outside of docker")
+                            benchmark_command_str = (
+                                "taskset -c "
+                                + client_cpuset_cpus
+                                + " "
+                                + benchmark_command_str
                             )
-                        )
+                            logging.info(
+                                "Running memtier benchmark command {}".format(
+                                    benchmark_command_str
+                                )
+                            )
+                            stream = os.popen(benchmark_command_str)
+                            client_container_stdout = stream.read()
+                            move_command = "mv {} {}".format(
+                                local_benchmark_output_filename, temporary_dir_client
+                            )
+                            os.system(move_command)
+                        else:
+                            logging.info(
+                                "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
+                                    client_container_image,
+                                    client_cpuset_cpus,
+                                    benchmark_command_str,
+                                )
+                            )
 
-                        client_container_stdout = docker_client.containers.run(
-                            image=client_container_image,
-                            volumes={
-                                temporary_dir_client: {
-                                    "bind": client_mnt_point,
-                                    "mode": "rw",
+                            # Use explicit container management for single client
+                            container = docker_client.containers.run(
+                                image=client_container_image,
+                                volumes={
+                                    temporary_dir_client: {
+                                        "bind": client_mnt_point,
+                                        "mode": "rw",
+                                    },
                                 },
-                            },
-                            auto_remove=True,
-                            privileged=True,
-                            working_dir=benchmark_tool_workdir,
-                            command=benchmark_command_str,
-                            network_mode="host",
-                            detach=False,
-                            cpuset_cpus=client_cpuset_cpus,
-                        )
+                                auto_remove=False,
+                                privileged=True,
+                                working_dir=benchmark_tool_workdir,
+                                command=benchmark_command_str,
+                                network_mode="host",
+                                detach=True,
+                                cpuset_cpus=client_cpuset_cpus,
+                            )
+
+                            # Wait for container and get output
+                            try:
+                                exit_code = container.wait()
+                                client_container_stdout = container.logs().decode(
+                                    "utf-8"
+                                )
+                                logging.info(
+                                    f"Single client completed with exit code: {exit_code}"
+                                )
+                            except Exception as wait_error:
+                                logging.error(f"Single client wait error: {wait_error}")
+                                client_container_stdout = container.logs().decode(
+                                    "utf-8"
+                                )
+                            finally:
+                                # Clean up container
+                                try:
+                                    container.remove(force=True)
+                                except Exception as cleanup_error:
+                                    logging.warning(
+                                        f"Single client cleanup error: {cleanup_error}"
+                                    )
 
                     benchmark_end_time = datetime.datetime.now()
                     benchmark_duration_seconds = (
@@ -895,18 +1394,47 @@ def process_self_contained_coordinator_stream(
                         client_container_stdout,
                         None,
                     )
-                    full_result_path = local_benchmark_output_filename
-                    if "memtier_benchmark" in benchmark_tool:
-                        full_result_path = "{}/{}".format(
-                            temporary_dir_client, local_benchmark_output_filename
+                    # Check if we have multi-client results with aggregated JSON
+                    if (
+                        is_multiple_clients
+                        and client_container_stdout.strip().startswith("{")
+                    ):
+                        # Use aggregated JSON from multi-client runner
+                        logging.info(
+                            "Using aggregated JSON results from multi-client execution"
                         )
-                    logging.info(f"Reading results json from {full_result_path}")
+                        results_dict = json.loads(client_container_stdout)
+                        # Print results table for multi-client
+                        print_results_table_stdout(
+                            benchmark_config,
+                            default_metrics,
+                            results_dict,
+                            setup_type,
+                            test_name,
+                        )
+                        # Add results to overall summary table
+                        prepare_overall_total_test_results(
+                            benchmark_config,
+                            default_metrics,
+                            results_dict,
+                            test_name,
+                            results_matrix,
+                            redis_conns,
+                        )
+                    else:
+                        # Single client - read from file as usual
+                        full_result_path = local_benchmark_output_filename
+                        if "memtier_benchmark" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
+                        logging.info(f"Reading results json from {full_result_path}")
 
-                    with open(
-                        full_result_path,
-                        "r",
-                    ) as json_file:
-                        results_dict = json.load(json_file)
+                        with open(
+                            full_result_path,
+                            "r",
+                        ) as json_file:
+                            results_dict = json.load(json_file)
                         print_results_table_stdout(
                             benchmark_config,
                             default_metrics,
@@ -921,6 +1449,7 @@ def process_self_contained_coordinator_stream(
                             results_dict,
                             test_name,
                             results_matrix,
+                            redis_conns,
                         )
 
                     dataset_load_duration_seconds = 0
@@ -994,6 +1523,22 @@ def process_self_contained_coordinator_stream(
                     full_result_path=full_result_path,
                     benchmark_tool_global=benchmark_tool_global,
                 )
+
+    # Print Redis server information section before results
+    if len(results_matrix) > 0:
+        # Get redis_conns from the first test context (we need to pass it somehow)
+        # For now, try to get it from the current context if available
+        try:
+            # Try to get redis connection to display server info
+            import redis as redis_module
+
+            r = redis_module.StrictRedis(
+                host="localhost", port=6379, decode_responses=True
+            )
+            r.ping()  # Test connection
+            print_redis_info_section([r])
+        except Exception as e:
+            logging.info(f"Could not connect to Redis for server info: {e}")
 
     table_name = "Results for entire test-suite"
     results_matrix_headers = [
@@ -1125,8 +1670,53 @@ def print_results_table_stdout(
     writer.write_table()
 
 
+def print_redis_info_section(redis_conns):
+    """Print Redis server information as a separate section"""
+    if redis_conns is not None and len(redis_conns) > 0:
+        try:
+            redis_info = redis_conns[0].info()
+
+            print("\n# Redis Server Information")
+            redis_info_data = [
+                ["Redis Version", redis_info.get("redis_version", "unknown")],
+                ["Redis Git SHA1", redis_info.get("redis_git_sha1", "unknown")],
+                ["Redis Git Dirty", str(redis_info.get("redis_git_dirty", "unknown"))],
+                ["Redis Build ID", redis_info.get("redis_build_id", "unknown")],
+                ["Redis Mode", redis_info.get("redis_mode", "unknown")],
+                ["OS", redis_info.get("os", "unknown")],
+                ["Arch Bits", str(redis_info.get("arch_bits", "unknown"))],
+                ["GCC Version", redis_info.get("gcc_version", "unknown")],
+                ["Process ID", str(redis_info.get("process_id", "unknown"))],
+                ["TCP Port", str(redis_info.get("tcp_port", "unknown"))],
+                [
+                    "Uptime (seconds)",
+                    str(redis_info.get("uptime_in_seconds", "unknown")),
+                ],
+            ]
+
+            from pytablewriter import MarkdownTableWriter
+
+            writer = MarkdownTableWriter(
+                table_name="",
+                headers=["Property", "Value"],
+                value_matrix=redis_info_data,
+            )
+            writer.write_table()
+
+            logging.info(
+                f"Displayed Redis server information: Redis {redis_info.get('redis_version', 'unknown')}"
+            )
+        except Exception as e:
+            logging.warning(f"Failed to collect Redis server information: {e}")
+
+
 def prepare_overall_total_test_results(
-    benchmark_config, default_metrics, results_dict, test_name, overall_results_matrix
+    benchmark_config,
+    default_metrics,
+    results_dict,
+    test_name,
+    overall_results_matrix,
+    redis_conns=None,
 ):
     # check which metrics to extract
     (
@@ -1246,7 +1836,8 @@ def data_prepopulation_step(
                     preload_command_str,
                 )
             )
-            client_container_stdout = docker_client.containers.run(
+            # Use explicit container management for preload tool
+            container = docker_client.containers.run(
                 image=preload_image,
                 volumes={
                     temporary_dir: {
@@ -1254,14 +1845,29 @@ def data_prepopulation_step(
                         "mode": "rw",
                     },
                 },
-                auto_remove=True,
+                auto_remove=False,
                 privileged=True,
                 working_dir=benchmark_tool_workdir,
                 command=preload_command_str,
                 network_mode="host",
-                detach=False,
+                detach=True,
                 cpuset_cpus=client_cpuset_cpus,
             )
+
+            # Wait for preload container and get output
+            try:
+                exit_code = container.wait()
+                client_container_stdout = container.logs().decode("utf-8")
+                logging.info(f"Preload tool completed with exit code: {exit_code}")
+            except Exception as wait_error:
+                logging.error(f"Preload tool wait error: {wait_error}")
+                client_container_stdout = container.logs().decode("utf-8")
+            finally:
+                # Clean up container
+                try:
+                    container.remove(force=True)
+                except Exception as cleanup_error:
+                    logging.warning(f"Preload tool cleanup error: {cleanup_error}")
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(

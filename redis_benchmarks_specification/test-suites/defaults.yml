@@ -26,3 +26,4 @@ exporter:
     - $."ALL STATS".Totals."Misses/sec"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
     - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+    - $."MessageRate"

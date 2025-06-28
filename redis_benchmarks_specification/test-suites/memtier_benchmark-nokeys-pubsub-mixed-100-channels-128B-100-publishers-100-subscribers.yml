@@ -1,0 +1,35 @@
+version: 0.4
+name: memtier_benchmark-nokeys-pubsub-mixed-100-channels-128B-100-publishers-100-subscribers
+description: Mixed workload with memtier publishing messages and pubsub-sub-bench subscribing to channels simultaneously.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- pubsub
+tested-commands:
+- publish
+- subscribe
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+clientconfigs:
+  - run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --test-time 120 --key-prefix "channel-" --pipeline 1 -d 128 --key-maximum 100 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 50 -t 4 --hide-histogram
+    resources:
+      requests:
+        cpus: '4'
+        memory: 1g
+  - run_image: filipe958/pubsub-sub-bench:latest
+    tool: pubsub-sub-bench
+    arguments: -clients 100 -channel-minimum 1 -channel-maximum 100 -subscriber-prefix "channel-" -mode subscribe -test-time 120 -subscribers-per-channel 1 
+    resources:
+      requests:
+        cpus: '4'
+        memory: 1g
+priority: 23
