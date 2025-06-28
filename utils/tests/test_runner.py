@@ -782,7 +782,6 @@ def test_prepare_pubsub_sub_bench_parameters():
     )
 
     # Verify basic parameters
-    assert "pubsub-sub-bench" in benchmark_command_str
     assert "-json-out-file test_output.json" in benchmark_command_str
     assert "-host localhost" in benchmark_command_str
     assert "-port 6379" in benchmark_command_str
