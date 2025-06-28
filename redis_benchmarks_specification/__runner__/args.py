@@ -209,6 +209,12 @@ def create_client_runner_args(project_name):
         help="override memtier number of runs for each benchmark. By default will run once each test",
     )
     parser.add_argument(
+        "--container-timeout-buffer",
+        default=60,
+        type=int,
+        help="Buffer time in seconds to add to test-time for container timeout. Default is 60 seconds.",
+    )
+    parser.add_argument(
         "--cluster-mode",
         default=False,
         action="store_true",
