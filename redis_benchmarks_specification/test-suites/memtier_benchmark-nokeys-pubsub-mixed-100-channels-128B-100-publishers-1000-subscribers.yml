@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-nokeys-pubsub-mixed-100-channels-128B-100-publishers-100-subscribers
+name: memtier_benchmark-nokeys-pubsub-mixed-100-channels-128B-100-publishers-1000-subscribers
 description: Mixed workload with memtier publishing messages and pubsub-sub-bench subscribing to channels simultaneously.
 dbconfig:
   configuration-parameters:
@@ -27,7 +27,7 @@ clientconfigs:
         memory: 1g
   - run_image: filipe958/pubsub-sub-bench:latest
     tool: pubsub-sub-bench
-    arguments: -clients 100 -channel-minimum 1 -channel-maximum 100 -subscriber-prefix "channel-" -mode subscribe -test-time 120 -subscribers-per-channel 1 
+    arguments: -clients 1000 -channel-minimum 1 -channel-maximum 100 -subscriber-prefix "channel-" -mode subscribe -test-time 120 -subscribers-per-channel 1 
     resources:
       requests:
         cpus: '4'
