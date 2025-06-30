@@ -123,11 +123,19 @@ def process_yaml_file(yaml_file_path, removed_dir):
         print(f"Error reading {yaml_file_path}: {e}", file=sys.stderr)
         return
 
-    # Check for necessary fields
+    # Check for necessary fields - handle both clientconfig and clientconfigs
     try:
-        arguments = config["clientconfig"]["arguments"]
-    except KeyError:
-        print(f"Skipping {yaml_file_path}: Missing 'clientconfig.arguments' field.")
+        if "clientconfigs" in config:
+            # Multiple client configs - use first one for memory calculation
+            arguments = config["clientconfigs"][0]["arguments"]
+        elif "clientconfig" in config:
+            # Single client config
+            arguments = config["clientconfig"]["arguments"]
+        else:
+            print(f"Skipping {yaml_file_path}: Missing client configuration.")
+            return
+    except (KeyError, IndexError):
+        print(f"Skipping {yaml_file_path}: Invalid client configuration format.")
         return
 
     # Convert arguments to string
@@ -203,10 +211,20 @@ def main():
                     continue
 
                 try:
-                    arguments = config["clientconfig"]["arguments"]
-                except KeyError:
+                    if "clientconfigs" in config:
+                        # Multiple client configs - use first one for memory calculation
+                        arguments = config["clientconfigs"][0]["arguments"]
+                    elif "clientconfig" in config:
+                        # Single client config
+                        arguments = config["clientconfig"]["arguments"]
+                    else:
+                        print(
+                            f"Skipping {yaml_file_path}: Missing client configuration."
+                        )
+                        continue
+                except (KeyError, IndexError):
                     print(
-                        f"Skipping {yaml_file_path}: Missing 'clientconfig.arguments' field."
+                        f"Skipping {yaml_file_path}: Invalid client configuration format."
                     )
                     continue
 

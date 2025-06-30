@@ -123,6 +123,25 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     )
                     test_result = False
 
+                # Validate client configuration format
+                has_clientconfig = "clientconfig" in benchmark_config
+                has_clientconfigs = "clientconfigs" in benchmark_config
+
+                if has_clientconfig and has_clientconfigs:
+                    logging.error(
+                        "Test {} has both 'clientconfig' and 'clientconfigs'. Only one format is allowed.".format(
+                            test_name
+                        )
+                    )
+                    test_result = False
+                elif not has_clientconfig and not has_clientconfigs:
+                    logging.error(
+                        "Test {} is missing client configuration. Must have either 'clientconfig' or 'clientconfigs'.".format(
+                            test_name
+                        )
+                    )
+                    test_result = False
+
                 test_names.append(test_name)
                 group = ""
                 is_memtier = False
@@ -150,12 +169,24 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 for tested_command in origin_tested_commands:
                     tested_commands.append(tested_command.lower())
                 if is_memtier:
-                    arguments = benchmark_config["clientconfig"]["arguments"]
-                    arg_list = (
-                        benchmark_config["clientconfig"]["arguments"]
-                        .replace('"', "")
-                        .split()
-                    )
+                    # Handle both clientconfig and clientconfigs formats
+                    if "clientconfigs" in benchmark_config:
+                        # For multiple configs, use the first one for stats analysis
+                        # TODO: Consider aggregating stats from all configs
+                        arguments = benchmark_config["clientconfigs"][0]["arguments"]
+                        arg_list = (
+                            benchmark_config["clientconfigs"][0]["arguments"]
+                            .replace('"', "")
+                            .split()
+                        )
+                    else:
+                        # Legacy single clientconfig format
+                        arguments = benchmark_config["clientconfig"]["arguments"]
+                        arg_list = (
+                            benchmark_config["clientconfig"]["arguments"]
+                            .replace('"', "")
+                            .split()
+                        )
 
                     data_size = get_arg_value(arg_list, "--data-size", data_size)
                     data_size = get_arg_value(arg_list, "-d", data_size)
