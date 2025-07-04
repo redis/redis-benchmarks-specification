@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-hash-hscan-50-fields-10B-values
-description: Runs memtier_benchmark, for a keyspace length of 1 keys pre-loading HASHes in which the value has a data size of 10 Bytes. After pre-loading the data it issues HSCAN command.
+description: Runs memtier_benchmark, for a keyspace length of 1 keys pre-loading HASHes in which the value has a data size of 10 Bytes. The key is expected to be listpack encoded due to the field count and field size. After pre-loading the data it issues HSCAN command.
 dbconfig:
   configuration-parameters:
     save: '""'
