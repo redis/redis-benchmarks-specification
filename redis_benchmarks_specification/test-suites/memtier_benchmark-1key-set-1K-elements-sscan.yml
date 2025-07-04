@@ -14,7 +14,7 @@ dbconfig:
 tested-groups:
 - set
 tested-commands:
-- smembers
+- sscan
 redis-topologies:
 - oss-standalone
 build-variants:
