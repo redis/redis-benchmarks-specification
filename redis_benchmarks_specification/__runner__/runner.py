@@ -1529,14 +1529,7 @@ def process_self_contained_coordinator_stream(
         # Get redis_conns from the first test context (we need to pass it somehow)
         # For now, try to get it from the current context if available
         try:
-            # Try to get redis connection to display server info
-            import redis as redis_module
-
-            r = redis_module.StrictRedis(
-                host="localhost", port=6379, decode_responses=True
-            )
-            r.ping()  # Test connection
-            print_redis_info_section([r])
+            print_redis_info_section(redis_conns)
         except Exception as e:
             logging.info(f"Could not connect to Redis for server info: {e}")
 
