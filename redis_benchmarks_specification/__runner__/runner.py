@@ -349,8 +349,6 @@ def run_multiple_clients(
             )
 
             # Start container (detached)
-            import os
-
             # Set working directory based on tool
             working_dir = benchmark_tool_workdir
             if "vector-db-benchmark" in client_tool:
@@ -483,8 +481,6 @@ def run_multiple_clients(
 
     if successful_results:
         # Try to read and aggregate JSON output files
-        import json
-        import os
 
         aggregated_json = {}
         memtier_json = None
@@ -1647,8 +1643,6 @@ def process_self_contained_coordinator_stream(
                             )
 
                             # Use explicit container management for single client
-                            import os
-
                             # Set working directory based on tool
                             working_dir = benchmark_tool_workdir
                             if "vector-db-benchmark" in benchmark_tool:
@@ -1821,7 +1815,6 @@ def process_self_contained_coordinator_stream(
                             )
                         elif "vector-db-benchmark" in benchmark_tool:
                             # For vector-db-benchmark, look for summary JSON file
-                            import os
                             summary_files = [f for f in os.listdir(temporary_dir_client) if f.endswith("-summary.json")]
                             if summary_files:
                                 full_result_path = os.path.join(temporary_dir_client, summary_files[0])
