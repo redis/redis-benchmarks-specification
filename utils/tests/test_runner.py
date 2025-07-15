@@ -987,18 +987,40 @@ def test_prepare_pubsub_sub_bench_parameters_override_test_time():
     assert "-verbose" in benchmark_command_str
 
 
-def test_create_client_runner_args_container_timeout_buffer():
-    """Test that container timeout buffer argument is properly configured"""
+def test_create_client_runner_args_timeout_buffer():
+    """Test that timeout buffer argument is properly configured"""
     from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
-    # Test default value
+    # Test default value for new argument
     parser = create_client_runner_args("test")
     args = parser.parse_args([])
-    assert args.container_timeout_buffer == 60  # Default should be 60 seconds
+    assert args.timeout_buffer == 60  # Default should be 60 seconds
 
-    # Test custom value
-    args = parser.parse_args(["--container-timeout-buffer", "120"])
-    assert args.container_timeout_buffer == 120
+    # Test custom value for new argument
+    args = parser.parse_args(["--timeout-buffer", "120"])
+    assert args.timeout_buffer == 120
+
+    # Test backward compatibility with old argument
+    args = parser.parse_args(["--container-timeout-buffer", "90"])
+    assert args.container_timeout_buffer == 90
+
+
+def test_run_local_command_with_timeout():
+    """Test the local command timeout functionality"""
+    from redis_benchmarks_specification.__runner__.runner import run_local_command_with_timeout, calculate_process_timeout
+
+    # Test successful command
+    success, stdout, stderr = run_local_command_with_timeout("echo 'test'", 5, "test command")
+    assert success is True
+    assert "test" in stdout
+
+    # Test timeout calculation
+    timeout = calculate_process_timeout("memtier_benchmark --test-time 60", 30)
+    assert timeout == 90  # 60 + 30
+
+    # Test default timeout
+    timeout = calculate_process_timeout("memtier_benchmark", 30)
+    assert timeout == 300  # default 5 minutes
 
 
 def test_run_client_runner_logic():
