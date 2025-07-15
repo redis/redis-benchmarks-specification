@@ -192,9 +192,10 @@ def save_profile_with_metadata(
             f"# profile from redis sha = {redis_metadata['redis_git_sha1']} "
             f"and pid {redis_metadata['process_id']} for duration of {duration}s. "
             f"collection in date {timestamp}\n"
-            f"# redis_version: {redis_metadata['redis_version']}\n"
-            f"# redis_git_dirty: {redis_metadata['redis_git_dirty']}\n"
-            f"# tcp_port: {redis_metadata['tcp_port']}\n"
+            f"# benchmark_name={benchmark_name}\n"
+            f"# redis_git_sha1={redis_metadata['redis_git_sha1']}\n"
+            f"# redis_version={redis_metadata['redis_version']}\n"
+            f"# redis_git_dirty={redis_metadata['redis_git_dirty']}\n"
         )
         
         # Write file with metadata and profile content
