@@ -57,6 +57,18 @@ def create_compare_arguments(parser):
     parser.add_argument("--baseline_github_org", type=str, default="")
     parser.add_argument("--comparison_github_org", type=str, default="")
     parser.add_argument("--triggering_env", type=str, default="ci")
+    parser.add_argument(
+        "--triggering_env_baseline",
+        type=str,
+        default=None,
+        help="Triggering environment for baseline data. If not specified, falls back to --triggering_env"
+    )
+    parser.add_argument(
+        "--triggering_env_comparison",
+        type=str,
+        default=None,
+        help="Triggering environment for comparison data. If not specified, falls back to --triggering_env"
+    )
     parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
     parser.add_argument("--deployment_name", type=str, default="oss-standalone")
@@ -66,6 +78,18 @@ def create_compare_arguments(parser):
     parser.add_argument("--metric_name", type=str, default="ALL_STATS.Totals.Ops/sec")
     parser.add_argument(
         "--running_platform", type=str, default="intel64-ubuntu22.04-redis-icx1"
+    )
+    parser.add_argument(
+        "--running_platform_baseline",
+        type=str,
+        default=None,
+        help="Platform for baseline data. If not specified, falls back to --running_platform"
+    )
+    parser.add_argument(
+        "--running_platform_comparison",
+        type=str,
+        default=None,
+        help="Platform for comparison data. If not specified, falls back to --running_platform"
     )
     parser.add_argument("--extra-filter", type=str, default=None)
     parser.add_argument(

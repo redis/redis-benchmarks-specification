@@ -203,16 +203,28 @@ def create_client_runner_args(project_name):
         help="Assume benchmarking tool (e.g. memtier benchmark) is installed locally and execute it without using a docker container.",
     )
     parser.add_argument(
+        "--memtier-bin-path",
+        type=str,
+        default="memtier_benchmark",
+        help="Path to memtier_benchmark binary when using --benchmark_local_install. Default is 'memtier_benchmark' (assumes it's in PATH).",
+    )
+    parser.add_argument(
         "--override-test-runs",
         default=1,
         type=int,
         help="override memtier number of runs for each benchmark. By default will run once each test",
     )
     parser.add_argument(
+        "--timeout-buffer",
+        default=60,
+        type=int,
+        help="Buffer time in seconds to add to test-time for process timeout (both Docker containers and local processes). Default is 60 seconds.",
+    )
+    parser.add_argument(
         "--container-timeout-buffer",
         default=60,
         type=int,
-        help="Buffer time in seconds to add to test-time for container timeout. Default is 60 seconds.",
+        help="Deprecated: Use --timeout-buffer instead. Buffer time in seconds to add to test-time for container timeout.",
     )
     parser.add_argument(
         "--cluster-mode",
@@ -224,5 +236,41 @@ def create_client_runner_args(project_name):
         "--unix-socket",
         default="",
         help="UNIX Domain socket name",
+    )
+    parser.add_argument(
+        "--enable-remote-profiling",
+        default=False,
+        action="store_true",
+        help="Enable remote profiling of Redis processes via HTTP GET endpoint. Profiles are collected in pprof binary format during benchmark execution.",
+    )
+    parser.add_argument(
+        "--remote-profile-host",
+        type=str,
+        default="localhost",
+        help="Host for remote profiling HTTP endpoint. Default is localhost.",
+    )
+    parser.add_argument(
+        "--remote-profile-port",
+        type=int,
+        default=10000,
+        help="Port for remote profiling HTTP endpoint. Default is 10000.",
+    )
+    parser.add_argument(
+        "--remote-profile-output-dir",
+        type=str,
+        default="profiles",
+        help="Directory to store remote profiling output files. Default is 'profiles/'.",
+    )
+    parser.add_argument(
+        "--remote-profile-username",
+        type=str,
+        default=None,
+        help="Username for HTTP basic authentication to remote profiling endpoint. Optional.",
+    )
+    parser.add_argument(
+        "--remote-profile-password",
+        type=str,
+        default=None,
+        help="Password for HTTP basic authentication to remote profiling endpoint. Optional.",
     )
     return parser

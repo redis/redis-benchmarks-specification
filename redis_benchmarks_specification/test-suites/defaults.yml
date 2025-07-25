@@ -27,3 +27,6 @@ exporter:
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
     - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
     - $."MessageRate"
+    - $."precision_summary".*.qps
+    - $."precision_summary".*.p50
+    - $."precision_summary".*.p95

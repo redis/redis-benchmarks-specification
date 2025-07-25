@@ -9,7 +9,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"  "--key-maximum" "1000000"'
   resources:
     requests:
       memory: 1g
