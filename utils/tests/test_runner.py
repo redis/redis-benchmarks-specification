@@ -548,6 +548,27 @@ def test_create_client_runner_args():
     assert args.flushall_on_every_test_start is True
     assert args.benchmark_local_install is True
 
+    # Test parsing with memtier bin path
+    args = parser.parse_args(
+        [
+            "--test",
+            "test.yml",
+            "--db_server_host",
+            "localhost",
+            "--db_server_port",
+            "6379",
+            "--benchmark_local_install",
+            "--memtier-bin-path",
+            "/custom/path/to/memtier_benchmark",
+        ]
+    )
+
+    assert args.benchmark_local_install is True
+    assert getattr(args, 'memtier_bin_path') == "/custom/path/to/memtier_benchmark"
+
+    assert args.flushall_on_every_test_start is True
+    assert args.benchmark_local_install is True
+
 
 def test_extract_client_container_image_legacy():
     """Test the legacy extract_client_container_image function"""
@@ -1021,6 +1042,103 @@ def test_run_local_command_with_timeout():
     # Test default timeout
     timeout = calculate_process_timeout("memtier_benchmark", 30)
     assert timeout == 300  # default 5 minutes
+
+
+def test_get_maxmemory():
+    """Test the get_maxmemory function with different Redis memory info scenarios"""
+    from redis_benchmarks_specification.__runner__.runner import get_maxmemory
+
+    class MockRedisConnection:
+        def __init__(self, memory_info):
+            self.memory_info = memory_info
+
+        def info(self, section):
+            if section == "memory":
+                return self.memory_info
+            return {}
+
+    # Test case 1: maxmemory key is missing (should return 0 and warn)
+    mock_redis_no_maxmemory = MockRedisConnection({
+        "used_memory": 1024000,
+        "total_system_memory": 8589934592
+    })
+    result = get_maxmemory(mock_redis_no_maxmemory)
+    assert result == 0
+
+    # Test case 2: maxmemory is 0 (should use total_system_memory)
+    mock_redis_maxmemory_zero = MockRedisConnection({
+        "maxmemory": 0,
+        "used_memory": 1024000,
+        "total_system_memory": 8589934592
+    })
+    result = get_maxmemory(mock_redis_maxmemory_zero)
+    assert result == 8589934592
+
+    # Test case 3: maxmemory has a value (should return that value)
+    mock_redis_maxmemory_set = MockRedisConnection({
+        "maxmemory": 4294967296,  # 4GB
+        "used_memory": 1024000,
+        "total_system_memory": 8589934592
+    })
+    result = get_maxmemory(mock_redis_maxmemory_set)
+    assert result == 4294967296
+
+
+def test_remote_profiling_pprof_format():
+    """Test the remote profiling functionality with pprof format"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        save_profile_with_metadata,
+        extract_redis_metadata,
+        calculate_profile_duration
+    )
+    import tempfile
+    import os
+
+    # Test save_profile_with_metadata with binary data
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Mock binary profile data
+        profile_data = b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff'  # Sample gzipped data
+        benchmark_name = "test-benchmark"
+        redis_metadata = {
+            "redis_version": "7.0.0",
+            "redis_git_sha1": "abc123",
+            "redis_git_dirty": "0",
+            "redis_build_id": "build123",
+            "process_id": "12345",
+            "tcp_port": "6379"
+        }
+        duration = 10
+
+        # Save profile
+        result_path = save_profile_with_metadata(
+            profile_data, benchmark_name, temp_dir, redis_metadata, duration
+        )
+
+        # Verify files were created
+        assert result_path is not None
+        assert os.path.exists(result_path)
+        assert result_path.endswith(".pb.gz")
+
+        # Verify metadata file was created
+        metadata_path = os.path.join(temp_dir, f"{benchmark_name}.metadata.txt")
+        assert os.path.exists(metadata_path)
+
+        # Verify binary data was written correctly
+        with open(result_path, 'rb') as f:
+            saved_data = f.read()
+            assert saved_data == profile_data
+
+        # Verify metadata content
+        with open(metadata_path, 'r') as f:
+            metadata_content = f.read()
+            assert "redis_git_sha1=abc123" in metadata_content
+            assert "benchmark_name=test-benchmark" in metadata_content
+            assert "duration_seconds=10" in metadata_content
+
+    # Test calculate_profile_duration
+    assert calculate_profile_duration(5) == 10  # minimum 10 seconds
+    assert calculate_profile_duration(15) == 15  # use benchmark duration
+    assert calculate_profile_duration(45) == 30  # maximum 30 seconds
 
 
 def test_run_client_runner_logic():

@@ -251,6 +251,14 @@ def compare_command_logic(args, project_name, project_version):
     testname_regex = args.testname_regex
     auto_approve = args.auto_approve
     running_platform = args.running_platform
+
+    # Handle separate baseline and comparison platform/environment arguments
+    # Fall back to general arguments if specific ones are not provided
+    running_platform_baseline = args.running_platform_baseline or args.running_platform
+    running_platform_comparison = args.running_platform_comparison or args.running_platform
+    triggering_env_baseline = args.triggering_env_baseline or args.triggering_env
+    triggering_env_comparison = args.triggering_env_comparison or args.triggering_env
+
     baseline_target_version = args.baseline_target_version
     comparison_target_version = args.comparison_target_version
     baseline_target_branch = args.baseline_target_branch
@@ -262,10 +270,31 @@ def compare_command_logic(args, project_name, project_version):
     baseline_hash = args.baseline_hash
     comparison_hash = args.comparison_hash
 
-    if running_platform is not None:
+    # Log platform and environment information
+    if running_platform_baseline == running_platform_comparison:
+        if running_platform_baseline is not None:
+            logging.info(
+                "Using platform named: {} for both baseline and comparison.\n\n".format(
+                    running_platform_baseline
+                )
+            )
+    else:
         logging.info(
-            "Using platform named: {} to do the comparison.\n\n".format(
-                running_platform
+            "Using platform named: {} for baseline and {} for comparison.\n\n".format(
+                running_platform_baseline, running_platform_comparison
+            )
+        )
+
+    if triggering_env_baseline == triggering_env_comparison:
+        logging.info(
+            "Using triggering environment: {} for both baseline and comparison.".format(
+                triggering_env_baseline
+            )
+        )
+    else:
+        logging.info(
+            "Using triggering environment: {} for baseline and {} for comparison.".format(
+                triggering_env_baseline, triggering_env_comparison
             )
         )
 
@@ -328,7 +357,8 @@ def compare_command_logic(args, project_name, project_version):
         rts,
         tf_github_org,
         tf_github_repo,
-        tf_triggering_env,
+        triggering_env_baseline,
+        triggering_env_comparison,
         metric_name,
         comparison_branch,
         baseline_branch,
@@ -352,7 +382,8 @@ def compare_command_logic(args, project_name, project_version):
         to_date,
         to_ts_ms,
         use_metric_context_path,
-        running_platform,
+        running_platform_baseline,
+        running_platform_comparison,
         baseline_target_version,
         comparison_target_version,
         baseline_hash,
@@ -383,11 +414,13 @@ def compare_command_logic(args, project_name, project_version):
         pr_link,
         regression_comment,
         rts,
-        running_platform,
+        running_platform_baseline,
+        running_platform_comparison,
         table_output,
         tf_github_org,
         tf_github_repo,
-        tf_triggering_env,
+        triggering_env_baseline,
+        triggering_env_comparison,
         total_comparison_points,
         total_improvements,
         total_regressions,
@@ -423,11 +456,13 @@ def prepare_regression_comment(
     pr_link,
     regression_comment,
     rts,
-    running_platform,
+    running_platform_baseline,
+    running_platform_comparison,
     table_output,
     tf_github_org,
     tf_github_repo,
-    tf_triggering_env,
+    triggering_env_baseline,
+    triggering_env_comparison,
     total_comparison_points,
     total_improvements,
     total_regressions,
@@ -441,9 +476,25 @@ def prepare_regression_comment(
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
         comment_body += "This comment was automatically generated given there is performance data available.\n\n"
-        if running_platform is not None:
-            comment_body += "Using platform named: {} to do the comparison.\n\n".format(
-                running_platform
+        # Add platform information to comment
+        if running_platform_baseline == running_platform_comparison:
+            if running_platform_baseline is not None:
+                comment_body += "Using platform named: {} for both baseline and comparison.\n\n".format(
+                    running_platform_baseline
+                )
+        else:
+            comment_body += "Using platform named: {} for baseline and {} for comparison.\n\n".format(
+                running_platform_baseline, running_platform_comparison
+            )
+
+        # Add triggering environment information to comment
+        if triggering_env_baseline == triggering_env_comparison:
+            comment_body += "Using triggering environment: {} for both baseline and comparison.\n\n".format(
+                triggering_env_baseline
+            )
+        else:
+            comment_body += "Using triggering environment: {} for baseline and {} for comparison.\n\n".format(
+                triggering_env_baseline, triggering_env_comparison
             )
         comparison_summary = "In summary:\n"
         if total_stable > 0:
@@ -507,7 +558,7 @@ def prepare_regression_comment(
 
         if is_actionable_pr:
             zset_project_pull_request = get_project_compare_zsets(
-                tf_triggering_env,
+                triggering_env_baseline,
                 tf_github_org,
                 tf_github_repo,
             )
@@ -516,16 +567,22 @@ def prepare_regression_comment(
                     zset_project_pull_request, comparison_branch
                 )
             )
-            _, start_time_ms, _ = get_start_time_vars()
-            res = rts.zadd(
-                zset_project_pull_request,
-                {comparison_branch: start_time_ms},
-            )
-            logging.info(
-                "Result of Populating the pull request performance ZSETs: {} with branch {}: {}".format(
-                    zset_project_pull_request, comparison_branch, res
+            # Only add to Redis sorted set if comparison_branch is not None
+            if comparison_branch is not None:
+                _, start_time_ms, _ = get_start_time_vars()
+                res = rts.zadd(
+                    zset_project_pull_request,
+                    {comparison_branch: start_time_ms},
                 )
-            )
+                logging.info(
+                    "Result of Populating the pull request performance ZSETs: {} with branch {}: {}".format(
+                        zset_project_pull_request, comparison_branch, res
+                    )
+                )
+            else:
+                logging.warning(
+                    "Skipping Redis ZADD operation because comparison_branch is None"
+                )
 
             if contains_regression_comment:
                 update_comment_if_needed(
@@ -587,7 +644,8 @@ def compute_regression_table(
     rts,
     tf_github_org,
     tf_github_repo,
-    tf_triggering_env,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
     metric_name,
     comparison_branch,
     baseline_branch="unstable",
@@ -611,7 +669,8 @@ def compute_regression_table(
     to_date=None,
     to_ts_ms=None,
     use_metric_context_path=None,
-    running_platform=None,
+    running_platform_baseline=None,
+    running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
     comparison_hash=None,
@@ -672,7 +731,7 @@ def compute_regression_table(
         _,
         _,
         _,
-    ) = get_overall_dashboard_keynames(tf_github_org, tf_github_repo, tf_triggering_env)
+    ) = get_overall_dashboard_keynames(tf_github_org, tf_github_repo, tf_triggering_env_baseline)
     test_names = []
     used_key = testcases_setname
     test_filter = "test_name"
@@ -728,9 +787,11 @@ def compute_regression_table(
         simplify_table,
         test_filter,
         test_names,
-        tf_triggering_env,
+        tf_triggering_env_baseline,
+        tf_triggering_env_comparison,
         verbose,
-        running_platform,
+        running_platform_baseline,
+        running_platform_comparison,
         baseline_github_repo,
         comparison_github_repo,
         baseline_github_org,
@@ -1047,9 +1108,11 @@ def from_rts_to_regression_table(
     simplify_table,
     test_filter,
     test_names,
-    tf_triggering_env,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
     verbose,
-    running_platform=None,
+    running_platform_baseline=None,
+    running_platform_comparison=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_github_org="redis",
@@ -1109,19 +1172,19 @@ def from_rts_to_regression_table(
             "{}={}".format(test_filter, test_name),
             "deployment_name={}".format(baseline_deployment_name),
             "github_repo={}".format(baseline_github_repo),
-            "triggering_env={}".format(tf_triggering_env),
+            "triggering_env={}".format(tf_triggering_env_baseline),
         ]
         if baseline_github_org != "":
             filters_baseline.append(f"github_org={baseline_github_org}")
-        if running_platform is not None:
-            filters_baseline.append("running_platform={}".format(running_platform))
+        if running_platform_baseline is not None:
+            filters_baseline.append("running_platform={}".format(running_platform_baseline))
         filters_comparison = [
             "{}={}".format(by_str_comparison, comparison_str),
             "metric={}".format(metric_name),
             "{}={}".format(test_filter, test_name),
             "deployment_name={}".format(comparison_deployment_name),
             "github_repo={}".format(comparison_github_repo),
-            "triggering_env={}".format(tf_triggering_env),
+            "triggering_env={}".format(tf_triggering_env_comparison),
         ]
         if comparison_github_org != "":
             filters_comparison.append(f"github_org={comparison_github_org}")
@@ -1129,8 +1192,8 @@ def from_rts_to_regression_table(
             filters_baseline.append("hash==")
         if "hash" not in by_str_comparison:
             filters_comparison.append("hash==")
-        if running_platform is not None:
-            filters_comparison.append("running_platform={}".format(running_platform))
+        if running_platform_comparison is not None:
+            filters_comparison.append("running_platform={}".format(running_platform_comparison))
         baseline_timeseries = rts.ts().queryindex(filters_baseline)
         comparison_timeseries = rts.ts().queryindex(filters_comparison)
 
@@ -1302,30 +1365,61 @@ def from_rts_to_regression_table(
         if baseline_v != "N/A" or comparison_v != "N/A":
             detected_regression = False
             detected_improvement = False
-            if percentage_change < 0.0:
-                if -waterline >= percentage_change:
-                    detected_regression = True
-                    total_regressions = total_regressions + 1
-                    note = note + f" {regression_str}"
-                    detected_regressions.append(test_name)
-                elif percentage_change < -noise_waterline:
-                    if simplify_table is False:
-                        note = note + f" potential {regression_str}"
-                else:
-                    if simplify_table is False:
-                        note = note + " No Change"
 
-            if percentage_change > 0.0:
-                if percentage_change > waterline:
-                    detected_improvement = True
-                    total_improvements = total_improvements + 1
-                    note = note + f" {improvement_str}"
-                elif percentage_change > noise_waterline:
-                    if simplify_table is False:
-                        note = note + f" potential {improvement_str}"
-                else:
-                    if simplify_table is False:
-                        note = note + " No Change"
+            # For higher-better metrics: negative change = regression, positive change = improvement
+            # For lower-better metrics: positive change = regression, negative change = improvement
+            if metric_mode == "higher-better":
+                # Higher is better: negative change is bad (regression), positive change is good (improvement)
+                if percentage_change < 0.0:
+                    if -waterline >= percentage_change:
+                        detected_regression = True
+                        total_regressions = total_regressions + 1
+                        note = note + f" {regression_str}"
+                        detected_regressions.append(test_name)
+                    elif percentage_change < -noise_waterline:
+                        if simplify_table is False:
+                            note = note + f" potential {regression_str}"
+                    else:
+                        if simplify_table is False:
+                            note = note + " No Change"
+
+                if percentage_change > 0.0:
+                    if percentage_change > waterline:
+                        detected_improvement = True
+                        total_improvements = total_improvements + 1
+                        note = note + f" {improvement_str}"
+                    elif percentage_change > noise_waterline:
+                        if simplify_table is False:
+                            note = note + f" potential {improvement_str}"
+                    else:
+                        if simplify_table is False:
+                            note = note + " No Change"
+            else:
+                # Lower is better: positive change is bad (regression), negative change is good (improvement)
+                if percentage_change > 0.0:
+                    if percentage_change >= waterline:
+                        detected_regression = True
+                        total_regressions = total_regressions + 1
+                        note = note + f" {regression_str}"
+                        detected_regressions.append(test_name)
+                    elif percentage_change > noise_waterline:
+                        if simplify_table is False:
+                            note = note + f" potential {regression_str}"
+                    else:
+                        if simplify_table is False:
+                            note = note + " No Change"
+
+                if percentage_change < 0.0:
+                    if -percentage_change > waterline:
+                        detected_improvement = True
+                        total_improvements = total_improvements + 1
+                        note = note + f" {improvement_str}"
+                    elif -percentage_change > noise_waterline:
+                        if simplify_table is False:
+                            note = note + f" potential {improvement_str}"
+                    else:
+                        if simplify_table is False:
+                            note = note + " No Change"
 
             for test_group in tested_groups:
                 if test_group not in group_change:

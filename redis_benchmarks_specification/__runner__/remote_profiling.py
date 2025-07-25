@@ -3,7 +3,7 @@ Remote profiling utilities for Redis benchmark runner.
 
 This module provides functionality to trigger remote profiling of Redis processes
 via HTTP GET endpoints during benchmark execution. Profiles are collected in
-folded format for performance analysis.
+pprof binary format for performance analysis.
 """
 
 import datetime
@@ -103,9 +103,9 @@ def trigger_remote_profile(
     timeout: int = 60,
     username: Optional[str] = None,
     password: Optional[str] = None
-) -> Optional[str]:
+) -> Optional[bytes]:
     """
-    Trigger remote profiling via HTTP GET request.
+    Trigger remote profiling via HTTP GET request using pprof endpoint.
 
     Args:
         host: Remote host address
@@ -117,9 +117,9 @@ def trigger_remote_profile(
         password: Optional password for HTTP basic authentication
 
     Returns:
-        Profile content in folded format, or None if failed
+        Profile content in pprof binary format, or None if failed
     """
-    url = f"http://{host}:{port}/debug/folded/profile"
+    url = f"http://{host}:{port}/debug/pprof/profile"
     params = {
         "pid": pid,
         "seconds": duration
@@ -136,8 +136,8 @@ def trigger_remote_profile(
         response = requests.get(url, params=params, timeout=timeout, auth=auth)
         response.raise_for_status()
 
-        profile_content = response.text
-        logging.info(f"Successfully collected profile: {len(profile_content)} characters")
+        profile_content = response.content
+        logging.info(f"Successfully collected profile: {len(profile_content)} bytes")
         return profile_content
 
     except requests.exceptions.Timeout:
@@ -157,55 +157,65 @@ def trigger_remote_profile(
 
 
 def save_profile_with_metadata(
-    profile_content: str,
+    profile_content: bytes,
     benchmark_name: str,
     output_dir: str,
     redis_metadata: Dict[str, Any],
     duration: int
 ) -> Optional[str]:
     """
-    Save profile content to file with metadata comments.
-    
+    Save profile content to file in pprof binary format.
+
     Args:
-        profile_content: Profile data in folded format
+        profile_content: Profile data in pprof binary format
         benchmark_name: Name of the benchmark
         output_dir: Output directory path
         redis_metadata: Redis metadata dictionary
         duration: Profiling duration in seconds
-        
+
     Returns:
         Path to saved file, or None if failed
     """
     try:
         # Create output directory if it doesn't exist
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-        
-        # Generate filename
-        filename = f"{benchmark_name}.folded"
+
+        # Generate filename with .pb.gz extension
+        filename = f"{benchmark_name}.pb.gz"
         filepath = os.path.join(output_dir, filename)
-        
+
         # Generate timestamp
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Create metadata comment
-        metadata_comment = (
-            f"# profile from redis sha = {redis_metadata['redis_git_sha1']} "
-            f"and pid {redis_metadata['process_id']} for duration of {duration}s. "
-            f"collection in date {timestamp}\n"
-            f"# benchmark_name={benchmark_name}\n"
-            f"# redis_git_sha1={redis_metadata['redis_git_sha1']}\n"
-            f"# redis_version={redis_metadata['redis_version']}\n"
-            f"# redis_git_dirty={redis_metadata['redis_git_dirty']}\n"
-        )
-        
-        # Write file with metadata and profile content
-        with open(filepath, 'w') as f:
-            f.write(metadata_comment)
+
+        # Write binary profile content directly
+        with open(filepath, 'wb') as f:
             f.write(profile_content)
-            
+
+        # Create a separate metadata file
+        metadata_filename = f"{benchmark_name}.metadata.txt"
+        metadata_filepath = os.path.join(output_dir, metadata_filename)
+
+        metadata_content = (
+            f"Profile from redis sha = {redis_metadata['redis_git_sha1']} "
+            f"and pid {redis_metadata['process_id']} for duration of {duration}s. "
+            f"Collection date: {timestamp}\n"
+            f"benchmark_name={benchmark_name}\n"
+            f"redis_git_sha1={redis_metadata['redis_git_sha1']}\n"
+            f"redis_version={redis_metadata['redis_version']}\n"
+            f"redis_git_dirty={redis_metadata['redis_git_dirty']}\n"
+            f"redis_build_id={redis_metadata['redis_build_id']}\n"
+            f"process_id={redis_metadata['process_id']}\n"
+            f"tcp_port={redis_metadata['tcp_port']}\n"
+            f"duration_seconds={duration}\n"
+        )
+
+        with open(metadata_filepath, 'w') as f:
+            f.write(metadata_content)
+
         logging.info(f"Saved profile to: {filepath}")
+        logging.info(f"Saved metadata to: {metadata_filepath}")
         return filepath
-        
+
     except Exception as e:
         logging.error(f"Failed to save profile file: {e}")
         return None
@@ -281,7 +291,7 @@ class RemoteProfiler:
                 username=self.username, password=self.password
             )
 
-            if profile_content:
+            if profile_content is not None:
                 # Save profile with metadata
                 filepath = save_profile_with_metadata(
                     profile_content, benchmark_name, self.output_dir, redis_metadata, duration

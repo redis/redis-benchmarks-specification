@@ -240,13 +240,19 @@ def run_multiple_clients(
 
             # Prepare benchmark command for this client
             if "memtier_benchmark" in client_tool:
+                # Set benchmark path based on local install option
+                if args.benchmark_local_install:
+                    full_benchmark_path = getattr(args, 'memtier_bin_path', 'memtier_benchmark')
+                else:
+                    full_benchmark_path = f"/usr/local/bin/{client_tool}"
+
                 (
                     _,
                     benchmark_command_str,
                     arbitrary_command,
                 ) = prepare_memtier_benchmark_parameters(
                     client_config,
-                    client_tool,
+                    full_benchmark_path,
                     port,
                     host,
                     password,
@@ -1202,7 +1208,9 @@ def process_self_contained_coordinator_stream(
                     else:
                         for conn in redis_conns:
                             maxmemory = maxmemory + get_maxmemory(conn)
-                    if benchmark_required_memory > maxmemory:
+
+                    # Only perform memory check if we have valid maxmemory information
+                    if maxmemory > 0 and benchmark_required_memory > maxmemory:
                         logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
                                 test_name, maxmemory, benchmark_required_memory
@@ -1214,6 +1222,12 @@ def process_self_contained_coordinator_stream(
                             benchmark_tool_global=benchmark_tool_global,
                         )
                         continue
+                    elif maxmemory == 0 and benchmark_required_memory > 0:
+                        logging.warning(
+                            "Cannot enforce memory checks for test {} - maxmemory information unavailable. Proceeding with test.".format(
+                                test_name
+                            )
+                        )
 
                     reset_commandstats(redis_conns)
 
@@ -1337,6 +1351,7 @@ def process_self_contained_coordinator_stream(
                                 oss_cluster_api_enabled,
                                 unix_socket,
                                 buffer_timeout,
+                                args,
                             )
                             if res is False:
                                 logging.warning(
@@ -1380,7 +1395,12 @@ def process_self_contained_coordinator_stream(
                     # backwards compatible
                     if benchmark_tool is None:
                         benchmark_tool = "redis-benchmark"
-                    full_benchmark_path = f"/usr/local/bin/{benchmark_tool}"
+
+                    # Set benchmark path based on local install option
+                    if args.benchmark_local_install and "memtier_benchmark" in benchmark_tool:
+                        full_benchmark_path = getattr(args, 'memtier_bin_path', 'memtier_benchmark')
+                    else:
+                        full_benchmark_path = f"/usr/local/bin/{benchmark_tool}"
 
                     # setup the benchmark
                     (
@@ -1966,9 +1986,16 @@ def process_self_contained_coordinator_stream(
 
 
 def get_maxmemory(r):
-    maxmemory = int(r.info("memory")["maxmemory"])
+    memory_info = r.info("memory")
+
+    # Check if maxmemory key exists in Redis memory info
+    if "maxmemory" not in memory_info:
+        logging.warning("maxmemory not present in Redis memory info. Cannot enforce memory checks.")
+        return 0
+
+    maxmemory = int(memory_info["maxmemory"])
     if maxmemory == 0:
-        total_system_memory = int(r.info("memory")["total_system_memory"])
+        total_system_memory = int(memory_info["total_system_memory"])
         logging.info(" Using total system memory as max {}".format(total_system_memory))
         maxmemory = total_system_memory
     else:
@@ -2268,6 +2295,7 @@ def data_prepopulation_step(
     oss_cluster_api_enabled=False,
     unix_socket="",
     timeout_buffer=60,
+    args=None,
 ):
     result = True
     # setup the benchmark
@@ -2286,7 +2314,12 @@ def data_prepopulation_step(
         benchmark_config["dbconfig"], "preload_tool"
     )
     preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
-    full_benchmark_path = f"/usr/local/bin/{preload_tool}"
+
+    # Set preload tool path based on local install option
+    if benchmark_local_install and "memtier_benchmark" in preload_tool and args:
+        full_benchmark_path = getattr(args, 'memtier_bin_path', 'memtier_benchmark')
+    else:
+        full_benchmark_path = f"/usr/local/bin/{preload_tool}"
     client_mnt_point = "/mnt/client/"
 
     if "memtier_benchmark" in preload_tool:
