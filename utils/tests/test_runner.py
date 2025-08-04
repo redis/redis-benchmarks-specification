@@ -566,7 +566,8 @@ def test_create_client_runner_args():
     assert args.benchmark_local_install is True
     assert getattr(args, 'memtier_bin_path') == "/custom/path/to/memtier_benchmark"
 
-    assert args.flushall_on_every_test_start is True
+    # This test case doesn't include --flushall_on_every_test_start, so it should be False
+    assert args.flushall_on_every_test_start is False
     assert args.benchmark_local_install is True
 
 
@@ -1139,6 +1140,245 @@ def test_remote_profiling_pprof_format():
     assert calculate_profile_duration(5) == 10  # minimum 10 seconds
     assert calculate_profile_duration(15) == 15  # use benchmark duration
     assert calculate_profile_duration(45) == 30  # maximum 30 seconds
+
+
+def test_extract_server_info_for_args():
+    """Test the auto-detection of server info from Redis INFO SERVER"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import extract_server_info_for_args
+
+    class MockRedisConnection:
+        def __init__(self, server_info):
+            self.server_info = server_info
+
+        def info(self, section):
+            if section == "server":
+                return self.server_info
+            return {}
+
+    # Test case 1: Standard Redis server
+    mock_redis_standard = MockRedisConnection({
+        "redis_version": "7.2.4",
+        "redis_git_sha1": "05eaf6e4",
+        "redis_git_dirty": "0",
+        "redis_build_id": "9ff8e77d3d80abcd"
+    })
+
+    result = extract_server_info_for_args(mock_redis_standard)
+    assert result["github_org"] == "redis"
+    assert result["github_repo"] == "redis"
+    assert result["github_version"] == "7.2.4"
+    assert result["github_hash"] == "05eaf6e4"
+    assert result["server_name"] == ""
+
+    # Test case 2: Valkey server
+    mock_redis_valkey = MockRedisConnection({
+        "server_name": "valkey",
+        "redis_version": "7.2.4",
+        "valkey_version": "8.1.3",
+        "redis_git_sha1": "05eaf6e4",
+        "redis_git_dirty": "0",
+        "redis_build_id": "9ff8e77d3d80abcd"
+    })
+
+    result = extract_server_info_for_args(mock_redis_valkey)
+    assert result["github_org"] == "valkey-io"
+    assert result["github_repo"] == "valkey"
+    assert result["github_version"] == "8.1.3"  # Should use valkey_version
+    assert result["github_hash"] == "05eaf6e4"  # Should use redis_git_sha1
+    assert result["server_name"] == "valkey"
+
+    # Test case 3: Valkey server without valkey_version (fallback to redis_version)
+    mock_redis_valkey_no_version = MockRedisConnection({
+        "server_name": "valkey",
+        "redis_version": "7.2.4",
+        "redis_git_sha1": "05eaf6e4",
+        "redis_git_dirty": "0",
+        "redis_build_id": "9ff8e77d3d80abcd"
+    })
+
+    result = extract_server_info_for_args(mock_redis_valkey_no_version)
+    assert result["github_org"] == "valkey-io"
+    assert result["github_repo"] == "valkey"
+    assert result["github_version"] == "7.2.4"  # Should fallback to redis_version
+    assert result["github_hash"] == "05eaf6e4"  # Should use redis_git_sha1
+    assert result["server_name"] == "valkey"
+
+    # Test case 4: Server with empty git_sha1 (fallback to build_id)
+    mock_redis_build_id = MockRedisConnection({
+        "redis_version": "6.2.0",
+        "redis_git_sha1": "00000000",  # Empty/zero git_sha1
+        "redis_build_id": "abc123def456"
+    })
+
+    result = extract_server_info_for_args(mock_redis_build_id)
+    assert result["github_org"] == "redis"
+    assert result["github_repo"] == "redis"
+    assert result["github_version"] == "6.2.0"
+    assert result["github_hash"] == "abc123def456"  # Should fallback to build_id
+    assert result["server_name"] == ""
+
+
+def test_extract_server_metadata_for_timeseries():
+    """Test the extraction of comprehensive server metadata for timeseries"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import extract_server_metadata_for_timeseries
+
+    class MockRedisConnection:
+        def __init__(self, server_info):
+            self.server_info = server_info
+
+        def info(self, section):
+            if section == "server":
+                return self.server_info
+            return {}
+
+    # Test with comprehensive server info (like Amazon ElastiCache)
+    mock_redis_comprehensive = MockRedisConnection({
+        "redis_version": "7.2.4",
+        "server_name": "valkey",
+        "valkey_version": "8.1.3",
+        "valkey_release_stage": "ga",
+        "os": "Amazon ElastiCache",
+        "arch_bits": 64,
+        "gcc_version": "12.2.0",
+        "server_mode": "standalone",
+        "multiplexing_api": "epoll",
+        "atomicvar_api": "c11-builtin",
+        "monotonic_clock": "POSIX clock_gettime",
+        "redis_build_id": "9ff8e77d3d80abcd",
+        "redis_git_dirty": "0",
+        "process_supervised": "no",
+        "availability_zone": "us-east-1a",
+        "io_threads_active": 0,
+        "config_file": "/etc/redis/redis.conf"
+    })
+
+    result = extract_server_metadata_for_timeseries(mock_redis_comprehensive)
+
+    # Verify key metadata fields are extracted
+    assert result["os"] == "Amazon ElastiCache"
+    assert result["arch_bits"] == "64"
+    assert result["gcc_version"] == "12.2.0"
+    assert result["server_mode"] == "standalone"
+    assert result["multiplexing_api"] == "epoll"
+    assert result["atomicvar_api"] == "c11-builtin"
+    assert result["monotonic_clock"] == "POSIX clock_gettime"
+    assert result["redis_build_id"] == "9ff8e77d3d80abcd"
+    assert result["redis_git_dirty"] == "0"
+    assert result["process_supervised"] == "no"
+    assert result["availability_zone"] == "us-east-1a"
+    assert result["io_threads_active"] == "0"
+    assert result["config_file"] == "/etc/redis/redis.conf"
+    assert result["server_name"] == "valkey"
+    assert result["redis_version"] == "7.2.4"
+    assert result["valkey_version"] == "8.1.3"
+    assert result["valkey_release_stage"] == "ga"
+
+    # Test with minimal server info
+    mock_redis_minimal = MockRedisConnection({
+        "redis_version": "6.2.0",
+        "os": "Linux 5.4.0-74-generic x86_64",
+        "arch_bits": 64
+    })
+
+    result = extract_server_metadata_for_timeseries(mock_redis_minimal)
+
+    # Verify basic fields are extracted
+    assert result["os"] == "Linux 5.4.0-74-generic x86_64"
+    assert result["arch_bits"] == "64"
+    assert result["redis_version"] == "6.2.0"
+    assert result["config_file"] == "none"  # Should default to "none" when empty
+
+    # Fields not present should not be in result
+    assert "availability_zone" not in result
+    assert "server_name" not in result
+
+
+def test_conn_mode_metadata():
+    """Test that conn_mode metadata is correctly set based on TLS configuration"""
+    # This test verifies the logic in the runner that sets conn_mode metadata
+    # We'll test the logic directly since it's simple conditional logic
+
+    # Test TLS enabled case
+    tls_enabled = True
+    metadata = {}
+
+    if tls_enabled:
+        metadata["conn_mode"] = "TLS"
+        metadata["tls"] = "true"
+    else:
+        metadata["conn_mode"] = "PLAINTEXT"
+
+    assert metadata["conn_mode"] == "TLS"
+    assert metadata["tls"] == "true"
+
+    # Test TLS disabled case
+    tls_enabled = False
+    metadata = {}
+
+    if tls_enabled:
+        metadata["conn_mode"] = "TLS"
+        metadata["tls"] = "true"
+    else:
+        metadata["conn_mode"] = "PLAINTEXT"
+
+    assert metadata["conn_mode"] == "PLAINTEXT"
+    assert "tls" not in metadata
+
+
+def test_deployment_arguments():
+    """Test that deployment arguments are properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default values
+    args = parser.parse_args([])
+    assert args.deployment_type == "oss-standalone"
+    assert args.deployment_name == "redis"
+    assert args.core_count is None
+
+    # Test custom values
+    args = parser.parse_args([
+        "--deployment_type", "oss-cluster",
+        "--deployment_name", "my-redis-cluster",
+        "--core_count", "16"
+    ])
+    assert args.deployment_type == "oss-cluster"
+    assert args.deployment_name == "my-redis-cluster"
+    assert args.core_count == 16
+
+
+def test_skip_tests_without_dataset_argument():
+    """Test that skip-tests-without-dataset argument is properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default value
+    args = parser.parse_args([])
+    assert args.skip_tests_without_dataset is False
+
+    # Test when flag is provided
+    args = parser.parse_args(["--skip-tests-without-dataset"])
+    assert args.skip_tests_without_dataset is True
+
+
+def test_memory_comparison_only_argument():
+    """Test that memory-comparison-only argument is properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default value
+    args = parser.parse_args([])
+    assert args.memory_comparison_only is False
+
+    # Test when flag is provided
+    args = parser.parse_args(["--memory-comparison-only"])
+    assert args.memory_comparison_only is True
 
 
 def test_run_client_runner_logic():

@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-string-with-10B-values-pipeline-100-nokeyprefix
-description: memtier_benchmark, 1M keys, string SET, 10B value size, pipeline=100, no key prefix
+description: memtier_benchmark, 1M keys, string SET, 10B value size, pipeline=100,
+  no key prefix
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,6 +10,7 @@ dbconfig:
   resources:
     requests:
       memory: 1g
+  dataset_name: 1Mkeys-load-string-with-10B-values-pipeline-100-nokeyprefix
 tested-groups:
 - string
 tested-commands:
@@ -19,10 +21,10 @@ redis-topologies:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "10" --command "SET __key__ __data__" --command-key-pattern="R" --key-prefix="" -c 50 -t 2 --pipeline 100 --hide-histogram --test-time 180'
+  arguments: '"--data-size" "10" --command "SET __key__ __data__" --command-key-pattern="R"
+    --key-prefix="" -c 50 -t 2 --pipeline 100 --hide-histogram --test-time 180'
   resources:
     requests:
       cpus: '3'
       memory: 2g
-
 priority: 33

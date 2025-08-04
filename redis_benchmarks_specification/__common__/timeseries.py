@@ -147,7 +147,11 @@ def extract_results_table(
 
                     # For precision_summary metrics, construct the full resolved path for display
                     display_path = metric_jsonpath
-                    if "precision_summary" in metric_jsonpath and "*" in metric_jsonpath and use_metric_context_path:
+                    if (
+                        "precision_summary" in metric_jsonpath
+                        and "*" in metric_jsonpath
+                        and use_metric_context_path
+                    ):
                         # Replace the wildcard with the actual precision level
                         display_path = metric_jsonpath.replace("*", metric_context_path)
 
@@ -156,7 +160,10 @@ def extract_results_table(
                         metric_name = metric_jsonpath
                     else:
                         # For display purposes, use the resolved path for precision_summary
-                        if "precision_summary" in metric_jsonpath and "*" in metric_jsonpath:
+                        if (
+                            "precision_summary" in metric_jsonpath
+                            and "*" in metric_jsonpath
+                        ):
                             metric_name = display_path
                         else:
                             # Clean up the metric name for other cases
@@ -167,7 +174,11 @@ def extract_results_table(
                             metric_name = metric_name.replace(" ", "_")
 
                     # Apply standard cleaning to all metric names
-                    if not ("precision_summary" in metric_jsonpath and "*" in metric_jsonpath and use_metric_context_path):
+                    if not (
+                        "precision_summary" in metric_jsonpath
+                        and "*" in metric_jsonpath
+                        and use_metric_context_path
+                    ):
                         metric_name = metric_name.replace("'", "")
                         metric_name = metric_name.replace('"', "")
                         metric_name = metric_name.replace("(", "")

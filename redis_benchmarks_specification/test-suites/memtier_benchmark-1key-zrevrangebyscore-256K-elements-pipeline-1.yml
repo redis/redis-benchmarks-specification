@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-zrevrangebyscore-256K-elements-pipeline-1
-description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 256K elements of 1KB each and we query it using ZREVRANGEBYSCORE.
+description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 256K elements of 1KB each and we query it using ZREVRANGEBYSCORE.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,13 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="ZADD key1 __key__  __data__" --command-key-pattern=P --key-maximum 262144 --key-prefix "" -R --data-size=1024 -n 262144 --hide-histogram -t 1 -c 1
+    arguments: --command="ZADD key1 __key__  __data__" --command-key-pattern=P --key-maximum
+      262144 --key-prefix "" -R --data-size=1024 -n 262144 --hide-histogram -t 1 -c
+      1
   resources:
     requests:
       memory: 1g
+  dataset_name: 1key-256K-elements
 tested-groups:
 - sorted-set
 tested-commands:
@@ -25,10 +29,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZREVRANGEBYSCORE key1 262144 1 WITHSCORES LIMIT 1 10" --hide-histogram --test-time 180 --pipeline 1
+  arguments: --command="ZREVRANGEBYSCORE key1 262144 1 WITHSCORES LIMIT 1 10" --hide-histogram
+    --test-time 180 --pipeline 1
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 16

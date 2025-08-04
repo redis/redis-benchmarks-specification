@@ -196,6 +196,7 @@ def exporter_datasink_common(
             ]
         },
     )
+    print(overall_end_time_metrics)
     # 7 days from now
     expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
     export_redis_metrics(
@@ -234,3 +235,19 @@ def exporter_datasink_common(
         {"metric-type": "commandstats"},
         expire_redis_metrics_ms,
     )
+
+    # Update deployment tracking sets
+    deployment_type_and_name = f"{setup_type}_AND_{setup_name}"
+    deployment_type_and_name_and_version = f"{setup_type}_AND_{setup_name}_AND_{git_version}"
+
+    # Add to deployment-specific set
+    deployment_set_key = f"ci.benchmarks.redislabs/{tf_triggering_env}/{deployment_type_and_name_and_version}:set"
+    datasink_conn.sadd(deployment_set_key, test_name)
+
+    # Add to testcases set
+    testcases_set_key = f"ci.benchmarks.redislabs/{tf_triggering_env}/testcases:set"
+    datasink_conn.sadd(testcases_set_key, test_name)
+
+    # Add metadata fields to timeseries metadata
+    metadata["deployment_type_AND_deployment_name"] = deployment_type_and_name
+    metadata["deployment_type_AND_deployment_name_AND_version"] = deployment_type_and_name_and_version

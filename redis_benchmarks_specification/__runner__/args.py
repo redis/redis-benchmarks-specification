@@ -21,6 +21,12 @@ def create_client_runner_args(project_name):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=project_name,
+        help="Show version information and exit",
+    )
+    parser.add_argument(
         "--platform-name",
         type=str,
         default=MACHINE_NAME,
@@ -34,6 +40,24 @@ def create_client_runner_args(project_name):
     )
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--setup_type", type=str, default="oss-standalone")
+    parser.add_argument(
+        "--deployment_type",
+        type=str,
+        default="oss-standalone",
+        help="Deployment type for the Redis instance (e.g., oss-standalone, oss-cluster, enterprise)"
+    )
+    parser.add_argument(
+        "--deployment_name",
+        type=str,
+        default="redis",
+        help="Deployment name identifier for the Redis instance"
+    )
+    parser.add_argument(
+        "--core_count",
+        type=int,
+        default=None,
+        help="Number of CPU cores available to the Redis instance"
+    )
     parser.add_argument("--github_repo", type=str, default="redis")
     parser.add_argument("--github_org", type=str, default="redis")
     parser.add_argument("--github_version", type=str, default="NA")
@@ -151,6 +175,18 @@ def create_client_runner_args(project_name):
         default=False,
         action="store_true",
         help="Run tests that contain a dbconfig with dataset",
+    )
+    parser.add_argument(
+        "--skip-tests-without-dataset",
+        default=False,
+        action="store_true",
+        help="Skip tests that do not contain a dbconfig with dataset",
+    )
+    parser.add_argument(
+        "--memory-comparison-only",
+        default=False,
+        action="store_true",
+        help="Run memory comparison only - execute preload and measure memory usage without client benchmarks",
     )
     parser.add_argument(
         "--client_aggregated_results_folder",

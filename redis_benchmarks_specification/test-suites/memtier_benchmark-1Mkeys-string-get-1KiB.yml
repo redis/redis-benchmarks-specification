@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-get-1KiB
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 1000 Bytes for each key.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 1000 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,12 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '--data-size 1000 --pipeline 50 -n allkeys --ratio 1:0 --key-pattern P:P -c 1 -t 4 --hide-histogram --key-minimum 1 --key-maximum 1000000'
+    arguments: --data-size 1000 --pipeline 50 -n allkeys --ratio 1:0 --key-pattern
+      P:P -c 1 -t 4 --hide-histogram --key-minimum 1 --key-maximum 1000000
   resources:
     requests:
       memory: 2g
+  dataset_name: 1Mkeys-string-get-1KiB
 tested-commands:
 - get
 redis-topologies:
@@ -23,12 +26,13 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 1 --data-size 1000 --ratio 0:1 --distinct-client-seed --key-pattern R:R -c 25 -t 4 --hide-histogram --test-time 180 --key-minimum 1 --key-maximum 1000000
+  arguments: --pipeline 1 --data-size 1000 --ratio 0:1 --distinct-client-seed --key-pattern
+    R:R -c 25 -t 4 --hide-histogram --test-time 180 --key-minimum 1 --key-maximum
+    1000000
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 tested-groups:
 - string
 priority: 1

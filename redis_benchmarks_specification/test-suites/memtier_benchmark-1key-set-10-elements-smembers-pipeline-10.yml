@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-set-10-elements-smembers-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 10 elements in it and we query it using SMEMBERS that returns all elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
+  contains 10 elements in it and we query it using SMEMBERS that returns all elements. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,7 +11,9 @@ dbconfig:
     requests:
       memory: 1g
   init_commands:
-   - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
+    "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  dataset_name: 1key-set-10-elements-string
 tested-groups:
 - set
 tested-commands:
@@ -23,10 +26,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time 180
+  arguments: --pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time
+    180
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 23

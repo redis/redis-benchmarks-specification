@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-generic-scan-cursor-count-500-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on SCAN performance with CURSOR and large COUNT.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
+  SCAN performance with CURSOR and large COUNT.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,13 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--pipeline" "100" "--data-size" "100" "--command" "HSET __key__ field __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--pipeline" "100" "--data-size" "100" "--command" "HSET __key__ field
+      __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram"
+      "--key-minimum" "1"'
   resources:
     requests:
       memory: 1g
+  dataset_name: 1Mkeys-generic-scan-cursor-count-500-pipeline-10
 tested-commands:
 - scan
 tested-groups:
@@ -25,10 +29,11 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "SCAN __key__ COUNT 500" --key-prefix "" --distinct-client-seed --key-maximum 1000000 --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --command "SCAN __key__ COUNT 500" --key-prefix "" --distinct-client-seed
+    --key-maximum 1000000 --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram
+    --test-time 180
   resources:
     requests:
       cpus: '2'
       memory: 2g
-
 priority: 44

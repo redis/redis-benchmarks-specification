@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10K-elements-lindex-string-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10000 string elements in it and we query it using LPOS of a element that we know it is in the middle of the list. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
+  contains 10000 string elements in it and we query it using LPOS of a element that
+  we know it is in the middle of the list. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,11 +11,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --hide-histogram --command "RPUSH strlist __key__" --key-maximum 10000 --key-minimum 1 -n allkeys --key-prefix "hello" --command-key-pattern S -c 1 -t 1 --pipeline 10
+    arguments: --hide-histogram --command "RPUSH strlist __key__" --key-maximum 10000
+      --key-minimum 1 -n allkeys --key-prefix "hello" --command-key-pattern S -c 1
+      -t 1 --pipeline 10
   resources:
     requests:
       cpus: '2'
       memory: 1g
+  dataset_name: 1key-list-10K-elements-string
 tested-groups:
 - list
 tested-commands:
@@ -26,7 +31,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="LINDEX strlist 5000"  --hide-histogram --test-time 120 --pipeline 10
+  arguments: --command="LINDEX strlist 5000"  --hide-histogram --test-time 120 --pipeline
+    10
   resources:
     requests:
       cpus: '4'

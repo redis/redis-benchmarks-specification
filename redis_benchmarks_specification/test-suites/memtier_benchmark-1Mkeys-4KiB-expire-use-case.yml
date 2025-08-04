@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-4KiB-expire-use-case
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 4KiB Bytes for each key, which 50% of the keys have expiration set during the benchmark.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 4KiB Bytes for each key, which 50% of the keys have expiration set during
+  the benchmark.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +11,13 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "1000" "--command" "SET __key__ __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"  "--key-maximum" "1000000"'
+    arguments: '"--data-size" "1000" "--command" "SET __key__ __data__" "--command-key-pattern"
+      "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"  "--key-maximum"
+      "1000000"'
   resources:
     requests:
       memory: 3g
+  dataset_name: 1Mkeys-4KiB-expire-use-case
 tested-groups:
 - string
 - generic
@@ -30,10 +35,13 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--key-minimum" "1"  "--key-maximum" "1000000" "--data-size" "4000" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120'
+  arguments: '"--key-minimum" "1"  "--key-maximum" "1000000" "--data-size" "4000"
+    --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET
+    __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R"
+    --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram
+    --test-time 120'
   resources:
     requests:
       cpus: '3'
       memory: 2g
-
 priority: 33

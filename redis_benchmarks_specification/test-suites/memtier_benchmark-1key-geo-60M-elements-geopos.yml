@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-geo-60M-elements-geopos
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEOPOS command. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO
+  key contains 60841557 elements in it and we query it using GEOPOS command. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,6 +11,7 @@ dbconfig:
   resources:
     requests:
       memory: 6g
+  dataset_name: 1key-geo-60M-elements
 tested-groups:
 - geo
 tested-commands:
@@ -27,5 +29,4 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 138

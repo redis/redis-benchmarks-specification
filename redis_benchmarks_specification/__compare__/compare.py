@@ -255,7 +255,9 @@ def compare_command_logic(args, project_name, project_version):
     # Handle separate baseline and comparison platform/environment arguments
     # Fall back to general arguments if specific ones are not provided
     running_platform_baseline = args.running_platform_baseline or args.running_platform
-    running_platform_comparison = args.running_platform_comparison or args.running_platform
+    running_platform_comparison = (
+        args.running_platform_comparison or args.running_platform
+    )
     triggering_env_baseline = args.triggering_env_baseline or args.triggering_env
     triggering_env_comparison = args.triggering_env_comparison or args.triggering_env
 
@@ -731,7 +733,9 @@ def compute_regression_table(
         _,
         _,
         _,
-    ) = get_overall_dashboard_keynames(tf_github_org, tf_github_repo, tf_triggering_env_baseline)
+    ) = get_overall_dashboard_keynames(
+        tf_github_org, tf_github_repo, tf_triggering_env_baseline
+    )
     test_names = []
     used_key = testcases_setname
     test_filter = "test_name"
@@ -1167,25 +1171,31 @@ def from_rts_to_regression_table(
         multi_value_comparison = check_multi_value_filter(comparison_str)
 
         filters_baseline = [
-            "{}={}".format(by_str_baseline, baseline_str),
             "metric={}".format(metric_name),
             "{}={}".format(test_filter, test_name),
-            "deployment_name={}".format(baseline_deployment_name),
             "github_repo={}".format(baseline_github_repo),
             "triggering_env={}".format(tf_triggering_env_baseline),
         ]
+        if baseline_str != "":
+            filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
+        if baseline_deployment_name != "":
+            filters_baseline.append("deployment_name={}".format(baseline_deployment_name))
         if baseline_github_org != "":
             filters_baseline.append(f"github_org={baseline_github_org}")
         if running_platform_baseline is not None:
-            filters_baseline.append("running_platform={}".format(running_platform_baseline))
+            filters_baseline.append(
+                "running_platform={}".format(running_platform_baseline)
+            )
         filters_comparison = [
-            "{}={}".format(by_str_comparison, comparison_str),
             "metric={}".format(metric_name),
             "{}={}".format(test_filter, test_name),
-            "deployment_name={}".format(comparison_deployment_name),
             "github_repo={}".format(comparison_github_repo),
             "triggering_env={}".format(tf_triggering_env_comparison),
         ]
+        if comparison_str != "":
+            filters_comparison.append("{}={}".format(by_str_comparison, comparison_str))
+        if comparison_deployment_name != "":
+            filters_comparison.append("deployment_name={}".format(comparison_deployment_name))
         if comparison_github_org != "":
             filters_comparison.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
@@ -1193,7 +1203,9 @@ def from_rts_to_regression_table(
         if "hash" not in by_str_comparison:
             filters_comparison.append("hash==")
         if running_platform_comparison is not None:
-            filters_comparison.append("running_platform={}".format(running_platform_comparison))
+            filters_comparison.append(
+                "running_platform={}".format(running_platform_comparison)
+            )
         baseline_timeseries = rts.ts().queryindex(filters_baseline)
         comparison_timeseries = rts.ts().queryindex(filters_comparison)
 

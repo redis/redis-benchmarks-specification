@@ -61,13 +61,13 @@ def create_compare_arguments(parser):
         "--triggering_env_baseline",
         type=str,
         default=None,
-        help="Triggering environment for baseline data. If not specified, falls back to --triggering_env"
+        help="Triggering environment for baseline data. If not specified, falls back to --triggering_env",
     )
     parser.add_argument(
         "--triggering_env_comparison",
         type=str,
         default=None,
-        help="Triggering environment for comparison data. If not specified, falls back to --triggering_env"
+        help="Triggering environment for comparison data. If not specified, falls back to --triggering_env",
     )
     parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
@@ -83,13 +83,13 @@ def create_compare_arguments(parser):
         "--running_platform_baseline",
         type=str,
         default=None,
-        help="Platform for baseline data. If not specified, falls back to --running_platform"
+        help="Platform for baseline data. If not specified, falls back to --running_platform",
     )
     parser.add_argument(
         "--running_platform_comparison",
         type=str,
         default=None,
-        help="Platform for comparison data. If not specified, falls back to --running_platform"
+        help="Platform for comparison data. If not specified, falls back to --running_platform",
     )
     parser.add_argument("--extra-filter", type=str, default=None)
     parser.add_argument(
