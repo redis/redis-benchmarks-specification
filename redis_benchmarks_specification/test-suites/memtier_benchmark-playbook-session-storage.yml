@@ -6,12 +6,27 @@ description: |
   and rate limiting. It includes realistic key sizes and command mixes representative
   of production traffic (e.g., 400–600B session hashes, ZSETs for analytics, and SETs for tracking).
 
-  Rate limiting is modeled using Redis counters with expiration and readback: each user has a
-  dedicated rate-limit key in the form of `ratelimit:user-<id>:/api/resource`, which is:
-    - incremented (`INCR`) to track API usage,
-    - assigned a TTL (`EXPIRE`) to define the 60-second rate window,
-    - and read (`GET`) to simulate application-side decision-making (e.g., to check if a user is over quota).
-  This models realistic per-user rate-limiting behavior for a single endpoint.
+  Rate limiting is modeled using an atomic Lua script, inspired by the Upstash Redis example:
+  https://github.com/upstash/examples/tree/main/examples/ratelimit-with-redis
+
+  Each user has a dedicated key in the form of `ratelimit:user-<id>:/api/resource`, which is
+  used to track usage under a fixed window. The logic is evaluated atomically with the following script:
+
+      local key = KEYS[1]
+      local limit = 100
+      local window = 60
+      local current = redis.call("INCR", key)
+      if current == 1 then
+        redis.call("EXPIRE", key, window)
+      end
+      if current > limit then
+        return 0
+      else
+        return 1
+      end
+
+  This ensures that rate enforcement and usage tracking are done without race conditions, and
+  mirrors a real-world API quota model.
 
   The workload emphasizes read-heavy patterns to reflect common SaaS access behavior. The overall
   **read:write ratio is approximately 85:15**, with read operations covering session access, user-session
@@ -22,7 +37,7 @@ description: |
     - Session CRUD (HGETALL, HSET): ~55%
     - User session tracking (SMEMBERS, SADD): ~21%
     - Organization analytics (ZRANGE, ZADD): ~12%
-    - Rate limiting (INCR, EXPIRE, GET): ~12%
+    - Rate limiting (EVAL-based quota check): ~12%
 
 exporter:
   redistimeseries:
@@ -37,9 +52,7 @@ exporter:
     - $."BEST RUN RESULTS".Sadds."Ops/sec"
     - $."BEST RUN RESULTS".Zranges."Ops/sec"
     - $."BEST RUN RESULTS".Zadds."Ops/sec"
-    - $."BEST RUN RESULTS".Incrs."Ops/sec"
-    - $."BEST RUN RESULTS".Gets."Ops/sec"
-    - $."BEST RUN RESULTS".Expires."Ops/sec"
+    - $."BEST RUN RESULTS".Evals."Ops/sec"
     - $."BEST RUN RESULTS".Totals."Ops/sec"
     - $."BEST RUN RESULTS".Totals."Latency"
     - $."BEST RUN RESULTS".Totals."Misses/sec"
@@ -51,9 +64,7 @@ exporter:
     - $."ALL STATS".Sadds."Ops/sec"
     - $."ALL STATS".Zranges."Ops/sec"
     - $."ALL STATS".Zadds."Ops/sec"
-    - $."ALL STATS".Incrs."Ops/sec"
-    - $."ALL STATS".Gets."Ops/sec"
-    - $."ALL STATS".Expires."Ops/sec"
+    - $."ALL STATS".Evals."Ops/sec"
     - $."ALL STATS".Totals."Ops/sec"
     - $."ALL STATS".Totals."Latency"
     - $."ALL STATS".Totals."Misses/sec"
@@ -63,9 +74,7 @@ exporter:
     - $."ALL STATS".Sadds."Percentile Latencies"."p50.00"
     - $."ALL STATS".Zranges."Percentile Latencies"."p50.00"
     - $."ALL STATS".Zadds."Percentile Latencies"."p50.00"
-    - $."ALL STATS".Incrs."Percentile Latencies"."p50.00"
-    - $."ALL STATS".Gets."Percentile Latencies"."p50.00"
-    - $."ALL STATS".Expires."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Evals."Percentile Latencies"."p50.00"
     - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
     - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
 
@@ -182,15 +191,9 @@ clientconfig:
     --command="ZADD org:__key__:sessions 1 user-__key__:session-__key__"
     --command-key-pattern=R
     --command-ratio=2
-    --command="INCR ratelimit:user-__key__:/api/resource"
+    --command='EVAL "local key=KEYS[1];local limit=10;local window=60;local current=redis.call(\"INCR\",key);if current==1 then redis.call(\"EXPIRE\",key,window) end;if current>limit then return 0 else return 1 end" 1 ratelimit:user-__key__:/api/resource'
     --command-key-pattern=R
-    --command-ratio=4
-    --command="EXPIRE ratelimit:user-__key__:/api/resource 60"
-    --command-key-pattern=R
-    --command-ratio=1
-    --command="GET ratelimit:user-__key__:/api/resource"
-    --command-key-pattern=R
-    --command-ratio=7
+    --command-ratio=12
     --hide-histogram
   resources:
     requests:
