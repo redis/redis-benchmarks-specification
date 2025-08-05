@@ -28,7 +28,10 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
     dbconfig_keyspacelen_check,
 )
-from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
+from redis_benchmarks_specification.__common__.runner import (
+    export_redis_metrics,
+)
 
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
@@ -56,6 +59,7 @@ from redis_benchmarks_specification.__common__.runner import (
     exporter_datasink_common,
     reset_commandstats,
     execute_init_commands,
+    export_redis_metrics,
 )
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
@@ -1935,8 +1939,10 @@ def process_self_contained_coordinator_stream(
                                 tf_github_org,
                                 tf_github_repo,
                                 tf_triggering_env,
-                                {"metric-type": "memory-stats"},
+                                metadata,
                                 expire_redis_metrics_ms,
+                                git_hash,
+                                running_platform,
                             )
                             
                             exporter_datasink_common(
@@ -1962,8 +1968,8 @@ def process_self_contained_coordinator_stream(
                                 topology_spec_name,
                                 default_metrics,
                                 git_hash,
-                                collect_commandstats=False,
-                                collect_memory_metrics=True,
+                                False,
+                                True,
                             )
 
                         # Send MEMORY PURGE after memory comparison (if FLUSHALL at test end is not enabled)
