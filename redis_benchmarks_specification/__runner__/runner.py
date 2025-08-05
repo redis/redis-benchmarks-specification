@@ -28,6 +28,8 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
     dbconfig_keyspacelen_check,
 )
+from redisbench_admin.run_remote.run_remote import export_redis_metrics
+
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -219,6 +221,176 @@ def extract_expected_benchmark_duration(
 
     # Default duration if not found
     return 30
+
+
+def detect_object_encoding(redis_conn, dbconfig):
+    """
+    Detect object encoding by scanning 1% of the dataset.
+
+    Args:
+        redis_conn: Redis connection
+        dbconfig: Database configuration containing keyspace info
+
+    Returns:
+        Dict with encoding information
+    """
+    try:
+        # Get total key count
+        total_keys = redis_conn.dbsize()
+        logging.debug(f"Object encoding detection: DBSIZE reports {total_keys} keys")
+
+        if total_keys == 0:
+            logging.warning("No keys found in database for encoding detection")
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": 0,
+                "encoding_distribution": {}
+            }
+
+        # Determine scanning strategy based on dataset size
+        if total_keys <= 1000:
+            # For small datasets, scan all keys for complete accuracy
+            sample_size = total_keys
+            scan_all_keys = True
+            logging.info(f"Scanning all {total_keys} keys (small dataset - complete analysis)")
+        else:
+            # For large datasets, sample 1% (minimum 10, maximum 1000)
+            sample_size = max(10, min(1000, int(total_keys * 0.01)))
+            scan_all_keys = False
+            logging.info(f"Sampling {sample_size} keys out of {total_keys} total keys ({(sample_size/total_keys)*100:.2f}%)")
+
+        # Use SCAN to get keys
+        encoding_counts = {}
+        scanned_keys = []
+        cursor = 0
+
+        if scan_all_keys:
+            # Scan all keys in the database
+            while True:
+                cursor, keys = redis_conn.scan(cursor=cursor, count=100)
+                scanned_keys.extend(keys)
+
+                # Break if we've completed a full scan
+                if cursor == 0:
+                    break
+        else:
+            # Sample keys until we reach our target sample size
+            while len(scanned_keys) < sample_size:
+                cursor, keys = redis_conn.scan(cursor=cursor, count=min(100, sample_size - len(scanned_keys)))
+                scanned_keys.extend(keys)
+
+                # Break if we've completed a full scan
+                if cursor == 0:
+                    break
+
+            # Limit to our target sample size
+            scanned_keys = scanned_keys[:sample_size]
+
+        logging.debug(f"SCAN completed: found {len(scanned_keys)} keys, cursor ended at {cursor}")
+
+        # If SCAN didn't find any keys but we know there are keys, try KEYS command as fallback
+        if len(scanned_keys) == 0 and total_keys > 0:
+            logging.warning(f"SCAN found no keys but DBSIZE reports {total_keys} keys. Trying KEYS fallback.")
+            try:
+                # Use KEYS * as fallback (only for small datasets to avoid blocking)
+                if total_keys <= 1000:
+                    all_keys = redis_conn.keys('*')
+                    scanned_keys = all_keys[:sample_size] if not scan_all_keys else all_keys
+                    logging.info(f"KEYS fallback found {len(scanned_keys)} keys")
+                else:
+                    logging.error(f"Cannot use KEYS fallback for large dataset ({total_keys} keys)")
+            except Exception as e:
+                logging.error(f"KEYS fallback failed: {e}")
+
+        # Final check: if we still have no keys, return early
+        if len(scanned_keys) == 0:
+            logging.error(f"No keys found for encoding detection despite DBSIZE={total_keys}")
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": total_keys,
+                "encoding_distribution": {},
+                "is_complete_scan": scan_all_keys,
+                "error": "No keys found by SCAN or KEYS commands"
+            }
+
+        # Get encoding for each sampled key
+        successful_encodings = 0
+        for i, key in enumerate(scanned_keys):
+            try:
+                # Use the redis-py object_encoding method instead of raw command
+                encoding = redis_conn.object("ENCODING", key)
+                if isinstance(encoding, bytes):
+                    encoding = encoding.decode('utf-8')
+                elif encoding is None:
+                    # Key might have expired or been deleted
+                    logging.debug(f"Key '{key}' returned None encoding (key may have expired)")
+                    continue
+
+                encoding_counts[encoding] = encoding_counts.get(encoding, 0) + 1
+                successful_encodings += 1
+
+                # Log first few keys for debugging
+                if i < 3:
+                    logging.debug(f"Key '{key}' has encoding '{encoding}'")
+
+            except Exception as e:
+                logging.warning(f"Failed to get encoding for key {key}: {e}")
+                continue
+
+        logging.debug(f"Successfully got encoding for {successful_encodings}/{len(scanned_keys)} keys")
+
+        if not encoding_counts:
+            logging.warning(f"No object encodings detected! Scanned {len(scanned_keys)} keys, successful encodings: {successful_encodings}")
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": total_keys,
+                "encoding_distribution": {},
+                "is_complete_scan": scan_all_keys
+            }
+
+        # Determine dominant encoding
+        total_sampled = sum(encoding_counts.values())
+        dominant_encoding = max(encoding_counts.items(), key=lambda x: x[1])
+        confidence = dominant_encoding[1] / total_sampled
+
+        # Calculate encoding distribution percentages
+        encoding_distribution = {
+            enc: (count / total_sampled) * 100
+            for enc, count in encoding_counts.items()
+        }
+
+        result = {
+            "encoding": dominant_encoding[0],
+            "confidence": confidence,
+            "sample_size": total_sampled,
+            "total_keys": total_keys,
+            "encoding_distribution": encoding_distribution,
+            "is_complete_scan": scan_all_keys
+        }
+
+        scan_type = "complete scan" if scan_all_keys else "sample"
+        logging.info(f"Object encoding analysis ({scan_type}): {dominant_encoding[0]} ({confidence*100:.1f}% confidence)")
+        if len(encoding_counts) > 1:
+            logging.info(f"Encoding distribution: {encoding_distribution}")
+
+        return result
+
+    except Exception as e:
+        logging.error(f"Failed to detect object encoding: {e}")
+        return {
+            "encoding": "error",
+            "confidence": 0.0,
+            "sample_size": 0,
+            "total_keys": 0,
+            "encoding_distribution": {},
+            "error": str(e)
+        }
 
 
 def run_multiple_clients(
@@ -1109,6 +1281,7 @@ def process_self_contained_coordinator_stream(
     dry_run_count = 0
     dry_run_tests = []  # Track test names for dry run output
     memory_results = []  # Track memory results for memory comparison mode
+    loaded_datasets = set()  # Track datasets that have been loaded (for memory comparison mode)
     dry_run = args.dry_run
     memory_comparison_only = args.memory_comparison_only
     dry_run_include_preload = args.dry_run_include_preload
@@ -1122,6 +1295,43 @@ def process_self_contained_coordinator_stream(
         _,
         _,
     ) = get_defaults(defaults_filename)
+
+    # For memory comparison mode, analyze datasets before starting
+    if memory_comparison_only:
+        unique_datasets = set()
+        total_tests_with_datasets = 0
+
+        logging.info("Analyzing datasets for memory comparison mode...")
+        for test_file in testsuite_spec_files:
+            if defaults_filename in test_file:
+                continue
+            try:
+                with open(test_file, "r") as stream:
+                    benchmark_config = yaml.safe_load(stream)
+
+                if "dbconfig" in benchmark_config:
+                    # Skip load tests (keyspacelen = 0) in memory comparison mode
+                    keyspacelen = benchmark_config["dbconfig"].get("check", {}).get("keyspacelen", None)
+                    if keyspacelen is not None and keyspacelen == 0:
+                        logging.debug(f"Skipping load test {test_file} (keyspacelen=0)")
+                        continue
+
+                    dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                    if dataset_name:
+                        unique_datasets.add(dataset_name)
+                        total_tests_with_datasets += 1
+
+            except Exception as e:
+                logging.warning(f"Error analyzing {test_file}: {e}")
+
+        logging.info(f"Memory comparison mode analysis:")
+        logging.info(f"  Total tests with datasets: {total_tests_with_datasets}")
+        logging.info(f"  Unique datasets to load: {len(unique_datasets)}")
+        logging.info(f"  Dataset ingestion savings: {total_tests_with_datasets - len(unique_datasets)} skipped loads")
+        logging.info(f"  Load tests skipped: Tests with keyspacelen=0 are automatically excluded")
+
+        if len(unique_datasets) > 0:
+            logging.info(f"  Unique datasets: {', '.join(sorted(unique_datasets))}")
 
     for test_file in tqdm.tqdm(testsuite_spec_files):
         # Check if user requested exit via Ctrl+C
@@ -1222,7 +1432,7 @@ def process_self_contained_coordinator_stream(
                         logging.info(f"Auto-detected github_version: {git_version}")
 
                     # Auto-detect git hash if it's the default value
-                    if git_hash == "NA" and detected_info["github_hash"] != "unknown":
+                    if (git_hash is None or git_hash == "NA") and detected_info["github_hash"] != "unknown":
                         git_hash = detected_info["github_hash"]
                         logging.info(f"Auto-detected git_hash: {git_hash}")
 
@@ -1493,46 +1703,60 @@ def process_self_contained_coordinator_stream(
                         continue
                     if "dbconfig" in benchmark_config:
                         if "preload_tool" in benchmark_config["dbconfig"]:
-                            # Get timeout buffer for preload
-                            buffer_timeout = getattr(
-                                args,
-                                "timeout_buffer",
-                                getattr(args, "container_timeout_buffer", 60),
-                            )
+                            # Check if this dataset has already been loaded (for memory comparison mode)
+                            dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                            skip_preload = False
 
-                            res = data_prepopulation_step(
-                                benchmark_config,
-                                benchmark_tool_workdir,
-                                client_cpuset_cpus,
-                                docker_client,
-                                git_hash,
-                                port,
-                                temporary_dir_client,
-                                test_name,
-                                host,
-                                tls_enabled,
-                                tls_skip_verify,
-                                test_tls_cert,
-                                test_tls_key,
-                                test_tls_cacert,
-                                resp_version,
-                                args.benchmark_local_install,
-                                password,
-                                oss_cluster_api_enabled,
-                                unix_socket,
-                                buffer_timeout,
-                                args,
-                            )
-                            if res is False:
-                                logging.warning(
-                                    "Skipping this test given preload result was false"
+                            if memory_comparison_only and dataset_name:
+                                if dataset_name in loaded_datasets:
+                                    logging.info(f"Skipping preload for dataset '{dataset_name}' - already loaded")
+                                    skip_preload = True
+                                    continue
+                                else:
+                                    logging.info(f"Loading dataset '{dataset_name}' for the first time")
+                                    loaded_datasets.add(dataset_name)
+
+                            if not skip_preload:
+                                # Get timeout buffer for preload
+                                buffer_timeout = getattr(
+                                    args,
+                                    "timeout_buffer",
+                                    getattr(args, "container_timeout_buffer", 60),
                                 )
-                                delete_temporary_files(
-                                    temporary_dir_client=temporary_dir_client,
-                                    full_result_path=None,
-                                    benchmark_tool_global=benchmark_tool_global,
+
+                                res = data_prepopulation_step(
+                                    benchmark_config,
+                                    benchmark_tool_workdir,
+                                    client_cpuset_cpus,
+                                    docker_client,
+                                    git_hash,
+                                    port,
+                                    temporary_dir_client,
+                                    test_name,
+                                    host,
+                                    tls_enabled,
+                                    tls_skip_verify,
+                                    test_tls_cert,
+                                    test_tls_key,
+                                    test_tls_cacert,
+                                    resp_version,
+                                    args.benchmark_local_install,
+                                    password,
+                                    oss_cluster_api_enabled,
+                                    unix_socket,
+                                    buffer_timeout,
+                                    args,
                                 )
-                                continue
+                                if res is False:
+                                    logging.warning(
+                                        "Skipping this test given preload result was false"
+                                    )
+                                    delete_temporary_files(
+                                        temporary_dir_client=temporary_dir_client,
+                                        full_result_path=None,
+                                        benchmark_tool_global=benchmark_tool_global,
+                                    )
+                                    continue
                     # Send MEMORY PURGE before preload for memory comparison mode (if FLUSHALL wasn't already done)
                     if memory_comparison_only and not args.flushall_on_every_test_start:
                         try:
@@ -1562,6 +1786,43 @@ def process_self_contained_coordinator_stream(
 
                     # For memory comparison mode, collect memory stats after preload and skip client benchmark
                     if memory_comparison_only:
+                        # Initialize timing variables for memory comparison mode
+                        (
+                            start_time,
+                            start_time_ms,
+                            start_time_str,
+                        ) = get_start_time_vars()
+                        dataset_load_duration_seconds = 0  # No dataset loading time for memory comparison
+
+                        # Skip load tests (keyspacelen = 0) in memory comparison mode
+                        keyspacelen = benchmark_config.get("dbconfig", {}).get("check", {}).get("keyspacelen", None)
+                        if keyspacelen is not None and keyspacelen == 0:
+                            logging.info(f"Skipping load test {test_name} in memory comparison mode (keyspacelen=0)")
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        # Handle dry run for memory comparison mode
+                        if dry_run:
+                            dry_run_count = dry_run_count + 1
+                            dry_run_tests.append(test_name)
+                            logging.info(f"[DRY RUN] Would collect memory stats for test {test_name}")
+
+                            # Add dataset info to dry run output
+                            dataset_name = benchmark_config.get("dbconfig", {}).get("dataset_name")
+                            if dataset_name:
+                                logging.info(f"[DRY RUN]   Dataset: {dataset_name}")
+
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                         logging.info(f"Collecting memory stats for test {test_name}")
                         try:
                             # Use raw command to avoid parsing issues with some Redis versions
@@ -1595,6 +1856,11 @@ def process_self_contained_coordinator_stream(
                                 "allocator-fragmentation.ratio": 1.0,
                             }
 
+                        # Detect object encoding by scanning 1% of the dataset
+                        object_encoding_info = detect_object_encoding(r, benchmark_config.get("dbconfig", {}))
+                        logging.info(f"Object encoding detection: {object_encoding_info.get('encoding', 'unknown')} "
+                                   f"({object_encoding_info.get('confidence', 0)*100:.1f}% confidence)")
+
                         # Extract key memory metrics
                         memory_result = {
                             "test_name": test_name,
@@ -1609,6 +1875,12 @@ def process_self_contained_coordinator_stream(
                             "allocator_allocated": memory_stats.get("allocator.allocated", 0),
                             "allocator_resident": memory_stats.get("allocator.resident", 0),
                             "allocator_fragmentation_ratio": memory_stats.get("allocator-fragmentation.ratio", 0),
+                            # Object encoding information
+                            "object_encoding": object_encoding_info.get("encoding", "unknown"),
+                            "encoding_confidence": object_encoding_info.get("confidence", 0.0),
+                            "encoding_sample_size": object_encoding_info.get("sample_size", 0),
+                            "encoding_distribution": object_encoding_info.get("encoding_distribution", {}),
+                            "encoding_is_complete_scan": object_encoding_info.get("is_complete_scan", False),
                         }
                         memory_results.append(memory_result)
 
@@ -1626,8 +1898,47 @@ def process_self_contained_coordinator_stream(
                                 "memory.allocator_allocated": memory_result["allocator_allocated"],
                                 "memory.allocator_resident": memory_result["allocator_resident"],
                                 "memory.allocator_fragmentation_ratio": memory_result["allocator_fragmentation_ratio"],
+                                "memory.encoding_confidence": memory_result["encoding_confidence"],
+                                "memory.encoding_sample_size": memory_result["encoding_sample_size"],
                             }
 
+                            # Add object encoding to metadata
+                            metadata["object_encoding"] = memory_result["object_encoding"]
+                            metadata["encoding_confidence"] = f"{memory_result['encoding_confidence']:.3f}"
+                            metadata["encoding_sample_size"] = str(memory_result["encoding_sample_size"])
+                            metadata["encoding_scan_type"] = "complete" if memory_result.get("encoding_is_complete_scan", False) else "sample"
+
+                            # Add encoding distribution to metadata if multiple encodings found
+                            if len(memory_result["encoding_distribution"]) > 1:
+                                for enc, percentage in memory_result["encoding_distribution"].items():
+                                    metadata[f"encoding_dist_{enc}"] = f"{percentage:.1f}%"
+
+                            # Set datapoint_time_ms for memory comparison mode
+                            datapoint_time_ms = start_time_ms
+                            # 7 days from now
+                            expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
+                            metadata["metric-type"] = "memory-stats"
+
+                            # Debug: Check git_hash value and memory metrics before export
+                            logging.info(f"DEBUG: About to export memory metrics with git_hash='{git_hash}', type={type(git_hash)}")
+                            logging.info(f"DEBUG: memory_metrics_dict has {len(memory_metrics_dict)} items: {list(memory_metrics_dict.keys())}")
+                            logging.info(f"DEBUG: Sample values: {dict(list(memory_metrics_dict.items())[:3])}")
+                            export_redis_metrics(
+                                git_version,
+                                datapoint_time_ms,
+                                memory_metrics_dict,
+                                datasink_conn,
+                                setup_name,
+                                setup_type,
+                                test_name,
+                                git_branch,
+                                tf_github_org,
+                                tf_github_repo,
+                                tf_triggering_env,
+                                {"metric-type": "memory-stats"},
+                                expire_redis_metrics_ms,
+                            )
+                            
                             exporter_datasink_common(
                                 benchmark_config,
                                 0,  # benchmark_duration_seconds = 0 for memory only
@@ -1651,6 +1962,8 @@ def process_self_contained_coordinator_stream(
                                 topology_spec_name,
                                 default_metrics,
                                 git_hash,
+                                collect_commandstats=False,
+                                collect_memory_metrics=True,
                             )
 
                         # Send MEMORY PURGE after memory comparison (if FLUSHALL at test end is not enabled)
@@ -2344,6 +2657,10 @@ def process_self_contained_coordinator_stream(
         logging.info("\n" + "="*80)
         logging.info("MEMORY COMPARISON SUMMARY")
         logging.info("="*80)
+        logging.info(f"Total unique datasets loaded: {len(loaded_datasets)}")
+        if loaded_datasets:
+            logging.info(f"Datasets: {', '.join(sorted(loaded_datasets))}")
+        logging.info("="*80)
 
         # Create memory summary table
         memory_headers = [
@@ -2355,7 +2672,10 @@ def process_self_contained_coordinator_stream(
             "Dataset %",
             "Overhead",
             "Fragmentation",
-            "Alloc Fragmentation"
+            "Alloc Fragmentation",
+            "Object Encoding",
+            "Encoding Confidence",
+            "Scan Type"
         ]
 
         memory_matrix = []
@@ -2374,7 +2694,10 @@ def process_self_contained_coordinator_stream(
                 f"{result['dataset_percentage']:.1f}%",
                 f"{overhead_mb:.1f}MB",
                 f"{result['fragmentation']:.2f}",
-                f"{result['allocator_fragmentation_ratio']:.3f}"
+                f"{result['allocator_fragmentation_ratio']:.3f}",
+                result.get("object_encoding", "unknown"),
+                f"{result.get('encoding_confidence', 0.0)*100:.1f}%",
+                "complete" if result.get("encoding_is_complete_scan", False) else "sample"
             ])
 
         memory_writer = MarkdownTableWriter(
@@ -2385,15 +2708,55 @@ def process_self_contained_coordinator_stream(
         memory_writer.write_table()
 
     if dry_run is True:
+        mode_description = "memory comparison" if memory_comparison_only else "benchmark"
         logging.info(
-            "Number of tests that would have been run: {}".format(dry_run_count)
+            "Number of tests that would have been run ({}): {}".format(mode_description, dry_run_count)
         )
         if _exit_requested:
             logging.info("(Note: Execution was stopped early by user request)")
         if dry_run_tests:
-            logging.info("Tests that would be run:")
+            logging.info(f"Tests that would be run ({mode_description} mode):")
+            for test in dry_run_tests:
+                logging.info(f"  - {test}")
             final_test_regex = "|".join(dry_run_tests)
             logging.info(f"Final test regex: {final_test_regex}")
+
+            # For memory comparison mode, show dataset analysis
+            if memory_comparison_only:
+                unique_datasets = set()
+                tests_with_datasets = 0
+
+                for test_file in testsuite_spec_files:
+                    if defaults_filename in test_file:
+                        continue
+                    try:
+                        with open(test_file, "r") as stream:
+                            benchmark_config = yaml.safe_load(stream)
+
+                        test_name = extract_test_name_from_test_configuration_file(test_file)
+                        if test_name in dry_run_tests and "dbconfig" in benchmark_config:
+                            # Skip load tests in dry run analysis too
+                            keyspacelen = benchmark_config["dbconfig"].get("check", {}).get("keyspacelen", None)
+                            if keyspacelen is not None and keyspacelen == 0:
+                                continue
+
+                            dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                            if dataset_name:
+                                unique_datasets.add(dataset_name)
+                                tests_with_datasets += 1
+
+                    except Exception as e:
+                        logging.debug(f"Error analyzing {test_file} for dry run: {e}")
+
+                if tests_with_datasets > 0:
+                    logging.info(f"\nMemory comparison analysis:")
+                    logging.info(f"  Tests with datasets: {tests_with_datasets}")
+                    logging.info(f"  Unique datasets: {len(unique_datasets)}")
+                    logging.info(f"  Dataset ingestion savings: {tests_with_datasets - len(unique_datasets)} skipped loads")
+                    if unique_datasets:
+                        logging.info(f"  Datasets that would be loaded:")
+                        for dataset in sorted(unique_datasets):
+                            logging.info(f"    - {dataset}")
 
 
 def get_maxmemory(r):

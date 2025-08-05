@@ -41,7 +41,9 @@ dbconfig:
     "0.282908" "nxcdcaqgit" "0.030110" "ewomnmugfa" "0.164237" "rkaznetutk" "0.281729"
     "rqvryfvlie" "0.877790" "holjcdpijr" "0.878293" "pquewclxuy" "0.674968" "ocrcszcznp"
     "0.520069" "xczfmrxrja" "0.314841" "nxzsnkmxvi" "0.719988" "hhjchwjlmc"'
-  dataset_name: 1key-zset-100-elements-zrangebyscore-all-elements
+  dataset_name: 1key-zset-100-elements-float
+  dataset_description: This dataset contains 1 sorted set key with 100 elements, each
+    with a floating point score.
 tested-groups:
 - sorted-set
 tested-commands:

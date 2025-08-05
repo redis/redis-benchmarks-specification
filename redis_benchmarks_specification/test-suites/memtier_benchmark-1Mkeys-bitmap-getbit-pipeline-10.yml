@@ -11,12 +11,14 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2
-      --pipeline 10 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
+      --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
   resources:
     requests:
       cpus: '2'
       memory: 1g
-  dataset_name: 1Mkeys-bitmap-getbit-pipeline-10
+  dataset_name: 1Mkeys-bitmap-1bit-size
+  dataset_description: This dataset contains 1 million bitmap keys, each with a size
+    of 1 bit.
 tested-commands:
 - getbit
 tested-groups:
@@ -29,7 +31,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
+  arguments: --pipeline 50 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
     "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time
     180
   resources:

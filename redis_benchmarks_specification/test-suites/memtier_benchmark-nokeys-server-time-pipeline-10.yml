@@ -7,7 +7,6 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: nokeys-server-time-pipeline-10
 tested-groups:
 - server
 tested-commands:

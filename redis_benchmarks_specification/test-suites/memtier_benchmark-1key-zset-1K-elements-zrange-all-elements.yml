@@ -298,7 +298,8 @@ dbconfig:
     "uncqdpbhwb" "0.231924" "bdtbaxnuko" "0.138864" "fsthobmdxk" "0.309461" "auwfujaoya"
     "0.288084" "hertbwuzyw" "0.452947" "azpwrzovza" "0.987974" "yilvzcevlj" "0.374557"
     "kpfqxroqbs" "0.224445" "dlomhvkoxg" "0.205225" "vjhpmffzxc" "0.863114" "klwqsggtob"'
-  dataset_name: 1key-zset-1K-elements
+  dataset_name: 1key-sorted-set-32B-size
+  dataset_description: 1 key. containing redis set data structures.
 tested-groups:
 - sorted-set
 tested-commands:

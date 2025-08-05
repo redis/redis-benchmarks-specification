@@ -32,7 +32,9 @@ dbconfig:
     "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr" "onzjrteqmu"
     "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk" "ypekeuutef"
     "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
-  dataset_name: 2keys-set-10-100-elements-sdiff
+  dataset_name: 2keys-set-10-100-elements
+  dataset_description: This dataset contains 2 set keys, one with 10 elements and
+    the other with 100 elements. The smaller set is a subset of the larger one.
 tested-commands:
 - smembers
 - sdiff

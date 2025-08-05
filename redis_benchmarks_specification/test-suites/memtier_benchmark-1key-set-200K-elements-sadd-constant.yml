@@ -16,7 +16,9 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --command="SADD myset __key__" --command-key-pattern=P --pipeline 100
       --key-maximum 200000 --key-prefix "" -n 200000 --hide-histogram -t 1 -c 1
-  dataset_name: 1key-set-200K-elements-integer
+  dataset_name: 1key-set-200K-elements-constant
+  dataset_description: This dataset contains 1 set key with 200,000 elements, with
+    the set size remaining constant as we are only updating its members but not increasing.
 tested-groups:
 - set
 tested-commands:

@@ -8,7 +8,6 @@ dbconfig:
   resources:
     requests:
       memory: 2g
-  dataset_name: nokeys-pubsub-mixed-100-channels-128B-100-publishers-1000-subscribers
 tested-groups:
 - pubsub
 tested-commands:

@@ -178,7 +178,8 @@ dbconfig:
     "ezgxjiwwig" "izizuzzjuv" "mallnshtok" "tctrsxgnrc" "exhjfssojj" "yilvzcevlj"
     "nepxmyiuhr" "dqqfcdugde" "iamjlqlznh" "mvmsikqfxu" "kmqlwfbsex" "pribqncfuf"
     "zavrjnezrf" "kmcwshsbye" "uzaejrbwue" "olezxlliej" "hjjxyybxiv"'
-  dataset_name: 1key-list-1K-elements
+  dataset_name: 1key-list-32B-size
+  dataset_description: 1 key. containing redis list data structures.
 tested-groups:
 - list
 tested-commands:

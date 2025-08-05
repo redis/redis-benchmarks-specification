@@ -27,7 +27,9 @@ dbconfig:
   resources:
     requests:
       memory: 2g
-  dataset_name: 100Kkeys-hash-hgetall-50-fields-100B-values
+  dataset_name: 100Kkeys-hash-50-fields-100B-size
+  dataset_description: This dataset contains 100,000 hash keys, each with 50 fields
+    and each field has a data size of 100 bytes.
 tested-groups:
 - hash
 tested-commands:

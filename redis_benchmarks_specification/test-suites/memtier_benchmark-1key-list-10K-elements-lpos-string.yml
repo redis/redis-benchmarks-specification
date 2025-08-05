@@ -13,12 +13,13 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --hide-histogram --command "RPUSH strlist __key__" --key-maximum 10000
       --key-minimum 1 -n allkeys --key-prefix "hello" --command-key-pattern S -c 1
-      -t 1 --pipeline 10
+      -t 1 --pipeline 50
   resources:
     requests:
       cpus: '2'
       memory: 1g
   dataset_name: 1key-list-10K-elements-string
+  dataset_description: This dataset contains 1 list key with 10,000 string elements.
 tested-groups:
 - list
 tested-commands:

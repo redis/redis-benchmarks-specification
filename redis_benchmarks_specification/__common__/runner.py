@@ -153,6 +153,8 @@ def exporter_datasink_common(
     topology_spec_name,
     default_metrics=None,
     git_hash=None,
+    collect_commandstats=True,
+    collect_memory_metrics=True,
 ):
     logging.info(
         f"Using datapoint_time_ms: {datapoint_time_ms}. git_hash={git_hash}, git_branch={git_branch}, git_version={git_version}. gh_org={tf_github_org}, gh_repo={tf_github_repo}"
@@ -181,71 +183,77 @@ def exporter_datasink_common(
         None,
         git_hash,
     )
-    logging.info("Collecting memory metrics")
-    (
-        _,
-        _,
-        overall_end_time_metrics,
-    ) = collect_redis_metrics(
-        redis_conns,
-        ["memory"],
-        {
-            "memory": [
-                "used_memory",
-                "used_memory_dataset",
-            ]
-        },
-    )
-    print(overall_end_time_metrics)
-    # 7 days from now
-    expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
-    export_redis_metrics(
-        git_version,
-        datapoint_time_ms,
-        overall_end_time_metrics,
-        datasink_conn,
-        setup_name,
-        setup_type,
-        test_name,
-        git_branch,
-        tf_github_org,
-        tf_github_repo,
-        tf_triggering_env,
-        {"metric-type": "redis-metrics"},
-        expire_redis_metrics_ms,
-    )
-    logging.info("Collecting commandstat metrics")
-    (
-        _,
-        _,
-        overall_commandstats_metrics,
-    ) = collect_redis_metrics(redis_conns, ["commandstats"])
-    export_redis_metrics(
-        git_version,
-        datapoint_time_ms,
-        overall_commandstats_metrics,
-        datasink_conn,
-        setup_name,
-        setup_type,
-        test_name,
-        git_branch,
-        tf_github_org,
-        tf_github_repo,
-        tf_triggering_env,
-        {"metric-type": "commandstats"},
-        expire_redis_metrics_ms,
-    )
+    if collect_memory_metrics:
+        logging.info("Collecting memory metrics")
+        (
+            _,
+            _,
+            overall_end_time_metrics,
+        ) = collect_redis_metrics(
+            redis_conns,
+            ["memory"],
+            {
+                "memory": [
+                    "used_memory",
+                    "used_memory_dataset",
+                ]
+            },
+        )
+        print(overall_end_time_metrics)
+        # 7 days from now
+        expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
+        export_redis_metrics(
+            git_version,
+            datapoint_time_ms,
+            overall_end_time_metrics,
+            datasink_conn,
+            setup_name,
+            setup_type,
+            test_name,
+            git_branch,
+            tf_github_org,
+            tf_github_repo,
+            tf_triggering_env,
+            {"metric-type": "redis-memory-metrics"},
+            expire_redis_metrics_ms,
+            git_hash,
+            running_platform,
+        )
+    if collect_commandstats:
+        logging.info("Collecting commandstat metrics")
+        (
+            _,
+            _,
+            overall_commandstats_metrics,
+        ) = collect_redis_metrics(redis_conns, ["commandstats"])
+        export_redis_metrics(
+            git_version,
+            datapoint_time_ms,
+            overall_commandstats_metrics,
+            datasink_conn,
+            setup_name,
+            setup_type,
+            test_name,
+            git_branch,
+            tf_github_org,
+            tf_github_repo,
+            tf_triggering_env,
+            {"metric-type": "commandstats"},
+            expire_redis_metrics_ms,
+            git_hash,
+            running_platform,
+        )
 
     # Update deployment tracking sets
     deployment_type_and_name = f"{setup_type}_AND_{setup_name}"
     deployment_type_and_name_and_version = f"{setup_type}_AND_{setup_name}_AND_{git_version}"
 
     # Add to deployment-specific set
-    deployment_set_key = f"ci.benchmarks.redislabs/{tf_triggering_env}/{deployment_type_and_name_and_version}:set"
+    deployment_set_key = f"ci.benchmarks.redis/{tf_triggering_env}/{deployment_type_and_name_and_version}:set"
     datasink_conn.sadd(deployment_set_key, test_name)
 
     # Add to testcases set
-    testcases_set_key = f"ci.benchmarks.redislabs/{tf_triggering_env}/testcases:set"
+    testcases_set_key = f"ci.benchmarks.redis/{tf_triggering_env}/testcases:set"
     datasink_conn.sadd(testcases_set_key, test_name)
 
     # Add metadata fields to timeseries metadata

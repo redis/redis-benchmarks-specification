@@ -14,11 +14,13 @@ dbconfig:
     tool: memtier_benchmark
     arguments: -n allkeys "--data-size" "10" --key-prefix "" "--command" "ZADD zset
       __key__ __key__" "--command-key-pattern" "P" "-c" "1" "-t" "1" "--hide-histogram"
-      "--key-minimum" "1" "--key-maximum" "600001"
+      "--key-minimum" "1" "--key-maximum" "600001" --pipeline 50
   resources:
     requests:
       memory: 1g
-  dataset_name: 1key-zset-600K-elements-zrangestore-300K-elements
+  dataset_name: 1key-zset-600K-elements-float
+  dataset_description: This dataset contains 1 sorted set key with 600,000 elements,
+    each with a floating-point score.
 tested-commands:
 - zrangestore
 redis-topologies:

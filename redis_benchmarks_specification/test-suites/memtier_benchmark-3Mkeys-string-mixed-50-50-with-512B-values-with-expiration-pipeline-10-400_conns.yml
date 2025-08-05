@@ -10,12 +10,11 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --data-size 512 --command "SET __key__ __data__ EX 5" -n allkeys --pipeline
-      10 --key-maximum 3000000 --key-pattern P:P --key-minimum 1 --hide-histogram
+      50 --key-maximum 3000000 --key-pattern P:P --key-minimum 1 --hide-histogram
       -t 1 -c 1
   resources:
     requests:
       memory: 3g
-  dataset_name: 3Mkeys-string-mixed-50-50-with-512B-values-with-expiration-pipeline-10-400_conns
 tested-commands:
 - setex
 - get

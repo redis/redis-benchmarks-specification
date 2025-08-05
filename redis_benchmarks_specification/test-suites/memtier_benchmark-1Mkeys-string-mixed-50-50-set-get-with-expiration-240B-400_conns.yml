@@ -17,7 +17,9 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-mixed-50-50-set-get-with-expiration-240B-400_conns
+  dataset_name: 1Mkeys-string-240B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 240 bytes and a very short expiration time.
 tested-commands:
 - set
 - get

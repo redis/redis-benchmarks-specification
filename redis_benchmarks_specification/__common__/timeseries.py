@@ -1173,7 +1173,6 @@ def timeseries_test_sucess_flow(
     testcase_metric_context_paths = []
     version_target_tables = None
     branch_target_tables = None
-
     if timeseries_dict is None:
         (
             timeseries_dict,

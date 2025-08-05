@@ -17,7 +17,9 @@ dbconfig:
   resources:
     requests:
       memory: 3g
-  dataset_name: 1Mkeys-4KiB-expire-use-case
+  dataset_name: 1Mkeys-string-4KiB-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 4 KiB. Half of the keys have an expiration set.
 tested-groups:
 - string
 - generic

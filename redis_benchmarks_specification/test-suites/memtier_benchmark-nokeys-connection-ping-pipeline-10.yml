@@ -7,7 +7,6 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: nokeys-connection-ping-pipeline-10
 tested-groups:
 - connection
 tested-commands:

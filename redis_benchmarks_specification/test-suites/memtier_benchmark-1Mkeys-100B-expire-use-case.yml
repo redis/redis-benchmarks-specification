@@ -17,7 +17,9 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-100B-expire-use-case
+  dataset_name: 1Mkeys-string-100B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 100 bytes.
 tested-groups:
 - string
 - generic

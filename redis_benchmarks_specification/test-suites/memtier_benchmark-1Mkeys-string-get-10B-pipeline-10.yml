@@ -12,11 +12,13 @@ dbconfig:
     tool: memtier_benchmark
     arguments: '"--key-maximum" "1000000" "-n" "allkeys" "--data-size" "10" "--ratio"
       "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum"
-      "1"'
+      "1" --pipeline 50'
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-get-10B-pipeline-10
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 10 bytes.
 tested-commands:
 - get
 redis-topologies:

@@ -8,7 +8,6 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-incrby
 tested-groups:
 - string
 tested-commands:

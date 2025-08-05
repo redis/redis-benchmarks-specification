@@ -11,11 +11,14 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
-      "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+      "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n"
+      "allkeys" --pipeline 50'
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-setrange-100B
+  dataset_name: 1Mkeys-string-100B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 100 bytes.
 tested-commands:
 - setrange
 redis-topologies:

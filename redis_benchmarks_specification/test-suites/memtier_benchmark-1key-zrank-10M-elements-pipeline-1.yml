@@ -16,7 +16,9 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1key-10M-elements-integer
+  dataset_name: 1key-zset-10M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 10 million elements,
+    each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:

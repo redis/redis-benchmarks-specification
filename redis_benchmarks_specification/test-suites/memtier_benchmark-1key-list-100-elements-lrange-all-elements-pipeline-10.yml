@@ -28,7 +28,8 @@ dbconfig:
     "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr" "onzjrteqmu"
     "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk" "ypekeuutef"
     "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
-  dataset_name: 1key-list-100-elements-string
+  dataset_name: 1key-list-100-elements
+  dataset_description: This dataset contains 1 list key with 100 elements.
 tested-groups:
 - list
 tested-commands:

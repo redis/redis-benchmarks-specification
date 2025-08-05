@@ -260,7 +260,9 @@ dbconfig:
     "value" "iamjlqlznh" "value" "mvmsikqfxu" "value" "kmqlwfbsex" "value" "pribqncfuf"
     "value" "zavrjnezrf" "value" "kmcwshsbye" "value" "uzaejrbwue" "value" "olezxlliej"
     "value" "hjjxyybxiv" "value"'
-  dataset_name: 1key-hash-1K-fields
+  dataset_name: 1key-hash-1-fields-32B-size
+  dataset_description: 1 key. containing redis hash data structures. with fields field(s)
+    each.
 tested-groups:
 - hash
 tested-commands:

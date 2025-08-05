@@ -410,7 +410,8 @@ dbconfig:
     "ele:296:tyYcCWTtaQAFidhATOrNnrZAynrppZdOVborlhuWuR" "0.6857753861540998" "ele:297:Q"
     "0.2846544060829831" "ele:298:Zq" "0.3958936266598334" "ele:299:KhIAswbBjpRQnbKRBRLdWdCDt"
     "0.6572602342327124" "ele:300:oTBAmFvCABLYQTZWxYnPAUqUmpeOuGMHIwSQiAIxUu"'
-  dataset_name: 2keys-zset-300-elements-skiplist-encoded-zunionstore
+  dataset_name: 2keys-sorted-set-32B-size
+  dataset_description: 2 keys. containing redis set data structures.
 tested-commands:
 - zunionstore
 redis-topologies:

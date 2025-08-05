@@ -4,7 +4,7 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys pre-loadin
   HASHes in which the value has a data size of 10 Bytes. After pre-loading the data
   it issues HGETALL command.
 dbconfig:
-  dataset_name: 1Mkeys-hash-hgetall-50-fields-10B-values
+  dataset_name: 1Mkeys-hash-50-fields-10B-size
   configuration-parameters:
     save: '""'
   check:
@@ -24,10 +24,13 @@ dbconfig:
       __data__ field:39 __data__ field:40 __data__ field:41 __data__ field:42 __data__
       field:43 __data__ field:44 __data__ field:45 __data__ field:46 __data__ field:47
       __data__ field:48 __data__ field:49 __data__ field:50 __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram'
+      --key-minimum=1 --key-maximum 10000000 -n 5000 -c 50 -t 4 --hide-histogram --pipeline
+      50'
   resources:
     requests:
       memory: 2g
+  dataset_description: This dataset contains 1 million hash keys, each with 50 fields
+    and each field has a data size of 10 bytes.
 tested-groups:
 - hash
 tested-commands:

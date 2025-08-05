@@ -13,7 +13,8 @@ dbconfig:
   init_commands:
   - '"SADD" "set:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
     "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
-  dataset_name: 1key-set-10-elements-string
+  dataset_name: 1key-set-10-elements
+  dataset_description: This dataset contains 1 set key with 10 elements.
 tested-groups:
 - set
 tested-commands:

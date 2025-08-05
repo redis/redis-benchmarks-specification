@@ -177,7 +177,8 @@ dbconfig:
     "xepfvvcovk" "ezgxjiwwig" "izizuzzjuv" "mallnshtok" "tctrsxgnrc" "exhjfssojj"
     "yilvzcevlj" "nepxmyiuhr" "dqqfcdugde" "iamjlqlznh" "mvmsikqfxu" "kmqlwfbsex"
     "pribqncfuf" "zavrjnezrf" "kmcwshsbye" "uzaejrbwue" "olezxlliej" "hjjxyybxiv"'
-  dataset_name: 1key-set-1K-elements-smembers
+  dataset_name: 1key-set-32B-size
+  dataset_description: 1 key. containing redis set data structures.
 tested-groups:
 - set
 tested-commands:

@@ -12,11 +12,13 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET
       __key__ __data__"  --command-key-pattern P --key-minimum 1 --hide-histogram
-      -t 2 -c 100
+      -t 2 -c 100 --pipeline 50
   resources:
     requests:
       memory: 2g
-  dataset_name: 1Mkeys-string-mget-1KiB
+  dataset_name: 1Mkeys-string-1KiB-size-no-key-prefix
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 1 KiB. The keys are not prefixed, meaning they are 1,2,3,etc...
 tested-commands:
 - mget
 redis-topologies:

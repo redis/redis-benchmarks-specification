@@ -22,7 +22,8 @@ dbconfig:
   - xadd key-2 * field value
   - xadd key-2 * field value
   - xadd key-2 * field value
-  dataset_name: 2keys-stream-5-entries-xread-all-entries-pipeline-10
+  dataset_name: 2keys-stream-5-entries
+  dataset_description: This dataset contains 2 stream keys, each with 5 entries.
 tested-commands:
 - xread
 redis-topologies:

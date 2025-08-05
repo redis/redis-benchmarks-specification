@@ -15,12 +15,14 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --hide-histogram --command "SETBIT users __key__ 1" --key-maximum 1000000000
       --key-minimum 1 -n 100000 --key-prefix "" --command-key-pattern R --distinct-client-seed
-      --pipeline 10
+      --pipeline 50
   resources:
     requests:
       cpus: '2'
       memory: 1g
-  dataset_name: 1key-1Billion-bits-bitmap
+  dataset_name: 1key-bitmap-1Billion-bits-140MB-size
+  dataset_description: This dataset contains 1 bitmap key with a size of 1 Billion
+    bits, approximately 20M bits are set and the total size is around 140MB.
 tested-commands:
 - bitcount
 tested-groups:

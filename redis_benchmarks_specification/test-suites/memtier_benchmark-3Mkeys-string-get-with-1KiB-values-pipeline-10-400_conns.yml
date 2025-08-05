@@ -11,12 +11,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --data-size 1000 --ratio 1:0 -n allkeys --pipeline 10 --key-maximum
+    arguments: --data-size 1000 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
       3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
   resources:
     requests:
       memory: 3g
-  dataset_name: 3Mkeys-string-get-with-1KiB-values-pipeline-10-400_conns
+  dataset_name: 3Mkeys-string-1KiB-size
+  dataset_description: This dataset contains 3 million string keys, each with a data
+    size of 1 KiB.
 tested-commands:
 - set
 redis-topologies:

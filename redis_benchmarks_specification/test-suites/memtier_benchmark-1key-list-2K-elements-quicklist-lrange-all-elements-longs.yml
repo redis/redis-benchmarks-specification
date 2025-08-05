@@ -235,7 +235,8 @@ dbconfig:
     "544700" "960117" "979088" "821091" "745289" "870898" "772669" "156821" "339467"
     "462864" "663633" "704102" "446816" "557140" "50699" "767901" "52426" "203649"
     "70161"'
-  dataset_name: 1key-list-2K-elements-quicklist
+  dataset_name: 1key-list-32B-size
+  dataset_description: 1 key. containing redis list data structures.
 tested-groups:
 - list
 tested-commands:

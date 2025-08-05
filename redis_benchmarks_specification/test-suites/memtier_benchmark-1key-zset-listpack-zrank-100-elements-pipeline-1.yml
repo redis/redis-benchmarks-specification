@@ -24,7 +24,9 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1key-zset-listpack-zrank-100-elements-pipeline-1
+  dataset_name: 1key-zset-100-elements-listpack
+  dataset_description: This dataset contains 1 sorted set key with 100 elements, each
+    with a listpack encoding.
 tested-groups:
 - sorted-set
 tested-commands:

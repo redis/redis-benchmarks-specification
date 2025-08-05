@@ -13,6 +13,7 @@ dbconfig:
     requests:
       memory: 6g
   dataset_name: 1key-geo-60M-elements
+  dataset_description: This dataset contains 1 GEO key with 60 million elements.
 tested-groups:
 - geo
 tested-commands:

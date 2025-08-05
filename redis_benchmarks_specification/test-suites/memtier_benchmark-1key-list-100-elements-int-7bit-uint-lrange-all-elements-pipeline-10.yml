@@ -19,7 +19,9 @@ dbconfig:
     "59" "60" "61" "62" "63" "64" "65" "66" "67" "68" "69" "70" "71" "72" "73" "74"
     "75" "76" "77" "78" "79" "80" "81" "82" "83" "84" "85" "86" "87" "88" "89" "90"
     "91" "92" "93" "94" "95" "96" "97" "98" "99"'
-  dataset_name: 1key-list-100-elements-int-7bit-uint
+  dataset_name: 1key-list-100-elements-7BIT_UINT
+  dataset_description: This dataset contains 1 list key with 100 integer elements,
+    each encoded as 7BIT_UINT.
 tested-groups:
 - list
 tested-commands:

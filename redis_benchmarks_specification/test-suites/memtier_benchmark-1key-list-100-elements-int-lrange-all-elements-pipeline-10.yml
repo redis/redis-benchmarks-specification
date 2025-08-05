@@ -28,6 +28,8 @@ dbconfig:
     "4304240283865562043" "5534023222112865484" "6763806160360168925" "7993589098607472366"
     "9223372036854775807"'
   dataset_name: 1key-list-100-elements-int
+  dataset_description: This dataset contains 1 list key with 100 integer elements
+    across all 6 encoding types.
 tested-groups:
 - list
 tested-commands:

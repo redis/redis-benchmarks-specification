@@ -18,11 +18,13 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum
-      5000000 --key-prefix "" -n 5000000 --hide-histogram -t 1 -c 1
+      5000000 --key-prefix "" -n 5000000 --hide-histogram -t 1 -c 1 --pipeline 50
   resources:
     requests:
       memory: 1g
-  dataset_name: 1key-5M-elements-integer
+  dataset_name: 1key-zset-5M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 5 million elements,
+    each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:

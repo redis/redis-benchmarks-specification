@@ -260,11 +260,14 @@ dbconfig:
       __data__ field:990 __data__ field:991 __data__ field:992 __data__ field:993
       __data__ field:994 __data__ field:995 __data__ field:996 __data__ field:997
       __data__ field:998 __data__ field:999 __data__ field:1000 __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum 1 -n allkeys -c 1 -t 1 --hide-histogram'
+      --key-minimum=1 --key-maximum 1 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
+      50'
   resources:
     requests:
       memory: 2g
-  dataset_name: 1key-hash-hscan-1K-fields-10B-values
+  dataset_name: 1key-hash-1K-fields-10B-size
+  dataset_description: This dataset contains 1 hash key, with 1000 fields and each
+    field has a data size of 10 bytes.
 tested-groups:
 - hash
 tested-commands:

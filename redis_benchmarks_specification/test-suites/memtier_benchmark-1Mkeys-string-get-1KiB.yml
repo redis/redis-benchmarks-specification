@@ -15,7 +15,9 @@ dbconfig:
   resources:
     requests:
       memory: 2g
-  dataset_name: 1Mkeys-string-get-1KiB
+  dataset_name: 1Mkeys-string-1KiB-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 1 KiB.
 tested-commands:
 - get
 redis-topologies:

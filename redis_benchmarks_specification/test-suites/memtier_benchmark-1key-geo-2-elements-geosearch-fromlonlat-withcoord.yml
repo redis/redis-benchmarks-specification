@@ -14,7 +14,9 @@ dbconfig:
   init_commands:
   - '"GEOADD" "Sicily" "13.361389" "38.115556" "Palermo" "15.087269" "37.502669" "Catania"'
   - '"GEOADD" "Sicily" "12.758489" "38.788135" "edge1" "17.241510" "38.788135" "edge2"'
-  dataset_name: 1key-geo-2-elements-geosearch-fromlonlat-withcoord
+  dataset_name: 1key-geo-4-elements
+  dataset_description: This dataset contains 1 GEO key with 4 elements, representing
+    locations in Sicily.
 tested-groups:
 - geo
 tested-commands:

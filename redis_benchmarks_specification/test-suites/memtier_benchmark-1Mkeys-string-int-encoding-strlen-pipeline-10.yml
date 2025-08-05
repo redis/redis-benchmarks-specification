@@ -15,7 +15,9 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-int-encoding-strlen-pipeline-10
+  dataset_name: 1Mkeys-string-int-encoded
+  dataset_description: This dataset contains 1 million string keys, each key is integer
+    encoded.
 tested-commands:
 - strlen
 redis-topologies:

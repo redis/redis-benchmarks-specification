@@ -41,7 +41,9 @@ dbconfig:
     "pquewclxuy" "10000090" "vpmpffdoqz" "10000091" "eouliovvra" "10000092" "vxcbagyymm"
     "10000093" "jekkafodvk" "10000094" "ypekeuutef" "10000095" "dlbqcynhrn" "10000096"
     "erxulvebrj" "10000097" "qwxrsgafzy" "10000098" "dlsjwmqzhx" "10000099" "exvhmqxvvp"'
-  dataset_name: 1key-zset-100-elements-zrangebyscore-all-elements-long-scores
+  dataset_name: 1key-zset-100-elements-long
+  dataset_description: This dataset contains 1 sorted set key with 100 elements, each
+    with a long score.
 tested-groups:
 - sorted-set
 tested-commands:

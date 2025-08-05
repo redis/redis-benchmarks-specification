@@ -11,12 +11,14 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
-      "-t" "4" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "10000000" "-n"
-      "allkeys"'
+      "-t" "1" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "10000000" "-n"
+      "allkeys" --pipeline 50'
   resources:
     requests:
       memory: 10g
-  dataset_name: 10Mkeys-string-get-10B-pipeline-100-nokeyprefix
+  dataset_name: 10Mkeys-string-10B-size-nokeyprefix
+  dataset_description: This dataset contains 10 million string keys, each with a data
+    size of 10 bytes. There is no key prefix on the keys, meaning key names are 1,2,3,...
 tested-groups:
 - string
 tested-commands:

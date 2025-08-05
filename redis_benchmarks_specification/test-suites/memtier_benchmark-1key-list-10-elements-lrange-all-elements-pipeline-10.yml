@@ -14,6 +14,7 @@ dbconfig:
   - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
     "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
   dataset_name: 1key-list-10-elements
+  dataset_description: This dataset contains 1 list key with 10 elements.
 tested-groups:
 - list
 tested-commands:

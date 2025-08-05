@@ -6,11 +6,10 @@ dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 1000000
+    keyspacelen: 0
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-load-string-with-10B-values-pipeline-100-nokeyprefix
 tested-groups:
 - string
 tested-commands:

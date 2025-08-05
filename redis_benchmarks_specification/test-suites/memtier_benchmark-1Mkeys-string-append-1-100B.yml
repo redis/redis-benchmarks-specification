@@ -12,11 +12,14 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "1" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
-      "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+      "-t" "2" "--hide-histogram" "--key-minimum" "1" --pipeline 50'
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-append-1-100B
+  dataset_name: 1Mkeys-string-1B-100B-size
+  dataset_description: This dataset contains 1 million string keys, each initially
+    with a data size of 1 byte, and then appended with values ranging from 1 to 100
+    bytes.
 tested-commands:
 - append
 redis-topologies:

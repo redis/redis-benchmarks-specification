@@ -12,11 +12,13 @@ dbconfig:
     tool: memtier_benchmark
     arguments: --command="ZADD key1 __key__  __data__" --command-key-pattern=P --key-maximum
       262144 --key-prefix "" -R --data-size=1024 -n 262144 --hide-histogram -t 1 -c
-      1
+      1 --pipeline 50
   resources:
     requests:
       memory: 1g
-  dataset_name: 1key-256K-elements
+  dataset_name: 1key-zset-256K-elements-1KiB-size
+  dataset_description: This dataset contains 1 sorted set key with 256K elements,
+    each with a data size of 1KiB.
 tested-groups:
 - sorted-set
 tested-commands:

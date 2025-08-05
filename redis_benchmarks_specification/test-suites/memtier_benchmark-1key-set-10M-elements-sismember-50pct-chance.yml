@@ -15,8 +15,9 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --command="SADD set:10M:elements __key__" --command-key-pattern=P --key-maximum
-      10000000 --key-prefix "" -n 10000000 --hide-histogram -t 1 -c 1
-  dataset_name: 1key-set-10M-elements-integer
+      10000000 --key-prefix "" -n 10000000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-set-10M-elements
+  dataset_description: This dataset contains 1 set key with 10 million elements.
 tested-groups:
 - set
 tested-commands:
