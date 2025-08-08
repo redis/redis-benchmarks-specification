@@ -76,7 +76,7 @@ def get_ts_metric_name(
     else:
         deployment_name = ""
     ts_name = (
-        "ci.benchmarks.redislabs/{by}/"
+        "ci.benchmarks.redis/{by}/"
         "{triggering_env}/{github_org}/{github_repo}/"
         "{test_name}/{build_variant_str}{running_platform_str}{deployment_type}{deployment_name}/{by_value}/{metric}".format(
             by=by,
@@ -323,7 +323,7 @@ def from_metric_kv_to_timeserie(
     }
 
     original_ts_name = ts_name
-    target_table_keyname = "target_tables:{triggering_env}:ci.benchmarks.redislabs/{break_by_key}/{break_by_str}/{tf_github_org}/{tf_github_repo}/{deployment_type}/{deployment_name}/{test_name}/{metric_name}".format(
+    target_table_keyname = "target_tables:{triggering_env}:ci.benchmarks.redis/{break_by_key}/{break_by_str}/{tf_github_org}/{tf_github_repo}/{deployment_type}/{deployment_name}/{test_name}/{metric_name}".format(
         triggering_env=tf_triggering_env,
         break_by_key=break_by_key,
         break_by_str=break_by_str,
@@ -679,7 +679,7 @@ def get_overall_dashboard_keynames(
     if running_platform is not None:
         running_platform_str = "/{}".format(running_platform)
     sprefix = (
-        "ci.benchmarks.redislabs/"
+        "ci.benchmarks.redis/"
         + "{triggering_env}/{github_org}/{github_repo}".format(
             triggering_env=tf_triggering_env,
             github_org=tf_github_org,

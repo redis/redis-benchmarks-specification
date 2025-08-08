@@ -345,6 +345,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     temporary_dir,
                                     test_name,
+                                    redis_password,
                                 )
 
                             logging.info(

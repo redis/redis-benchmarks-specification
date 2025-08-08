@@ -59,7 +59,7 @@ def get_overall_dashboard_keynames(
     if running_platform is not None:
         running_platform_str = "/{}".format(running_platform)
     sprefix = (
-        "ci.benchmarks.redislabs/"
+        "ci.benchmarks.redis/"
         + "{triggering_env}/{github_org}/{github_repo}".format(
             triggering_env=tf_triggering_env,
             github_org=tf_github_org,
@@ -128,7 +128,7 @@ def get_start_time_vars(start_time=None):
 
 
 def get_project_compare_zsets(triggering_env, org, repo):
-    return "ci.benchmarks.redislabs/{}/{}/{}:compare:pull_requests:zset".format(
+    return "ci.benchmarks.redis/{}/{}/{}:compare:pull_requests:zset".format(
         triggering_env, org, repo
     )
 

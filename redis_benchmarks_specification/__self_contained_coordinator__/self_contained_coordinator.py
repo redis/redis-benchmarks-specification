@@ -495,10 +495,8 @@ def process_self_contained_coordinator_stream(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     args=None,
+    redis_password="redis_coordinator_password_2024",
 ):
-    # Use a default password for coordinator Redis instances
-    redis_password = "redis_coordinator_password_2024"
-
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
@@ -936,6 +934,7 @@ def process_self_contained_coordinator_stream(
                                         redis_proc_start_port,
                                         temporary_dir,
                                         test_name,
+                                        redis_password,
                                     )
 
                                 execute_init_commands(
@@ -1700,6 +1699,7 @@ def data_prepopulation_step(
     port,
     temporary_dir,
     test_name,
+    redis_password,
 ):
     # setup the benchmark
     (

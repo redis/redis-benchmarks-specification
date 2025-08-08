@@ -23,6 +23,7 @@ def data_prepopulation_step(
     port,
     temporary_dir,
     test_name,
+    redis_password,
 ):
     # setup the benchmark
     (
@@ -53,6 +54,7 @@ def data_prepopulation_step(
             "localhost",
             local_benchmark_output_filename,
             False,
+            redis_password,
         )
 
         logging.info(
