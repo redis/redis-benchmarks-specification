@@ -277,6 +277,8 @@ def export_redis_metrics(
         }
     if git_hash is not None and git_hash != "":
         by_variants["by.hash/{}".format(git_hash)] = {"hash": git_hash}
+        if artifact_version is not None and artifact_version != "":
+            by_variants["by.hash/{}".format(git_hash)]["version"] = artifact_version
     if artifact_version is not None and artifact_version != "":
         by_variants["by.version/{}".format(artifact_version)] = {
             "version": artifact_version
