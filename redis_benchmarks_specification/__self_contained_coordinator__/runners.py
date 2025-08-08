@@ -118,6 +118,8 @@ def process_self_contained_coordinator_stream(
     verbose=False,
     run_tests_with_dataset=False,
 ):
+    # Use a default password for coordinator Redis instances
+    redis_password = "redis_coordinator_password_2024"
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
@@ -276,6 +278,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     run_image,
                                     temporary_dir,
+                                    redis_password,
                                 )
                             else:
                                 shard_count = 1
@@ -307,11 +310,15 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
 
-                            r = redis.StrictRedis(port=redis_proc_start_port)
+                            r = redis.StrictRedis(port=redis_proc_start_port, password=redis_password)
                             r.ping()
                             redis_pids = []
-                            first_redis_pid = r.info()["process_id"]
-                            redis_pids.append(first_redis_pid)
+                            redis_info = r.info()
+                            first_redis_pid = redis_info.get("process_id")
+                            if first_redis_pid is not None:
+                                redis_pids.append(first_redis_pid)
+                            else:
+                                logging.warning("Redis process_id not found in INFO command")
                             ceil_client_cpu_limit = extract_client_cpu_limit(
                                 benchmark_config
                             )
@@ -385,6 +392,7 @@ def process_self_contained_coordinator_stream(
                                     "localhost",
                                     local_benchmark_output_filename,
                                     benchmark_tool_workdir,
+                                    redis_password,
                                 )
                             elif "vector_db_benchmark" in benchmark_tool:
                                 (

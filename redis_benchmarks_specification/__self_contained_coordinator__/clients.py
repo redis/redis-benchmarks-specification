@@ -1,3 +1,6 @@
+import logging
+
+
 def prepare_memtier_benchmark_parameters(
     clientconfig,
     full_benchmark_path,
@@ -5,6 +8,7 @@ def prepare_memtier_benchmark_parameters(
     server,
     local_benchmark_output_filename,
     oss_cluster_api_enabled,
+    password=None,
 ):
     benchmark_command = [
         full_benchmark_path,
@@ -15,6 +19,12 @@ def prepare_memtier_benchmark_parameters(
         "--server",
         "{}".format(server),
     ]
+
+    # Add password authentication if provided
+    if password is not None and password != "":
+        benchmark_command.extend(["--authenticate", password])
+        logging.info("Memtier benchmark will use password authentication")
+
     if oss_cluster_api_enabled is True:
         benchmark_command.append("--cluster-mode")
     benchmark_command_str = " ".join(benchmark_command)

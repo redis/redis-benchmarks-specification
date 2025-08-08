@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-playbook-session-storage
+name: memtier_benchmark-playbook-session-storage-100k-sessions
 description: |
   Runs memtier_benchmark to simulate a session-based SaaS application.
   The workload mimics user session CRUD, session tracking, organization-level analytics,

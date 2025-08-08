@@ -1393,17 +1393,27 @@ def process_self_contained_coordinator_stream(
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
                         ssl_cert_reqs = None
-                    r = redis.StrictRedis(
-                        host=host,
-                        port=port,
-                        password=password,
-                        ssl=tls_enabled,
-                        ssl_cert_reqs=ssl_cert_reqs,
-                        ssl_keyfile=tls_key,
-                        ssl_certfile=tls_cert,
-                        ssl_ca_certs=tls_cacert,
-                        ssl_check_hostname=False,
-                    )
+
+                    # Build Redis connection parameters
+                    redis_params = {
+                        "host": host,
+                        "port": port,
+                        "password": password,
+                        "ssl": tls_enabled,
+                        "ssl_cert_reqs": ssl_cert_reqs,
+                        "ssl_check_hostname": False,
+                    }
+
+                    # Only add SSL certificate parameters if they are provided
+                    if tls_enabled:
+                        if tls_key is not None and tls_key != "":
+                            redis_params["ssl_keyfile"] = tls_key
+                        if tls_cert is not None and tls_cert != "":
+                            redis_params["ssl_certfile"] = tls_cert
+                        if tls_cacert is not None and tls_cacert != "":
+                            redis_params["ssl_ca_certs"] = tls_cacert
+
+                    r = redis.StrictRedis(**redis_params)
                     setup_name = "oss-standalone"
                     r.ping()
 
@@ -1456,17 +1466,26 @@ def process_self_contained_coordinator_stream(
                             slot_network_info = slot[2]
                             prefered_endpoint = slot_network_info[0]
                             prefered_port = slot_network_info[1]
-                            shard_conn = redis.StrictRedis(
-                                host=prefered_endpoint,
-                                port=prefered_port,
-                                password=password,
-                                ssl=tls_enabled,
-                                ssl_cert_reqs=ssl_cert_reqs,
-                                ssl_keyfile=tls_key,
-                                ssl_certfile=tls_cert,
-                                ssl_ca_certs=tls_cacert,
-                                ssl_check_hostname=False,
-                            )
+                            # Build shard connection parameters
+                            shard_params = {
+                                "host": prefered_endpoint,
+                                "port": prefered_port,
+                                "password": password,
+                                "ssl": tls_enabled,
+                                "ssl_cert_reqs": ssl_cert_reqs,
+                                "ssl_check_hostname": False,
+                            }
+
+                            # Only add SSL certificate parameters if they are provided
+                            if tls_enabled:
+                                if tls_key is not None and tls_key != "":
+                                    shard_params["ssl_keyfile"] = tls_key
+                                if tls_cert is not None and tls_cert != "":
+                                    shard_params["ssl_certfile"] = tls_cert
+                                if tls_cacert is not None and tls_cacert != "":
+                                    shard_params["ssl_ca_certs"] = tls_cacert
+
+                            shard_conn = redis.StrictRedis(**shard_params)
                             redis_conns.append(shard_conn)
                         logging.info(
                             "There are a total of {} shards".format(len(redis_conns))
@@ -1475,8 +1494,12 @@ def process_self_contained_coordinator_stream(
 
                     redis_pids = []
                     for conn in redis_conns:
-                        redis_pid = conn.info()["process_id"]
-                        redis_pids.append(redis_pid)
+                        redis_info = conn.info()
+                        redis_pid = redis_info.get("process_id")
+                        if redis_pid is not None:
+                            redis_pids.append(redis_pid)
+                        else:
+                            logging.warning("Redis process_id not found in INFO command, skipping PID collection for this connection")
 
                     # Check if all tested commands are supported by this Redis instance
                     supported_commands = get_supported_redis_commands(redis_conns)
@@ -2991,6 +3014,11 @@ def get_supported_redis_commands(redis_conns):
                 f"Retrieved {len(supported_commands)} supported Redis commands"
             )
 
+            # Handle case where COMMAND returns 0 commands (likely not supported)
+            if len(supported_commands) == 0:
+                logging.warning("COMMAND returned 0 commands - likely not supported by this Redis instance")
+                return None
+
             # Log some sample commands for debugging
             if supported_commands:
                 sample_commands = sorted(list(supported_commands))[:10]
@@ -3013,8 +3041,8 @@ def get_supported_redis_commands(redis_conns):
 
 def check_test_command_support(benchmark_config, supported_commands):
     """Check if all tested-commands in the benchmark config are supported"""
-    if supported_commands is None:
-        logging.warning("No supported commands list available, skipping command check")
+    if supported_commands is None or len(supported_commands) == 0:
+        logging.warning("No supported commands list available (COMMAND not supported or returned 0 commands), skipping command check")
         return True, []
 
     if "tested-commands" not in benchmark_config:

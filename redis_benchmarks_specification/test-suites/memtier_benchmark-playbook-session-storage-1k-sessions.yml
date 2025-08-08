@@ -1,0 +1,203 @@
+version: 0.4
+name: memtier_benchmark-playbook-session-storage-1k-sessions
+description: |
+  Runs memtier_benchmark to simulate a session-based SaaS application.
+  The workload mimics user session CRUD, session tracking, organization-level analytics,
+  and rate limiting. It includes realistic key sizes and command mixes representative
+  of production traffic (e.g., 400–600B session hashes, ZSETs for analytics, and SETs for tracking).
+
+  Rate limiting is modeled using an atomic Lua script, inspired by the Upstash Redis example:
+  https://github.com/upstash/examples/tree/main/examples/ratelimit-with-redis
+
+  Each user has a dedicated key in the form of `ratelimit:user-<id>:/api/resource`, which is
+  used to track usage under a fixed window. The logic is evaluated atomically with the following script:
+
+      local key = KEYS[1]
+      local limit = 100
+      local window = 60
+      local current = redis.call("INCR", key)
+      if current == 1 then
+        redis.call("EXPIRE", key, window)
+      end
+      if current > limit then
+        return 0
+      else
+        return 1
+      end
+
+  This ensures that rate enforcement and usage tracking are done without race conditions, and
+  mirrors a real-world API quota model.
+
+  The workload emphasizes read-heavy patterns to reflect common SaaS access behavior. The overall
+  **read:write ratio is approximately 85:15**, with read operations covering session access, user-session
+  lookups, org analytics, and rate limit enforcement, while writes handle session updates, activity tracking,
+  and quota increments.
+
+  Command groups by use-case (approximate ratio of total operations):
+    - Session CRUD (HGETALL, HSET): ~55%
+    - User session tracking (SMEMBERS, SADD): ~21%
+    - Organization analytics (ZRANGE, ZADD): ~12%
+    - Rate limiting (EVAL-based quota check): ~12%
+
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Hgetalls."Ops/sec"
+    - $."BEST RUN RESULTS".Hsets."Ops/sec"
+    - $."BEST RUN RESULTS".Smemberss."Ops/sec"
+    - $."BEST RUN RESULTS".Sadds."Ops/sec"
+    - $."BEST RUN RESULTS".Zranges."Ops/sec"
+    - $."BEST RUN RESULTS".Zadds."Ops/sec"
+    - $."BEST RUN RESULTS".Evals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Misses/sec"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hgetalls."Ops/sec"
+    - $."ALL STATS".Hsets."Ops/sec"
+    - $."ALL STATS".Smemberss."Ops/sec"
+    - $."ALL STATS".Sadds."Ops/sec"
+    - $."ALL STATS".Zranges."Ops/sec"
+    - $."ALL STATS".Zadds."Ops/sec"
+    - $."ALL STATS".Evals."Ops/sec"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Hgetalls."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Smemberss."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Sadds."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Zranges."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Zadds."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Evals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- Use a fixed seed for reproducibility
+    local seed = 12345
+    math.randomseed(seed)
+
+    local now = tonumber(redis.call('TIME')[1])
+
+    local function rand_str(len)
+      local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      local res = ''
+      for i = 1, len do
+        local idx = math.random(#chars)
+        res = res .. chars:sub(idx, idx)
+      end
+      return res
+    end
+
+    for i = 1, 1000 do
+      local session_id = 'session:' .. i
+      local user_id = 'user-' .. i
+      local org_id = 'org-' .. i
+
+      redis.call('HSET', session_id,
+        'userId', user_id,
+        'organizationId', org_id,
+        'role', 'member',
+        'createdAt', tostring(now - math.random(3600)),
+        'lastAccessed', tostring(now),
+        'ipAddress', '192.168.1.' .. (i % 255),
+        'device', 'device-' .. rand_str(8),
+        'authMethod', 'password',
+        'status', 'active',
+        'metadata', rand_str(200 + (i % 100))
+      )
+
+      redis.call('SADD', 'user:' .. i .. ':sessions', session_id)
+
+      local org_key = 'org:' .. i .. ':sessions'
+      for j = 1, 10 do
+        local uid = 'user-' .. ((i + j) % 1000 + 1)
+        local sid = 'session:' .. ((i + j) % 1000 + 1)
+        local zmember = uid .. ':' .. sid
+        local zscore = now - math.random(86400)
+        redis.call('ZADD', org_key, zscore, zmember)
+      end
+
+      local endpoint = '/api/resource'
+      local rate_key = 'ratelimit:' .. user_id .. ':' .. endpoint
+      redis.call('INCR', rate_key)
+      redis.call('EXPIRE', rate_key, 60)
+    end
+
+    return 'OK'
+tested-groups:
+- hash
+- zset
+- set
+- string
+
+tested-commands:
+- hgetall
+- hset
+- smembers
+- sadd
+- zrange
+- zadd
+- incr
+- expire
+- get
+
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:8.5.0-amd64-debian-buster-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 1000
+    --data-size-range=400-600
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="HGETALL session:__key__"
+    --command-key-pattern=R
+    --command-ratio=50
+    --command="HSET session:__key__ userId user-__key__ organizationId org-__key__ role admin email user__key__@example.com name "User __key__" permissions "["read","write"]" lastActivity __timestamp__ ipAddress 192.168.1.__key__ userAgent "Mozilla/5.0" createdAt __timestamp__"
+    --command-key-pattern=R
+    --command-ratio=5
+    --command="SMEMBERS user:__key__:sessions"
+    --command-key-pattern=R
+    --command-ratio=18
+    --command="SADD user:__key__:sessions session-__key__"
+    --command-key-pattern=R
+    --command-ratio=3
+    --command="ZRANGE org:__key__:sessions 0 -1 WITHSCORES"
+    --command-key-pattern=R
+    --command-ratio=10
+    --command="ZADD org:__key__:sessions 1 user-__key__:session-__key__"
+    --command-key-pattern=R
+    --command-ratio=2
+    --command='EVAL "local key=KEYS[1];local limit=10;local window=60;local current=redis.call(\"INCR\",key);if current==1 then redis.call(\"EXPIRE\",key,window) end;if current>limit then return 0 else return 1 end" 1 ratelimit:user-__key__:/api/resource'
+    --command-key-pattern=R
+    --command-ratio=12
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
