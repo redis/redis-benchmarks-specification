@@ -223,6 +223,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         command = command.replace("'", "")
                         if "-key-pattern" in command:
                             continue
+                        # Skip command-ratio and other memtier arguments that start with -
+                        if command.startswith("-"):
+                            continue
                         command = command.lower()
                         if command not in tested_commands:
                             tested_commands.append(command)
@@ -238,14 +241,16 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         if command not in tracked_commands_json:
                             tracked_commands_json[command] = command_json
 
-                        group = command_json["group"]
-                        if group not in tested_groups:
+                        # Only process if command_json has group information
+                        if "group" in command_json:
+                            group = command_json["group"]
+                            if group not in tested_groups:
 
-                            tested_groups.append(group)
-                        if group not in tracked_groups:
-                            tracked_groups.append(group)
-                            tracked_groups_hist[group] = 0
-                        tracked_groups_hist[group] = tracked_groups_hist[group] + 1
+                                tested_groups.append(group)
+                            if group not in tracked_groups:
+                                tracked_groups.append(group)
+                                tracked_groups_hist[group] = 0
+                            tracked_groups_hist[group] = tracked_groups_hist[group] + 1
 
                 # Calculate total connections
                 total_connections = clients * threads
@@ -262,12 +267,14 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     data_sizes[data_size] = 0
                 data_sizes[data_size] = data_sizes[data_size] + 1
 
-                if tested_commands != origin_tested_commands:
+                if sorted(tested_commands) != sorted(origin_tested_commands):
                     requires_override = True
                     benchmark_config["tested-commands"] = tested_commands
                     logging.warn(
                         "there is a difference between specified test-commands in the yaml (name={}) and the ones we've detected {}!={}".format(
-                            test_name, origin_tested_commands, tested_commands
+                            test_name,
+                            sorted(origin_tested_commands),
+                            sorted(tested_commands),
                         )
                     )
 
@@ -323,12 +330,14 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         )
                     )
 
-                if tested_groups != origin_tested_groups:
+                if sorted(tested_groups) != sorted(origin_tested_groups):
                     tested_groups_match_origin = False
                     benchmark_config["tested-groups"] = tested_groups
                     logging.warn(
                         "there is a difference between specified test-groups in the yaml (name={}) and the ones we've detected {}!={}".format(
-                            test_name, origin_tested_groups, tested_groups
+                            test_name,
+                            sorted(origin_tested_groups),
+                            sorted(tested_groups),
                         )
                     )
 

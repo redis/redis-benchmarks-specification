@@ -21,6 +21,12 @@ def create_client_runner_args(project_name):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=project_name,
+        help="Show version information and exit",
+    )
+    parser.add_argument(
         "--platform-name",
         type=str,
         default=MACHINE_NAME,
@@ -34,6 +40,24 @@ def create_client_runner_args(project_name):
     )
     parser.add_argument("--triggering_env", type=str, default="ci")
     parser.add_argument("--setup_type", type=str, default="oss-standalone")
+    parser.add_argument(
+        "--deployment_type",
+        type=str,
+        default="oss-standalone",
+        help="Deployment type for the Redis instance (e.g., oss-standalone, oss-cluster, enterprise)",
+    )
+    parser.add_argument(
+        "--deployment_name",
+        type=str,
+        default="redis",
+        help="Deployment name identifier for the Redis instance",
+    )
+    parser.add_argument(
+        "--core_count",
+        type=int,
+        default=None,
+        help="Number of CPU cores available to the Redis instance",
+    )
     parser.add_argument("--github_repo", type=str, default="redis")
     parser.add_argument("--github_org", type=str, default="redis")
     parser.add_argument("--github_version", type=str, default="NA")
@@ -153,6 +177,18 @@ def create_client_runner_args(project_name):
         help="Run tests that contain a dbconfig with dataset",
     )
     parser.add_argument(
+        "--skip-tests-without-dataset",
+        default=False,
+        action="store_true",
+        help="Skip tests that do not contain a dbconfig with dataset",
+    )
+    parser.add_argument(
+        "--memory-comparison-only",
+        default=False,
+        action="store_true",
+        help="Run memory comparison only - execute preload and measure memory usage without client benchmarks",
+    )
+    parser.add_argument(
         "--client_aggregated_results_folder",
         type=str,
         default="",
@@ -203,16 +239,28 @@ def create_client_runner_args(project_name):
         help="Assume benchmarking tool (e.g. memtier benchmark) is installed locally and execute it without using a docker container.",
     )
     parser.add_argument(
+        "--memtier-bin-path",
+        type=str,
+        default="memtier_benchmark",
+        help="Path to memtier_benchmark binary when using --benchmark_local_install. Default is 'memtier_benchmark' (assumes it's in PATH).",
+    )
+    parser.add_argument(
         "--override-test-runs",
         default=1,
         type=int,
         help="override memtier number of runs for each benchmark. By default will run once each test",
     )
     parser.add_argument(
+        "--timeout-buffer",
+        default=60,
+        type=int,
+        help="Buffer time in seconds to add to test-time for process timeout (both Docker containers and local processes). Default is 60 seconds.",
+    )
+    parser.add_argument(
         "--container-timeout-buffer",
         default=60,
         type=int,
-        help="Buffer time in seconds to add to test-time for container timeout. Default is 60 seconds.",
+        help="Deprecated: Use --timeout-buffer instead. Buffer time in seconds to add to test-time for container timeout.",
     )
     parser.add_argument(
         "--cluster-mode",
@@ -224,5 +272,41 @@ def create_client_runner_args(project_name):
         "--unix-socket",
         default="",
         help="UNIX Domain socket name",
+    )
+    parser.add_argument(
+        "--enable-remote-profiling",
+        default=False,
+        action="store_true",
+        help="Enable remote profiling of Redis processes via HTTP GET endpoint. Profiles are collected in pprof binary format during benchmark execution.",
+    )
+    parser.add_argument(
+        "--remote-profile-host",
+        type=str,
+        default="localhost",
+        help="Host for remote profiling HTTP endpoint. Default is localhost.",
+    )
+    parser.add_argument(
+        "--remote-profile-port",
+        type=int,
+        default=10000,
+        help="Port for remote profiling HTTP endpoint. Default is 10000.",
+    )
+    parser.add_argument(
+        "--remote-profile-output-dir",
+        type=str,
+        default="profiles",
+        help="Directory to store remote profiling output files. Default is 'profiles/'.",
+    )
+    parser.add_argument(
+        "--remote-profile-username",
+        type=str,
+        default=None,
+        help="Username for HTTP basic authentication to remote profiling endpoint. Optional.",
+    )
+    parser.add_argument(
+        "--remote-profile-password",
+        type=str,
+        default=None,
+        help="Password for HTTP basic authentication to remote profiling endpoint. Optional.",
     )
     return parser

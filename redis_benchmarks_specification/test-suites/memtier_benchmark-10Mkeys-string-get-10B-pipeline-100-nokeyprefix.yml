@@ -1,14 +1,24 @@
 version: 0.4
 name: memtier_benchmark-10Mkeys-string-get-10B-pipeline-100-nokeyprefix
-description: memtier_benchmark, 10M keys, string GET, 10B value size, pipeline=100, no key prefix
+description: memtier_benchmark, 10M keys, string GET, 10B value size, pipeline=100,
+  no key prefix
 dbconfig:
   configuration-parameters:
     save: '""'
   check:
     keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
+      "-t" "1" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "10000000" "-n"
+      "allkeys" --pipeline 50'
   resources:
     requests:
       memory: 10g
+  dataset_name: 10Mkeys-string-10B-size-nokeyprefix
+  dataset_description: This dataset contains 10 million string keys, each with a data
+    size of 10 bytes. There is no key prefix on the keys, meaning key names are 1,2,3,...
 tested-groups:
 - string
 tested-commands:
@@ -19,10 +29,10 @@ redis-topologies:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "10" --command "GET __key__" --command-key-pattern="R" --key-prefix="" -c 50 -t 2 --pipeline 100 --hide-histogram --test-time 180'
+  arguments: '"--data-size" "10" --command "GET __key__" --command-key-pattern="R"
+    --key-prefix="" -c 50 -t 2 --pipeline 100 --hide-histogram --test-time 180'
   resources:
     requests:
       cpus: '3'
       memory: 2g
-
 priority: 33

@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-zrank-1M-elements-pipeline-1
-description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements and we query it using ZRANK.
+description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 1M elements and we query it using ZRANK.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --pipeline 50 --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+    arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
+      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -25,10 +30,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZRANK key1 __key__" --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1
+  arguments: --command="ZRANK lb __key__" --key-maximum 1000000 --command-key-pattern=R
+    --key-prefix "" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 72

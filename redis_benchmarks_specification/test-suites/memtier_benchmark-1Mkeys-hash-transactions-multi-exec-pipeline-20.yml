@@ -1,6 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-hash-transactions-multi-exec-pipeline-20
-description: Runs memtier_benchmark for MULTI EXEC scenario - executing commands as a transaction. The transaction sets fields in a hash, checks if they exist, retrieves them and finally deletes them. At the end of execution there are no keys in the database. 
+description: Runs memtier_benchmark for MULTI EXEC scenario - executing commands as
+  a transaction. The transaction sets fields in a hash, checks if they exist, retrieves
+  them and finally deletes them. At the end of execution there are no keys in the
+  database.
 tested-groups:
 - transactions
 - hash
@@ -27,10 +30,13 @@ dbconfig:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "100" --command=MULTI --command-key-pattern=S --command="HSETNX __key__ __key__ __data__" --command-key-pattern=S --command="HEXISTS __key__ __key__" --command-key-pattern=S  --command="HGET __key__ __key__" --command-key-pattern=S --command="HDEL __key__ __key__"  --command-key-pattern=S --command=EXEC --command-key-pattern=S --pipeline=20 -c 50 -t 2 --hide-histogram --test-time 300'
+  arguments: '"--data-size" "100" --command=MULTI --command-key-pattern=S --command="HSETNX
+    __key__ __key__ __data__" --command-key-pattern=S --command="HEXISTS __key__ __key__"
+    --command-key-pattern=S  --command="HGET __key__ __key__" --command-key-pattern=S
+    --command="HDEL __key__ __key__"  --command-key-pattern=S --command=EXEC --command-key-pattern=S
+    --pipeline=20 -c 50 -t 2 --hide-histogram --test-time 300'
   resources:
     requests:
       cpus: '3'
       memory: 2g
-
 priority: 80

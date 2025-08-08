@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-geo-2-elements-geopos
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 2 elements and comes from the example of https://redis.io/docs/latest/commands/geopos, and we query it using GEOPOS command.'
+description: Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key
+  contains 2 elements and comes from the example of https://redis.io/docs/latest/commands/geopos,
+  and we query it using GEOPOS command.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,7 +12,10 @@ dbconfig:
     requests:
       memory: 1g
   init_commands:
-   - '"GEOADD" "Sicily" "13.361389" "38.115556" "Palermo" "15.087269" "37.502669" "Catania"'
+  - '"GEOADD" "Sicily" "13.361389" "38.115556" "Palermo" "15.087269" "37.502669" "Catania"'
+  dataset_name: 1key-geo-2-elements
+  dataset_description: This dataset contains 1 GEO key with 2 elements, representing
+    locations in Sicily.
 tested-groups:
 - geo
 tested-commands:
@@ -23,10 +28,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: -c 50 -t 4 --command="GEOPOS Sicily Palermo Catania"  --hide-histogram --test-time 120
+  arguments: -c 50 -t 4 --command="GEOPOS Sicily Palermo Catania"  --hide-histogram
+    --test-time 120
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 138

@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-incrby
-description: Runs memtier_benchmark, for a keyspace length of 1M keys doing incrby of 1.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys doing incrby
+  of 1.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -19,10 +20,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 120 --command "INCRBY __key__ 1" --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
+  arguments: --test-time 120 --command "INCRBY __key__ 1" --command-key-pattern="R"
+    --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 21

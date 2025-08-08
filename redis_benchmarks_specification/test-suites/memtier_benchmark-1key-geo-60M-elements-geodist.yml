@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-geo-60M-elements-geodist
-description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO key contains 60841557 elements in it and we query it using GEODIST command between 2 elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 GEO key. The GEO
+  key contains 60841557 elements in it and we query it using GEODIST command between
+  2 elements. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,6 +12,8 @@ dbconfig:
   resources:
     requests:
       memory: 6g
+  dataset_name: 1key-geo-60M-elements
+  dataset_description: This dataset contains 1 GEO key with 60 million elements.
 tested-groups:
 - geo
 tested-commands:
@@ -22,10 +26,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: -c 50 -t 4 --command="GEODIST key 1 2"  --hide-histogram --test-time 180
+  arguments: -c 50 -t 4 --command="GEODIST key 1 2"  --hide-histogram --test-time
+    180
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 166

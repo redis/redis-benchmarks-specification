@@ -287,12 +287,14 @@ def test_start_redis_container():
     docker_client = docker.from_env()
     redis_containers = []
 
+    redis_password = "test_password_123"
     command = generate_standalone_redis_server_args(
         executable,
         redis_proc_start_port,
         mnt_point,
         redis_configuration_parameters,
         redis_arguments,
+        redis_password,
     )
     command_str = " ".join(command)
     db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -308,7 +310,7 @@ def test_start_redis_container():
         run_image,
         temporary_dir,
     )
-    r = redis.StrictRedis(port=redis_proc_start_port)
+    r = redis.StrictRedis(port=redis_proc_start_port, password=redis_password)
     try:
         r.ping()
     except redis.exceptions.ConnectionError:

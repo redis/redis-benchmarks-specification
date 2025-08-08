@@ -1,6 +1,14 @@
 version: 0.4
 name: memtier_benchmark-1key-zrem-5M-elements-pipeline-1
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 5M elements and we remove members using ZREM. Throughout the course of the benchmark,the sorted set contains fewer members as we continuously remove them. The chance that we ask for a member to be removed, which was already removed, also increases. Starting with a large number of members helps us to have suffienct number of members for the duration of the benchmark, however the preload stage takes longer to complete. NOTE: using the --randomize flag ensures that we continue to remove elements the longer we run the test. Without the flag, we stop removing elements after some time, possibly we keep generating the same random numbers. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 5M elements and we remove members using ZREM. Throughout the
+  course of the benchmark,the sorted set contains fewer members as we continuously
+  remove them. The chance that we ask for a member to be removed, which was already
+  removed, also increases. Starting with a large number of members helps us to have
+  suffienct number of members for the duration of the benchmark, however the preload
+  stage takes longer to complete. NOTE: using the --randomize flag ensures that we
+  continue to remove elements the longer we run the test. Without the flag, we stop
+  removing elements after some time, possibly we keep generating the same random numbers. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +17,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum 5000000 --key-prefix "" -n 5000000 --hide-histogram -t 1 -c 1
+    arguments: --command="ZADD key1 __key__  __key__" --command-key-pattern=P --key-maximum
+      5000000 --key-prefix "" -n 5000000 --hide-histogram -t 1 -c 1 --pipeline 50
   resources:
     requests:
       memory: 1g
+  dataset_name: 1key-zset-5M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 5 million elements,
+    each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -25,10 +37,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZREM key1 __key__" --key-maximum 5000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1 --randomize
+  arguments: --command="ZREM key1 __key__" --key-maximum 5000000 --command-key-pattern=R
+    --key-prefix "" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1 --randomize
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 36

@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-get-10B-pipeline-100
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 10 Bytes for each key.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 10 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,15 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--key-maximum" "1000000" "-n" "allkeys" "--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--key-maximum" "1000000" "-n" "allkeys" "--data-size" "10" "--ratio"
+      "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum"
+      "1" --pipeline 50'
   resources:
     requests:
       memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 10 bytes.
 tested-commands:
 - get
 redis-topologies:
@@ -23,12 +29,12 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--pipeline" "100"  --distinct-client-seed "--data-size" "10" --ratio 0:1 --key-pattern R:R -c 10 -t 10 --hide-histogram --test-time 120'
+  arguments: '"--pipeline" "100"  --distinct-client-seed "--data-size" "10" --ratio
+    0:1 --key-pattern R:R -c 10 -t 10 --hide-histogram --test-time 120'
   resources:
     requests:
       cpus: '10'
       memory: 2g
-
 tested-groups:
 - string
 priority: 1

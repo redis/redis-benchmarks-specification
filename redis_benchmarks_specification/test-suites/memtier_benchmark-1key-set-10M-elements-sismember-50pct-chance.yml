@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-set-10M-elements-sismember-50pct-chance
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 10M elements. We query it using SISMEMBER in which the value has 50% change of being member. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 10M
+  elements. We query it using SISMEMBER in which the value has 50% change of being
+  member. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -12,7 +14,10 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="SADD set:10M:elements __key__" --command-key-pattern=P --key-maximum 10000000 --key-prefix "" -n 10000000 --hide-histogram -t 1 -c 1
+    arguments: --command="SADD set:10M:elements __key__" --command-key-pattern=P --key-maximum
+      10000000 --key-prefix "" -n 10000000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-set-10M-elements
+  dataset_description: This dataset contains 1 set key with 10 million elements.
 tested-groups:
 - set
 tested-commands:
@@ -26,7 +31,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="SISMEMBER set:10M:elements __key__"  --key-maximum 20000000 --key-prefix ""  --hide-histogram --test-time 180
+  arguments: --command="SISMEMBER set:10M:elements __key__"  --key-maximum 20000000
+    --key-prefix ""  --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '4'

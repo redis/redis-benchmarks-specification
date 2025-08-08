@@ -495,6 +495,7 @@ def process_self_contained_coordinator_stream(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     args=None,
+    redis_password="redis_coordinator_password_2024",
 ):
     stream_id = "n/a"
     overall_result = False
@@ -861,6 +862,7 @@ def process_self_contained_coordinator_stream(
                                     mnt_point,
                                     redis_configuration_parameters,
                                     redis_arguments,
+                                    redis_password,
                                 )
                                 command_str = " ".join(command)
                                 db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -876,13 +878,20 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                 )
 
-                                r = redis.StrictRedis(port=redis_proc_start_port)
+                                r = redis.StrictRedis(
+                                    port=redis_proc_start_port, password=redis_password
+                                )
                                 r.ping()
                                 redis_conns = [r]
                                 reset_commandstats(redis_conns)
                                 redis_pids = []
                                 redis_info = r.info()
-                                first_redis_pid = redis_info["process_id"]
+                                first_redis_pid = redis_info.get("process_id")
+                                if first_redis_pid is None:
+                                    logging.warning(
+                                        "Redis process_id not found in INFO command"
+                                    )
+                                    first_redis_pid = "unknown"
                                 if git_hash is None and "redis_git_sha1" in redis_info:
                                     git_hash = redis_info["redis_git_sha1"]
                                     if (
@@ -925,6 +934,7 @@ def process_self_contained_coordinator_stream(
                                         redis_proc_start_port,
                                         temporary_dir,
                                         test_name,
+                                        redis_password,
                                     )
 
                                 execute_init_commands(
@@ -972,7 +982,7 @@ def process_self_contained_coordinator_stream(
                                         full_benchmark_path,
                                         redis_proc_start_port,
                                         "localhost",
-                                        None,
+                                        redis_password,
                                         local_benchmark_output_filename,
                                         False,
                                         False,
@@ -1689,6 +1699,7 @@ def data_prepopulation_step(
     port,
     temporary_dir,
     test_name,
+    redis_password,
 ):
     # setup the benchmark
     (
@@ -1718,7 +1729,7 @@ def data_prepopulation_step(
             full_benchmark_path,
             port,
             "localhost",
-            None,
+            redis_password,
             local_benchmark_output_filename,
             False,
         )

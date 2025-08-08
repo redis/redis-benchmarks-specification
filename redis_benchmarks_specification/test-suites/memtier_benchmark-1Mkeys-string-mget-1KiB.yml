@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-mget-1KiB
-description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data size of 1000 Bytes for each key.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys with a data
+  size of 1000 Bytes for each key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,15 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET __key__ __data__"  --command-key-pattern P --key-minimum 1 --hide-histogram -t 2 -c 100
+    arguments: --data-size 1000 --key-maximum 1000000 --key-prefix "" --command="SET
+      __key__ __data__"  --command-key-pattern P --key-minimum 1 --hide-histogram
+      -t 2 -c 100 --pipeline 50
   resources:
     requests:
       memory: 2g
+  dataset_name: 1Mkeys-string-1KiB-size-no-key-prefix
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 1 KiB. The keys are not prefixed, meaning they are 1,2,3,etc...
 tested-commands:
 - mget
 redis-topologies:
@@ -23,12 +29,12 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --key-prefix "" --command "MGET __key__ 1 2 3 4 5 6 7 8 9" -c 50 -t 2
+    --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'
       memory: 2g
-
 tested-groups:
 - string
 priority: 13

@@ -8,9 +8,14 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 
 
 def generate_standalone_redis_server_args(
-    binary, port, dbdir, configuration_parameters=None, redis_arguments=""
+    binary,
+    port,
+    dbdir,
+    configuration_parameters=None,
+    redis_arguments="",
+    password=None,
 ):
-    added_params = ["port", "protected-mode", "dir"]
+    added_params = ["port", "protected-mode", "dir", "requirepass"]
     # start redis-server
     command = [
         binary,
@@ -19,6 +24,11 @@ def generate_standalone_redis_server_args(
         "--port",
         "{}".format(port),
     ]
+
+    # Add password authentication if provided
+    if password is not None and password != "":
+        command.extend(["--requirepass", password])
+        logging.info("Redis server will be started with password authentication")
     if dbdir != "":
         command.extend(["--dir", dbdir])
     if configuration_parameters is not None:
@@ -59,6 +69,7 @@ def spin_docker_standalone_redis(
     redis_proc_start_port,
     run_image,
     temporary_dir,
+    password=None,
 ):
     mnt_point = "/mnt/redis/"
     command = generate_standalone_redis_server_args(
@@ -66,6 +77,8 @@ def spin_docker_standalone_redis(
         redis_proc_start_port,
         mnt_point,
         redis_configuration_parameters,
+        "",
+        password,
     )
     command_str = " ".join(command)
     db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(

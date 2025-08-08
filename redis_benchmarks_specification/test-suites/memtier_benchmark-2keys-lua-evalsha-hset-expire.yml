@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-2keys-lua-evalsha-hset-expire
-description: 'Runs memtier_benchmark, for a keyspace length of 2 HASH keys. This benchmark invokes the execution of a server-side Lua script doing 2 HSET commands and doing EXPIRE on those keys. '
+description: 'Runs memtier_benchmark, for a keyspace length of 2 HASH keys. This benchmark
+  invokes the execution of a server-side Lua script doing 2 HSET commands and doing
+  EXPIRE on those keys. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,10 +12,10 @@ dbconfig:
     requests:
       memory: 1g
   init_commands:
-   - - SCRIPT
-     - LOAD
-     - redis.call('hset', 'h1', 'k', 'v');redis.call('hset', 'h2', 'k', 'v');redis.call('expire', 'h1', 3600);redis.call('expire', 'h2', 3600);return
-
+  - - SCRIPT
+    - LOAD
+    - redis.call('hset', 'h1', 'k', 'v');redis.call('hset', 'h2', 'k', 'v');redis.call('expire',
+      'h1', 3600);redis.call('expire', 'h2', 3600);return
 redis-topologies:
 - oss-standalone
 tested-groups:
@@ -29,10 +31,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="EVALSHA 5664e4cac3c4cb86682722a5e3cf03e2f83ce7a1 0"  --hide-histogram --test-time 180
+  arguments: --command="EVALSHA 5664e4cac3c4cb86682722a5e3cf03e2f83ce7a1 0"  --hide-histogram
+    --test-time 180
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 24

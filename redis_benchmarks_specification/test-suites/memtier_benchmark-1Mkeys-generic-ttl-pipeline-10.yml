@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-generic-ttl-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on TTL performance.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
+  TTL performance.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +10,15 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "100" "--command" "SETEX __key__ 3600 __data__" "--command-key-pattern" "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1"'
+    arguments: '"--data-size" "100" "--command" "SETEX __key__ 3600 __data__" "--command-key-pattern"
+      "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum"
+      "1000000" --pipeline 50'
   resources:
     requests:
       memory: 1g
+  dataset_name: 1Mkeys-string-100B-size-with-expiration
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 100 bytes.
 tested-commands:
 - ttl
 tested-groups:
@@ -25,10 +31,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "TTL __key__" --pipeline 10 --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --command "TTL __key__" --pipeline 10 --command-key-pattern="R" -c 50
+    -t 2 --hide-histogram --test-time 180 --key-minimum 1 --key-maximum 1000000
   resources:
     requests:
       cpus: '2'
       memory: 2g
-
 priority: 22

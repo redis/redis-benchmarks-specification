@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10-elements-lrange-all-elements
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10 elements in it and we query it using LRANGE with a range of all elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
+  contains 10 elements in it and we query it using LRANGE with a range of all elements. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,7 +11,10 @@ dbconfig:
     requests:
       memory: 1g
   init_commands:
-   - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh" "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  - '"LPUSH" "list:10" "lysbgqqfqw" "mtccjerdon" "jekkafodvk" "nmgxcctxpn" "vyqqkuszzh"
+    "pytrnqdhvs" "oguwnmniig" "gekntrykfh" "nhfnbxqgol" "cgoeihlnei"'
+  dataset_name: 1key-list-10-elements
+  dataset_description: This dataset contains 1 list key with 10 elements.
 tested-groups:
 - list
 tested-commands:
@@ -28,5 +32,4 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 34

@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-getbit-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on EXISTS performance. 50% of the EXIST commands will be on non-existing keys.
+description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
+  EXISTS performance. 50% of the EXIST commands will be on non-existing keys.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,11 +10,15 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2 --pipeline 10 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2
+      --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
   resources:
     requests:
       cpus: '2'
       memory: 1g
+  dataset_name: 1Mkeys-bitmap-1bit-size
+  dataset_description: This dataset contains 1 million bitmap keys, each with a size
+    of 1 bit.
 tested-commands:
 - getbit
 tested-groups:
@@ -26,10 +31,11 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --pipeline 50 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
+    "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time
+    180
   resources:
     requests:
       cpus: '2'
       memory: 2g
-
 priority: 19

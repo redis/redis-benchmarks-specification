@@ -4,6 +4,8 @@ import logging
 import math
 import os
 import shutil
+import signal
+import subprocess
 import sys
 import tempfile
 import traceback
@@ -26,6 +28,11 @@ from redisbench_admin.run.common import (
     prepare_benchmark_parameters,
     dbconfig_keyspacelen_check,
 )
+
+from redis_benchmarks_specification.__common__.runner import (
+    export_redis_metrics,
+)
+
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -52,6 +59,7 @@ from redis_benchmarks_specification.__common__.runner import (
     exporter_datasink_common,
     reset_commandstats,
     execute_init_commands,
+    export_redis_metrics,
 )
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
@@ -62,6 +70,107 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tools,
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+from redis_benchmarks_specification.__runner__.remote_profiling import RemoteProfiler
+
+
+# Global flag to track if user wants to exit
+_exit_requested = False
+
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C signal to exit gracefully"""
+    global _exit_requested
+    if not _exit_requested:
+        _exit_requested = True
+        logging.info("Ctrl+C detected. Exiting after current test completes...")
+        print("\nCtrl+C detected. Exiting after current test completes...")
+    else:
+        logging.info("Ctrl+C detected again. Force exiting...")
+        print("\nForce exiting...")
+        sys.exit(1)
+
+
+def run_local_command_with_timeout(command_str, timeout_seconds, description="command"):
+    """
+    Run a local command with timeout support.
+
+    Args:
+        command_str: The command string to execute
+        timeout_seconds: Timeout in seconds
+        description: Description for logging
+
+    Returns:
+        tuple: (success, stdout, stderr)
+    """
+    try:
+        logging.info(
+            f"Running {description} with {timeout_seconds}s timeout: {command_str}"
+        )
+
+        # Use shell=True to support complex command strings with pipes, etc.
+        process = subprocess.Popen(
+            command_str,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            return_code = process.returncode
+
+            if return_code == 0:
+                logging.info(f"{description} completed successfully")
+                return True, stdout, stderr
+            else:
+                logging.error(f"{description} failed with return code {return_code}")
+                logging.error(f"stderr: {stderr}")
+                return False, stdout, stderr
+
+        except subprocess.TimeoutExpired:
+            logging.error(f"{description} timed out after {timeout_seconds} seconds")
+            process.kill()
+            try:
+                stdout, stderr = process.communicate(
+                    timeout=5
+                )  # Give 5 seconds to cleanup
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", "Process killed due to timeout"
+            return False, stdout, f"Timeout after {timeout_seconds} seconds. {stderr}"
+
+    except Exception as e:
+        logging.error(f"Error running {description}: {e}")
+        return False, "", str(e)
+
+
+def calculate_process_timeout(command_str, buffer_timeout):
+    """
+    Calculate timeout for a process based on test-time parameter and buffer.
+
+    Args:
+        command_str: The command string to analyze
+        buffer_timeout: Buffer time to add to test-time
+
+    Returns:
+        int: Timeout in seconds
+    """
+    default_timeout = 300  # 5 minutes default
+
+    if "test-time" in command_str:
+        # Try to extract test time and add buffer
+        # Handle both --test-time (memtier) and -test-time (pubsub-sub-bench)
+        test_time_match = re.search(r"--?test-time[=\s]+(\d+)", command_str)
+        if test_time_match:
+            test_time = int(test_time_match.group(1))
+            timeout = test_time + buffer_timeout
+            logging.info(
+                f"Set process timeout to {timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
+            )
+            return timeout
+
+    logging.info(f"Using default process timeout: {default_timeout}s")
+    return default_timeout
 
 
 def parse_size(size):
@@ -89,6 +198,226 @@ def parse_size(size):
     m = re.match(r"^([\d\.]+)\s*([a-zA-Z]{0,3})$", str(size).strip())
     number, unit = float(m.group(1)), m.group(2).upper()
     return int(number * units[unit])
+
+
+def extract_expected_benchmark_duration(
+    benchmark_command_str, override_memtier_test_time
+):
+    """
+    Extract expected benchmark duration from command string or override.
+
+    Args:
+        benchmark_command_str: The benchmark command string
+        override_memtier_test_time: Override test time value
+
+    Returns:
+        Expected duration in seconds, or 30 as default
+    """
+    if override_memtier_test_time > 0:
+        return override_memtier_test_time
+
+    # Try to extract test-time from command string
+    if "test-time" in benchmark_command_str:
+        # Handle both --test-time (memtier) and -test-time (pubsub-sub-bench)
+        test_time_match = re.search(r"--?test-time[=\s]+(\d+)", benchmark_command_str)
+        if test_time_match:
+            return int(test_time_match.group(1))
+
+    # Default duration if not found
+    return 30
+
+
+def detect_object_encoding(redis_conn, dbconfig):
+    """
+    Detect object encoding by scanning 1% of the dataset.
+
+    Args:
+        redis_conn: Redis connection
+        dbconfig: Database configuration containing keyspace info
+
+    Returns:
+        Dict with encoding information
+    """
+    try:
+        # Get total key count
+        total_keys = redis_conn.dbsize()
+        logging.debug(f"Object encoding detection: DBSIZE reports {total_keys} keys")
+
+        if total_keys == 0:
+            logging.warning("No keys found in database for encoding detection")
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": 0,
+                "encoding_distribution": {},
+            }
+
+        # Determine scanning strategy based on dataset size
+        if total_keys <= 1000:
+            # For small datasets, scan all keys for complete accuracy
+            sample_size = total_keys
+            scan_all_keys = True
+            logging.info(
+                f"Scanning all {total_keys} keys (small dataset - complete analysis)"
+            )
+        else:
+            # For large datasets, sample 1% (minimum 10, maximum 1000)
+            sample_size = max(10, min(1000, int(total_keys * 0.01)))
+            scan_all_keys = False
+            logging.info(
+                f"Sampling {sample_size} keys out of {total_keys} total keys ({(sample_size/total_keys)*100:.2f}%)"
+            )
+
+        # Use SCAN to get keys
+        encoding_counts = {}
+        scanned_keys = []
+        cursor = 0
+
+        if scan_all_keys:
+            # Scan all keys in the database
+            while True:
+                cursor, keys = redis_conn.scan(cursor=cursor, count=100)
+                scanned_keys.extend(keys)
+
+                # Break if we've completed a full scan
+                if cursor == 0:
+                    break
+        else:
+            # Sample keys until we reach our target sample size
+            while len(scanned_keys) < sample_size:
+                cursor, keys = redis_conn.scan(
+                    cursor=cursor, count=min(100, sample_size - len(scanned_keys))
+                )
+                scanned_keys.extend(keys)
+
+                # Break if we've completed a full scan
+                if cursor == 0:
+                    break
+
+            # Limit to our target sample size
+            scanned_keys = scanned_keys[:sample_size]
+
+        logging.debug(
+            f"SCAN completed: found {len(scanned_keys)} keys, cursor ended at {cursor}"
+        )
+
+        # If SCAN didn't find any keys but we know there are keys, try KEYS command as fallback
+        if len(scanned_keys) == 0 and total_keys > 0:
+            logging.warning(
+                f"SCAN found no keys but DBSIZE reports {total_keys} keys. Trying KEYS fallback."
+            )
+            try:
+                # Use KEYS * as fallback (only for small datasets to avoid blocking)
+                if total_keys <= 1000:
+                    all_keys = redis_conn.keys("*")
+                    scanned_keys = (
+                        all_keys[:sample_size] if not scan_all_keys else all_keys
+                    )
+                    logging.info(f"KEYS fallback found {len(scanned_keys)} keys")
+                else:
+                    logging.error(
+                        f"Cannot use KEYS fallback for large dataset ({total_keys} keys)"
+                    )
+            except Exception as e:
+                logging.error(f"KEYS fallback failed: {e}")
+
+        # Final check: if we still have no keys, return early
+        if len(scanned_keys) == 0:
+            logging.error(
+                f"No keys found for encoding detection despite DBSIZE={total_keys}"
+            )
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": total_keys,
+                "encoding_distribution": {},
+                "is_complete_scan": scan_all_keys,
+                "error": "No keys found by SCAN or KEYS commands",
+            }
+
+        # Get encoding for each sampled key
+        successful_encodings = 0
+        for i, key in enumerate(scanned_keys):
+            try:
+                # Use the redis-py object_encoding method instead of raw command
+                encoding = redis_conn.object("ENCODING", key)
+                if isinstance(encoding, bytes):
+                    encoding = encoding.decode("utf-8")
+                elif encoding is None:
+                    # Key might have expired or been deleted
+                    logging.debug(
+                        f"Key '{key}' returned None encoding (key may have expired)"
+                    )
+                    continue
+
+                encoding_counts[encoding] = encoding_counts.get(encoding, 0) + 1
+                successful_encodings += 1
+
+                # Log first few keys for debugging
+                if i < 3:
+                    logging.debug(f"Key '{key}' has encoding '{encoding}'")
+
+            except Exception as e:
+                logging.warning(f"Failed to get encoding for key {key}: {e}")
+                continue
+
+        logging.debug(
+            f"Successfully got encoding for {successful_encodings}/{len(scanned_keys)} keys"
+        )
+
+        if not encoding_counts:
+            logging.warning(
+                f"No object encodings detected! Scanned {len(scanned_keys)} keys, successful encodings: {successful_encodings}"
+            )
+            return {
+                "encoding": "unknown",
+                "confidence": 0.0,
+                "sample_size": 0,
+                "total_keys": total_keys,
+                "encoding_distribution": {},
+                "is_complete_scan": scan_all_keys,
+            }
+
+        # Determine dominant encoding
+        total_sampled = sum(encoding_counts.values())
+        dominant_encoding = max(encoding_counts.items(), key=lambda x: x[1])
+        confidence = dominant_encoding[1] / total_sampled
+
+        # Calculate encoding distribution percentages
+        encoding_distribution = {
+            enc: (count / total_sampled) * 100 for enc, count in encoding_counts.items()
+        }
+
+        result = {
+            "encoding": dominant_encoding[0],
+            "confidence": confidence,
+            "sample_size": total_sampled,
+            "total_keys": total_keys,
+            "encoding_distribution": encoding_distribution,
+            "is_complete_scan": scan_all_keys,
+        }
+
+        scan_type = "complete scan" if scan_all_keys else "sample"
+        logging.info(
+            f"Object encoding analysis ({scan_type}): {dominant_encoding[0]} ({confidence*100:.1f}% confidence)"
+        )
+        if len(encoding_counts) > 1:
+            logging.info(f"Encoding distribution: {encoding_distribution}")
+
+        return result
+
+    except Exception as e:
+        logging.error(f"Failed to detect object encoding: {e}")
+        return {
+            "encoding": "error",
+            "confidence": 0.0,
+            "sample_size": 0,
+            "total_keys": 0,
+            "encoding_distribution": {},
+            "error": str(e),
+        }
 
 
 def run_multiple_clients(
@@ -136,13 +465,21 @@ def run_multiple_clients(
 
             # Prepare benchmark command for this client
             if "memtier_benchmark" in client_tool:
+                # Set benchmark path based on local install option
+                if args.benchmark_local_install:
+                    full_benchmark_path = getattr(
+                        args, "memtier_bin_path", "memtier_benchmark"
+                    )
+                else:
+                    full_benchmark_path = f"/usr/local/bin/{client_tool}"
+
                 (
                     _,
                     benchmark_command_str,
                     arbitrary_command,
                 ) = prepare_memtier_benchmark_parameters(
                     client_config,
-                    client_tool,
+                    full_benchmark_path,
                     port,
                     host,
                     password,
@@ -181,6 +518,30 @@ def run_multiple_clients(
                     unix_socket,
                     None,  # username
                 )
+            elif "vector-db-benchmark" in client_tool:
+                (
+                    _,
+                    benchmark_command_str,
+                    arbitrary_command,
+                    client_env_vars,
+                ) = prepare_vector_db_benchmark_parameters(
+                    client_config,
+                    client_tool,
+                    port,
+                    host,
+                    password,
+                    local_benchmark_output_filename,
+                    oss_cluster_api_enabled,
+                    tls_enabled,
+                    tls_skip_verify,
+                    test_tls_cert,
+                    test_tls_key,
+                    test_tls_cacert,
+                    resp_version,
+                    override_memtier_test_time,
+                    unix_socket,
+                    None,  # username
+                )
             else:
                 # Handle other benchmark tools
                 (
@@ -199,9 +560,10 @@ def run_multiple_clients(
 
             # Calculate container timeout
             container_timeout = 300  # 5 minutes default
-            buffer_timeout = (
-                args.container_timeout_buffer
-            )  # Configurable buffer from command line
+            # Use new timeout_buffer argument, fallback to container_timeout_buffer for backward compatibility
+            buffer_timeout = getattr(
+                args, "timeout_buffer", getattr(args, "container_timeout_buffer", 60)
+            )
             if "test-time" in benchmark_command_str:
                 # Try to extract test time and add buffer
                 import re
@@ -222,25 +584,51 @@ def run_multiple_clients(
             )
 
             # Start container (detached)
-            import os
+            # Set working directory based on tool
+            working_dir = benchmark_tool_workdir
+            if "vector-db-benchmark" in client_tool:
+                working_dir = "/app"  # vector-db-benchmark needs to run from /app
 
-            container = docker_client.containers.run(
-                image=client_image,
-                volumes={
-                    temporary_dir_client: {
-                        "bind": client_mnt_point,
-                        "mode": "rw",
-                    },
+            # Prepare container arguments
+            volumes = {
+                temporary_dir_client: {
+                    "bind": client_mnt_point,
+                    "mode": "rw",
                 },
-                auto_remove=False,
-                privileged=True,
-                working_dir=benchmark_tool_workdir,
-                command=benchmark_command_str,
-                network_mode="host",
-                detach=True,
-                cpuset_cpus=client_cpuset_cpus,
-                user=f"{os.getuid()}:{os.getgid()}",  # Run as current user to fix permissions
-            )
+            }
+
+            # For vector-db-benchmark, also mount the results directory
+            if "vector-db-benchmark" in client_tool:
+                volumes[temporary_dir_client] = {
+                    "bind": "/app/results",
+                    "mode": "rw",
+                }
+
+            container_kwargs = {
+                "image": client_image,
+                "volumes": volumes,
+                "auto_remove": False,
+                "privileged": True,
+                "working_dir": working_dir,
+                "command": benchmark_command_str,
+                "network_mode": "host",
+                "detach": True,
+                "cpuset_cpus": client_cpuset_cpus,
+            }
+
+            # Only add user for non-vector-db-benchmark tools to avoid permission issues
+            if "vector-db-benchmark" not in client_tool:
+                container_kwargs["user"] = f"{os.getuid()}:{os.getgid()}"
+
+            # Add environment variables for vector-db-benchmark
+            if "vector-db-benchmark" in client_tool:
+                try:
+                    container_kwargs["environment"] = client_env_vars
+                except NameError:
+                    # client_env_vars not defined, skip environment variables
+                    pass
+
+            container = docker_client.containers.run(**container_kwargs)
 
             containers.append(
                 {
@@ -328,12 +716,11 @@ def run_multiple_clients(
 
     if successful_results:
         # Try to read and aggregate JSON output files
-        import json
-        import os
 
         aggregated_json = {}
         memtier_json = None
         pubsub_json = None
+        vector_json = None
 
         for result in successful_results:
             client_index = result["client_index"]
@@ -360,6 +747,31 @@ def run_multiple_clients(
                         logging.info(
                             f"Successfully read pubsub-sub-bench JSON output from client {client_index}"
                         )
+                    elif "vector-db-benchmark" in tool:
+                        # For vector-db-benchmark, look for summary JSON file
+                        summary_files = [
+                            f
+                            for f in os.listdir(temporary_dir_client)
+                            if f.endswith("-summary.json")
+                        ]
+                        if summary_files:
+                            summary_filepath = os.path.join(
+                                temporary_dir_client, summary_files[0]
+                            )
+                            try:
+                                with open(summary_filepath, "r") as f:
+                                    vector_json = json.load(f)
+                                logging.info(
+                                    f"Successfully read vector-db-benchmark JSON output from {summary_files[0]}"
+                                )
+                            except Exception as e:
+                                logging.warning(
+                                    f"Failed to read vector-db-benchmark JSON from {summary_files[0]}: {e}"
+                                )
+                        else:
+                            logging.warning(
+                                f"No vector-db-benchmark summary JSON file found for client {client_index}"
+                            )
 
                     logging.info(
                         f"Successfully read JSON output from client {client_index} ({tool})"
@@ -376,15 +788,39 @@ def run_multiple_clients(
                     f"JSON output file not found for client {client_index}: {json_filepath}"
                 )
 
-        # Merge JSON outputs from both tools
-        if memtier_json and pubsub_json:
+        # Merge JSON outputs from all tools
+        if memtier_json and pubsub_json and vector_json:
+            # Use memtier as base and add other metrics
+            aggregated_json = memtier_json.copy()
+            aggregated_json.update(pubsub_json)
+            aggregated_json.update(vector_json)
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info(
+                "Using merged JSON results from memtier, pubsub-sub-bench, and vector-db-benchmark clients"
+            )
+        elif memtier_json and pubsub_json:
             # Use memtier as base and add pubsub metrics
             aggregated_json = memtier_json.copy()
-            # Add pubsub metrics to the aggregated result
             aggregated_json.update(pubsub_json)
             aggregated_stdout = json.dumps(aggregated_json, indent=2)
             logging.info(
                 "Using merged JSON results from memtier and pubsub-sub-bench clients"
+            )
+        elif memtier_json and vector_json:
+            # Use memtier as base and add vector metrics
+            aggregated_json = memtier_json.copy()
+            aggregated_json.update(vector_json)
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info(
+                "Using merged JSON results from memtier and vector-db-benchmark clients"
+            )
+        elif pubsub_json and vector_json:
+            # Use pubsub as base and add vector metrics
+            aggregated_json = pubsub_json.copy()
+            aggregated_json.update(vector_json)
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info(
+                "Using merged JSON results from pubsub-sub-bench and vector-db-benchmark clients"
             )
         elif memtier_json:
             # Only memtier available
@@ -396,6 +832,11 @@ def run_multiple_clients(
             aggregated_json = pubsub_json
             aggregated_stdout = json.dumps(aggregated_json, indent=2)
             logging.info("Using JSON results from pubsub-sub-bench client only")
+        elif vector_json:
+            # Only vector-db-benchmark available
+            aggregated_json = vector_json
+            aggregated_stdout = json.dumps(aggregated_json, indent=2)
+            logging.info("Using JSON results from vector-db-benchmark client only")
         else:
             # Fall back to concatenated stdout
             aggregated_stdout = "\n".join([r["stdout"] for r in successful_results])
@@ -407,6 +848,9 @@ def run_multiple_clients(
 
 
 def main():
+    # Register signal handler for graceful exit on Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+
     _, _, project_version = populate_with_poetry_data()
     project_name_suffix = "redis-benchmarks-spec-client-runner"
     project_name = f"{project_name_suffix} (solely client)"
@@ -665,6 +1109,73 @@ def prepare_memtier_benchmark_parameters(
     return None, benchmark_command_str, arbitrary_command
 
 
+def prepare_vector_db_benchmark_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    password,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled=False,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
+    resp_version=None,
+    override_test_time=0,
+    unix_socket="",
+    username=None,
+):
+    """
+    Prepare vector-db-benchmark command parameters
+    """
+    arbitrary_command = False
+
+    benchmark_command = [
+        "/app/run.py",
+        "--host",
+        f"{server}",
+    ]
+
+    # Add port as environment variable (vector-db-benchmark uses env vars)
+    env_vars = {}
+    if port is not None:
+        env_vars["REDIS_PORT"] = str(port)
+    if password is not None:
+        env_vars["REDIS_AUTH"] = password
+    if username is not None:
+        env_vars["REDIS_USER"] = username
+
+    # Add engines parameter
+    engines = clientconfig.get("engines", "vectorsets-fp32-default")
+    benchmark_command.extend(["--engines", engines])
+
+    # Add datasets parameter
+    datasets = clientconfig.get("datasets", "random-100")
+    benchmark_command.extend(["--datasets", datasets])
+
+    # Add other optional parameters
+    if "parallels" in clientconfig:
+        benchmark_command.extend(["--parallels", str(clientconfig["parallels"])])
+
+    if "queries" in clientconfig:
+        benchmark_command.extend(["--queries", str(clientconfig["queries"])])
+
+    if "timeout" in clientconfig:
+        benchmark_command.extend(["--timeout", str(clientconfig["timeout"])])
+
+    # Add custom arguments if specified
+    if "arguments" in clientconfig:
+        benchmark_command_str = (
+            " ".join(benchmark_command) + " " + clientconfig["arguments"]
+        )
+    else:
+        benchmark_command_str = " ".join(benchmark_command)
+
+    return benchmark_command, benchmark_command_str, arbitrary_command, env_vars
+
+
 def prepare_pubsub_sub_bench_parameters(
     clientconfig,
     full_benchmark_path,
@@ -795,7 +1306,13 @@ def process_self_contained_coordinator_stream(
     results_matrix = []
     total_test_suite_runs = 0
     dry_run_count = 0
+    dry_run_tests = []  # Track test names for dry run output
+    memory_results = []  # Track memory results for memory comparison mode
+    loaded_datasets = (
+        set()
+    )  # Track datasets that have been loaded (for memory comparison mode)
     dry_run = args.dry_run
+    memory_comparison_only = args.memory_comparison_only
     dry_run_include_preload = args.dry_run_include_preload
     defaults_filename = args.defaults_filename
     override_test_runs = args.override_test_runs
@@ -808,7 +1325,57 @@ def process_self_contained_coordinator_stream(
         _,
     ) = get_defaults(defaults_filename)
 
+    # For memory comparison mode, analyze datasets before starting
+    if memory_comparison_only:
+        unique_datasets = set()
+        total_tests_with_datasets = 0
+
+        logging.info("Analyzing datasets for memory comparison mode...")
+        for test_file in testsuite_spec_files:
+            if defaults_filename in test_file:
+                continue
+            try:
+                with open(test_file, "r") as stream:
+                    benchmark_config = yaml.safe_load(stream)
+
+                if "dbconfig" in benchmark_config:
+                    # Skip load tests (keyspacelen = 0) in memory comparison mode
+                    keyspacelen = (
+                        benchmark_config["dbconfig"]
+                        .get("check", {})
+                        .get("keyspacelen", None)
+                    )
+                    if keyspacelen is not None and keyspacelen == 0:
+                        logging.debug(f"Skipping load test {test_file} (keyspacelen=0)")
+                        continue
+
+                    dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                    if dataset_name:
+                        unique_datasets.add(dataset_name)
+                        total_tests_with_datasets += 1
+
+            except Exception as e:
+                logging.warning(f"Error analyzing {test_file}: {e}")
+
+        logging.info(f"Memory comparison mode analysis:")
+        logging.info(f"  Total tests with datasets: {total_tests_with_datasets}")
+        logging.info(f"  Unique datasets to load: {len(unique_datasets)}")
+        logging.info(
+            f"  Dataset ingestion savings: {total_tests_with_datasets - len(unique_datasets)} skipped loads"
+        )
+        logging.info(
+            f"  Load tests skipped: Tests with keyspacelen=0 are automatically excluded"
+        )
+
+        if len(unique_datasets) > 0:
+            logging.info(f"  Unique datasets: {', '.join(sorted(unique_datasets))}")
+
     for test_file in tqdm.tqdm(testsuite_spec_files):
+        # Check if user requested exit via Ctrl+C
+        if _exit_requested:
+            logging.info("Exit requested by user. Stopping test execution.")
+            break
+
         if defaults_filename in test_file:
             continue
         client_containers = []
@@ -817,6 +1384,11 @@ def process_self_contained_coordinator_stream(
             _, benchmark_config, test_name = get_final_benchmark_config(
                 None, None, stream, ""
             )
+
+            # Check if user requested exit via Ctrl+C
+            if _exit_requested:
+                logging.info(f"Exit requested by user. Skipping test {test_name}.")
+                break
 
             if tls_enabled:
                 test_name = test_name + "-tls"
@@ -834,6 +1406,7 @@ def process_self_contained_coordinator_stream(
                     current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)
 
+                    # These will be updated after auto-detection
                     tf_github_org = args.github_org
                     tf_github_repo = args.github_repo
                     tf_triggering_env = args.platform_name
@@ -853,20 +1426,79 @@ def process_self_contained_coordinator_stream(
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
                         ssl_cert_reqs = None
-                    r = redis.StrictRedis(
-                        host=host,
-                        port=port,
-                        password=password,
-                        ssl=tls_enabled,
-                        ssl_cert_reqs=ssl_cert_reqs,
-                        ssl_keyfile=tls_key,
-                        ssl_certfile=tls_cert,
-                        ssl_ca_certs=tls_cacert,
-                        ssl_check_hostname=False,
-                    )
+
+                    # Build Redis connection parameters
+                    redis_params = {
+                        "host": host,
+                        "port": port,
+                        "password": password,
+                        "ssl": tls_enabled,
+                        "ssl_cert_reqs": ssl_cert_reqs,
+                        "ssl_check_hostname": False,
+                    }
+
+                    # Only add SSL certificate parameters if they are provided
+                    if tls_enabled:
+                        if tls_key is not None and tls_key != "":
+                            redis_params["ssl_keyfile"] = tls_key
+                        if tls_cert is not None and tls_cert != "":
+                            redis_params["ssl_certfile"] = tls_cert
+                        if tls_cacert is not None and tls_cacert != "":
+                            redis_params["ssl_ca_certs"] = tls_cacert
+
+                    r = redis.StrictRedis(**redis_params)
                     setup_name = "oss-standalone"
                     r.ping()
+
+                    # Auto-detect server information if not explicitly provided
+                    from redis_benchmarks_specification.__runner__.remote_profiling import (
+                        extract_server_info_for_args,
+                        extract_server_metadata_for_timeseries,
+                    )
+
+                    detected_info = extract_server_info_for_args(r)
+                    server_metadata = extract_server_metadata_for_timeseries(r)
+
+                    # Use detected values if arguments weren't explicitly provided
+                    github_org = args.github_org
+                    github_repo = args.github_repo
+
+                    # Auto-detect github_org if it's the default value
+                    if (
+                        args.github_org == "redis"
+                        and detected_info["github_org"] != "redis"
+                    ):
+                        github_org = detected_info["github_org"]
+                        logging.info(f"Auto-detected github_org: {github_org}")
+
+                    # Auto-detect github_repo if it's the default value
+                    if (
+                        args.github_repo == "redis"
+                        and detected_info["github_repo"] != "redis"
+                    ):
+                        github_repo = detected_info["github_repo"]
+                        logging.info(f"Auto-detected github_repo: {github_repo}")
+
+                    # Auto-detect version if it's the default value
+                    if (
+                        args.github_version == "NA"
+                        and detected_info["github_version"] != "unknown"
+                    ):
+                        git_version = detected_info["github_version"]
+                        logging.info(f"Auto-detected github_version: {git_version}")
+
+                    # Auto-detect git hash if it's the default value
+                    if (git_hash is None or git_hash == "NA") and detected_info[
+                        "github_hash"
+                    ] != "unknown":
+                        git_hash = detected_info["github_hash"]
+                        logging.info(f"Auto-detected git_hash: {git_hash}")
+
+                    # Update tf_github_org and tf_github_repo with detected values
+                    tf_github_org = github_org
+                    tf_github_repo = github_repo
                     redis_conns = [r]
+
                     if oss_cluster_api_enabled:
                         redis_conns = []
                         logging.info("updating redis connections from cluster slots")
@@ -877,17 +1509,26 @@ def process_self_contained_coordinator_stream(
                             slot_network_info = slot[2]
                             prefered_endpoint = slot_network_info[0]
                             prefered_port = slot_network_info[1]
-                            shard_conn = redis.StrictRedis(
-                                host=prefered_endpoint,
-                                port=prefered_port,
-                                password=password,
-                                ssl=tls_enabled,
-                                ssl_cert_reqs=ssl_cert_reqs,
-                                ssl_keyfile=tls_key,
-                                ssl_certfile=tls_cert,
-                                ssl_ca_certs=tls_cacert,
-                                ssl_check_hostname=False,
-                            )
+                            # Build shard connection parameters
+                            shard_params = {
+                                "host": prefered_endpoint,
+                                "port": prefered_port,
+                                "password": password,
+                                "ssl": tls_enabled,
+                                "ssl_cert_reqs": ssl_cert_reqs,
+                                "ssl_check_hostname": False,
+                            }
+
+                            # Only add SSL certificate parameters if they are provided
+                            if tls_enabled:
+                                if tls_key is not None and tls_key != "":
+                                    shard_params["ssl_keyfile"] = tls_key
+                                if tls_cert is not None and tls_cert != "":
+                                    shard_params["ssl_certfile"] = tls_cert
+                                if tls_cacert is not None and tls_cacert != "":
+                                    shard_params["ssl_ca_certs"] = tls_cacert
+
+                            shard_conn = redis.StrictRedis(**shard_params)
                             redis_conns.append(shard_conn)
                         logging.info(
                             "There are a total of {} shards".format(len(redis_conns))
@@ -896,8 +1537,31 @@ def process_self_contained_coordinator_stream(
 
                     redis_pids = []
                     for conn in redis_conns:
-                        redis_pid = conn.info()["process_id"]
-                        redis_pids.append(redis_pid)
+                        redis_info = conn.info()
+                        redis_pid = redis_info.get("process_id")
+                        if redis_pid is not None:
+                            redis_pids.append(redis_pid)
+                        else:
+                            logging.warning(
+                                "Redis process_id not found in INFO command, skipping PID collection for this connection"
+                            )
+
+                    # Check if all tested commands are supported by this Redis instance
+                    supported_commands = get_supported_redis_commands(redis_conns)
+                    commands_supported, unsupported_commands = (
+                        check_test_command_support(benchmark_config, supported_commands)
+                    )
+
+                    if not commands_supported:
+                        logging.warning(
+                            f"Skipping test {test_name} due to unsupported commands: {unsupported_commands}"
+                        )
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
+                        continue
 
                     github_actor = f"{tf_triggering_env}-{running_platform}"
                     dso = "redis-server"
@@ -927,6 +1591,19 @@ def process_self_contained_coordinator_stream(
                         for conn in redis_conns:
                             conn.flushall()
 
+                        # Send MEMORY PURGE after FLUSHALL for memory comparison mode
+                        if memory_comparison_only:
+                            try:
+                                logging.info(
+                                    "Sending MEMORY PURGE after FLUSHALL at test start"
+                                )
+                                for conn in redis_conns:
+                                    conn.execute_command("MEMORY", "PURGE")
+                            except Exception as e:
+                                logging.warning(
+                                    f"MEMORY PURGE failed after FLUSHALL at test start: {e}"
+                                )
+
                     benchmark_required_memory = get_benchmark_required_memory(
                         benchmark_config
                     )
@@ -936,7 +1613,9 @@ def process_self_contained_coordinator_stream(
                     else:
                         for conn in redis_conns:
                             maxmemory = maxmemory + get_maxmemory(conn)
-                    if benchmark_required_memory > maxmemory:
+
+                    # Only perform memory check if we have valid maxmemory information
+                    if maxmemory > 0 and benchmark_required_memory > maxmemory:
                         logging.warning(
                             "Skipping test {} given maxmemory of server is bellow the benchmark required memory: {} < {}".format(
                                 test_name, maxmemory, benchmark_required_memory
@@ -948,6 +1627,12 @@ def process_self_contained_coordinator_stream(
                             benchmark_tool_global=benchmark_tool_global,
                         )
                         continue
+                    elif maxmemory == 0 and benchmark_required_memory > 0:
+                        logging.warning(
+                            "Cannot enforce memory checks for test {} - maxmemory information unavailable. Proceeding with test.".format(
+                                test_name
+                            )
+                        )
 
                     reset_commandstats(redis_conns)
 
@@ -955,11 +1640,28 @@ def process_self_contained_coordinator_stream(
                     benchmark_tool_workdir = client_mnt_point
 
                     metadata = {}
+                    # Add server metadata from Redis INFO SERVER
+                    metadata.update(server_metadata)
+
+                    # Add connection mode metadata
+                    if tls_enabled:
+                        metadata["conn_mode"] = "TLS"
+                        metadata["tls"] = "true"
+                    else:
+                        metadata["conn_mode"] = "PLAINTEXT"
+
+                    # Add deployment metadata
+                    metadata["deployment_type"] = args.deployment_type
+                    metadata["deployment_name"] = args.deployment_name
+
+                    # Add core count if specified
+                    if args.core_count is not None:
+                        metadata["core_count"] = str(args.core_count)
+
                     test_tls_cacert = None
                     test_tls_cert = None
                     test_tls_key = None
                     if tls_enabled:
-                        metadata["tls"] = "true"
                         if tls_cert is not None and tls_cert != "":
                             _, test_tls_cert = cp_to_workdir(
                                 temporary_dir_client, tls_cert
@@ -1037,8 +1739,43 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
+                        # Check if we should skip tests without dataset
+                        has_dataset = "preload_tool" in benchmark_config.get(
+                            "dbconfig", {}
+                        )
+                        if args.skip_tests_without_dataset is True and not has_dataset:
+                            logging.warning(
+                                "Skipping test {} as it does not contain a dataset".format(
+                                    test_name
+                                )
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        # For memory comparison mode, only run tests with dbconfig
+                        if (
+                            memory_comparison_only
+                            and "dbconfig" not in benchmark_config
+                        ):
+                            logging.warning(
+                                "Skipping test {} in memory comparison mode as it does not contain dbconfig".format(
+                                    test_name
+                                )
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                     if dry_run is True:
                         dry_run_count = dry_run_count + 1
+                        dry_run_tests.append(test_name)
                         delete_temporary_files(
                             temporary_dir_client=temporary_dir_client,
                             full_result_path=None,
@@ -1047,37 +1784,77 @@ def process_self_contained_coordinator_stream(
                         continue
                     if "dbconfig" in benchmark_config:
                         if "preload_tool" in benchmark_config["dbconfig"]:
-                            res = data_prepopulation_step(
-                                benchmark_config,
-                                benchmark_tool_workdir,
-                                client_cpuset_cpus,
-                                docker_client,
-                                git_hash,
-                                port,
-                                temporary_dir_client,
-                                test_name,
-                                host,
-                                tls_enabled,
-                                tls_skip_verify,
-                                test_tls_cert,
-                                test_tls_key,
-                                test_tls_cacert,
-                                resp_version,
-                                args.benchmark_local_install,
-                                password,
-                                oss_cluster_api_enabled,
-                                unix_socket,
+                            # Check if this dataset has already been loaded (for memory comparison mode)
+                            dataset_name = benchmark_config["dbconfig"].get(
+                                "dataset_name"
                             )
-                            if res is False:
-                                logging.warning(
-                                    "Skipping this test given preload result was false"
+                            skip_preload = False
+
+                            if memory_comparison_only and dataset_name:
+                                if dataset_name in loaded_datasets:
+                                    logging.info(
+                                        f"Skipping preload for dataset '{dataset_name}' - already loaded"
+                                    )
+                                    skip_preload = True
+                                    continue
+                                else:
+                                    logging.info(
+                                        f"Loading dataset '{dataset_name}' for the first time"
+                                    )
+                                    loaded_datasets.add(dataset_name)
+
+                            if not skip_preload:
+                                # Get timeout buffer for preload
+                                buffer_timeout = getattr(
+                                    args,
+                                    "timeout_buffer",
+                                    getattr(args, "container_timeout_buffer", 60),
                                 )
-                                delete_temporary_files(
-                                    temporary_dir_client=temporary_dir_client,
-                                    full_result_path=None,
-                                    benchmark_tool_global=benchmark_tool_global,
+
+                                res = data_prepopulation_step(
+                                    benchmark_config,
+                                    benchmark_tool_workdir,
+                                    client_cpuset_cpus,
+                                    docker_client,
+                                    git_hash,
+                                    port,
+                                    temporary_dir_client,
+                                    test_name,
+                                    host,
+                                    tls_enabled,
+                                    tls_skip_verify,
+                                    test_tls_cert,
+                                    test_tls_key,
+                                    test_tls_cacert,
+                                    resp_version,
+                                    args.benchmark_local_install,
+                                    password,
+                                    oss_cluster_api_enabled,
+                                    unix_socket,
+                                    buffer_timeout,
+                                    args,
                                 )
-                                continue
+                                if res is False:
+                                    logging.warning(
+                                        "Skipping this test given preload result was false"
+                                    )
+                                    delete_temporary_files(
+                                        temporary_dir_client=temporary_dir_client,
+                                        full_result_path=None,
+                                        benchmark_tool_global=benchmark_tool_global,
+                                    )
+                                    continue
+                    # Send MEMORY PURGE before preload for memory comparison mode (if FLUSHALL wasn't already done)
+                    if memory_comparison_only and not args.flushall_on_every_test_start:
+                        try:
+                            logging.info(
+                                "Sending MEMORY PURGE before preload for memory comparison mode"
+                            )
+                            for conn in redis_conns:
+                                conn.execute_command("MEMORY", "PURGE")
+                        except Exception as e:
+                            logging.warning(f"MEMORY PURGE failed before preload: {e}")
+
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
@@ -1096,8 +1873,300 @@ def process_self_contained_coordinator_stream(
                         redis_conns,
                     )
 
+                    # For memory comparison mode, collect memory stats after preload and skip client benchmark
+                    if memory_comparison_only:
+                        # Initialize timing variables for memory comparison mode
+                        (
+                            start_time,
+                            start_time_ms,
+                            start_time_str,
+                        ) = get_start_time_vars()
+                        dataset_load_duration_seconds = (
+                            0  # No dataset loading time for memory comparison
+                        )
+
+                        # Skip load tests (keyspacelen = 0) in memory comparison mode
+                        keyspacelen = (
+                            benchmark_config.get("dbconfig", {})
+                            .get("check", {})
+                            .get("keyspacelen", None)
+                        )
+                        if keyspacelen is not None and keyspacelen == 0:
+                            logging.info(
+                                f"Skipping load test {test_name} in memory comparison mode (keyspacelen=0)"
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        # Handle dry run for memory comparison mode
+                        if dry_run:
+                            dry_run_count = dry_run_count + 1
+                            dry_run_tests.append(test_name)
+                            logging.info(
+                                f"[DRY RUN] Would collect memory stats for test {test_name}"
+                            )
+
+                            # Add dataset info to dry run output
+                            dataset_name = benchmark_config.get("dbconfig", {}).get(
+                                "dataset_name"
+                            )
+                            if dataset_name:
+                                logging.info(f"[DRY RUN]   Dataset: {dataset_name}")
+
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        logging.info(f"Collecting memory stats for test {test_name}")
+                        try:
+                            # Use raw command to avoid parsing issues with some Redis versions
+                            memory_stats_raw = r.execute_command("MEMORY", "STATS")
+                            # Convert list response to dict
+                            memory_stats = {}
+                            for i in range(0, len(memory_stats_raw), 2):
+                                key = (
+                                    memory_stats_raw[i].decode()
+                                    if isinstance(memory_stats_raw[i], bytes)
+                                    else str(memory_stats_raw[i])
+                                )
+                                value = memory_stats_raw[i + 1]
+                                if isinstance(value, bytes):
+                                    try:
+                                        value = float(value.decode())
+                                    except ValueError:
+                                        value = value.decode()
+                                memory_stats[key] = value
+                        except Exception as e:
+                            logging.error(f"Failed to collect memory stats: {e}")
+                            # Fallback to basic memory info
+                            info = r.info("memory")
+                            memory_stats = {
+                                "total.allocated": info.get("used_memory", 0),
+                                "dataset.bytes": info.get("used_memory_dataset", 0),
+                                "keys.count": r.dbsize(),
+                                "keys.bytes-per-key": 0,
+                                "dataset.percentage": 0,
+                                "overhead.total": 0,
+                                "fragmentation": info.get(
+                                    "mem_fragmentation_ratio", 1.0
+                                ),
+                                "fragmentation.bytes": 0,
+                                "allocator.allocated": info.get("used_memory", 0),
+                                "allocator.resident": info.get("used_memory_rss", 0),
+                                "allocator-fragmentation.ratio": 1.0,
+                            }
+
+                        # Detect object encoding by scanning 1% of the dataset
+                        object_encoding_info = detect_object_encoding(
+                            r, benchmark_config.get("dbconfig", {})
+                        )
+                        logging.info(
+                            f"Object encoding detection: {object_encoding_info.get('encoding', 'unknown')} "
+                            f"({object_encoding_info.get('confidence', 0)*100:.1f}% confidence)"
+                        )
+
+                        # Extract key memory metrics
+                        memory_result = {
+                            "test_name": test_name,
+                            "total_allocated": memory_stats.get("total.allocated", 0),
+                            "dataset_bytes": memory_stats.get("dataset.bytes", 0),
+                            "keys_count": memory_stats.get("keys.count", 0),
+                            "keys_bytes_per_key": memory_stats.get(
+                                "keys.bytes-per-key", 0
+                            ),
+                            "dataset_percentage": memory_stats.get(
+                                "dataset.percentage", 0
+                            ),
+                            "overhead_total": memory_stats.get("overhead.total", 0),
+                            "fragmentation": memory_stats.get("fragmentation", 0),
+                            "fragmentation_bytes": memory_stats.get(
+                                "fragmentation.bytes", 0
+                            ),
+                            "allocator_allocated": memory_stats.get(
+                                "allocator.allocated", 0
+                            ),
+                            "allocator_resident": memory_stats.get(
+                                "allocator.resident", 0
+                            ),
+                            "allocator_fragmentation_ratio": memory_stats.get(
+                                "allocator-fragmentation.ratio", 0
+                            ),
+                            # Object encoding information
+                            "object_encoding": object_encoding_info.get(
+                                "encoding", "unknown"
+                            ),
+                            "encoding_confidence": object_encoding_info.get(
+                                "confidence", 0.0
+                            ),
+                            "encoding_sample_size": object_encoding_info.get(
+                                "sample_size", 0
+                            ),
+                            "encoding_distribution": object_encoding_info.get(
+                                "encoding_distribution", {}
+                            ),
+                            "encoding_is_complete_scan": object_encoding_info.get(
+                                "is_complete_scan", False
+                            ),
+                        }
+                        memory_results.append(memory_result)
+
+                        # Push memory metrics to datasink
+                        if datasink_push_results_redistimeseries:
+                            memory_metrics_dict = {
+                                "memory.total_allocated": memory_result[
+                                    "total_allocated"
+                                ],
+                                "memory.dataset_bytes": memory_result["dataset_bytes"],
+                                "memory.keys_count": memory_result["keys_count"],
+                                "memory.keys_bytes_per_key": memory_result[
+                                    "keys_bytes_per_key"
+                                ],
+                                "memory.dataset_percentage": memory_result[
+                                    "dataset_percentage"
+                                ],
+                                "memory.overhead_total": memory_result[
+                                    "overhead_total"
+                                ],
+                                "memory.fragmentation": memory_result["fragmentation"],
+                                "memory.fragmentation_bytes": memory_result[
+                                    "fragmentation_bytes"
+                                ],
+                                "memory.allocator_allocated": memory_result[
+                                    "allocator_allocated"
+                                ],
+                                "memory.allocator_resident": memory_result[
+                                    "allocator_resident"
+                                ],
+                                "memory.allocator_fragmentation_ratio": memory_result[
+                                    "allocator_fragmentation_ratio"
+                                ],
+                                "memory.encoding_confidence": memory_result[
+                                    "encoding_confidence"
+                                ],
+                                "memory.encoding_sample_size": memory_result[
+                                    "encoding_sample_size"
+                                ],
+                            }
+
+                            # Add object encoding to metadata
+                            metadata["object_encoding"] = memory_result[
+                                "object_encoding"
+                            ]
+                            metadata["encoding_confidence"] = (
+                                f"{memory_result['encoding_confidence']:.3f}"
+                            )
+                            metadata["encoding_sample_size"] = str(
+                                memory_result["encoding_sample_size"]
+                            )
+                            metadata["encoding_scan_type"] = (
+                                "complete"
+                                if memory_result.get("encoding_is_complete_scan", False)
+                                else "sample"
+                            )
+
+                            # Add encoding distribution to metadata if multiple encodings found
+                            if len(memory_result["encoding_distribution"]) > 1:
+                                for enc, percentage in memory_result[
+                                    "encoding_distribution"
+                                ].items():
+                                    metadata[f"encoding_dist_{enc}"] = (
+                                        f"{percentage:.1f}%"
+                                    )
+
+                            # Set datapoint_time_ms for memory comparison mode
+                            datapoint_time_ms = start_time_ms
+                            # 7 days from now
+                            expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
+                            metadata["metric-type"] = "memory-stats"
+
+                            # Debug: Check git_hash value and memory metrics before export
+                            logging.info(
+                                f"DEBUG: About to export memory metrics with git_hash='{git_hash}', type={type(git_hash)}"
+                            )
+                            logging.info(
+                                f"DEBUG: memory_metrics_dict has {len(memory_metrics_dict)} items: {list(memory_metrics_dict.keys())}"
+                            )
+                            logging.info(
+                                f"DEBUG: Sample values: {dict(list(memory_metrics_dict.items())[:3])}"
+                            )
+                            export_redis_metrics(
+                                git_version,
+                                datapoint_time_ms,
+                                memory_metrics_dict,
+                                datasink_conn,
+                                setup_name,
+                                setup_type,
+                                test_name,
+                                git_branch,
+                                tf_github_org,
+                                tf_github_repo,
+                                tf_triggering_env,
+                                metadata,
+                                expire_redis_metrics_ms,
+                                git_hash,
+                                running_platform,
+                            )
+
+                            exporter_datasink_common(
+                                benchmark_config,
+                                0,  # benchmark_duration_seconds = 0 for memory only
+                                build_variant_name,
+                                datapoint_time_ms,
+                                dataset_load_duration_seconds,
+                                datasink_conn,
+                                datasink_push_results_redistimeseries,
+                                git_branch,
+                                git_version,
+                                metadata,
+                                redis_conns,
+                                memory_metrics_dict,
+                                running_platform,
+                                args.deployment_name,
+                                args.deployment_type,
+                                test_name,
+                                tf_github_org,
+                                tf_github_repo,
+                                tf_triggering_env,
+                                topology_spec_name,
+                                default_metrics,
+                                git_hash,
+                                False,
+                                True,
+                            )
+
+                        # Send MEMORY PURGE after memory comparison (if FLUSHALL at test end is not enabled)
+                        if not args.flushall_on_every_test_end:
+                            try:
+                                logging.info(
+                                    "Sending MEMORY PURGE after memory comparison"
+                                )
+                                for conn in redis_conns:
+                                    conn.execute_command("MEMORY", "PURGE")
+                            except Exception as e:
+                                logging.warning(
+                                    f"MEMORY PURGE failed after memory comparison: {e}"
+                                )
+
+                        logging.info(
+                            f"Memory comparison completed for test {test_name}"
+                        )
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
+                        continue
+
                     if dry_run_include_preload is True:
                         dry_run_count = dry_run_count + 1
+                        dry_run_tests.append(test_name)
                         delete_temporary_files(
                             temporary_dir_client=temporary_dir_client,
                             full_result_path=None,
@@ -1110,7 +2179,17 @@ def process_self_contained_coordinator_stream(
                     # backwards compatible
                     if benchmark_tool is None:
                         benchmark_tool = "redis-benchmark"
-                    full_benchmark_path = f"/usr/local/bin/{benchmark_tool}"
+
+                    # Set benchmark path based on local install option
+                    if (
+                        args.benchmark_local_install
+                        and "memtier_benchmark" in benchmark_tool
+                    ):
+                        full_benchmark_path = getattr(
+                            args, "memtier_bin_path", "memtier_benchmark"
+                        )
+                    else:
+                        full_benchmark_path = f"/usr/local/bin/{benchmark_tool}"
 
                     # setup the benchmark
                     (
@@ -1208,6 +2287,30 @@ def process_self_contained_coordinator_stream(
                                 unix_socket,
                                 None,  # username
                             )
+                        elif "vector-db-benchmark" in benchmark_tool:
+                            (
+                                _,
+                                benchmark_command_str,
+                                arbitrary_command,
+                                env_vars,
+                            ) = prepare_vector_db_benchmark_parameters(
+                                benchmark_config["clientconfig"],
+                                full_benchmark_path,
+                                port,
+                                host,
+                                password,
+                                local_benchmark_output_filename,
+                                oss_cluster_api_enabled,
+                                tls_enabled,
+                                tls_skip_verify,
+                                test_tls_cert,
+                                test_tls_key,
+                                test_tls_cacert,
+                                resp_version,
+                                override_memtier_test_time,
+                                unix_socket,
+                                None,  # username
+                            )
                         else:
                             # prepare the benchmark command for other tools
                             (
@@ -1240,6 +2343,44 @@ def process_self_contained_coordinator_stream(
                         profiler_frequency,
                         profiler_call_graph_mode,
                     )
+
+                    # start remote profiling if enabled
+                    remote_profiler = None
+                    if args.enable_remote_profiling:
+                        try:
+                            remote_profiler = RemoteProfiler(
+                                args.remote_profile_host,
+                                args.remote_profile_port,
+                                args.remote_profile_output_dir,
+                                args.remote_profile_username,
+                                args.remote_profile_password,
+                            )
+
+                            # Extract expected benchmark duration
+                            expected_duration = extract_expected_benchmark_duration(
+                                benchmark_command_str, override_memtier_test_time
+                            )
+
+                            # Start remote profiling
+                            profiling_started = remote_profiler.start_profiling(
+                                redis_conns[0] if redis_conns else None,
+                                test_name,
+                                expected_duration,
+                            )
+
+                            if profiling_started:
+                                logging.info(
+                                    f"Started remote profiling for test: {test_name}"
+                                )
+                            else:
+                                logging.warning(
+                                    f"Failed to start remote profiling for test: {test_name}"
+                                )
+                                remote_profiler = None
+
+                        except Exception as e:
+                            logging.error(f"Error starting remote profiling: {e}")
+                            remote_profiler = None
 
                     # run the benchmark
                     benchmark_start_time = datetime.datetime.now()
@@ -1284,13 +2425,31 @@ def process_self_contained_coordinator_stream(
                                 + " "
                                 + benchmark_command_str
                             )
-                            logging.info(
-                                "Running memtier benchmark command {}".format(
-                                    benchmark_command_str
+
+                            # Calculate timeout for local process
+                            buffer_timeout = getattr(
+                                args,
+                                "timeout_buffer",
+                                getattr(args, "container_timeout_buffer", 60),
+                            )
+                            process_timeout = calculate_process_timeout(
+                                benchmark_command_str, buffer_timeout
+                            )
+
+                            # Run with timeout
+                            success, client_container_stdout, stderr = (
+                                run_local_command_with_timeout(
+                                    benchmark_command_str,
+                                    process_timeout,
+                                    "memtier benchmark",
                                 )
                             )
-                            stream = os.popen(benchmark_command_str)
-                            client_container_stdout = stream.read()
+
+                            if not success:
+                                logging.error(f"Memtier benchmark failed: {stderr}")
+                                # Continue with the test but log the failure
+                                client_container_stdout = f"ERROR: {stderr}"
+
                             move_command = "mv {} {}".format(
                                 local_benchmark_output_filename, temporary_dir_client
                             )
@@ -1305,22 +2464,55 @@ def process_self_contained_coordinator_stream(
                             )
 
                             # Use explicit container management for single client
-                            container = docker_client.containers.run(
-                                image=client_container_image,
-                                volumes={
-                                    temporary_dir_client: {
-                                        "bind": client_mnt_point,
-                                        "mode": "rw",
-                                    },
+                            # Set working directory based on tool
+                            working_dir = benchmark_tool_workdir
+                            if "vector-db-benchmark" in benchmark_tool:
+                                working_dir = (
+                                    "/app"  # vector-db-benchmark needs to run from /app
+                                )
+
+                            # Prepare volumes
+                            volumes = {
+                                temporary_dir_client: {
+                                    "bind": client_mnt_point,
+                                    "mode": "rw",
                                 },
-                                auto_remove=False,
-                                privileged=True,
-                                working_dir=benchmark_tool_workdir,
-                                command=benchmark_command_str,
-                                network_mode="host",
-                                detach=True,
-                                cpuset_cpus=client_cpuset_cpus,
-                            )
+                            }
+
+                            # For vector-db-benchmark, also mount the results directory
+                            if "vector-db-benchmark" in benchmark_tool:
+                                volumes[temporary_dir_client] = {
+                                    "bind": "/app/results",
+                                    "mode": "rw",
+                                }
+
+                            container_kwargs = {
+                                "image": client_container_image,
+                                "volumes": volumes,
+                                "auto_remove": False,
+                                "privileged": True,
+                                "working_dir": working_dir,
+                                "command": benchmark_command_str,
+                                "network_mode": "host",
+                                "detach": True,
+                                "cpuset_cpus": client_cpuset_cpus,
+                            }
+
+                            # Only add user for non-vector-db-benchmark tools to avoid permission issues
+                            if "vector-db-benchmark" not in benchmark_tool:
+                                container_kwargs["user"] = (
+                                    f"{os.getuid()}:{os.getgid()}"
+                                )
+
+                            # Add environment variables for vector-db-benchmark
+                            if "vector-db-benchmark" in benchmark_tool:
+                                try:
+                                    container_kwargs["environment"] = env_vars
+                                except NameError:
+                                    # env_vars not defined, skip environment variables
+                                    pass
+
+                            container = docker_client.containers.run(**container_kwargs)
 
                             # Wait for container and get output
                             try:
@@ -1370,7 +2562,31 @@ def process_self_contained_coordinator_stream(
                         test_name,
                     )
 
+                    # wait for remote profiling completion
+                    if remote_profiler is not None:
+                        try:
+                            logging.info("Waiting for remote profiling to complete...")
+                            profiling_success = remote_profiler.wait_for_completion(
+                                timeout=60
+                            )
+                            if profiling_success:
+                                logging.info("Remote profiling completed successfully")
+                            else:
+                                logging.warning(
+                                    "Remote profiling did not complete successfully"
+                                )
+                        except Exception as e:
+                            logging.error(
+                                f"Error waiting for remote profiling completion: {e}"
+                            )
+
                     logging.info("Printing client tool stdout output")
+                    if client_container_stdout:
+                        print("=== Container Output ===")
+                        print(client_container_stdout)
+                        print("=== End Container Output ===")
+                    else:
+                        logging.warning("No container output captured")
 
                     used_memory_check(
                         test_name,
@@ -1379,11 +2595,6 @@ def process_self_contained_coordinator_stream(
                         "end of benchmark",
                         used_memory_check_fail,
                     )
-
-                    if args.flushall_on_every_test_end:
-                        logging.info("Sending FLUSHALL to the DB")
-                        for r in redis_conns:
-                            r.flushall()
                     datapoint_time_ms = start_time_ms
 
                     post_process_benchmark_results(
@@ -1428,13 +2639,44 @@ def process_self_contained_coordinator_stream(
                             full_result_path = "{}/{}".format(
                                 temporary_dir_client, local_benchmark_output_filename
                             )
+                        elif "vector-db-benchmark" in benchmark_tool:
+                            # For vector-db-benchmark, look for summary JSON file
+                            summary_files = [
+                                f
+                                for f in os.listdir(temporary_dir_client)
+                                if f.endswith("-summary.json")
+                            ]
+                            if summary_files:
+                                full_result_path = os.path.join(
+                                    temporary_dir_client, summary_files[0]
+                                )
+                                logging.info(
+                                    f"Found vector-db-benchmark summary file: {summary_files[0]}"
+                                )
+                            else:
+                                logging.warning(
+                                    "No vector-db-benchmark summary JSON file found"
+                                )
+                                # Create empty results dict to avoid crash
+                                results_dict = {}
+
                         logging.info(f"Reading results json from {full_result_path}")
 
-                        with open(
-                            full_result_path,
-                            "r",
-                        ) as json_file:
-                            results_dict = json.load(json_file)
+                        if (
+                            "vector-db-benchmark" in benchmark_tool
+                            and not os.path.exists(full_result_path)
+                        ):
+                            # Handle case where vector-db-benchmark didn't produce results
+                            results_dict = {}
+                            logging.warning(
+                                "Vector-db-benchmark did not produce results file"
+                            )
+                        else:
+                            with open(
+                                full_result_path,
+                                "r",
+                            ) as json_file:
+                                results_dict = json.load(json_file)
                         print_results_table_stdout(
                             benchmark_config,
                             default_metrics,
@@ -1468,18 +2710,41 @@ def process_self_contained_coordinator_stream(
                         redis_conns,
                         results_dict,
                         running_platform,
-                        setup_name,
-                        setup_type,
+                        args.deployment_name,
+                        args.deployment_type,
                         test_name,
                         tf_github_org,
                         tf_github_repo,
                         tf_triggering_env,
                         topology_spec_name,
                         default_metrics,
+                        git_hash,
                     )
                     test_result = True
                     total_test_suite_runs = total_test_suite_runs + 1
 
+                    if args.flushall_on_every_test_end:
+                        logging.info("Sending FLUSHALL to the DB")
+                        for r in redis_conns:
+                            r.flushall()
+
+                        # Send MEMORY PURGE after FLUSHALL for memory comparison mode
+                        if memory_comparison_only:
+                            try:
+                                logging.info(
+                                    "Sending MEMORY PURGE after FLUSHALL at test end"
+                                )
+                                for r in redis_conns:
+                                    r.execute_command("MEMORY", "PURGE")
+                            except Exception as e:
+                                logging.warning(
+                                    f"MEMORY PURGE failed after FLUSHALL at test end: {e}"
+                                )
+
+                except KeyboardInterrupt:
+                    logging.info("KeyboardInterrupt caught. Exiting...")
+                    print("\nKeyboardInterrupt caught. Exiting...")
+                    break
                 except:
                     logging.critical(
                         "Some unexpected exception was caught "
@@ -1490,6 +2755,13 @@ def process_self_contained_coordinator_stream(
                     traceback.print_exc(file=sys.stdout)
                     print("-" * 60)
                     test_result = False
+
+                    # Check if user requested exit via Ctrl+C
+                    if _exit_requested:
+                        logging.info(
+                            "Exit requested by user. Stopping after exception."
+                        )
+                        break
                 # tear-down
                 logging.info("Tearing down setup")
                 for container in client_containers:
@@ -1524,6 +2796,13 @@ def process_self_contained_coordinator_stream(
                     benchmark_tool_global=benchmark_tool_global,
                 )
 
+    # Check if user requested exit via Ctrl+C
+    if _exit_requested:
+        logging.info("Exit requested by user. Printing summary before exit.")
+        print(
+            "\nExecution stopped by user request. Printing summary of completed tests..."
+        )
+
     # Print Redis server information section before results
     if len(results_matrix) > 0:
         # Get redis_conns from the first test context (we need to pass it somehow)
@@ -1546,6 +2825,12 @@ def process_self_contained_coordinator_stream(
     )
     writer.write_table()
 
+    # Add note if execution was stopped early
+    if _exit_requested:
+        print(
+            "\n(Note: Execution was stopped early by user request - showing results for completed tests only)"
+        )
+
     if client_aggregated_results_folder != "":
         os.makedirs(client_aggregated_results_folder, exist_ok=True)
         dest_fpath = f"{client_aggregated_results_folder}/aggregate-results.csv"
@@ -1558,16 +2843,149 @@ def process_self_contained_coordinator_stream(
         )
         csv_writer.dump(dest_fpath)
 
-    if dry_run is True:
-        logging.info(
-            "Number of tests that would have been run: {}".format(dry_run_count)
+    # Print memory comparison summary if in memory comparison mode
+    if memory_comparison_only and memory_results:
+        logging.info("\n" + "=" * 80)
+        logging.info("MEMORY COMPARISON SUMMARY")
+        logging.info("=" * 80)
+        logging.info(f"Total unique datasets loaded: {len(loaded_datasets)}")
+        if loaded_datasets:
+            logging.info(f"Datasets: {', '.join(sorted(loaded_datasets))}")
+        logging.info("=" * 80)
+
+        # Create memory summary table
+        memory_headers = [
+            "Test Name",
+            "Total Allocated",
+            "Dataset Bytes",
+            "Keys Count",
+            "Bytes/Key",
+            "Dataset %",
+            "Overhead",
+            "Fragmentation",
+            "Alloc Fragmentation",
+            "Object Encoding",
+            "Encoding Confidence",
+            "Scan Type",
+        ]
+
+        memory_matrix = []
+        for result in memory_results:
+            # Convert bytes to human readable format
+            total_mb = result["total_allocated"] / (1024 * 1024)
+            dataset_mb = result["dataset_bytes"] / (1024 * 1024)
+            overhead_mb = result["overhead_total"] / (1024 * 1024)
+
+            memory_matrix.append(
+                [
+                    result["test_name"],
+                    f"{total_mb:.1f}MB",
+                    f"{dataset_mb:.1f}MB",
+                    f"{result['keys_count']:,}",
+                    f"{result['keys_bytes_per_key']:.0f}B",
+                    f"{result['dataset_percentage']:.1f}%",
+                    f"{overhead_mb:.1f}MB",
+                    f"{result['fragmentation']:.2f}",
+                    f"{result['allocator_fragmentation_ratio']:.3f}",
+                    result.get("object_encoding", "unknown"),
+                    f"{result.get('encoding_confidence', 0.0)*100:.1f}%",
+                    (
+                        "complete"
+                        if result.get("encoding_is_complete_scan", False)
+                        else "sample"
+                    ),
+                ]
+            )
+
+        memory_writer = MarkdownTableWriter(
+            table_name="Memory Usage Summary",
+            headers=memory_headers,
+            value_matrix=memory_matrix,
         )
+        memory_writer.write_table()
+
+    if dry_run is True:
+        mode_description = (
+            "memory comparison" if memory_comparison_only else "benchmark"
+        )
+        logging.info(
+            "Number of tests that would have been run ({}): {}".format(
+                mode_description, dry_run_count
+            )
+        )
+        if _exit_requested:
+            logging.info("(Note: Execution was stopped early by user request)")
+        if dry_run_tests:
+            logging.info(f"Tests that would be run ({mode_description} mode):")
+            for test in dry_run_tests:
+                logging.info(f"  - {test}")
+            final_test_regex = "|".join(dry_run_tests)
+            logging.info(f"Final test regex: {final_test_regex}")
+
+            # For memory comparison mode, show dataset analysis
+            if memory_comparison_only:
+                unique_datasets = set()
+                tests_with_datasets = 0
+
+                for test_file in testsuite_spec_files:
+                    if defaults_filename in test_file:
+                        continue
+                    try:
+                        with open(test_file, "r") as stream:
+                            benchmark_config = yaml.safe_load(stream)
+
+                        test_name = extract_test_name_from_test_configuration_file(
+                            test_file
+                        )
+                        if (
+                            test_name in dry_run_tests
+                            and "dbconfig" in benchmark_config
+                        ):
+                            # Skip load tests in dry run analysis too
+                            keyspacelen = (
+                                benchmark_config["dbconfig"]
+                                .get("check", {})
+                                .get("keyspacelen", None)
+                            )
+                            if keyspacelen is not None and keyspacelen == 0:
+                                continue
+
+                            dataset_name = benchmark_config["dbconfig"].get(
+                                "dataset_name"
+                            )
+                            if dataset_name:
+                                unique_datasets.add(dataset_name)
+                                tests_with_datasets += 1
+
+                    except Exception as e:
+                        logging.debug(f"Error analyzing {test_file} for dry run: {e}")
+
+                if tests_with_datasets > 0:
+                    logging.info(f"\nMemory comparison analysis:")
+                    logging.info(f"  Tests with datasets: {tests_with_datasets}")
+                    logging.info(f"  Unique datasets: {len(unique_datasets)}")
+                    logging.info(
+                        f"  Dataset ingestion savings: {tests_with_datasets - len(unique_datasets)} skipped loads"
+                    )
+                    if unique_datasets:
+                        logging.info(f"  Datasets that would be loaded:")
+                        for dataset in sorted(unique_datasets):
+                            logging.info(f"    - {dataset}")
 
 
 def get_maxmemory(r):
-    maxmemory = int(r.info("memory")["maxmemory"])
+    memory_info = r.info("memory")
+
+    # Check if maxmemory key exists in Redis memory info
+    if "maxmemory" not in memory_info:
+        logging.warning(
+            "maxmemory not present in Redis memory info. Cannot enforce memory checks."
+        )
+        return 0
+
+    maxmemory = int(memory_info["maxmemory"])
     if maxmemory == 0:
-        total_system_memory = int(r.info("memory")["total_system_memory"])
+        total_system_memory = int(memory_info["total_system_memory"])
         logging.info(" Using total system memory as max {}".format(total_system_memory))
         maxmemory = total_system_memory
     else:
@@ -1654,7 +3072,36 @@ def print_results_table_stdout(
     ]
     results_matrix = extract_results_table(metrics, results_dict)
 
-    results_matrix = [[x[0], f"{x[3]:.3f}"] for x in results_matrix]
+    # Use resolved metric name for precision_summary metrics, otherwise use original path
+    def get_display_name(x):
+        # For precision_summary metrics with wildcards, construct the resolved path
+        if (
+            len(x) > 1
+            and isinstance(x[0], str)
+            and "precision_summary" in x[0]
+            and "*" in x[0]
+        ):
+
+            # Look for the precision level in the cleaned metrics logs
+            # We need to find the corresponding cleaned metric to get the precision level
+            # For now, let's extract it from the time series logs that we know are working
+            # The pattern is: replace "*" with the actual precision level
+
+            # Since we know from logs that the precision level is available,
+            # let's reconstruct it from the metric context path (x[1]) if available
+            if (
+                len(x) > 1
+                and isinstance(x[1], str)
+                and x[1].startswith("'")
+                and x[1].endswith("'")
+            ):
+                precision_level = x[1]  # This should be something like "'1.0000'"
+                resolved_path = x[0].replace("*", precision_level)
+                return resolved_path
+
+        return x[0]  # Use original path
+
+    results_matrix = [[get_display_name(x), f"{x[3]:.3f}"] for x in results_matrix]
     writer = MarkdownTableWriter(
         table_name=table_name,
         headers=results_matrix_headers,
@@ -1668,14 +3115,31 @@ def print_redis_info_section(redis_conns):
     if redis_conns is not None and len(redis_conns) > 0:
         try:
             redis_info = redis_conns[0].info()
+            server_name = "redis"
+            if "server_name" in redis_info:
+                server_name = redis_info["server_name"]
 
             print("\n# Redis Server Information")
             redis_info_data = [
-                ["Redis Version", redis_info.get("redis_version", "unknown")],
-                ["Redis Git SHA1", redis_info.get("redis_git_sha1", "unknown")],
-                ["Redis Git Dirty", str(redis_info.get("redis_git_dirty", "unknown"))],
-                ["Redis Build ID", redis_info.get("redis_build_id", "unknown")],
-                ["Redis Mode", redis_info.get("redis_mode", "unknown")],
+                [
+                    f"{server_name} version",
+                    redis_info.get(f"{server_name}_version", "unknown"),
+                ],
+                ["redis version", redis_info.get("redis_version", "unknown")],
+                ["io_threads_active", redis_info.get("io_threads_active", "unknown")],
+                [
+                    f"{server_name} Git SHA1",
+                    redis_info.get("redis_git_sha1", "unknown"),
+                ],
+                [
+                    f"{server_name} Git Dirty",
+                    str(redis_info.get("redis_git_dirty", "unknown")),
+                ],
+                [
+                    f"{server_name} Build ID",
+                    redis_info.get("redis_build_id", "unknown"),
+                ],
+                [f"{server_name} Mode", redis_info.get("redis_mode", "unknown")],
                 ["OS", redis_info.get("os", "unknown")],
                 ["Arch Bits", str(redis_info.get("arch_bits", "unknown"))],
                 ["GCC Version", redis_info.get("gcc_version", "unknown")],
@@ -1703,6 +3167,93 @@ def print_redis_info_section(redis_conns):
             logging.warning(f"Failed to collect Redis server information: {e}")
 
 
+def get_supported_redis_commands(redis_conns):
+    """Get list of supported Redis commands from the server"""
+    if redis_conns is not None and len(redis_conns) > 0:
+        try:
+            # Execute COMMAND to get all supported commands
+            commands_info = redis_conns[0].execute_command("COMMAND")
+            logging.info(
+                f"COMMAND response type: {type(commands_info)}, length: {len(commands_info) if hasattr(commands_info, '__len__') else 'N/A'}"
+            )
+
+            # Extract command names
+            supported_commands = set()
+
+            if isinstance(commands_info, dict):
+                # COMMAND response is a dict with command names as keys
+                for cmd_name in commands_info.keys():
+                    if isinstance(cmd_name, bytes):
+                        cmd_name = cmd_name.decode("utf-8")
+                    supported_commands.add(str(cmd_name).upper())
+            elif isinstance(commands_info, (list, tuple)):
+                # Fallback for list format (first element of each command info array)
+                for cmd_info in commands_info:
+                    if isinstance(cmd_info, (list, tuple)) and len(cmd_info) > 0:
+                        cmd_name = cmd_info[0]
+                        if isinstance(cmd_name, bytes):
+                            cmd_name = cmd_name.decode("utf-8")
+                        supported_commands.add(str(cmd_name).upper())
+
+            logging.info(
+                f"Retrieved {len(supported_commands)} supported Redis commands"
+            )
+
+            # Handle case where COMMAND returns 0 commands (likely not supported)
+            if len(supported_commands) == 0:
+                logging.warning(
+                    "COMMAND returned 0 commands - likely not supported by this Redis instance"
+                )
+                return None
+
+            # Log some sample commands for debugging
+            if supported_commands:
+                sample_commands = sorted(list(supported_commands))[:10]
+                logging.info(f"Sample commands: {sample_commands}")
+
+                # Check specifically for vector commands
+                vector_commands = [
+                    cmd for cmd in supported_commands if cmd.startswith("V")
+                ]
+                if vector_commands:
+                    logging.info(f"Vector commands found: {sorted(vector_commands)}")
+
+            return supported_commands
+        except Exception as e:
+            logging.warning(f"Failed to get supported Redis commands: {e}")
+            logging.warning("Proceeding without command validation")
+            return None
+    return None
+
+
+def check_test_command_support(benchmark_config, supported_commands):
+    """Check if all tested-commands in the benchmark config are supported"""
+    if supported_commands is None or len(supported_commands) == 0:
+        logging.warning(
+            "No supported commands list available (COMMAND not supported or returned 0 commands), skipping command check"
+        )
+        return True, []
+
+    if "tested-commands" not in benchmark_config:
+        logging.info("No tested-commands specified in benchmark config")
+        return True, []
+
+    tested_commands = benchmark_config["tested-commands"]
+    unsupported_commands = []
+
+    for cmd in tested_commands:
+        cmd_upper = cmd.upper()
+        if cmd_upper not in supported_commands:
+            unsupported_commands.append(cmd)
+
+    if unsupported_commands:
+        logging.warning(f"Unsupported commands found: {unsupported_commands}")
+        return False, unsupported_commands
+    else:
+        logging.info(f"All tested commands are supported: {tested_commands}")
+        return True, []
+
+
 def prepare_overall_total_test_results(
     benchmark_config,
     default_metrics,
@@ -1721,8 +3272,33 @@ def prepare_overall_total_test_results(
         None,
     )
     current_test_results_matrix = extract_results_table(metrics, results_dict)
+
+    # Use the same display name logic as in the individual test results
+    def get_overall_display_name(x):
+        # For precision_summary metrics with wildcards, construct the resolved path
+        if (
+            len(x) > 1
+            and isinstance(x[0], str)
+            and "precision_summary" in x[0]
+            and "*" in x[0]
+        ):
+
+            # Reconstruct resolved path from metric context path (x[1]) if available
+            if (
+                len(x) > 1
+                and isinstance(x[1], str)
+                and x[1].startswith("'")
+                and x[1].endswith("'")
+            ):
+                precision_level = x[1]  # This should be something like "'1.0000'"
+                resolved_path = x[0].replace("*", precision_level)
+                return resolved_path
+
+        return x[0]  # Use original path
+
     current_test_results_matrix = [
-        [test_name, x[0], f"{x[3]:.3f}"] for x in current_test_results_matrix
+        [test_name, get_overall_display_name(x), f"{x[3]:.3f}"]
+        for x in current_test_results_matrix
     ]
     overall_results_matrix.extend(current_test_results_matrix)
 
@@ -1747,6 +3323,8 @@ def data_prepopulation_step(
     password=None,
     oss_cluster_api_enabled=False,
     unix_socket="",
+    timeout_buffer=60,
+    args=None,
 ):
     result = True
     # setup the benchmark
@@ -1765,7 +3343,12 @@ def data_prepopulation_step(
         benchmark_config["dbconfig"], "preload_tool"
     )
     preload_tool = extract_client_tool(benchmark_config["dbconfig"], "preload_tool")
-    full_benchmark_path = f"/usr/local/bin/{preload_tool}"
+
+    # Set preload tool path based on local install option
+    if benchmark_local_install and "memtier_benchmark" in preload_tool and args:
+        full_benchmark_path = getattr(args, "memtier_bin_path", "memtier_benchmark")
+    else:
+        full_benchmark_path = f"/usr/local/bin/{preload_tool}"
     client_mnt_point = "/mnt/client/"
 
     if "memtier_benchmark" in preload_tool:
@@ -1808,13 +3391,21 @@ def data_prepopulation_step(
             preload_command_str = (
                 "taskset -c " + client_cpuset_cpus + " " + preload_command_str
             )
-            logging.info(
-                "Pre-loading using memtier benchmark command {}".format(
-                    preload_command_str
-                )
+
+            # Calculate timeout for preload process
+            process_timeout = calculate_process_timeout(
+                preload_command_str, timeout_buffer
             )
-            stream = os.popen(preload_command_str)
-            client_container_stdout = stream.read()
+
+            # Run with timeout
+            success, client_container_stdout, stderr = run_local_command_with_timeout(
+                preload_command_str, process_timeout, "memtier preload"
+            )
+
+            if not success:
+                logging.error(f"Memtier preload failed: {stderr}")
+                result = False
+                return result
 
             move_command = "mv {} {}".format(
                 local_benchmark_output_filename, temporary_dir

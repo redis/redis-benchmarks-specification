@@ -76,7 +76,7 @@ def get_ts_metric_name(
     else:
         deployment_name = ""
     ts_name = (
-        "ci.benchmarks.redislabs/{by}/"
+        "ci.benchmarks.redis/{by}/"
         "{triggering_env}/{github_org}/{github_repo}/"
         "{test_name}/{build_variant_str}{running_platform_str}{deployment_type}{deployment_name}/{by_value}/{metric}".format(
             by=by,
@@ -133,6 +133,9 @@ def extract_results_table(
                 use_metric_context_path = False
                 if len(find_res) > 1:
                     use_metric_context_path = True
+                # Always use context path for precision_summary metrics to show actual precision levels
+                if "precision_summary" in metric_jsonpath and "*" in metric_jsonpath:
+                    use_metric_context_path = True
                 for metric in find_res:
                     metric_name = str(metric.path)
                     metric_value = float(metric.value)
@@ -142,15 +145,45 @@ def extract_results_table(
                     if metric_jsonpath[0] == ".":
                         metric_jsonpath = metric_jsonpath[1:]
 
+                    # For precision_summary metrics, construct the full resolved path for display
+                    display_path = metric_jsonpath
+                    if (
+                        "precision_summary" in metric_jsonpath
+                        and "*" in metric_jsonpath
+                        and use_metric_context_path
+                    ):
+                        # Replace the wildcard with the actual precision level
+                        display_path = metric_jsonpath.replace("*", metric_context_path)
+
                     # retro-compatible naming
                     if use_metric_context_path is False:
                         metric_name = metric_jsonpath
+                    else:
+                        # For display purposes, use the resolved path for precision_summary
+                        if (
+                            "precision_summary" in metric_jsonpath
+                            and "*" in metric_jsonpath
+                        ):
+                            metric_name = display_path
+                        else:
+                            # Clean up the metric name for other cases
+                            metric_name = metric_name.replace("'", "")
+                            metric_name = metric_name.replace('"', "")
+                            metric_name = metric_name.replace("(", "")
+                            metric_name = metric_name.replace(")", "")
+                            metric_name = metric_name.replace(" ", "_")
 
-                    metric_name = metric_name.replace("'", "")
-                    metric_name = metric_name.replace('"', "")
-                    metric_name = metric_name.replace("(", "")
-                    metric_name = metric_name.replace(")", "")
-                    metric_name = metric_name.replace(" ", "_")
+                    # Apply standard cleaning to all metric names
+                    if not (
+                        "precision_summary" in metric_jsonpath
+                        and "*" in metric_jsonpath
+                        and use_metric_context_path
+                    ):
+                        metric_name = metric_name.replace("'", "")
+                        metric_name = metric_name.replace('"', "")
+                        metric_name = metric_name.replace("(", "")
+                        metric_name = metric_name.replace(")", "")
+                        metric_name = metric_name.replace(" ", "_")
 
                     results_matrix.append(
                         [
@@ -290,7 +323,7 @@ def from_metric_kv_to_timeserie(
     }
 
     original_ts_name = ts_name
-    target_table_keyname = "target_tables:{triggering_env}:ci.benchmarks.redislabs/{break_by_key}/{break_by_str}/{tf_github_org}/{tf_github_repo}/{deployment_type}/{deployment_name}/{test_name}/{metric_name}".format(
+    target_table_keyname = "target_tables:{triggering_env}:ci.benchmarks.redis/{break_by_key}/{break_by_str}/{tf_github_org}/{tf_github_repo}/{deployment_type}/{deployment_name}/{test_name}/{metric_name}".format(
         triggering_env=tf_triggering_env,
         break_by_key=break_by_key,
         break_by_str=break_by_str,
@@ -646,7 +679,7 @@ def get_overall_dashboard_keynames(
     if running_platform is not None:
         running_platform_str = "/{}".format(running_platform)
     sprefix = (
-        "ci.benchmarks.redislabs/"
+        "ci.benchmarks.redis/"
         + "{triggering_env}/{github_org}/{github_repo}".format(
             triggering_env=tf_triggering_env,
             github_org=tf_github_org,
@@ -1140,7 +1173,6 @@ def timeseries_test_sucess_flow(
     testcase_metric_context_paths = []
     version_target_tables = None
     branch_target_tables = None
-
     if timeseries_dict is None:
         (
             timeseries_dict,

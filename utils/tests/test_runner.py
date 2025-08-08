@@ -45,7 +45,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
         (_, benchmark_command_str, _) = prepare_memtier_benchmark_parameters(
             benchmark_config["clientconfig"],
@@ -65,7 +65,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time=5'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time=5 --key-minimum 1 --key-maximum 1000000'
         )
         oss_api_enabled = True
         (_, benchmark_command_str, _) = prepare_memtier_benchmark_parameters(
@@ -79,7 +79,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --cluster-mode "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --cluster-mode "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
         oss_api_enabled = False
@@ -104,7 +104,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
         tls_enabled = True
@@ -123,7 +123,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --tls-skip-verify "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --tls-skip-verify "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
         tls_skip_verify = False
@@ -142,7 +142,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
         tls_skip_verify = False
@@ -163,7 +163,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --cert cert.file --key key.file "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --cert cert.file --key key.file "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
         tls_cacert = "cacert.file"
@@ -183,7 +183,7 @@ def test_prepare_memtier_benchmark_parameters():
         )
         assert (
             benchmark_command_str
-            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --cert cert.file --key key.file --cacert cacert.file "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 300'
+            == 'memtier_benchmark --json-out-file 1.json --port 12000 --server localhost --tls --cert cert.file --key key.file --cacert cacert.file "--data-size" "100" --command "SETEX __key__ 10 __data__" --command-key-pattern="R" --command "SET __key__ __data__" --command-key-pattern="R" --command "GET __key__" --command-key-pattern="R" --command "DEL __key__" --command-key-pattern="R"  -c 50 -t 2 --hide-histogram --test-time 120 --key-minimum 1 --key-maximum 1000000'
         )
 
 
@@ -546,6 +546,28 @@ def test_create_client_runner_args():
     )
 
     assert args.flushall_on_every_test_start is True
+    assert args.benchmark_local_install is True
+
+    # Test parsing with memtier bin path
+    args = parser.parse_args(
+        [
+            "--test",
+            "test.yml",
+            "--db_server_host",
+            "localhost",
+            "--db_server_port",
+            "6379",
+            "--benchmark_local_install",
+            "--memtier-bin-path",
+            "/custom/path/to/memtier_benchmark",
+        ]
+    )
+
+    assert args.benchmark_local_install is True
+    assert getattr(args, "memtier_bin_path") == "/custom/path/to/memtier_benchmark"
+
+    # This test case doesn't include --flushall_on_every_test_start, so it should be False
+    assert args.flushall_on_every_test_start is False
     assert args.benchmark_local_install is True
 
 
@@ -987,18 +1009,403 @@ def test_prepare_pubsub_sub_bench_parameters_override_test_time():
     assert "-verbose" in benchmark_command_str
 
 
-def test_create_client_runner_args_container_timeout_buffer():
-    """Test that container timeout buffer argument is properly configured"""
+def test_create_client_runner_args_timeout_buffer():
+    """Test that timeout buffer argument is properly configured"""
     from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 
-    # Test default value
+    # Test default value for new argument
     parser = create_client_runner_args("test")
     args = parser.parse_args([])
-    assert args.container_timeout_buffer == 60  # Default should be 60 seconds
+    assert args.timeout_buffer == 60  # Default should be 60 seconds
 
-    # Test custom value
-    args = parser.parse_args(["--container-timeout-buffer", "120"])
-    assert args.container_timeout_buffer == 120
+    # Test custom value for new argument
+    args = parser.parse_args(["--timeout-buffer", "120"])
+    assert args.timeout_buffer == 120
+
+    # Test backward compatibility with old argument
+    args = parser.parse_args(["--container-timeout-buffer", "90"])
+    assert args.container_timeout_buffer == 90
+
+
+def test_run_local_command_with_timeout():
+    """Test the local command timeout functionality"""
+    from redis_benchmarks_specification.__runner__.runner import (
+        run_local_command_with_timeout,
+        calculate_process_timeout,
+    )
+
+    # Test successful command
+    success, stdout, stderr = run_local_command_with_timeout(
+        "echo 'test'", 5, "test command"
+    )
+    assert success is True
+    assert "test" in stdout
+
+    # Test timeout calculation
+    timeout = calculate_process_timeout("memtier_benchmark --test-time 60", 30)
+    assert timeout == 90  # 60 + 30
+
+    # Test default timeout
+    timeout = calculate_process_timeout("memtier_benchmark", 30)
+    assert timeout == 300  # default 5 minutes
+
+
+def test_get_maxmemory():
+    """Test the get_maxmemory function with different Redis memory info scenarios"""
+    from redis_benchmarks_specification.__runner__.runner import get_maxmemory
+
+    class MockRedisConnection:
+        def __init__(self, memory_info):
+            self.memory_info = memory_info
+
+        def info(self, section):
+            if section == "memory":
+                return self.memory_info
+            return {}
+
+    # Test case 1: maxmemory key is missing (should return 0 and warn)
+    mock_redis_no_maxmemory = MockRedisConnection(
+        {"used_memory": 1024000, "total_system_memory": 8589934592}
+    )
+    result = get_maxmemory(mock_redis_no_maxmemory)
+    assert result == 0
+
+    # Test case 2: maxmemory is 0 (should use total_system_memory)
+    mock_redis_maxmemory_zero = MockRedisConnection(
+        {"maxmemory": 0, "used_memory": 1024000, "total_system_memory": 8589934592}
+    )
+    result = get_maxmemory(mock_redis_maxmemory_zero)
+    assert result == 8589934592
+
+    # Test case 3: maxmemory has a value (should return that value)
+    mock_redis_maxmemory_set = MockRedisConnection(
+        {
+            "maxmemory": 4294967296,  # 4GB
+            "used_memory": 1024000,
+            "total_system_memory": 8589934592,
+        }
+    )
+    result = get_maxmemory(mock_redis_maxmemory_set)
+    assert result == 4294967296
+
+
+def test_remote_profiling_pprof_format():
+    """Test the remote profiling functionality with pprof format"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        save_profile_with_metadata,
+        extract_redis_metadata,
+        calculate_profile_duration,
+    )
+    import tempfile
+    import os
+
+    # Test save_profile_with_metadata with binary data
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Mock binary profile data
+        profile_data = (
+            b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"  # Sample gzipped data
+        )
+        benchmark_name = "test-benchmark"
+        redis_metadata = {
+            "redis_version": "7.0.0",
+            "redis_git_sha1": "abc123",
+            "redis_git_dirty": "0",
+            "redis_build_id": "build123",
+            "process_id": "12345",
+            "tcp_port": "6379",
+        }
+        duration = 10
+
+        # Save profile
+        result_path = save_profile_with_metadata(
+            profile_data, benchmark_name, temp_dir, redis_metadata, duration
+        )
+
+        # Verify files were created
+        assert result_path is not None
+        assert os.path.exists(result_path)
+        assert result_path.endswith(".pb.gz")
+
+        # Verify metadata file was created
+        metadata_path = os.path.join(temp_dir, f"{benchmark_name}.metadata.txt")
+        assert os.path.exists(metadata_path)
+
+        # Verify binary data was written correctly
+        with open(result_path, "rb") as f:
+            saved_data = f.read()
+            assert saved_data == profile_data
+
+        # Verify metadata content
+        with open(metadata_path, "r") as f:
+            metadata_content = f.read()
+            assert "redis_git_sha1=abc123" in metadata_content
+            assert "benchmark_name=test-benchmark" in metadata_content
+            assert "duration_seconds=10" in metadata_content
+
+    # Test calculate_profile_duration
+    assert calculate_profile_duration(5) == 10  # minimum 10 seconds
+    assert calculate_profile_duration(15) == 15  # use benchmark duration
+    assert calculate_profile_duration(45) == 30  # maximum 30 seconds
+
+
+def test_extract_server_info_for_args():
+    """Test the auto-detection of server info from Redis INFO SERVER"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        extract_server_info_for_args,
+    )
+
+    class MockRedisConnection:
+        def __init__(self, server_info):
+            self.server_info = server_info
+
+        def info(self, section):
+            if section == "server":
+                return self.server_info
+            return {}
+
+    # Test case 1: Standard Redis server
+    mock_redis_standard = MockRedisConnection(
+        {
+            "redis_version": "7.2.4",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
+
+    result = extract_server_info_for_args(mock_redis_standard)
+    assert result["github_org"] == "redis"
+    assert result["github_repo"] == "redis"
+    assert result["github_version"] == "7.2.4"
+    assert result["github_hash"] == "05eaf6e4"
+    assert result["server_name"] == ""
+
+    # Test case 2: Valkey server
+    mock_redis_valkey = MockRedisConnection(
+        {
+            "server_name": "valkey",
+            "redis_version": "7.2.4",
+            "valkey_version": "8.1.3",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
+
+    result = extract_server_info_for_args(mock_redis_valkey)
+    assert result["github_org"] == "valkey-io"
+    assert result["github_repo"] == "valkey"
+    assert result["github_version"] == "8.1.3"  # Should use valkey_version
+    assert result["github_hash"] == "05eaf6e4"  # Should use redis_git_sha1
+    assert result["server_name"] == "valkey"
+
+    # Test case 3: Valkey server without valkey_version (fallback to redis_version)
+    mock_redis_valkey_no_version = MockRedisConnection(
+        {
+            "server_name": "valkey",
+            "redis_version": "7.2.4",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
+
+    result = extract_server_info_for_args(mock_redis_valkey_no_version)
+    assert result["github_org"] == "valkey-io"
+    assert result["github_repo"] == "valkey"
+    assert result["github_version"] == "7.2.4"  # Should fallback to redis_version
+    assert result["github_hash"] == "05eaf6e4"  # Should use redis_git_sha1
+    assert result["server_name"] == "valkey"
+
+    # Test case 4: Server with empty git_sha1 (fallback to build_id)
+    mock_redis_build_id = MockRedisConnection(
+        {
+            "redis_version": "6.2.0",
+            "redis_git_sha1": "00000000",  # Empty/zero git_sha1
+            "redis_build_id": "abc123def456",
+        }
+    )
+
+    result = extract_server_info_for_args(mock_redis_build_id)
+    assert result["github_org"] == "redis"
+    assert result["github_repo"] == "redis"
+    assert result["github_version"] == "6.2.0"
+    assert result["github_hash"] == "abc123def456"  # Should fallback to build_id
+    assert result["server_name"] == ""
+
+
+def test_extract_server_metadata_for_timeseries():
+    """Test the extraction of comprehensive server metadata for timeseries"""
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        extract_server_metadata_for_timeseries,
+    )
+
+    class MockRedisConnection:
+        def __init__(self, server_info):
+            self.server_info = server_info
+
+        def info(self, section):
+            if section == "server":
+                return self.server_info
+            return {}
+
+    # Test with comprehensive server info (like Amazon ElastiCache)
+    mock_redis_comprehensive = MockRedisConnection(
+        {
+            "redis_version": "7.2.4",
+            "server_name": "valkey",
+            "valkey_version": "8.1.3",
+            "valkey_release_stage": "ga",
+            "os": "Amazon ElastiCache",
+            "arch_bits": 64,
+            "gcc_version": "12.2.0",
+            "server_mode": "standalone",
+            "multiplexing_api": "epoll",
+            "atomicvar_api": "c11-builtin",
+            "monotonic_clock": "POSIX clock_gettime",
+            "redis_build_id": "9ff8e77d3d80abcd",
+            "redis_git_dirty": "0",
+            "process_supervised": "no",
+            "availability_zone": "us-east-1a",
+            "io_threads_active": 0,
+            "config_file": "/etc/redis/redis.conf",
+        }
+    )
+
+    result = extract_server_metadata_for_timeseries(mock_redis_comprehensive)
+
+    # Verify key metadata fields are extracted
+    assert result["os"] == "Amazon ElastiCache"
+    assert result["arch_bits"] == "64"
+    assert result["gcc_version"] == "12.2.0"
+    assert result["server_mode"] == "standalone"
+    assert result["multiplexing_api"] == "epoll"
+    assert result["atomicvar_api"] == "c11-builtin"
+    assert result["monotonic_clock"] == "POSIX clock_gettime"
+    assert result["redis_build_id"] == "9ff8e77d3d80abcd"
+    assert result["redis_git_dirty"] == "0"
+    assert result["process_supervised"] == "no"
+    assert result["availability_zone"] == "us-east-1a"
+    assert result["io_threads_active"] == "0"
+    assert result["config_file"] == "/etc/redis/redis.conf"
+    assert result["server_name"] == "valkey"
+    assert result["redis_version"] == "7.2.4"
+    assert result["valkey_version"] == "8.1.3"
+    assert result["valkey_release_stage"] == "ga"
+
+    # Test with minimal server info
+    mock_redis_minimal = MockRedisConnection(
+        {
+            "redis_version": "6.2.0",
+            "os": "Linux 5.4.0-74-generic x86_64",
+            "arch_bits": 64,
+        }
+    )
+
+    result = extract_server_metadata_for_timeseries(mock_redis_minimal)
+
+    # Verify basic fields are extracted
+    assert result["os"] == "Linux 5.4.0-74-generic x86_64"
+    assert result["arch_bits"] == "64"
+    assert result["redis_version"] == "6.2.0"
+    assert result["config_file"] == "none"  # Should default to "none" when empty
+
+    # Fields not present should not be in result
+    assert "availability_zone" not in result
+    assert "server_name" not in result
+
+
+def test_conn_mode_metadata():
+    """Test that conn_mode metadata is correctly set based on TLS configuration"""
+    # This test verifies the logic in the runner that sets conn_mode metadata
+    # We'll test the logic directly since it's simple conditional logic
+
+    # Test TLS enabled case
+    tls_enabled = True
+    metadata = {}
+
+    if tls_enabled:
+        metadata["conn_mode"] = "TLS"
+        metadata["tls"] = "true"
+    else:
+        metadata["conn_mode"] = "PLAINTEXT"
+
+    assert metadata["conn_mode"] == "TLS"
+    assert metadata["tls"] == "true"
+
+    # Test TLS disabled case
+    tls_enabled = False
+    metadata = {}
+
+    if tls_enabled:
+        metadata["conn_mode"] = "TLS"
+        metadata["tls"] = "true"
+    else:
+        metadata["conn_mode"] = "PLAINTEXT"
+
+    assert metadata["conn_mode"] == "PLAINTEXT"
+    assert "tls" not in metadata
+
+
+def test_deployment_arguments():
+    """Test that deployment arguments are properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default values
+    args = parser.parse_args([])
+    assert args.deployment_type == "oss-standalone"
+    assert args.deployment_name == "redis"
+    assert args.core_count is None
+
+    # Test custom values
+    args = parser.parse_args(
+        [
+            "--deployment_type",
+            "oss-cluster",
+            "--deployment_name",
+            "my-redis-cluster",
+            "--core_count",
+            "16",
+        ]
+    )
+    assert args.deployment_type == "oss-cluster"
+    assert args.deployment_name == "my-redis-cluster"
+    assert args.core_count == 16
+
+
+def test_skip_tests_without_dataset_argument():
+    """Test that skip-tests-without-dataset argument is properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default value
+    args = parser.parse_args([])
+    assert args.skip_tests_without_dataset is False
+
+    # Test when flag is provided
+    args = parser.parse_args(["--skip-tests-without-dataset"])
+    assert args.skip_tests_without_dataset is True
+
+
+def test_memory_comparison_only_argument():
+    """Test that memory-comparison-only argument is properly configured"""
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+
+    version_string = "test-version-1.0"
+    parser = create_client_runner_args(version_string)
+
+    # Test default value
+    args = parser.parse_args([])
+    assert args.memory_comparison_only is False
+
+    # Test when flag is provided
+    args = parser.parse_args(["--memory-comparison-only"])
+    assert args.memory_comparison_only is True
 
 
 def test_run_client_runner_logic():

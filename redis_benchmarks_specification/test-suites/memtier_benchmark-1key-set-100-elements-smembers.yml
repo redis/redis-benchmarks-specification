@@ -1,6 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1key-set-100-elements-smembers
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 100 elements in it and we query it using SMEMBERS that returns all elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
+  contains 100 elements in it and we query it using SMEMBERS that returns all elements. '
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,8 +10,25 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-  init_commands:
-   '"SADD" "set:100" "vyoomgwuzv" "xamjodnbpf" "ewomnmugfa" "ljcgdooafo" "pcxdhdjwnf" "djetcyfxuc" "licotqplim" "alqlzsvuuz" "ijsmoyesvd" "whmotknaff" "rkaznetutk" "ksqpdywgdd" "gorgpnnqwr" "gekntrykfh" "rjkknoigmu" "luemuetmia" "gxephxbdru" "ncjfckgkcl" "hhjclfbbka" "cgoeihlnei" "zwnitejtpg" "upodnpqenn" "mibvtmqxcy" "htvbwmfyic" "rqvryfvlie" "nxcdcaqgit" "gfdqdrondm" "lysbgqqfqw" "nxzsnkmxvi" "nsxaigrnje" "cwaveajmcz" "xsepfhdizi" "owtkxlzaci" "agsdggdghc" "tcjvjofxtd" "kgqrovsxce" "ouuybhtvyb" "ueyrvldzwl" "vpbkvwgxsf" "pytrnqdhvs" "qbiwbqiubb" "ssjqrsluod" "urvgxwbiiz" "ujrxcmpvsq" "mtccjerdon" "xczfmrxrja" "imyizmhzjk" "oguwnmniig" "mxwgdcutnb" "pqyurbvifk" "ccagtnjilc" "mbxohpancs" "lgrkndhekf" "eqlgkwosie" "jxoxtnzujs" "lbtpbknelm" "ichqzmiyot" "mbgehjiauu" "aovfsvbwjg" "nmgxcctxpn" "vyqqkuszzh" "rojeolnopp" "ibhohmfxzt" "qbyhorvill" "nhfnbxqgol" "wkbasfyzqz" "mjjuylgssm" "imdqxmkzdj" "oapbvnisyq" "bqntlsaqjb" "ocrcszcznp" "hhniikmtsx" "hlpdstpvzw" "wqiwdbncmt" "vymjzlzqcn" "hhjchwjlmc" "ypfeltycpy" "qjyeqcfhjj" "uapsgmizgh" "owbbdezgxn" "qrosceblyo" "sahqeskveq" "dapacykoah" "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr" "onzjrteqmu" "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk" "ypekeuutef" "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
+  init_commands: '"SADD" "set:100" "vyoomgwuzv" "xamjodnbpf" "ewomnmugfa" "ljcgdooafo"
+    "pcxdhdjwnf" "djetcyfxuc" "licotqplim" "alqlzsvuuz" "ijsmoyesvd" "whmotknaff"
+    "rkaznetutk" "ksqpdywgdd" "gorgpnnqwr" "gekntrykfh" "rjkknoigmu" "luemuetmia"
+    "gxephxbdru" "ncjfckgkcl" "hhjclfbbka" "cgoeihlnei" "zwnitejtpg" "upodnpqenn"
+    "mibvtmqxcy" "htvbwmfyic" "rqvryfvlie" "nxcdcaqgit" "gfdqdrondm" "lysbgqqfqw"
+    "nxzsnkmxvi" "nsxaigrnje" "cwaveajmcz" "xsepfhdizi" "owtkxlzaci" "agsdggdghc"
+    "tcjvjofxtd" "kgqrovsxce" "ouuybhtvyb" "ueyrvldzwl" "vpbkvwgxsf" "pytrnqdhvs"
+    "qbiwbqiubb" "ssjqrsluod" "urvgxwbiiz" "ujrxcmpvsq" "mtccjerdon" "xczfmrxrja"
+    "imyizmhzjk" "oguwnmniig" "mxwgdcutnb" "pqyurbvifk" "ccagtnjilc" "mbxohpancs"
+    "lgrkndhekf" "eqlgkwosie" "jxoxtnzujs" "lbtpbknelm" "ichqzmiyot" "mbgehjiauu"
+    "aovfsvbwjg" "nmgxcctxpn" "vyqqkuszzh" "rojeolnopp" "ibhohmfxzt" "qbyhorvill"
+    "nhfnbxqgol" "wkbasfyzqz" "mjjuylgssm" "imdqxmkzdj" "oapbvnisyq" "bqntlsaqjb"
+    "ocrcszcznp" "hhniikmtsx" "hlpdstpvzw" "wqiwdbncmt" "vymjzlzqcn" "hhjchwjlmc"
+    "ypfeltycpy" "qjyeqcfhjj" "uapsgmizgh" "owbbdezgxn" "qrosceblyo" "sahqeskveq"
+    "dapacykoah" "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr"
+    "onzjrteqmu" "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk"
+    "ypekeuutef" "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
+  dataset_name: 1key-set-100-elements
+  dataset_description: This dataset contains 1 set key with 100 elements.
 tested-groups:
 - set
 tested-commands:
@@ -28,5 +46,4 @@ clientconfig:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 23

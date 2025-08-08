@@ -1,6 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zremrangebyscore-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains 1M elements in it and we query it using ZREVRANGE with a range of 5 elements. This benchmarks helps assessing: https://github.com/redis/redis/issues/10310'
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
+  SORTED SET contains 1M elements in it and we query it using ZREVRANGE with a range
+  of 5 elements. This benchmarks helps assessing: https://github.com/redis/redis/issues/10310'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,10 +11,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern P --hide-histogram -t 4 -c 100
+    arguments: --key-maximum 1000000 --key-prefix "" --command="ZADD lb __key__ __key__"  --command-key-pattern
+      P --hide-histogram -t 4 -c 100 --pipeline 50
   resources:
     requests:
       memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -25,10 +31,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZREMRANGEBYSCORE lb __key__ __key__"  --hide-histogram --test-time 120 --pipeline 10
+  arguments: --command="ZREMRANGEBYSCORE lb __key__ __key__"  --hide-histogram --test-time
+    120 --pipeline 10
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 8

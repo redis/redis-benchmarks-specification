@@ -19,10 +19,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 120 --pipeline 10 --command "TIME" --command-key-pattern="R" -c 50 -t 4 --hide-histogram
+  arguments: --test-time 120 --pipeline 10 --command "TIME" --command-key-pattern="R"
+    -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
       memory: 2g
-
 priority: 21

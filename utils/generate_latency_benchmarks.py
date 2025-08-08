@@ -134,7 +134,7 @@ def main():
         return
 
     # Key for test cases
-    testcases_key = "ci.benchmarks.redislabs/ci/redis/redis:testcases"
+    testcases_key = "ci.benchmarks.redis/ci/redis/redis:testcases"
 
     # Retrieve test cases
     testcases = rts.smembers(testcases_key)
@@ -147,7 +147,7 @@ def main():
     for test_name in testcases:
         # Construct the time series key
         ts_key = (
-            f"ci.benchmarks.redislabs/by.branch/ci/redis/redis/{test_name}/"
+            f"ci.benchmarks.redis/by.branch/ci/redis/redis/{test_name}/"
             "gcc:8.5.0-amd64-debian-buster-default/"
             "intel64-ubuntu22.04-redis-icx1/oss-standalone/unstable/"
             "ALL_STATS.Totals.Ops/sec"
