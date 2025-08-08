@@ -272,7 +272,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     benchmark_config["tested-commands"] = tested_commands
                     logging.warn(
                         "there is a difference between specified test-commands in the yaml (name={}) and the ones we've detected {}!={}".format(
-                            test_name, sorted(origin_tested_commands), sorted(tested_commands)
+                            test_name,
+                            sorted(origin_tested_commands),
+                            sorted(tested_commands),
                         )
                     )
 
@@ -333,7 +335,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     benchmark_config["tested-groups"] = tested_groups
                     logging.warn(
                         "there is a difference between specified test-groups in the yaml (name={}) and the ones we've detected {}!={}".format(
-                            test_name, sorted(origin_tested_groups), sorted(tested_groups)
+                            test_name,
+                            sorted(origin_tested_groups),
+                            sorted(tested_groups),
                         )
                     )
 

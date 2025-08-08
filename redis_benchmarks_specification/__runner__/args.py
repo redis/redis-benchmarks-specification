@@ -44,19 +44,19 @@ def create_client_runner_args(project_name):
         "--deployment_type",
         type=str,
         default="oss-standalone",
-        help="Deployment type for the Redis instance (e.g., oss-standalone, oss-cluster, enterprise)"
+        help="Deployment type for the Redis instance (e.g., oss-standalone, oss-cluster, enterprise)",
     )
     parser.add_argument(
         "--deployment_name",
         type=str,
         default="redis",
-        help="Deployment name identifier for the Redis instance"
+        help="Deployment name identifier for the Redis instance",
     )
     parser.add_argument(
         "--core_count",
         type=int,
         default=None,
-        help="Number of CPU cores available to the Redis instance"
+        help="Number of CPU cores available to the Redis instance",
     )
     parser.add_argument("--github_repo", type=str, default="redis")
     parser.add_argument("--github_org", type=str, default="redis")

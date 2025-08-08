@@ -8,7 +8,12 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 
 
 def generate_standalone_redis_server_args(
-    binary, port, dbdir, configuration_parameters=None, redis_arguments="", password=None
+    binary,
+    port,
+    dbdir,
+    configuration_parameters=None,
+    redis_arguments="",
+    password=None,
 ):
     added_params = ["port", "protected-mode", "dir", "requirepass"]
     # start redis-server

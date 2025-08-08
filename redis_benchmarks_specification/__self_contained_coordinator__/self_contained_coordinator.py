@@ -880,7 +880,9 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                 )
 
-                                r = redis.StrictRedis(port=redis_proc_start_port, password=redis_password)
+                                r = redis.StrictRedis(
+                                    port=redis_proc_start_port, password=redis_password
+                                )
                                 r.ping()
                                 redis_conns = [r]
                                 reset_commandstats(redis_conns)
@@ -888,7 +890,9 @@ def process_self_contained_coordinator_stream(
                                 redis_info = r.info()
                                 first_redis_pid = redis_info.get("process_id")
                                 if first_redis_pid is None:
-                                    logging.warning("Redis process_id not found in INFO command")
+                                    logging.warning(
+                                        "Redis process_id not found in INFO command"
+                                    )
                                     first_redis_pid = "unknown"
                                 if git_hash is None and "redis_git_sha1" in redis_info:
                                     git_hash = redis_info["redis_git_sha1"]

@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import openai
+
     OPENAI_AVAILABLE = True
     # Set your OpenAI API key here or via environment variable
     # openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -21,82 +22,89 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: OpenAI package not installed. Install with: pip install openai")
 
+
 def extract_full_context(content, dbconfig):
     """Extract all relevant context for dataset analysis."""
     context = {
-        'test_name': content.get('name', ''),
-        'description': content.get('description', ''),
-        'keyspacelen': dbconfig.get('check', {}).get('keyspacelen', 0),
-        'preload_details': {},
-        'tested_commands': content.get('tested-commands', []),
-        'tested_groups': content.get('tested-groups', [])
+        "test_name": content.get("name", ""),
+        "description": content.get("description", ""),
+        "keyspacelen": dbconfig.get("check", {}).get("keyspacelen", 0),
+        "preload_details": {},
+        "tested_commands": content.get("tested-commands", []),
+        "tested_groups": content.get("tested-groups", []),
     }
-    
+
     # Extract preload information
-    if 'preload_tool' in dbconfig:
-        preload = dbconfig['preload_tool']
-        context['preload_details'] = {
-            'type': 'preload_tool',
-            'tool': preload.get('tool', ''),
-            'arguments': preload.get('arguments', ''),
-            'run_image': preload.get('run_image', '')
+    if "preload_tool" in dbconfig:
+        preload = dbconfig["preload_tool"]
+        context["preload_details"] = {
+            "type": "preload_tool",
+            "tool": preload.get("tool", ""),
+            "arguments": preload.get("arguments", ""),
+            "run_image": preload.get("run_image", ""),
         }
-    elif 'init_commands' in dbconfig:
-        context['preload_details'] = {
-            'type': 'init_commands',
-            'commands': dbconfig['init_commands']
+    elif "init_commands" in dbconfig:
+        context["preload_details"] = {
+            "type": "init_commands",
+            "commands": dbconfig["init_commands"],
         }
-    
+
     return context
+
 
 def generate_manual_description(context, dataset_name):
     """Generate a manual description for the dataset."""
-    keyspacelen = context['keyspacelen']
+    keyspacelen = context["keyspacelen"]
 
     # Parse dataset name components
-    parts = dataset_name.split('-')
+    parts = dataset_name.split("-")
 
     description_parts = []
 
     # Key count description
-    if 'Mkeys' in dataset_name:
+    if "Mkeys" in dataset_name:
         description_parts.append(f"{keyspacelen//1000000} million keys")
-    elif 'Kkeys' in dataset_name:
+    elif "Kkeys" in dataset_name:
         description_parts.append(f"{keyspacelen//1000} thousand keys")
-    elif 'key' in dataset_name:
+    elif "key" in dataset_name:
         if keyspacelen == 1:
             description_parts.append("1 key")
         else:
             description_parts.append(f"{keyspacelen} keys")
 
     # Data type description
-    if 'hash' in parts:
+    if "hash" in parts:
         description_parts.append("containing Redis hash data structures")
-        if any('field' in p for p in parts):
-            field_part = next(p for p in parts if 'field' in p)
-            field_count = field_part.split('-')[0]
+        if any("field" in p for p in parts):
+            field_part = next(p for p in parts if "field" in p)
+            field_count = field_part.split("-")[0]
             description_parts.append(f"with {field_count} field(s) each")
-    elif 'zset' in parts:
+    elif "zset" in parts:
         description_parts.append("containing Redis sorted set data structures")
-        if 'elements' in dataset_name:
-            elem_part = next(p for p in parts if 'elements' in p or p.endswith('M') or p.endswith('K'))
+        if "elements" in dataset_name:
+            elem_part = next(
+                p
+                for p in parts
+                if "elements" in p or p.endswith("M") or p.endswith("K")
+            )
             description_parts.append(f"with {elem_part} elements each")
-    elif 'string' in parts:
+    elif "string" in parts:
         description_parts.append("containing Redis string values")
-    elif 'list' in parts:
+    elif "list" in parts:
         description_parts.append("containing Redis list data structures")
-    elif 'set' in parts:
+    elif "set" in parts:
         description_parts.append("containing Redis set data structures")
-    elif 'bitmap' in parts:
+    elif "bitmap" in parts:
         description_parts.append("containing Redis bitmap data structures")
 
     # Size description
-    size_parts = [p for p in parts if 'B-size' in p or 'KiB-size' in p]
+    size_parts = [p for p in parts if "B-size" in p or "KiB-size" in p]
     if size_parts:
-        size_info = size_parts[0].replace('-size', '')
+        size_info = size_parts[0].replace("-size", "")
         description_parts.append(f"where each value is {size_info}")
 
     return ". ".join(description_parts).capitalize() + "."
+
 
 def generate_dataset_name_with_ai(context):
     """Use OpenAI to generate a descriptive dataset name based on full context."""
@@ -104,20 +112,20 @@ def generate_dataset_name_with_ai(context):
         manual_name = analyze_context_manually(context)
         manual_desc = generate_manual_description(context, manual_name)
         return manual_name, manual_desc, "Generated from manual analysis"
-    
+
     try:
         # Prepare detailed context for AI
         preload_info = ""
-        if context['preload_details'].get('type') == 'preload_tool':
+        if context["preload_details"].get("type") == "preload_tool":
             preload_info = f"""
 Preload Tool: {context['preload_details'].get('tool', '')}
 Arguments: {context['preload_details'].get('arguments', '')}
 """
-        elif context['preload_details'].get('type') == 'init_commands':
+        elif context["preload_details"].get("type") == "init_commands":
             preload_info = f"""
 Init Commands: {context['preload_details'].get('commands', '')}
 """
-        
+
         prompt = f"""
 You are analyzing Redis benchmark tests to create precise dataset names. The dataset name should describe the exact data structure and characteristics being loaded, not the operations performed.
 
@@ -176,28 +184,33 @@ Respond with JSON:
     "size_info": "data size details"
 }}
 """
-        
+
         response = openai.chat.completions.create(
             model="gpt-4",  # Use GPT-4 for better analysis
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=500
+            max_tokens=500,
         )
-        
+
         result = json.loads(response.choices[0].message.content)
-        return result.get("dataset_name", ""), result.get("dataset_description", ""), result.get("reasoning", "")
-        
+        return (
+            result.get("dataset_name", ""),
+            result.get("dataset_description", ""),
+            result.get("reasoning", ""),
+        )
+
     except Exception as e:
         manual_name = analyze_context_manually(context)
         manual_desc = generate_manual_description(context, manual_name)
         return manual_name, manual_desc, f"AI error, used manual analysis: {e}"
 
+
 def analyze_context_manually(context):
     """Manual analysis fallback when AI is not available."""
     parts = []
-    
+
     # Key count
-    keyspacelen = context['keyspacelen']
+    keyspacelen = context["keyspacelen"]
     if keyspacelen >= 1000000:
         parts.append(f"{keyspacelen//1000000}Mkeys")
     elif keyspacelen >= 1000:
@@ -206,39 +219,41 @@ def analyze_context_manually(context):
         parts.append(f"{keyspacelen}keys")
     elif keyspacelen == 1:
         parts.append("1key")
-    
+
     # Analyze preload for data type and structure
-    if context['preload_details'].get('type') == 'preload_tool':
-        args = context['preload_details'].get('arguments', '').lower()
-        
+    if context["preload_details"].get("type") == "preload_tool":
+        args = context["preload_details"].get("arguments", "").lower()
+
         # Detect data type and structure
-        if 'hset' in args:
+        if "hset" in args:
             parts.append("hash")
             # Count fields in HSET command
-            field_count = args.count('field')
+            field_count = args.count("field")
             if field_count > 0:
                 parts.append(f"{field_count}-fields")
             else:
                 # Look for pattern like "field __data__" or "field1 __data__ field2 __data__"
                 import re
-                field_matches = re.findall(r'field\d*', args)
+
+                field_matches = re.findall(r"field\d*", args)
                 if field_matches:
                     parts.append(f"{len(field_matches)}-fields")
                 else:
                     parts.append("1-fields")  # Default assumption
-        elif 'zadd' in args:
+        elif "zadd" in args:
             parts.append("zset")
-        elif 'lpush' in args or 'rpush' in args:
+        elif "lpush" in args or "rpush" in args:
             parts.append("list")
-        elif 'sadd' in args:
+        elif "sadd" in args:
             parts.append("set")
-        elif 'setbit' in args:
+        elif "setbit" in args:
             parts.append("bitmap")
         else:
             parts.append("string")
-        
+
         # Extract data size
         import re
+
         size_match = re.search(r'--data-size["\s]+(\d+)', args)
         if size_match:
             size = int(size_match.group(1))
@@ -246,88 +261,98 @@ def analyze_context_manually(context):
                 parts.append(f"{size//1024}KiB-size")
             else:
                 parts.append(f"{size}B-size")
-    
+
     # Use tested groups as hint if no preload info
-    elif context['tested_groups']:
-        data_type = context['tested_groups'][0]
+    elif context["tested_groups"]:
+        data_type = context["tested_groups"][0]
         parts.append(data_type)
-        if data_type == 'hash':
+        if data_type == "hash":
             parts.append("1-fields")  # Default assumption
         parts.append("32B-size")  # Default assumption
-    
+
     return "-".join(parts) if len(parts) > 1 else "unknown-dataset"
+
 
 def should_have_dataset_name(dbconfig):
     """Check if a file should have dataset_name based on keyspacelen."""
-    keyspacelen = dbconfig.get('check', {}).get('keyspacelen', None)
+    keyspacelen = dbconfig.get("check", {}).get("keyspacelen", None)
     return keyspacelen is not None and keyspacelen > 0
+
 
 def process_file(file_path):
     """Process a single YAML file."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             content = yaml.safe_load(f)
-        
-        if not content or 'dbconfig' not in content:
+
+        if not content or "dbconfig" not in content:
             return None, "No dbconfig section"
-        
-        dbconfig = content['dbconfig']
-        
+
+        dbconfig = content["dbconfig"]
+
         # Check if file should have dataset_name
         should_have_dataset = should_have_dataset_name(dbconfig)
-        has_dataset_name = 'dataset_name' in dbconfig
-        
+        has_dataset_name = "dataset_name" in dbconfig
+
         if not should_have_dataset:
             if has_dataset_name:
-                del dbconfig['dataset_name']
+                del dbconfig["dataset_name"]
                 return content, f"Removed dataset_name (keyspacelen=0)"
             else:
                 return None, f"Correct (no dataset_name for keyspacelen=0)"
-        
+
         # Extract full context for analysis
         context = extract_full_context(content, dbconfig)
-        
+
         # Generate AI-suggested dataset name and description
-        ai_dataset_name, ai_dataset_description, reasoning = generate_dataset_name_with_ai(context)
+        ai_dataset_name, ai_dataset_description, reasoning = (
+            generate_dataset_name_with_ai(context)
+        )
 
         if not ai_dataset_name or ai_dataset_name == "unknown-dataset":
             return None, f"Could not generate dataset name: {reasoning}"
 
-        current_dataset_name = dbconfig.get('dataset_name', None)
-        current_dataset_description = dbconfig.get('dataset_description', None)
+        current_dataset_name = dbconfig.get("dataset_name", None)
+        current_dataset_description = dbconfig.get("dataset_description", None)
 
         # Check if both name and description are already optimal
-        if current_dataset_name == ai_dataset_name and current_dataset_description == ai_dataset_description:
+        if (
+            current_dataset_name == ai_dataset_name
+            and current_dataset_description == ai_dataset_description
+        ):
             return None, f"Already optimal: {ai_dataset_name}"
 
         # Update dataset_name and dataset_description
-        dbconfig['dataset_name'] = ai_dataset_name
-        dbconfig['dataset_description'] = ai_dataset_description
+        dbconfig["dataset_name"] = ai_dataset_name
+        dbconfig["dataset_description"] = ai_dataset_description
 
         changes = []
         if current_dataset_name != ai_dataset_name:
             changes.append(f"name: {current_dataset_name} -> {ai_dataset_name}")
         if current_dataset_description != ai_dataset_description:
-            changes.append(f"description: {'added' if not current_dataset_description else 'updated'}")
+            changes.append(
+                f"description: {'added' if not current_dataset_description else 'updated'}"
+            )
 
         return content, f"Updated {', '.join(changes)} | {reasoning[:100]}..."
-        
+
     except Exception as e:
         return None, f"Error: {e}"
 
+
 def extract_preload_signature(dbconfig):
     """Extract a normalized signature of the preload configuration for comparison."""
-    if 'preload_tool' in dbconfig:
-        preload = dbconfig['preload_tool']
+    if "preload_tool" in dbconfig:
+        preload = dbconfig["preload_tool"]
         # Create signature from tool and arguments (normalized)
-        tool = preload.get('tool', '')
-        args = preload.get('arguments', '').strip()
+        tool = preload.get("tool", "")
+        args = preload.get("arguments", "").strip()
         # Normalize whitespace and quotes for comparison
-        args = ' '.join(args.split())
+        args = " ".join(args.split())
         return f"{tool}:{args}"
-    elif 'init_commands' in dbconfig:
+    elif "init_commands" in dbconfig:
         # For init_commands, use the commands themselves
-        commands = dbconfig['init_commands']
+        commands = dbconfig["init_commands"]
         if isinstance(commands, list):
             return "init:" + "|".join(str(cmd).strip() for cmd in commands)
         else:
@@ -335,54 +360,56 @@ def extract_preload_signature(dbconfig):
     else:
         return "no_preload"
 
+
 def parse_memtier_command(arguments):
     """Parse memtier_benchmark arguments to extract key characteristics."""
     import re
 
     parsed = {
-        'data_size': None,
-        'command_type': None,
-        'fields': [],
-        'key_pattern': None,
-        'ratio': None,
-        'pipeline': None,
-        'connections': None,
-        'threads': None
+        "data_size": None,
+        "command_type": None,
+        "fields": [],
+        "key_pattern": None,
+        "ratio": None,
+        "pipeline": None,
+        "connections": None,
+        "threads": None,
     }
 
     # Extract data size
     data_size_match = re.search(r'--data-size["\s]+(\d+)', arguments)
     if data_size_match:
-        parsed['data_size'] = int(data_size_match.group(1))
+        parsed["data_size"] = int(data_size_match.group(1))
 
     # Extract command and analyze structure
     command_match = re.search(r'--command["\s]+"([^"]+)"', arguments)
     if command_match:
         command = command_match.group(1)
-        parsed['command_type'] = command.split()[0].upper()  # GET, SET, HSET, etc.
+        parsed["command_type"] = command.split()[0].upper()  # GET, SET, HSET, etc.
 
         # Count fields in HSET commands
-        if 'HSET' in command:
-            field_matches = re.findall(r'field\d*', command.lower())
-            parsed['fields'] = field_matches
+        if "HSET" in command:
+            field_matches = re.findall(r"field\d*", command.lower())
+            parsed["fields"] = field_matches
 
         # Detect ZADD patterns
-        if 'ZADD' in command:
-            if '__key__' in command:
-                parsed['score_type'] = 'integer'
+        if "ZADD" in command:
+            if "__key__" in command:
+                parsed["score_type"] = "integer"
             else:
-                parsed['score_type'] = 'float'
+                parsed["score_type"] = "float"
 
     # Extract other parameters
     ratio_match = re.search(r'--ratio["\s]+"([^"]+)"', arguments)
     if ratio_match:
-        parsed['ratio'] = ratio_match.group(1)
+        parsed["ratio"] = ratio_match.group(1)
 
     pipeline_match = re.search(r'--pipeline["\s]+(\d+)', arguments)
     if pipeline_match:
-        parsed['pipeline'] = int(pipeline_match.group(1))
+        parsed["pipeline"] = int(pipeline_match.group(1))
 
     return parsed
+
 
 def analyze_inconsistency_with_ai(dataset_name, inconsistencies, file_details):
     """Use OpenAI to analyze dataset inconsistencies with deep memtier command understanding."""
@@ -393,13 +420,15 @@ def analyze_inconsistency_with_ai(dataset_name, inconsistencies, file_details):
         # Parse memtier commands for detailed analysis
         command_analysis = ""
         for detail in file_details:
-            if 'memtier_benchmark:' in detail['preload_sig']:
-                args = detail['preload_sig'].split('memtier_benchmark:', 1)[1]
+            if "memtier_benchmark:" in detail["preload_sig"]:
+                args = detail["preload_sig"].split("memtier_benchmark:", 1)[1]
                 parsed = parse_memtier_command(args)
                 command_analysis += f"\nFile: {detail['file']}\n"
                 command_analysis += f"  Command Type: {parsed['command_type']}\n"
                 command_analysis += f"  Data Size: {parsed['data_size']}B\n"
-                command_analysis += f"  Fields: {len(parsed['fields'])} ({parsed['fields']})\n"
+                command_analysis += (
+                    f"  Fields: {len(parsed['fields'])} ({parsed['fields']})\n"
+                )
                 command_analysis += f"  Score Type: {parsed.get('score_type', 'N/A')}\n"
                 command_analysis += f"  Full Command: {args}\n"
 
@@ -408,7 +437,7 @@ def analyze_inconsistency_with_ai(dataset_name, inconsistencies, file_details):
             inconsistency_details += f"\nFile: {inc['file']}\n"
             inconsistency_details += f"Type: {inc['type']}\n"
             inconsistency_details += f"Value: {inc['value']}\n"
-            if inc['type'] == 'preload':
+            if inc["type"] == "preload":
                 inconsistency_details += f"Expected: {inc['expected']}\n"
 
         prompt = f"""
@@ -460,14 +489,19 @@ Respond with JSON:
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=1200
+            max_tokens=1200,
         )
 
         result = json.loads(response.choices[0].message.content)
-        return result.get("action", "manual_review"), result.get("recommendation", ""), result
+        return (
+            result.get("action", "manual_review"),
+            result.get("recommendation", ""),
+            result,
+        )
 
     except Exception as e:
         return "manual_review", f"AI analysis error: {e}", {}
+
 
 def get_human_approval(dataset_name, action, recommendation, affected_files):
     """Get human approval for dataset changes."""
@@ -481,83 +515,94 @@ def get_human_approval(dataset_name, action, recommendation, affected_files):
     print(f"{'='*80}")
 
     while True:
-        response = input("Do you approve this change? (y/n/s for skip): ").lower().strip()
-        if response in ['y', 'yes']:
+        response = (
+            input("Do you approve this change? (y/n/s for skip): ").lower().strip()
+        )
+        if response in ["y", "yes"]:
             return True
-        elif response in ['n', 'no']:
+        elif response in ["n", "no"]:
             return False
-        elif response in ['s', 'skip']:
+        elif response in ["s", "skip"]:
             return None
         else:
             print("Please enter 'y' for yes, 'n' for no, or 's' to skip")
 
+
 def validate_dataset_consistency(memtier_files):
     """Validate that files with same dataset_name use identical preload commands and descriptions."""
-    dataset_info_map = {}  # dataset_name -> {preload_sig, description, files, file_details}
+    dataset_info_map = (
+        {}
+    )  # dataset_name -> {preload_sig, description, files, file_details}
     inconsistencies = []
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("DATASET CONSISTENCY VALIDATION")
-    print("="*60)
+    print("=" * 60)
 
     # Collect all dataset names and their info
     for file_path in memtier_files:
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 content = yaml.safe_load(f)
 
-            if not content or 'dbconfig' not in content:
+            if not content or "dbconfig" not in content:
                 continue
 
-            dbconfig = content['dbconfig']
-            dataset_name = dbconfig.get('dataset_name')
+            dbconfig = content["dbconfig"]
+            dataset_name = dbconfig.get("dataset_name")
 
             if not dataset_name:
                 continue
 
             preload_sig = extract_preload_signature(dbconfig)
-            dataset_desc = dbconfig.get('dataset_description', '')
+            dataset_desc = dbconfig.get("dataset_description", "")
             file_name = Path(file_path).name
 
             if dataset_name not in dataset_info_map:
                 dataset_info_map[dataset_name] = {
-                    'preload_sig': preload_sig,
-                    'description': dataset_desc,
-                    'files': [],
-                    'file_details': []
+                    "preload_sig": preload_sig,
+                    "description": dataset_desc,
+                    "files": [],
+                    "file_details": [],
                 }
 
-            dataset_info_map[dataset_name]['files'].append(file_name)
-            dataset_info_map[dataset_name]['file_details'].append({
-                'file': file_name,
-                'path': file_path,
-                'preload_sig': preload_sig,
-                'description': dataset_desc
-            })
+            dataset_info_map[dataset_name]["files"].append(file_name)
+            dataset_info_map[dataset_name]["file_details"].append(
+                {
+                    "file": file_name,
+                    "path": file_path,
+                    "preload_sig": preload_sig,
+                    "description": dataset_desc,
+                }
+            )
 
             # Check for preload inconsistency
-            if dataset_info_map[dataset_name]['preload_sig'] != preload_sig:
-                inconsistencies.append({
-                    'dataset': dataset_name,
-                    'type': 'preload',
-                    'file': file_name,
-                    'value': preload_sig,
-                    'expected': dataset_info_map[dataset_name]['preload_sig']
-                })
+            if dataset_info_map[dataset_name]["preload_sig"] != preload_sig:
+                inconsistencies.append(
+                    {
+                        "dataset": dataset_name,
+                        "type": "preload",
+                        "file": file_name,
+                        "value": preload_sig,
+                        "expected": dataset_info_map[dataset_name]["preload_sig"],
+                    }
+                )
 
             # Check for description inconsistency
-            expected_desc = dataset_info_map[dataset_name]['description']
+            expected_desc = dataset_info_map[dataset_name]["description"]
             if expected_desc and dataset_desc and expected_desc != dataset_desc:
-                inconsistencies.append({
-                    'dataset': dataset_name,
-                    'type': 'description',
-                    'file': file_name,
-                    'value': dataset_desc,
-                    'expected': expected_desc
-                })
+                inconsistencies.append(
+                    {
+                        "dataset": dataset_name,
+                        "type": "description",
+                        "file": file_name,
+                        "value": dataset_desc,
+                        "expected": expected_desc,
+                    }
+                )
             elif not expected_desc and dataset_desc:
                 # Update with first non-empty description found
-                dataset_info_map[dataset_name]['description'] = dataset_desc
+                dataset_info_map[dataset_name]["description"] = dataset_desc
 
         except Exception as e:
             print(f"Error reading {file_path}: {e}")
@@ -569,7 +614,7 @@ def validate_dataset_consistency(memtier_files):
         # Group inconsistencies by dataset
         dataset_inconsistencies = {}
         for inc in inconsistencies:
-            dataset = inc['dataset']
+            dataset = inc["dataset"]
             if dataset not in dataset_inconsistencies:
                 dataset_inconsistencies[dataset] = []
             dataset_inconsistencies[dataset].append(inc)
@@ -579,25 +624,31 @@ def validate_dataset_consistency(memtier_files):
             print(f"\nAnalyzing inconsistencies for dataset: {dataset_name}")
 
             # Get detailed file information for this dataset
-            dataset_file_details = dataset_info_map[dataset_name]['file_details']
+            dataset_file_details = dataset_info_map[dataset_name]["file_details"]
 
             action, recommendation, ai_result = analyze_inconsistency_with_ai(
                 dataset_name, dataset_incs, dataset_file_details
             )
-            affected_files = list(set(inc['file'] for inc in dataset_incs))
+            affected_files = list(set(inc["file"] for inc in dataset_incs))
 
             print(f"AI Analysis:")
-            print(f"  Commands Equivalent: {ai_result.get('commands_equivalent', 'Unknown')}")
-            print(f"  Dataset Name Accurate: {ai_result.get('dataset_name_accurate', 'Unknown')}")
+            print(
+                f"  Commands Equivalent: {ai_result.get('commands_equivalent', 'Unknown')}"
+            )
+            print(
+                f"  Dataset Name Accurate: {ai_result.get('dataset_name_accurate', 'Unknown')}"
+            )
             print(f"  Issues Found: {', '.join(ai_result.get('issues_found', []))}")
             print(f"  Recommendation: {action}")
             print(f"  Details: {recommendation}")
 
-            if ai_result.get('corrected_command'):
+            if ai_result.get("corrected_command"):
                 print(f"  Suggested Command: {ai_result['corrected_command']}")
 
-            if action in ['standardize_commands', 'split_datasets', 'fix_dataset_name']:
-                approval = get_human_approval(dataset_name, action, recommendation, affected_files)
+            if action in ["standardize_commands", "split_datasets", "fix_dataset_name"]:
+                approval = get_human_approval(
+                    dataset_name, action, recommendation, affected_files
+                )
 
                 if approval is True:
                     print(f"✅ Approved: Will {action} for {dataset_name}")
@@ -610,26 +661,29 @@ def validate_dataset_consistency(memtier_files):
                 print(f"ℹ️  No action required for {dataset_name}")
 
     # Report datasets with multiple files
-    shared_datasets = {name: info for name, info in dataset_info_map.items() if len(info['files']) > 1}
+    shared_datasets = {
+        name: info for name, info in dataset_info_map.items() if len(info["files"]) > 1
+    }
 
     if shared_datasets:
         print(f"\nDatasets shared by multiple files:")
         for dataset_name, info in shared_datasets.items():
             print(f"  {dataset_name}: {len(info['files'])} files")
-            for file_name in info['files']:
+            for file_name in info["files"]:
                 print(f"    - {file_name}")
-            if not info['description']:
+            if not info["description"]:
                 print(f"    ⚠️  Missing dataset_description!")
     else:
         print("\n✅ No datasets are shared by multiple files")
 
     return len(shared_datasets)
 
+
 def synchronize_dataset_descriptions(memtier_files):
     """Ensure files with same dataset_name have identical dataset_description."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SYNCHRONIZING DATASET DESCRIPTIONS")
-    print("="*60)
+    print("=" * 60)
 
     # First pass: collect canonical descriptions for each dataset
     dataset_canonical_desc = {}
@@ -637,15 +691,15 @@ def synchronize_dataset_descriptions(memtier_files):
 
     for file_path in memtier_files:
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 content = yaml.safe_load(f)
 
-            if not content or 'dbconfig' not in content:
+            if not content or "dbconfig" not in content:
                 continue
 
-            dbconfig = content['dbconfig']
-            dataset_name = dbconfig.get('dataset_name')
-            dataset_desc = dbconfig.get('dataset_description', '')
+            dbconfig = content["dbconfig"]
+            dataset_name = dbconfig.get("dataset_name")
+            dataset_desc = dbconfig.get("dataset_description", "")
 
             if not dataset_name:
                 continue
@@ -667,23 +721,23 @@ def synchronize_dataset_descriptions(memtier_files):
         if len(files) <= 1:
             continue  # Skip single-file datasets
 
-        canonical_desc = dataset_canonical_desc.get(dataset_name, '')
+        canonical_desc = dataset_canonical_desc.get(dataset_name, "")
         if not canonical_desc:
             print(f"⚠️  No description found for shared dataset: {dataset_name}")
             continue
 
         for file_path in files:
             try:
-                with open(file_path, 'r') as f:
+                with open(file_path, "r") as f:
                     content = yaml.safe_load(f)
 
-                dbconfig = content['dbconfig']
-                current_desc = dbconfig.get('dataset_description', '')
+                dbconfig = content["dbconfig"]
+                current_desc = dbconfig.get("dataset_description", "")
 
                 if current_desc != canonical_desc:
-                    dbconfig['dataset_description'] = canonical_desc
+                    dbconfig["dataset_description"] = canonical_desc
 
-                    with open(file_path, 'w') as f:
+                    with open(file_path, "w") as f:
                         yaml.dump(content, f, default_flow_style=False, sort_keys=False)
 
                     updated_count += 1
@@ -695,6 +749,7 @@ def synchronize_dataset_descriptions(memtier_files):
     print(f"\nSynchronized descriptions for {updated_count} files")
     return updated_count
 
+
 def process_file_thread_safe(file_path):
     """Thread-safe wrapper for process_file that returns results with file path."""
     try:
@@ -702,7 +757,7 @@ def process_file_thread_safe(file_path):
 
         if updated_content:
             # Write the file
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 yaml.dump(updated_content, f, default_flow_style=False, sort_keys=False)
             return file_path, "success", message, updated_content is not None
         else:
@@ -710,6 +765,7 @@ def process_file_thread_safe(file_path):
 
     except Exception as e:
         return file_path, "error", f"Processing error: {e}", False
+
 
 def main():
     """Main function to process all memtier files with threading."""
@@ -725,7 +781,7 @@ def main():
     memtier_files = glob.glob(pattern)
 
     # Filter out defaults.yml if it exists
-    memtier_files = [f for f in memtier_files if not f.endswith('defaults.yml')]
+    memtier_files = [f for f in memtier_files if not f.endswith("defaults.yml")]
 
     print(f"\nFound {len(memtier_files)} memtier benchmark files to process")
 
@@ -733,11 +789,11 @@ def main():
     shared_count = validate_dataset_consistency(memtier_files)
 
     results = {
-        'updated': 0,
-        'already_optimal': 0,
-        'removed_dataset': 0,
-        'no_dataset_needed': 0,
-        'errors': 0
+        "updated": 0,
+        "already_optimal": 0,
+        "removed_dataset": 0,
+        "no_dataset_needed": 0,
+        "errors": 0,
     }
 
     # Process files with threading
@@ -747,8 +803,10 @@ def main():
     completed = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
-        future_to_file = {executor.submit(process_file_thread_safe, file_path): file_path
-                         for file_path in sorted(memtier_files)}
+        future_to_file = {
+            executor.submit(process_file_thread_safe, file_path): file_path
+            for file_path in sorted(memtier_files)
+        }
 
         # Process completed tasks
         for future in as_completed(future_to_file):
@@ -761,42 +819,44 @@ def main():
 
             if status == "success":
                 if "Updated:" in message:
-                    results['updated'] += 1
+                    results["updated"] += 1
                     print(f"{progress} ✓ {file_name}: {message[:80]}...")
                 elif "Removed dataset_name" in message:
-                    results['removed_dataset'] += 1
+                    results["removed_dataset"] += 1
                     print(f"{progress} ✓ {file_name}: {message}")
                 else:
-                    results['updated'] += 1
+                    results["updated"] += 1
                     print(f"{progress} ✓ {file_name}: Updated")
 
             elif status == "no_change":
                 if "Already optimal:" in message:
-                    results['already_optimal'] += 1
+                    results["already_optimal"] += 1
                 elif "Correct (no dataset_name" in message:
-                    results['no_dataset_needed'] += 1
+                    results["no_dataset_needed"] += 1
                 elif "error" in message.lower():
-                    results['errors'] += 1
+                    results["errors"] += 1
                     print(f"{progress} ✗ {file_name}: {message}")
                 else:
                     print(f"{progress} - {file_name}: {message[:60]}...")
 
             elif status == "error":
-                results['errors'] += 1
+                results["errors"] += 1
                 print(f"{progress} ✗ {file_name}: {message}")
 
     # Synchronize dataset descriptions for shared datasets
     sync_count = synchronize_dataset_descriptions(memtier_files)
 
     # Validate consistency again after updates
-    if results['updated'] > 0 or sync_count > 0:
-        print(f"\n" + "="*60)
+    if results["updated"] > 0 or sync_count > 0:
+        print(f"\n" + "=" * 60)
         print("POST-UPDATE CONSISTENCY VALIDATION")
-        print("="*60)
+        print("=" * 60)
         shared_count_after = validate_dataset_consistency(memtier_files)
 
         if shared_count_after > shared_count:
-            print(f"⚠️  Warning: {shared_count_after - shared_count} new dataset conflicts introduced!")
+            print(
+                f"⚠️  Warning: {shared_count_after - shared_count} new dataset conflicts introduced!"
+            )
         else:
             print("✅ All dataset consistency checks passed!")
 
@@ -812,12 +872,13 @@ def main():
     print(f"No dataset needed (keyspacelen=0): {results['no_dataset_needed']}")
     print(f"Errors: {results['errors']}")
 
-    if results['updated'] > 0:
+    if results["updated"] > 0:
         print(f"\n✅ Successfully updated {results['updated']} dataset names!")
     if sync_count > 0:
         print(f"✅ Synchronized descriptions for {sync_count} files!")
-    if results['errors'] > 0:
+    if results["errors"] > 0:
         print(f"\n⚠️  {results['errors']} files had errors - please check manually")
+
 
 if __name__ == "__main__":
     main()

@@ -564,7 +564,7 @@ def test_create_client_runner_args():
     )
 
     assert args.benchmark_local_install is True
-    assert getattr(args, 'memtier_bin_path') == "/custom/path/to/memtier_benchmark"
+    assert getattr(args, "memtier_bin_path") == "/custom/path/to/memtier_benchmark"
 
     # This test case doesn't include --flushall_on_every_test_start, so it should be False
     assert args.flushall_on_every_test_start is False
@@ -1029,10 +1029,15 @@ def test_create_client_runner_args_timeout_buffer():
 
 def test_run_local_command_with_timeout():
     """Test the local command timeout functionality"""
-    from redis_benchmarks_specification.__runner__.runner import run_local_command_with_timeout, calculate_process_timeout
+    from redis_benchmarks_specification.__runner__.runner import (
+        run_local_command_with_timeout,
+        calculate_process_timeout,
+    )
 
     # Test successful command
-    success, stdout, stderr = run_local_command_with_timeout("echo 'test'", 5, "test command")
+    success, stdout, stderr = run_local_command_with_timeout(
+        "echo 'test'", 5, "test command"
+    )
     assert success is True
     assert "test" in stdout
 
@@ -1059,28 +1064,27 @@ def test_get_maxmemory():
             return {}
 
     # Test case 1: maxmemory key is missing (should return 0 and warn)
-    mock_redis_no_maxmemory = MockRedisConnection({
-        "used_memory": 1024000,
-        "total_system_memory": 8589934592
-    })
+    mock_redis_no_maxmemory = MockRedisConnection(
+        {"used_memory": 1024000, "total_system_memory": 8589934592}
+    )
     result = get_maxmemory(mock_redis_no_maxmemory)
     assert result == 0
 
     # Test case 2: maxmemory is 0 (should use total_system_memory)
-    mock_redis_maxmemory_zero = MockRedisConnection({
-        "maxmemory": 0,
-        "used_memory": 1024000,
-        "total_system_memory": 8589934592
-    })
+    mock_redis_maxmemory_zero = MockRedisConnection(
+        {"maxmemory": 0, "used_memory": 1024000, "total_system_memory": 8589934592}
+    )
     result = get_maxmemory(mock_redis_maxmemory_zero)
     assert result == 8589934592
 
     # Test case 3: maxmemory has a value (should return that value)
-    mock_redis_maxmemory_set = MockRedisConnection({
-        "maxmemory": 4294967296,  # 4GB
-        "used_memory": 1024000,
-        "total_system_memory": 8589934592
-    })
+    mock_redis_maxmemory_set = MockRedisConnection(
+        {
+            "maxmemory": 4294967296,  # 4GB
+            "used_memory": 1024000,
+            "total_system_memory": 8589934592,
+        }
+    )
     result = get_maxmemory(mock_redis_maxmemory_set)
     assert result == 4294967296
 
@@ -1090,7 +1094,7 @@ def test_remote_profiling_pprof_format():
     from redis_benchmarks_specification.__runner__.remote_profiling import (
         save_profile_with_metadata,
         extract_redis_metadata,
-        calculate_profile_duration
+        calculate_profile_duration,
     )
     import tempfile
     import os
@@ -1098,7 +1102,9 @@ def test_remote_profiling_pprof_format():
     # Test save_profile_with_metadata with binary data
     with tempfile.TemporaryDirectory() as temp_dir:
         # Mock binary profile data
-        profile_data = b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff'  # Sample gzipped data
+        profile_data = (
+            b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"  # Sample gzipped data
+        )
         benchmark_name = "test-benchmark"
         redis_metadata = {
             "redis_version": "7.0.0",
@@ -1106,7 +1112,7 @@ def test_remote_profiling_pprof_format():
             "redis_git_dirty": "0",
             "redis_build_id": "build123",
             "process_id": "12345",
-            "tcp_port": "6379"
+            "tcp_port": "6379",
         }
         duration = 10
 
@@ -1125,12 +1131,12 @@ def test_remote_profiling_pprof_format():
         assert os.path.exists(metadata_path)
 
         # Verify binary data was written correctly
-        with open(result_path, 'rb') as f:
+        with open(result_path, "rb") as f:
             saved_data = f.read()
             assert saved_data == profile_data
 
         # Verify metadata content
-        with open(metadata_path, 'r') as f:
+        with open(metadata_path, "r") as f:
             metadata_content = f.read()
             assert "redis_git_sha1=abc123" in metadata_content
             assert "benchmark_name=test-benchmark" in metadata_content
@@ -1144,7 +1150,9 @@ def test_remote_profiling_pprof_format():
 
 def test_extract_server_info_for_args():
     """Test the auto-detection of server info from Redis INFO SERVER"""
-    from redis_benchmarks_specification.__runner__.remote_profiling import extract_server_info_for_args
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        extract_server_info_for_args,
+    )
 
     class MockRedisConnection:
         def __init__(self, server_info):
@@ -1156,12 +1164,14 @@ def test_extract_server_info_for_args():
             return {}
 
     # Test case 1: Standard Redis server
-    mock_redis_standard = MockRedisConnection({
-        "redis_version": "7.2.4",
-        "redis_git_sha1": "05eaf6e4",
-        "redis_git_dirty": "0",
-        "redis_build_id": "9ff8e77d3d80abcd"
-    })
+    mock_redis_standard = MockRedisConnection(
+        {
+            "redis_version": "7.2.4",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
 
     result = extract_server_info_for_args(mock_redis_standard)
     assert result["github_org"] == "redis"
@@ -1171,14 +1181,16 @@ def test_extract_server_info_for_args():
     assert result["server_name"] == ""
 
     # Test case 2: Valkey server
-    mock_redis_valkey = MockRedisConnection({
-        "server_name": "valkey",
-        "redis_version": "7.2.4",
-        "valkey_version": "8.1.3",
-        "redis_git_sha1": "05eaf6e4",
-        "redis_git_dirty": "0",
-        "redis_build_id": "9ff8e77d3d80abcd"
-    })
+    mock_redis_valkey = MockRedisConnection(
+        {
+            "server_name": "valkey",
+            "redis_version": "7.2.4",
+            "valkey_version": "8.1.3",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
 
     result = extract_server_info_for_args(mock_redis_valkey)
     assert result["github_org"] == "valkey-io"
@@ -1188,13 +1200,15 @@ def test_extract_server_info_for_args():
     assert result["server_name"] == "valkey"
 
     # Test case 3: Valkey server without valkey_version (fallback to redis_version)
-    mock_redis_valkey_no_version = MockRedisConnection({
-        "server_name": "valkey",
-        "redis_version": "7.2.4",
-        "redis_git_sha1": "05eaf6e4",
-        "redis_git_dirty": "0",
-        "redis_build_id": "9ff8e77d3d80abcd"
-    })
+    mock_redis_valkey_no_version = MockRedisConnection(
+        {
+            "server_name": "valkey",
+            "redis_version": "7.2.4",
+            "redis_git_sha1": "05eaf6e4",
+            "redis_git_dirty": "0",
+            "redis_build_id": "9ff8e77d3d80abcd",
+        }
+    )
 
     result = extract_server_info_for_args(mock_redis_valkey_no_version)
     assert result["github_org"] == "valkey-io"
@@ -1204,11 +1218,13 @@ def test_extract_server_info_for_args():
     assert result["server_name"] == "valkey"
 
     # Test case 4: Server with empty git_sha1 (fallback to build_id)
-    mock_redis_build_id = MockRedisConnection({
-        "redis_version": "6.2.0",
-        "redis_git_sha1": "00000000",  # Empty/zero git_sha1
-        "redis_build_id": "abc123def456"
-    })
+    mock_redis_build_id = MockRedisConnection(
+        {
+            "redis_version": "6.2.0",
+            "redis_git_sha1": "00000000",  # Empty/zero git_sha1
+            "redis_build_id": "abc123def456",
+        }
+    )
 
     result = extract_server_info_for_args(mock_redis_build_id)
     assert result["github_org"] == "redis"
@@ -1220,7 +1236,9 @@ def test_extract_server_info_for_args():
 
 def test_extract_server_metadata_for_timeseries():
     """Test the extraction of comprehensive server metadata for timeseries"""
-    from redis_benchmarks_specification.__runner__.remote_profiling import extract_server_metadata_for_timeseries
+    from redis_benchmarks_specification.__runner__.remote_profiling import (
+        extract_server_metadata_for_timeseries,
+    )
 
     class MockRedisConnection:
         def __init__(self, server_info):
@@ -1232,25 +1250,27 @@ def test_extract_server_metadata_for_timeseries():
             return {}
 
     # Test with comprehensive server info (like Amazon ElastiCache)
-    mock_redis_comprehensive = MockRedisConnection({
-        "redis_version": "7.2.4",
-        "server_name": "valkey",
-        "valkey_version": "8.1.3",
-        "valkey_release_stage": "ga",
-        "os": "Amazon ElastiCache",
-        "arch_bits": 64,
-        "gcc_version": "12.2.0",
-        "server_mode": "standalone",
-        "multiplexing_api": "epoll",
-        "atomicvar_api": "c11-builtin",
-        "monotonic_clock": "POSIX clock_gettime",
-        "redis_build_id": "9ff8e77d3d80abcd",
-        "redis_git_dirty": "0",
-        "process_supervised": "no",
-        "availability_zone": "us-east-1a",
-        "io_threads_active": 0,
-        "config_file": "/etc/redis/redis.conf"
-    })
+    mock_redis_comprehensive = MockRedisConnection(
+        {
+            "redis_version": "7.2.4",
+            "server_name": "valkey",
+            "valkey_version": "8.1.3",
+            "valkey_release_stage": "ga",
+            "os": "Amazon ElastiCache",
+            "arch_bits": 64,
+            "gcc_version": "12.2.0",
+            "server_mode": "standalone",
+            "multiplexing_api": "epoll",
+            "atomicvar_api": "c11-builtin",
+            "monotonic_clock": "POSIX clock_gettime",
+            "redis_build_id": "9ff8e77d3d80abcd",
+            "redis_git_dirty": "0",
+            "process_supervised": "no",
+            "availability_zone": "us-east-1a",
+            "io_threads_active": 0,
+            "config_file": "/etc/redis/redis.conf",
+        }
+    )
 
     result = extract_server_metadata_for_timeseries(mock_redis_comprehensive)
 
@@ -1274,11 +1294,13 @@ def test_extract_server_metadata_for_timeseries():
     assert result["valkey_release_stage"] == "ga"
 
     # Test with minimal server info
-    mock_redis_minimal = MockRedisConnection({
-        "redis_version": "6.2.0",
-        "os": "Linux 5.4.0-74-generic x86_64",
-        "arch_bits": 64
-    })
+    mock_redis_minimal = MockRedisConnection(
+        {
+            "redis_version": "6.2.0",
+            "os": "Linux 5.4.0-74-generic x86_64",
+            "arch_bits": 64,
+        }
+    )
 
     result = extract_server_metadata_for_timeseries(mock_redis_minimal)
 
@@ -1339,11 +1361,16 @@ def test_deployment_arguments():
     assert args.core_count is None
 
     # Test custom values
-    args = parser.parse_args([
-        "--deployment_type", "oss-cluster",
-        "--deployment_name", "my-redis-cluster",
-        "--core_count", "16"
-    ])
+    args = parser.parse_args(
+        [
+            "--deployment_type",
+            "oss-cluster",
+            "--deployment_name",
+            "my-redis-cluster",
+            "--core_count",
+            "16",
+        ]
+    )
     assert args.deployment_type == "oss-cluster"
     assert args.deployment_name == "my-redis-cluster"
     assert args.core_count == 16

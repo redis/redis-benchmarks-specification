@@ -238,7 +238,9 @@ def extract_server_metadata_for_timeseries(redis_conn) -> Dict[str, str]:
         else:
             metadata["config_file"] = "none"
 
-        logging.info(f"Extracted {len(metadata)} server metadata fields for timeseries: {list(metadata.keys())}")
+        logging.info(
+            f"Extracted {len(metadata)} server metadata fields for timeseries: {list(metadata.keys())}"
+        )
 
         return metadata
 

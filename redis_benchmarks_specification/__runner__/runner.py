@@ -250,7 +250,7 @@ def detect_object_encoding(redis_conn, dbconfig):
                 "confidence": 0.0,
                 "sample_size": 0,
                 "total_keys": 0,
-                "encoding_distribution": {}
+                "encoding_distribution": {},
             }
 
         # Determine scanning strategy based on dataset size
@@ -258,12 +258,16 @@ def detect_object_encoding(redis_conn, dbconfig):
             # For small datasets, scan all keys for complete accuracy
             sample_size = total_keys
             scan_all_keys = True
-            logging.info(f"Scanning all {total_keys} keys (small dataset - complete analysis)")
+            logging.info(
+                f"Scanning all {total_keys} keys (small dataset - complete analysis)"
+            )
         else:
             # For large datasets, sample 1% (minimum 10, maximum 1000)
             sample_size = max(10, min(1000, int(total_keys * 0.01)))
             scan_all_keys = False
-            logging.info(f"Sampling {sample_size} keys out of {total_keys} total keys ({(sample_size/total_keys)*100:.2f}%)")
+            logging.info(
+                f"Sampling {sample_size} keys out of {total_keys} total keys ({(sample_size/total_keys)*100:.2f}%)"
+            )
 
         # Use SCAN to get keys
         encoding_counts = {}
@@ -282,7 +286,9 @@ def detect_object_encoding(redis_conn, dbconfig):
         else:
             # Sample keys until we reach our target sample size
             while len(scanned_keys) < sample_size:
-                cursor, keys = redis_conn.scan(cursor=cursor, count=min(100, sample_size - len(scanned_keys)))
+                cursor, keys = redis_conn.scan(
+                    cursor=cursor, count=min(100, sample_size - len(scanned_keys))
+                )
                 scanned_keys.extend(keys)
 
                 # Break if we've completed a full scan
@@ -292,25 +298,35 @@ def detect_object_encoding(redis_conn, dbconfig):
             # Limit to our target sample size
             scanned_keys = scanned_keys[:sample_size]
 
-        logging.debug(f"SCAN completed: found {len(scanned_keys)} keys, cursor ended at {cursor}")
+        logging.debug(
+            f"SCAN completed: found {len(scanned_keys)} keys, cursor ended at {cursor}"
+        )
 
         # If SCAN didn't find any keys but we know there are keys, try KEYS command as fallback
         if len(scanned_keys) == 0 and total_keys > 0:
-            logging.warning(f"SCAN found no keys but DBSIZE reports {total_keys} keys. Trying KEYS fallback.")
+            logging.warning(
+                f"SCAN found no keys but DBSIZE reports {total_keys} keys. Trying KEYS fallback."
+            )
             try:
                 # Use KEYS * as fallback (only for small datasets to avoid blocking)
                 if total_keys <= 1000:
-                    all_keys = redis_conn.keys('*')
-                    scanned_keys = all_keys[:sample_size] if not scan_all_keys else all_keys
+                    all_keys = redis_conn.keys("*")
+                    scanned_keys = (
+                        all_keys[:sample_size] if not scan_all_keys else all_keys
+                    )
                     logging.info(f"KEYS fallback found {len(scanned_keys)} keys")
                 else:
-                    logging.error(f"Cannot use KEYS fallback for large dataset ({total_keys} keys)")
+                    logging.error(
+                        f"Cannot use KEYS fallback for large dataset ({total_keys} keys)"
+                    )
             except Exception as e:
                 logging.error(f"KEYS fallback failed: {e}")
 
         # Final check: if we still have no keys, return early
         if len(scanned_keys) == 0:
-            logging.error(f"No keys found for encoding detection despite DBSIZE={total_keys}")
+            logging.error(
+                f"No keys found for encoding detection despite DBSIZE={total_keys}"
+            )
             return {
                 "encoding": "unknown",
                 "confidence": 0.0,
@@ -318,7 +334,7 @@ def detect_object_encoding(redis_conn, dbconfig):
                 "total_keys": total_keys,
                 "encoding_distribution": {},
                 "is_complete_scan": scan_all_keys,
-                "error": "No keys found by SCAN or KEYS commands"
+                "error": "No keys found by SCAN or KEYS commands",
             }
 
         # Get encoding for each sampled key
@@ -328,10 +344,12 @@ def detect_object_encoding(redis_conn, dbconfig):
                 # Use the redis-py object_encoding method instead of raw command
                 encoding = redis_conn.object("ENCODING", key)
                 if isinstance(encoding, bytes):
-                    encoding = encoding.decode('utf-8')
+                    encoding = encoding.decode("utf-8")
                 elif encoding is None:
                     # Key might have expired or been deleted
-                    logging.debug(f"Key '{key}' returned None encoding (key may have expired)")
+                    logging.debug(
+                        f"Key '{key}' returned None encoding (key may have expired)"
+                    )
                     continue
 
                 encoding_counts[encoding] = encoding_counts.get(encoding, 0) + 1
@@ -345,17 +363,21 @@ def detect_object_encoding(redis_conn, dbconfig):
                 logging.warning(f"Failed to get encoding for key {key}: {e}")
                 continue
 
-        logging.debug(f"Successfully got encoding for {successful_encodings}/{len(scanned_keys)} keys")
+        logging.debug(
+            f"Successfully got encoding for {successful_encodings}/{len(scanned_keys)} keys"
+        )
 
         if not encoding_counts:
-            logging.warning(f"No object encodings detected! Scanned {len(scanned_keys)} keys, successful encodings: {successful_encodings}")
+            logging.warning(
+                f"No object encodings detected! Scanned {len(scanned_keys)} keys, successful encodings: {successful_encodings}"
+            )
             return {
                 "encoding": "unknown",
                 "confidence": 0.0,
                 "sample_size": 0,
                 "total_keys": total_keys,
                 "encoding_distribution": {},
-                "is_complete_scan": scan_all_keys
+                "is_complete_scan": scan_all_keys,
             }
 
         # Determine dominant encoding
@@ -365,8 +387,7 @@ def detect_object_encoding(redis_conn, dbconfig):
 
         # Calculate encoding distribution percentages
         encoding_distribution = {
-            enc: (count / total_sampled) * 100
-            for enc, count in encoding_counts.items()
+            enc: (count / total_sampled) * 100 for enc, count in encoding_counts.items()
         }
 
         result = {
@@ -375,11 +396,13 @@ def detect_object_encoding(redis_conn, dbconfig):
             "sample_size": total_sampled,
             "total_keys": total_keys,
             "encoding_distribution": encoding_distribution,
-            "is_complete_scan": scan_all_keys
+            "is_complete_scan": scan_all_keys,
         }
 
         scan_type = "complete scan" if scan_all_keys else "sample"
-        logging.info(f"Object encoding analysis ({scan_type}): {dominant_encoding[0]} ({confidence*100:.1f}% confidence)")
+        logging.info(
+            f"Object encoding analysis ({scan_type}): {dominant_encoding[0]} ({confidence*100:.1f}% confidence)"
+        )
         if len(encoding_counts) > 1:
             logging.info(f"Encoding distribution: {encoding_distribution}")
 
@@ -393,7 +416,7 @@ def detect_object_encoding(redis_conn, dbconfig):
             "sample_size": 0,
             "total_keys": 0,
             "encoding_distribution": {},
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -1285,7 +1308,9 @@ def process_self_contained_coordinator_stream(
     dry_run_count = 0
     dry_run_tests = []  # Track test names for dry run output
     memory_results = []  # Track memory results for memory comparison mode
-    loaded_datasets = set()  # Track datasets that have been loaded (for memory comparison mode)
+    loaded_datasets = (
+        set()
+    )  # Track datasets that have been loaded (for memory comparison mode)
     dry_run = args.dry_run
     memory_comparison_only = args.memory_comparison_only
     dry_run_include_preload = args.dry_run_include_preload
@@ -1315,7 +1340,11 @@ def process_self_contained_coordinator_stream(
 
                 if "dbconfig" in benchmark_config:
                     # Skip load tests (keyspacelen = 0) in memory comparison mode
-                    keyspacelen = benchmark_config["dbconfig"].get("check", {}).get("keyspacelen", None)
+                    keyspacelen = (
+                        benchmark_config["dbconfig"]
+                        .get("check", {})
+                        .get("keyspacelen", None)
+                    )
                     if keyspacelen is not None and keyspacelen == 0:
                         logging.debug(f"Skipping load test {test_file} (keyspacelen=0)")
                         continue
@@ -1331,8 +1360,12 @@ def process_self_contained_coordinator_stream(
         logging.info(f"Memory comparison mode analysis:")
         logging.info(f"  Total tests with datasets: {total_tests_with_datasets}")
         logging.info(f"  Unique datasets to load: {len(unique_datasets)}")
-        logging.info(f"  Dataset ingestion savings: {total_tests_with_datasets - len(unique_datasets)} skipped loads")
-        logging.info(f"  Load tests skipped: Tests with keyspacelen=0 are automatically excluded")
+        logging.info(
+            f"  Dataset ingestion savings: {total_tests_with_datasets - len(unique_datasets)} skipped loads"
+        )
+        logging.info(
+            f"  Load tests skipped: Tests with keyspacelen=0 are automatically excluded"
+        )
 
         if len(unique_datasets) > 0:
             logging.info(f"  Unique datasets: {', '.join(sorted(unique_datasets))}")
@@ -1420,7 +1453,7 @@ def process_self_contained_coordinator_stream(
                     # Auto-detect server information if not explicitly provided
                     from redis_benchmarks_specification.__runner__.remote_profiling import (
                         extract_server_info_for_args,
-                        extract_server_metadata_for_timeseries
+                        extract_server_metadata_for_timeseries,
                     )
 
                     detected_info = extract_server_info_for_args(r)
@@ -1431,22 +1464,33 @@ def process_self_contained_coordinator_stream(
                     github_repo = args.github_repo
 
                     # Auto-detect github_org if it's the default value
-                    if args.github_org == "redis" and detected_info["github_org"] != "redis":
+                    if (
+                        args.github_org == "redis"
+                        and detected_info["github_org"] != "redis"
+                    ):
                         github_org = detected_info["github_org"]
                         logging.info(f"Auto-detected github_org: {github_org}")
 
                     # Auto-detect github_repo if it's the default value
-                    if args.github_repo == "redis" and detected_info["github_repo"] != "redis":
+                    if (
+                        args.github_repo == "redis"
+                        and detected_info["github_repo"] != "redis"
+                    ):
                         github_repo = detected_info["github_repo"]
                         logging.info(f"Auto-detected github_repo: {github_repo}")
 
                     # Auto-detect version if it's the default value
-                    if args.github_version == "NA" and detected_info["github_version"] != "unknown":
+                    if (
+                        args.github_version == "NA"
+                        and detected_info["github_version"] != "unknown"
+                    ):
                         git_version = detected_info["github_version"]
                         logging.info(f"Auto-detected github_version: {git_version}")
 
                     # Auto-detect git hash if it's the default value
-                    if (git_hash is None or git_hash == "NA") and detected_info["github_hash"] != "unknown":
+                    if (git_hash is None or git_hash == "NA") and detected_info[
+                        "github_hash"
+                    ] != "unknown":
                         git_hash = detected_info["github_hash"]
                         logging.info(f"Auto-detected git_hash: {git_hash}")
 
@@ -1454,7 +1498,6 @@ def process_self_contained_coordinator_stream(
                     tf_github_org = github_org
                     tf_github_repo = github_repo
                     redis_conns = [r]
-
 
                     if oss_cluster_api_enabled:
                         redis_conns = []
@@ -1499,7 +1542,9 @@ def process_self_contained_coordinator_stream(
                         if redis_pid is not None:
                             redis_pids.append(redis_pid)
                         else:
-                            logging.warning("Redis process_id not found in INFO command, skipping PID collection for this connection")
+                            logging.warning(
+                                "Redis process_id not found in INFO command, skipping PID collection for this connection"
+                            )
 
                     # Check if all tested commands are supported by this Redis instance
                     supported_commands = get_supported_redis_commands(redis_conns)
@@ -1549,11 +1594,15 @@ def process_self_contained_coordinator_stream(
                         # Send MEMORY PURGE after FLUSHALL for memory comparison mode
                         if memory_comparison_only:
                             try:
-                                logging.info("Sending MEMORY PURGE after FLUSHALL at test start")
+                                logging.info(
+                                    "Sending MEMORY PURGE after FLUSHALL at test start"
+                                )
                                 for conn in redis_conns:
                                     conn.execute_command("MEMORY", "PURGE")
                             except Exception as e:
-                                logging.warning(f"MEMORY PURGE failed after FLUSHALL at test start: {e}")
+                                logging.warning(
+                                    f"MEMORY PURGE failed after FLUSHALL at test start: {e}"
+                                )
 
                     benchmark_required_memory = get_benchmark_required_memory(
                         benchmark_config
@@ -1691,7 +1740,9 @@ def process_self_contained_coordinator_stream(
                                 continue
 
                         # Check if we should skip tests without dataset
-                        has_dataset = "preload_tool" in benchmark_config.get("dbconfig", {})
+                        has_dataset = "preload_tool" in benchmark_config.get(
+                            "dbconfig", {}
+                        )
                         if args.skip_tests_without_dataset is True and not has_dataset:
                             logging.warning(
                                 "Skipping test {} as it does not contain a dataset".format(
@@ -1706,7 +1757,10 @@ def process_self_contained_coordinator_stream(
                             continue
 
                         # For memory comparison mode, only run tests with dbconfig
-                        if memory_comparison_only and "dbconfig" not in benchmark_config:
+                        if (
+                            memory_comparison_only
+                            and "dbconfig" not in benchmark_config
+                        ):
                             logging.warning(
                                 "Skipping test {} in memory comparison mode as it does not contain dbconfig".format(
                                     test_name
@@ -1731,16 +1785,22 @@ def process_self_contained_coordinator_stream(
                     if "dbconfig" in benchmark_config:
                         if "preload_tool" in benchmark_config["dbconfig"]:
                             # Check if this dataset has already been loaded (for memory comparison mode)
-                            dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                            dataset_name = benchmark_config["dbconfig"].get(
+                                "dataset_name"
+                            )
                             skip_preload = False
 
                             if memory_comparison_only and dataset_name:
                                 if dataset_name in loaded_datasets:
-                                    logging.info(f"Skipping preload for dataset '{dataset_name}' - already loaded")
+                                    logging.info(
+                                        f"Skipping preload for dataset '{dataset_name}' - already loaded"
+                                    )
                                     skip_preload = True
                                     continue
                                 else:
-                                    logging.info(f"Loading dataset '{dataset_name}' for the first time")
+                                    logging.info(
+                                        f"Loading dataset '{dataset_name}' for the first time"
+                                    )
                                     loaded_datasets.add(dataset_name)
 
                             if not skip_preload:
@@ -1787,7 +1847,9 @@ def process_self_contained_coordinator_stream(
                     # Send MEMORY PURGE before preload for memory comparison mode (if FLUSHALL wasn't already done)
                     if memory_comparison_only and not args.flushall_on_every_test_start:
                         try:
-                            logging.info("Sending MEMORY PURGE before preload for memory comparison mode")
+                            logging.info(
+                                "Sending MEMORY PURGE before preload for memory comparison mode"
+                            )
                             for conn in redis_conns:
                                 conn.execute_command("MEMORY", "PURGE")
                         except Exception as e:
@@ -1819,12 +1881,20 @@ def process_self_contained_coordinator_stream(
                             start_time_ms,
                             start_time_str,
                         ) = get_start_time_vars()
-                        dataset_load_duration_seconds = 0  # No dataset loading time for memory comparison
+                        dataset_load_duration_seconds = (
+                            0  # No dataset loading time for memory comparison
+                        )
 
                         # Skip load tests (keyspacelen = 0) in memory comparison mode
-                        keyspacelen = benchmark_config.get("dbconfig", {}).get("check", {}).get("keyspacelen", None)
+                        keyspacelen = (
+                            benchmark_config.get("dbconfig", {})
+                            .get("check", {})
+                            .get("keyspacelen", None)
+                        )
                         if keyspacelen is not None and keyspacelen == 0:
-                            logging.info(f"Skipping load test {test_name} in memory comparison mode (keyspacelen=0)")
+                            logging.info(
+                                f"Skipping load test {test_name} in memory comparison mode (keyspacelen=0)"
+                            )
                             delete_temporary_files(
                                 temporary_dir_client=temporary_dir_client,
                                 full_result_path=None,
@@ -1836,10 +1906,14 @@ def process_self_contained_coordinator_stream(
                         if dry_run:
                             dry_run_count = dry_run_count + 1
                             dry_run_tests.append(test_name)
-                            logging.info(f"[DRY RUN] Would collect memory stats for test {test_name}")
+                            logging.info(
+                                f"[DRY RUN] Would collect memory stats for test {test_name}"
+                            )
 
                             # Add dataset info to dry run output
-                            dataset_name = benchmark_config.get("dbconfig", {}).get("dataset_name")
+                            dataset_name = benchmark_config.get("dbconfig", {}).get(
+                                "dataset_name"
+                            )
                             if dataset_name:
                                 logging.info(f"[DRY RUN]   Dataset: {dataset_name}")
 
@@ -1857,7 +1931,11 @@ def process_self_contained_coordinator_stream(
                             # Convert list response to dict
                             memory_stats = {}
                             for i in range(0, len(memory_stats_raw), 2):
-                                key = memory_stats_raw[i].decode() if isinstance(memory_stats_raw[i], bytes) else str(memory_stats_raw[i])
+                                key = (
+                                    memory_stats_raw[i].decode()
+                                    if isinstance(memory_stats_raw[i], bytes)
+                                    else str(memory_stats_raw[i])
+                                )
                                 value = memory_stats_raw[i + 1]
                                 if isinstance(value, bytes):
                                     try:
@@ -1876,7 +1954,9 @@ def process_self_contained_coordinator_stream(
                                 "keys.bytes-per-key": 0,
                                 "dataset.percentage": 0,
                                 "overhead.total": 0,
-                                "fragmentation": info.get("mem_fragmentation_ratio", 1.0),
+                                "fragmentation": info.get(
+                                    "mem_fragmentation_ratio", 1.0
+                                ),
                                 "fragmentation.bytes": 0,
                                 "allocator.allocated": info.get("used_memory", 0),
                                 "allocator.resident": info.get("used_memory_rss", 0),
@@ -1884,9 +1964,13 @@ def process_self_contained_coordinator_stream(
                             }
 
                         # Detect object encoding by scanning 1% of the dataset
-                        object_encoding_info = detect_object_encoding(r, benchmark_config.get("dbconfig", {}))
-                        logging.info(f"Object encoding detection: {object_encoding_info.get('encoding', 'unknown')} "
-                                   f"({object_encoding_info.get('confidence', 0)*100:.1f}% confidence)")
+                        object_encoding_info = detect_object_encoding(
+                            r, benchmark_config.get("dbconfig", {})
+                        )
+                        logging.info(
+                            f"Object encoding detection: {object_encoding_info.get('encoding', 'unknown')} "
+                            f"({object_encoding_info.get('confidence', 0)*100:.1f}% confidence)"
+                        )
 
                         # Extract key memory metrics
                         memory_result = {
@@ -1894,51 +1978,107 @@ def process_self_contained_coordinator_stream(
                             "total_allocated": memory_stats.get("total.allocated", 0),
                             "dataset_bytes": memory_stats.get("dataset.bytes", 0),
                             "keys_count": memory_stats.get("keys.count", 0),
-                            "keys_bytes_per_key": memory_stats.get("keys.bytes-per-key", 0),
-                            "dataset_percentage": memory_stats.get("dataset.percentage", 0),
+                            "keys_bytes_per_key": memory_stats.get(
+                                "keys.bytes-per-key", 0
+                            ),
+                            "dataset_percentage": memory_stats.get(
+                                "dataset.percentage", 0
+                            ),
                             "overhead_total": memory_stats.get("overhead.total", 0),
                             "fragmentation": memory_stats.get("fragmentation", 0),
-                            "fragmentation_bytes": memory_stats.get("fragmentation.bytes", 0),
-                            "allocator_allocated": memory_stats.get("allocator.allocated", 0),
-                            "allocator_resident": memory_stats.get("allocator.resident", 0),
-                            "allocator_fragmentation_ratio": memory_stats.get("allocator-fragmentation.ratio", 0),
+                            "fragmentation_bytes": memory_stats.get(
+                                "fragmentation.bytes", 0
+                            ),
+                            "allocator_allocated": memory_stats.get(
+                                "allocator.allocated", 0
+                            ),
+                            "allocator_resident": memory_stats.get(
+                                "allocator.resident", 0
+                            ),
+                            "allocator_fragmentation_ratio": memory_stats.get(
+                                "allocator-fragmentation.ratio", 0
+                            ),
                             # Object encoding information
-                            "object_encoding": object_encoding_info.get("encoding", "unknown"),
-                            "encoding_confidence": object_encoding_info.get("confidence", 0.0),
-                            "encoding_sample_size": object_encoding_info.get("sample_size", 0),
-                            "encoding_distribution": object_encoding_info.get("encoding_distribution", {}),
-                            "encoding_is_complete_scan": object_encoding_info.get("is_complete_scan", False),
+                            "object_encoding": object_encoding_info.get(
+                                "encoding", "unknown"
+                            ),
+                            "encoding_confidence": object_encoding_info.get(
+                                "confidence", 0.0
+                            ),
+                            "encoding_sample_size": object_encoding_info.get(
+                                "sample_size", 0
+                            ),
+                            "encoding_distribution": object_encoding_info.get(
+                                "encoding_distribution", {}
+                            ),
+                            "encoding_is_complete_scan": object_encoding_info.get(
+                                "is_complete_scan", False
+                            ),
                         }
                         memory_results.append(memory_result)
 
                         # Push memory metrics to datasink
                         if datasink_push_results_redistimeseries:
                             memory_metrics_dict = {
-                                "memory.total_allocated": memory_result["total_allocated"],
+                                "memory.total_allocated": memory_result[
+                                    "total_allocated"
+                                ],
                                 "memory.dataset_bytes": memory_result["dataset_bytes"],
                                 "memory.keys_count": memory_result["keys_count"],
-                                "memory.keys_bytes_per_key": memory_result["keys_bytes_per_key"],
-                                "memory.dataset_percentage": memory_result["dataset_percentage"],
-                                "memory.overhead_total": memory_result["overhead_total"],
+                                "memory.keys_bytes_per_key": memory_result[
+                                    "keys_bytes_per_key"
+                                ],
+                                "memory.dataset_percentage": memory_result[
+                                    "dataset_percentage"
+                                ],
+                                "memory.overhead_total": memory_result[
+                                    "overhead_total"
+                                ],
                                 "memory.fragmentation": memory_result["fragmentation"],
-                                "memory.fragmentation_bytes": memory_result["fragmentation_bytes"],
-                                "memory.allocator_allocated": memory_result["allocator_allocated"],
-                                "memory.allocator_resident": memory_result["allocator_resident"],
-                                "memory.allocator_fragmentation_ratio": memory_result["allocator_fragmentation_ratio"],
-                                "memory.encoding_confidence": memory_result["encoding_confidence"],
-                                "memory.encoding_sample_size": memory_result["encoding_sample_size"],
+                                "memory.fragmentation_bytes": memory_result[
+                                    "fragmentation_bytes"
+                                ],
+                                "memory.allocator_allocated": memory_result[
+                                    "allocator_allocated"
+                                ],
+                                "memory.allocator_resident": memory_result[
+                                    "allocator_resident"
+                                ],
+                                "memory.allocator_fragmentation_ratio": memory_result[
+                                    "allocator_fragmentation_ratio"
+                                ],
+                                "memory.encoding_confidence": memory_result[
+                                    "encoding_confidence"
+                                ],
+                                "memory.encoding_sample_size": memory_result[
+                                    "encoding_sample_size"
+                                ],
                             }
 
                             # Add object encoding to metadata
-                            metadata["object_encoding"] = memory_result["object_encoding"]
-                            metadata["encoding_confidence"] = f"{memory_result['encoding_confidence']:.3f}"
-                            metadata["encoding_sample_size"] = str(memory_result["encoding_sample_size"])
-                            metadata["encoding_scan_type"] = "complete" if memory_result.get("encoding_is_complete_scan", False) else "sample"
+                            metadata["object_encoding"] = memory_result[
+                                "object_encoding"
+                            ]
+                            metadata["encoding_confidence"] = (
+                                f"{memory_result['encoding_confidence']:.3f}"
+                            )
+                            metadata["encoding_sample_size"] = str(
+                                memory_result["encoding_sample_size"]
+                            )
+                            metadata["encoding_scan_type"] = (
+                                "complete"
+                                if memory_result.get("encoding_is_complete_scan", False)
+                                else "sample"
+                            )
 
                             # Add encoding distribution to metadata if multiple encodings found
                             if len(memory_result["encoding_distribution"]) > 1:
-                                for enc, percentage in memory_result["encoding_distribution"].items():
-                                    metadata[f"encoding_dist_{enc}"] = f"{percentage:.1f}%"
+                                for enc, percentage in memory_result[
+                                    "encoding_distribution"
+                                ].items():
+                                    metadata[f"encoding_dist_{enc}"] = (
+                                        f"{percentage:.1f}%"
+                                    )
 
                             # Set datapoint_time_ms for memory comparison mode
                             datapoint_time_ms = start_time_ms
@@ -1947,9 +2087,15 @@ def process_self_contained_coordinator_stream(
                             metadata["metric-type"] = "memory-stats"
 
                             # Debug: Check git_hash value and memory metrics before export
-                            logging.info(f"DEBUG: About to export memory metrics with git_hash='{git_hash}', type={type(git_hash)}")
-                            logging.info(f"DEBUG: memory_metrics_dict has {len(memory_metrics_dict)} items: {list(memory_metrics_dict.keys())}")
-                            logging.info(f"DEBUG: Sample values: {dict(list(memory_metrics_dict.items())[:3])}")
+                            logging.info(
+                                f"DEBUG: About to export memory metrics with git_hash='{git_hash}', type={type(git_hash)}"
+                            )
+                            logging.info(
+                                f"DEBUG: memory_metrics_dict has {len(memory_metrics_dict)} items: {list(memory_metrics_dict.keys())}"
+                            )
+                            logging.info(
+                                f"DEBUG: Sample values: {dict(list(memory_metrics_dict.items())[:3])}"
+                            )
                             export_redis_metrics(
                                 git_version,
                                 datapoint_time_ms,
@@ -1967,7 +2113,7 @@ def process_self_contained_coordinator_stream(
                                 git_hash,
                                 running_platform,
                             )
-                            
+
                             exporter_datasink_common(
                                 benchmark_config,
                                 0,  # benchmark_duration_seconds = 0 for memory only
@@ -1998,13 +2144,19 @@ def process_self_contained_coordinator_stream(
                         # Send MEMORY PURGE after memory comparison (if FLUSHALL at test end is not enabled)
                         if not args.flushall_on_every_test_end:
                             try:
-                                logging.info("Sending MEMORY PURGE after memory comparison")
+                                logging.info(
+                                    "Sending MEMORY PURGE after memory comparison"
+                                )
                                 for conn in redis_conns:
                                     conn.execute_command("MEMORY", "PURGE")
                             except Exception as e:
-                                logging.warning(f"MEMORY PURGE failed after memory comparison: {e}")
+                                logging.warning(
+                                    f"MEMORY PURGE failed after memory comparison: {e}"
+                                )
 
-                        logging.info(f"Memory comparison completed for test {test_name}")
+                        logging.info(
+                            f"Memory comparison completed for test {test_name}"
+                        )
                         delete_temporary_files(
                             temporary_dir_client=temporary_dir_client,
                             full_result_path=None,
@@ -2579,11 +2731,15 @@ def process_self_contained_coordinator_stream(
                         # Send MEMORY PURGE after FLUSHALL for memory comparison mode
                         if memory_comparison_only:
                             try:
-                                logging.info("Sending MEMORY PURGE after FLUSHALL at test end")
+                                logging.info(
+                                    "Sending MEMORY PURGE after FLUSHALL at test end"
+                                )
                                 for r in redis_conns:
                                     r.execute_command("MEMORY", "PURGE")
                             except Exception as e:
-                                logging.warning(f"MEMORY PURGE failed after FLUSHALL at test end: {e}")
+                                logging.warning(
+                                    f"MEMORY PURGE failed after FLUSHALL at test end: {e}"
+                                )
 
                 except KeyboardInterrupt:
                     logging.info("KeyboardInterrupt caught. Exiting...")
@@ -2602,7 +2758,9 @@ def process_self_contained_coordinator_stream(
 
                     # Check if user requested exit via Ctrl+C
                     if _exit_requested:
-                        logging.info("Exit requested by user. Stopping after exception.")
+                        logging.info(
+                            "Exit requested by user. Stopping after exception."
+                        )
                         break
                 # tear-down
                 logging.info("Tearing down setup")
@@ -2641,7 +2799,9 @@ def process_self_contained_coordinator_stream(
     # Check if user requested exit via Ctrl+C
     if _exit_requested:
         logging.info("Exit requested by user. Printing summary before exit.")
-        print("\nExecution stopped by user request. Printing summary of completed tests...")
+        print(
+            "\nExecution stopped by user request. Printing summary of completed tests..."
+        )
 
     # Print Redis server information section before results
     if len(results_matrix) > 0:
@@ -2667,7 +2827,9 @@ def process_self_contained_coordinator_stream(
 
     # Add note if execution was stopped early
     if _exit_requested:
-        print("\n(Note: Execution was stopped early by user request - showing results for completed tests only)")
+        print(
+            "\n(Note: Execution was stopped early by user request - showing results for completed tests only)"
+        )
 
     if client_aggregated_results_folder != "":
         os.makedirs(client_aggregated_results_folder, exist_ok=True)
@@ -2683,13 +2845,13 @@ def process_self_contained_coordinator_stream(
 
     # Print memory comparison summary if in memory comparison mode
     if memory_comparison_only and memory_results:
-        logging.info("\n" + "="*80)
+        logging.info("\n" + "=" * 80)
         logging.info("MEMORY COMPARISON SUMMARY")
-        logging.info("="*80)
+        logging.info("=" * 80)
         logging.info(f"Total unique datasets loaded: {len(loaded_datasets)}")
         if loaded_datasets:
             logging.info(f"Datasets: {', '.join(sorted(loaded_datasets))}")
-        logging.info("="*80)
+        logging.info("=" * 80)
 
         # Create memory summary table
         memory_headers = [
@@ -2704,7 +2866,7 @@ def process_self_contained_coordinator_stream(
             "Alloc Fragmentation",
             "Object Encoding",
             "Encoding Confidence",
-            "Scan Type"
+            "Scan Type",
         ]
 
         memory_matrix = []
@@ -2714,20 +2876,26 @@ def process_self_contained_coordinator_stream(
             dataset_mb = result["dataset_bytes"] / (1024 * 1024)
             overhead_mb = result["overhead_total"] / (1024 * 1024)
 
-            memory_matrix.append([
-                result["test_name"],
-                f"{total_mb:.1f}MB",
-                f"{dataset_mb:.1f}MB",
-                f"{result['keys_count']:,}",
-                f"{result['keys_bytes_per_key']:.0f}B",
-                f"{result['dataset_percentage']:.1f}%",
-                f"{overhead_mb:.1f}MB",
-                f"{result['fragmentation']:.2f}",
-                f"{result['allocator_fragmentation_ratio']:.3f}",
-                result.get("object_encoding", "unknown"),
-                f"{result.get('encoding_confidence', 0.0)*100:.1f}%",
-                "complete" if result.get("encoding_is_complete_scan", False) else "sample"
-            ])
+            memory_matrix.append(
+                [
+                    result["test_name"],
+                    f"{total_mb:.1f}MB",
+                    f"{dataset_mb:.1f}MB",
+                    f"{result['keys_count']:,}",
+                    f"{result['keys_bytes_per_key']:.0f}B",
+                    f"{result['dataset_percentage']:.1f}%",
+                    f"{overhead_mb:.1f}MB",
+                    f"{result['fragmentation']:.2f}",
+                    f"{result['allocator_fragmentation_ratio']:.3f}",
+                    result.get("object_encoding", "unknown"),
+                    f"{result.get('encoding_confidence', 0.0)*100:.1f}%",
+                    (
+                        "complete"
+                        if result.get("encoding_is_complete_scan", False)
+                        else "sample"
+                    ),
+                ]
+            )
 
         memory_writer = MarkdownTableWriter(
             table_name="Memory Usage Summary",
@@ -2737,9 +2905,13 @@ def process_self_contained_coordinator_stream(
         memory_writer.write_table()
 
     if dry_run is True:
-        mode_description = "memory comparison" if memory_comparison_only else "benchmark"
+        mode_description = (
+            "memory comparison" if memory_comparison_only else "benchmark"
+        )
         logging.info(
-            "Number of tests that would have been run ({}): {}".format(mode_description, dry_run_count)
+            "Number of tests that would have been run ({}): {}".format(
+                mode_description, dry_run_count
+            )
         )
         if _exit_requested:
             logging.info("(Note: Execution was stopped early by user request)")
@@ -2762,14 +2934,25 @@ def process_self_contained_coordinator_stream(
                         with open(test_file, "r") as stream:
                             benchmark_config = yaml.safe_load(stream)
 
-                        test_name = extract_test_name_from_test_configuration_file(test_file)
-                        if test_name in dry_run_tests and "dbconfig" in benchmark_config:
+                        test_name = extract_test_name_from_test_configuration_file(
+                            test_file
+                        )
+                        if (
+                            test_name in dry_run_tests
+                            and "dbconfig" in benchmark_config
+                        ):
                             # Skip load tests in dry run analysis too
-                            keyspacelen = benchmark_config["dbconfig"].get("check", {}).get("keyspacelen", None)
+                            keyspacelen = (
+                                benchmark_config["dbconfig"]
+                                .get("check", {})
+                                .get("keyspacelen", None)
+                            )
                             if keyspacelen is not None and keyspacelen == 0:
                                 continue
 
-                            dataset_name = benchmark_config["dbconfig"].get("dataset_name")
+                            dataset_name = benchmark_config["dbconfig"].get(
+                                "dataset_name"
+                            )
                             if dataset_name:
                                 unique_datasets.add(dataset_name)
                                 tests_with_datasets += 1
@@ -2781,7 +2964,9 @@ def process_self_contained_coordinator_stream(
                     logging.info(f"\nMemory comparison analysis:")
                     logging.info(f"  Tests with datasets: {tests_with_datasets}")
                     logging.info(f"  Unique datasets: {len(unique_datasets)}")
-                    logging.info(f"  Dataset ingestion savings: {tests_with_datasets - len(unique_datasets)} skipped loads")
+                    logging.info(
+                        f"  Dataset ingestion savings: {tests_with_datasets - len(unique_datasets)} skipped loads"
+                    )
                     if unique_datasets:
                         logging.info(f"  Datasets that would be loaded:")
                         for dataset in sorted(unique_datasets):
@@ -3016,7 +3201,9 @@ def get_supported_redis_commands(redis_conns):
 
             # Handle case where COMMAND returns 0 commands (likely not supported)
             if len(supported_commands) == 0:
-                logging.warning("COMMAND returned 0 commands - likely not supported by this Redis instance")
+                logging.warning(
+                    "COMMAND returned 0 commands - likely not supported by this Redis instance"
+                )
                 return None
 
             # Log some sample commands for debugging
@@ -3042,7 +3229,9 @@ def get_supported_redis_commands(redis_conns):
 def check_test_command_support(benchmark_config, supported_commands):
     """Check if all tested-commands in the benchmark config are supported"""
     if supported_commands is None or len(supported_commands) == 0:
-        logging.warning("No supported commands list available (COMMAND not supported or returned 0 commands), skipping command check")
+        logging.warning(
+            "No supported commands list available (COMMAND not supported or returned 0 commands), skipping command check"
+        )
         return True, []
 
     if "tested-commands" not in benchmark_config:

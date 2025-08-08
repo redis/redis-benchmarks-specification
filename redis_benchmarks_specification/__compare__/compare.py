@@ -1179,7 +1179,9 @@ def from_rts_to_regression_table(
         if baseline_str != "":
             filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
         if baseline_deployment_name != "":
-            filters_baseline.append("deployment_name={}".format(baseline_deployment_name))
+            filters_baseline.append(
+                "deployment_name={}".format(baseline_deployment_name)
+            )
         if baseline_github_org != "":
             filters_baseline.append(f"github_org={baseline_github_org}")
         if running_platform_baseline is not None and running_platform_baseline != "":
@@ -1195,14 +1197,19 @@ def from_rts_to_regression_table(
         if comparison_str != "":
             filters_comparison.append("{}={}".format(by_str_comparison, comparison_str))
         if comparison_deployment_name != "":
-            filters_comparison.append("deployment_name={}".format(comparison_deployment_name))
+            filters_comparison.append(
+                "deployment_name={}".format(comparison_deployment_name)
+            )
         if comparison_github_org != "":
             filters_comparison.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
             filters_baseline.append("hash==")
         if "hash" not in by_str_comparison:
             filters_comparison.append("hash==")
-        if running_platform_comparison is not None and running_platform_comparison != "":
+        if (
+            running_platform_comparison is not None
+            and running_platform_comparison != ""
+        ):
             filters_comparison.append(
                 "running_platform={}".format(running_platform_comparison)
             )
@@ -1538,7 +1545,9 @@ def from_rts_to_regression_table(
 
 def get_only_Totals(baseline_timeseries):
     logging.warning("\t\tTime-series: {}".format(", ".join(baseline_timeseries)))
-    logging.info(f"Checking if Totals will reduce timeseries. initial len={len(baseline_timeseries)}")
+    logging.info(
+        f"Checking if Totals will reduce timeseries. initial len={len(baseline_timeseries)}"
+    )
     new_base = []
     for ts_name in baseline_timeseries:
         if "io-threads" in ts_name:
@@ -1548,8 +1557,10 @@ def get_only_Totals(baseline_timeseries):
         if "Totals" in ts_name:
             new_base.append(ts_name)
     baseline_timeseries = new_base
-    logging.info(f"                                          final len={len(baseline_timeseries)}")
- 
+    logging.info(
+        f"                                          final len={len(baseline_timeseries)}"
+    )
+
     return baseline_timeseries
 
 

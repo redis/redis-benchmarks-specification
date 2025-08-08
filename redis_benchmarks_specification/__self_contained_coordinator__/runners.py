@@ -310,7 +310,9 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
 
-                            r = redis.StrictRedis(port=redis_proc_start_port, password=redis_password)
+                            r = redis.StrictRedis(
+                                port=redis_proc_start_port, password=redis_password
+                            )
                             r.ping()
                             redis_pids = []
                             redis_info = r.info()
@@ -318,7 +320,9 @@ def process_self_contained_coordinator_stream(
                             if first_redis_pid is not None:
                                 redis_pids.append(first_redis_pid)
                             else:
-                                logging.warning("Redis process_id not found in INFO command")
+                                logging.warning(
+                                    "Redis process_id not found in INFO command"
+                                )
                             ceil_client_cpu_limit = extract_client_cpu_limit(
                                 benchmark_config
                             )

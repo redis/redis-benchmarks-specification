@@ -67,7 +67,9 @@ def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
 
         for lua_script in lua_scripts:
             try:
-                logging.info("Executing Lua script (length: {} chars)".format(len(lua_script)))
+                logging.info(
+                    "Executing Lua script (length: {} chars)".format(len(lua_script))
+                )
                 # Execute the Lua script using EVAL command with 0 keys
                 stdout = r.execute_command("EVAL", lua_script, 0)
                 logging.info("Lua script result: {}".format(stdout))
@@ -135,7 +137,6 @@ def extract_testsuites(args):
             logging.info(f"Test {test}")
 
     return testsuite_spec_files
-
 
 
 def commandstats_latencystats_process_name(
@@ -235,6 +236,7 @@ def collect_redis_metrics(
 
     return start_time_ms, res, kv_overall
 
+
 def export_redis_metrics(
     artifact_version,
     end_time_ms,
@@ -274,9 +276,7 @@ def export_redis_metrics(
             "branch": tf_github_branch
         }
     if git_hash is not None and git_hash != "":
-        by_variants["by.hash/{}".format(git_hash)] = {
-            "hash": git_hash
-        }
+        by_variants["by.hash/{}".format(git_hash)] = {"hash": git_hash}
     if artifact_version is not None and artifact_version != "":
         by_variants["by.version/{}".format(artifact_version)] = {
             "version": artifact_version
@@ -337,8 +337,6 @@ def export_redis_metrics(
     datapoint_errors = datapoint_errors + i_errors
     datapoint_inserts = datapoint_inserts + i_inserts
     return datapoint_errors, datapoint_inserts
-
-
 
 
 def reset_commandstats(redis_conns):
@@ -468,7 +466,9 @@ def exporter_datasink_common(
 
     # Update deployment tracking sets
     deployment_type_and_name = f"{setup_type}_AND_{setup_name}"
-    deployment_type_and_name_and_version = f"{setup_type}_AND_{setup_name}_AND_{git_version}"
+    deployment_type_and_name_and_version = (
+        f"{setup_type}_AND_{setup_name}_AND_{git_version}"
+    )
 
     # Add to deployment-specific set (only if datasink connection is available)
     if datasink_conn is not None:
@@ -483,4 +483,6 @@ def exporter_datasink_common(
 
     # Add metadata fields to timeseries metadata
     metadata["deployment_type_AND_deployment_name"] = deployment_type_and_name
-    metadata["deployment_type_AND_deployment_name_AND_version"] = deployment_type_and_name_and_version
+    metadata["deployment_type_AND_deployment_name_AND_version"] = (
+        deployment_type_and_name_and_version
+    )
