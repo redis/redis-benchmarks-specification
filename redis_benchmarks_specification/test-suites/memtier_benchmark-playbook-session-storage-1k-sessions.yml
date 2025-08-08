@@ -140,9 +140,9 @@ dbconfig:
     return 'OK'
 tested-groups:
 - hash
-- zset
+- sorted-set
 - set
-- string
+- scripting
 
 tested-commands:
 - hgetall
@@ -154,6 +154,7 @@ tested-commands:
 - incr
 - expire
 - get
+- eval
 
 redis-topologies:
 - oss-standalone
