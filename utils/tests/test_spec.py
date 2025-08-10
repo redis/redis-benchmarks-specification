@@ -25,7 +25,7 @@ def test_extract_build_variant_variations():
     ) as yml_file:
         benchmark_config = yaml.safe_load(yml_file)
         build_variants = extract_build_variant_variations(benchmark_config)
-        assert "gcc:8.5.0-amd64-debian-buster-default" in build_variants
+        assert "gcc:8.5.0-amd64-debian-bookworm-default" in build_variants
 
 
 def test_extract_redis_dbconfig_parameters():
@@ -35,4 +35,4 @@ def test_extract_redis_dbconfig_parameters():
     ) as yml_file:
         benchmark_config = yaml.safe_load(yml_file)
         build_variants = extract_build_variant_variations(benchmark_config)
-        assert "gcc:8.5.0-amd64-debian-buster-default" in build_variants
+        assert "gcc:8.5.0-amd64-debian-bookworm-default" in build_variants

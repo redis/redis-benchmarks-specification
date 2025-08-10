@@ -14,8 +14,8 @@ tested-commands:
 redis-topologies:
 - oss-standalone
 build-variants:
-- gcc:8.5.0-amd64-debian-buster-default
-- gcc:8.5.0-arm64-debian-buster-default
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
 - dockerhub
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge

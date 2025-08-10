@@ -41,12 +41,12 @@ from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
 def test_build_spec_image_prefetch():
     builders_folder = "./redis_benchmarks_specification/setups/builders"
-    different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
+    different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
     prefetched_images, total_fetched = build_spec_image_prefetch(
         builders_folder, different_build_specs
     )
     assert total_fetched >= 0 and total_fetched <= 2
-    assert "gcc:8.5.0-buster" in prefetched_images
+    assert "gcc:8.5.0-bookworm" in prefetched_images
 
 
 def test_commit_schema_to_stream_then_build():
@@ -74,7 +74,7 @@ def test_commit_schema_to_stream_then_build():
                 assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 1
                 assert "id" in reply_fields
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
+            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             (
                 previous_id,
@@ -127,7 +127,7 @@ def test_commit_schema_to_stream_then_build_historical_redis():
                 assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 1
                 assert "id" in reply_fields
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
+            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
@@ -164,7 +164,7 @@ def test_cli_build():
 
             import argparse
 
-            run_image = "debian:buster"
+            run_image = "debian:bookworm"
             github_org = "valkey-io"
             github_repo = "valkey"
             git_hash = "7795152fff06f8200f5e4239ff612b240f638e14"
@@ -210,7 +210,7 @@ def test_cli_build():
             events_in_pipe = conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT)
             assert events_in_pipe > 0
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-buster-default.yml"]
+            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
@@ -276,7 +276,7 @@ def test_cli_build():
             metric_context_path = None
             gh_org = github_org
             gh_repo = github_repo
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_variant_name = "gcc:8.5.0-amd64-debian-bookworm-default"
             for metric_name in ["ALL_STATS.Totals.Latency", "ALL_STATS.Totals.Ops/sec"]:
                 ts_key_name = get_ts_metric_name(
                     "by.branch",
@@ -351,7 +351,7 @@ def test_cli_build():
             ]
 
             assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
-            assert "debian-buster".encode() in datasink_conn.smembers(
+            assert "debian-bookworm".encode() in datasink_conn.smembers(
                 project_oss_setname
             )
             assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)

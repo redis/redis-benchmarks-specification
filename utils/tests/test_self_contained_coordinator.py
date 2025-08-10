@@ -248,7 +248,7 @@ def test_self_contained_coordinator_blocking_read():
             ]
 
             assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
-            assert "debian-buster".encode() in datasink_conn.smembers(
+            assert "debian-bookworm".encode() in datasink_conn.smembers(
                 project_oss_setname
             )
             assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)
