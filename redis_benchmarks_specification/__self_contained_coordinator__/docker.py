@@ -15,7 +15,7 @@ def generate_standalone_redis_server_args(
     redis_arguments="",
     password=None,
 ):
-    added_params = ["port", "protected-mode", "dir", "requirepass"]
+    added_params = ["port", "protected-mode", "dir", "requirepass", "logfile"]
     # start redis-server
     command = [
         binary,
@@ -31,6 +31,7 @@ def generate_standalone_redis_server_args(
         logging.info("Redis server will be started with password authentication")
     if dbdir != "":
         command.extend(["--dir", dbdir])
+        command.extend(["--logfile", f"{dbdir}redis.log"])
     if configuration_parameters is not None:
         for parameter, parameter_value in configuration_parameters.items():
             if parameter not in added_params:
