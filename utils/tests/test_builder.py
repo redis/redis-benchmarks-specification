@@ -41,7 +41,7 @@ from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
 def test_build_spec_image_prefetch():
     builders_folder = "./redis_benchmarks_specification/setups/builders"
-    different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
+    different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
     prefetched_images, total_fetched = build_spec_image_prefetch(
         builders_folder, different_build_specs
     )
@@ -74,7 +74,7 @@ def test_commit_schema_to_stream_then_build():
                 assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 1
                 assert "id" in reply_fields
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
+            different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             (
                 previous_id,
@@ -127,7 +127,7 @@ def test_commit_schema_to_stream_then_build_historical_redis():
                 assert conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT) == 1
                 assert "id" in reply_fields
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
+            different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
@@ -210,7 +210,7 @@ def test_cli_build():
             events_in_pipe = conn.xlen(STREAM_KEYNAME_GH_EVENTS_COMMIT)
             assert events_in_pipe > 0
             builders_folder = "./redis_benchmarks_specification/setups/builders"
-            different_build_specs = ["gcc:8.5.0-amd64-debian-bookworm-default.yml"]
+            different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
                 builders_folder, conn, different_build_specs, previous_id
@@ -276,7 +276,7 @@ def test_cli_build():
             metric_context_path = None
             gh_org = github_org
             gh_repo = github_repo
-            build_variant_name = "gcc:8.5.0-amd64-debian-bookworm-default"
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             for metric_name in ["ALL_STATS.Totals.Latency", "ALL_STATS.Totals.Ops/sec"]:
                 ts_key_name = get_ts_metric_name(
                     "by.branch",

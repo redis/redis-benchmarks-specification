@@ -14,7 +14,7 @@ from redis_benchmarks_specification.__common__.env import (
 
 def flow_1_and_2_api_builder_checks(
     conn,
-    build_spec_name="gcc:8.5.0-amd64-debian-bookworm-default",
+    build_spec_name="gcc:15.2.0-amd64-debian-bookworm-default",
     gh_org="redis",
     gh_repo="redis",
     git_hash="0cf2df84d4b27af4bffd2bf3543838f09e10f874",

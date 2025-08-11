@@ -6,7 +6,7 @@ compiler: "gcc"
 cpp_compiler: "g++"
 kind: docker
 build_image: gcc:15.2.0-bookworm
-run_image: debian:bookworm
+run_image: gcc:15.2.0-bookworm
 description: "Using GNU Compiler Containers (https://hub.docker.com/_/gcc?tab=description)
               pre-configured environment with all the tools required to build with gcc."
 metadata:
