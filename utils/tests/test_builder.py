@@ -46,7 +46,7 @@ def test_build_spec_image_prefetch():
         builders_folder, different_build_specs
     )
     assert total_fetched >= 0 and total_fetched <= 2
-    assert "gcc:8.5.0-bookworm" in prefetched_images
+    assert "gcc:15.2.0-bookworm" in prefetched_images
 
 
 def test_commit_schema_to_stream_then_build():
