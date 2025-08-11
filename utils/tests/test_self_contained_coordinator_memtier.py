@@ -187,7 +187,7 @@ def test_self_contained_coordinator_blocking_read():
             ]
 
             assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
-            assert "debian-buster".encode() in datasink_conn.smembers(
+            assert "debian-bookworm".encode() in datasink_conn.smembers(
                 project_oss_setname
             )
             assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)
@@ -260,7 +260,7 @@ def test_self_contained_coordinator_dockerhub_preload():
                     )
                 )
 
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
@@ -386,7 +386,7 @@ def test_self_contained_coordinator_dockerhub():
                     )
                 )
 
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
@@ -512,7 +512,7 @@ def test_self_contained_coordinator_dockerhub_iothreads():
                     )
                 )
 
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
@@ -1006,7 +1006,7 @@ def test_self_contained_coordinator_skip_build_variant():
             db_port = int(os.getenv("DATASINK_PORT", "6379"))
             conn = redis.StrictRedis(port=db_port)
             conn.ping()
-            build_variant_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
             conn.flushall()
             build_variant_name, reply_fields = flow_1_and_2_api_builder_checks(conn)
@@ -1111,7 +1111,7 @@ def test_self_contained_coordinator_blocking_read_valkey():
             conn.flushall()
             gh_org = "valkey-io"
             gh_repo = "valkey"
-            build_spec_name = "gcc:8.5.0-amd64-debian-buster-default"
+            build_spec_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             git_hash = "7795152fff06f8200f5e4239ff612b240f638e14"
             git_branch = "unstable"
             build_artifacts = ["valkey-server"]
@@ -1266,7 +1266,7 @@ def test_self_contained_coordinator_blocking_read_valkey():
             ]
 
             assert "amd64".encode() in datasink_conn.smembers(project_archs_setname)
-            assert "debian-buster".encode() in datasink_conn.smembers(
+            assert "debian-bookworm".encode() in datasink_conn.smembers(
                 project_oss_setname
             )
             assert "gcc".encode() in datasink_conn.smembers(project_compilers_setname)

@@ -148,7 +148,7 @@ def main():
         # Construct the time series key
         ts_key = (
             f"ci.benchmarks.redis/by.branch/ci/redis/redis/{test_name}/"
-            "gcc:8.5.0-amd64-debian-buster-default/"
+            "gcc:15.2.0-amd64-debian-bookworm-default/"
             "intel64-ubuntu22.04-redis-icx1/oss-standalone/unstable/"
             "ALL_STATS.Totals.Ops/sec"
         )
