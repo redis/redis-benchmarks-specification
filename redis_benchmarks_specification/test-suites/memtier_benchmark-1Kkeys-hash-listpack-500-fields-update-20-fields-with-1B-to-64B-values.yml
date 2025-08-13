@@ -1,0 +1,75 @@
+version: 0.4
+name: memtier_benchmark-1Kkeys-hash-listpack-500-fields-update-20-fields-with-1B-to-64B-values
+description: |
+  Runs memtier_benchmark to measure update performance on large Redis hashes stored as
+  listpacks. The dataset is preloaded with 1,000 keys (`test_hash:<id>`), each containing
+  500 field–value pairs, where values are small strings ranging from 1 to 64 bytes.
+
+  The benchmark focuses on multi-field `HSET` updates, where each operation updates 20
+  fields in the same hash. This workload stresses Redis's listpack encoding for hashes,
+  particularly when performing batched updates inside already large hashes.
+
+  Since each key already contains 500 fields, the test highlights the cost of inserting
+  into dense listpacks, memory reallocation behavior, and the effectiveness of Redis's
+  multi-element insertion optimizations
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    local total_keys = 1000
+    local total_fields = 500
+    local batch_size = 100  -- number of arguments per HSET call (field + value count)
+    for k = 1, total_keys do
+      local key = "test_hash:" .. k
+      redis.call("DEL", key)
+      local field_num = 1
+      while field_num <= total_fields do
+        local args = {key}
+        for j = 1, batch_size, 2 do
+          if field_num > total_fields then break end
+          table.insert(args, "f" .. field_num)
+          table.insert(args, "v" .. field_num)
+          field_num = field_num + 1
+        end
+        redis.call("HSET", unpack(args))
+      end
+    end
+    return "OK"
+
+
+tested-groups:
+- hash
+
+tested-commands:
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix "test_hash:"
+    --key-minimum 1
+    --key-maximum 1000
+    --data-size-range=1-64
+    --pipeline=1
+    --test-time=120
+    --command='HSET __key__ HSET test_hash f1 __data__ f2 __data__ f3 __data__ f4 __data__ f5 __data__ f6 __data__ f7 __data__ f8 __data__ f9 __data__ f10 __data__ f11 __data__ f12 __data__ f13 __data__ f14 __data__ f15 __data__ f16 __data__ f17 __data__ f18 __data__ f19 __data__ f20 __data__'
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
