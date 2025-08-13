@@ -124,9 +124,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     benchmark_total_command_count = 0
 
     # Group-based read/write tracking for benchmarks
-    benchmark_group_read = {}      # group -> count
-    benchmark_group_write = {}     # group -> count
-    benchmark_group_total = {}     # group -> total count
+    benchmark_group_read = {}  # group -> count
+    benchmark_group_write = {}  # group -> count
+    benchmark_group_total = {}  # group -> total count
 
     # ACL category tracking for commandstats CSV
     csv_read_commands = {}
@@ -136,13 +136,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     csv_total_command_count = 0
 
     # Group-based read/write tracking for CSV
-    csv_group_read = {}           # group -> count
-    csv_group_write = {}          # group -> count
-    csv_group_total = {}          # group -> total count
+    csv_group_read = {}  # group -> count
+    csv_group_write = {}  # group -> count
+    csv_group_total = {}  # group -> total count
 
     # Percentage validation tracking
     csv_provided_percentages = {}  # command -> provided percentage
-    csv_original_counts = {}       # command -> original count from CSV
+    csv_original_counts = {}  # command -> original count from CSV
 
     override_enabled = args.override_tests
     fail_on_required_diff = args.fail_on_required_diff
@@ -326,10 +326,17 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                                     is_read = True
                                 elif "@pubsub" in acl_categories:
                                     # Pubsub commands: SUBSCRIBE/UNSUBSCRIBE are read, PUBLISH is write
-                                    if command.lower() in ["subscribe", "unsubscribe", "psubscribe", "punsubscribe"]:
+                                    if command.lower() in [
+                                        "subscribe",
+                                        "unsubscribe",
+                                        "psubscribe",
+                                        "punsubscribe",
+                                    ]:
                                         is_read = True
                                     else:
-                                        is_write = True  # PUBLISH and other pubsub commands
+                                        is_write = (
+                                            True  # PUBLISH and other pubsub commands
+                                        )
                                 else:
                                     # Commands without explicit read/write ACL but not _ro are assumed write
                                     # This covers cases like EVALSHA which can modify data
@@ -579,7 +586,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                         acl_categories = command_json["acl_categories"]
 
                         # Use original count if available, otherwise use parsed count
-                        tracking_count = original_count if original_count is not None else count
+                        tracking_count = (
+                            original_count if original_count is not None else count
+                        )
                         csv_total_command_count += tracking_count
 
                         # Track total by group (all commands)
@@ -600,7 +609,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                             is_read = True
                         elif "@pubsub" in acl_categories:
                             # Pubsub commands: SUBSCRIBE/UNSUBSCRIBE are read, PUBLISH is write
-                            if cmd.lower() in ["subscribe", "unsubscribe", "psubscribe", "punsubscribe"]:
+                            if cmd.lower() in [
+                                "subscribe",
+                                "unsubscribe",
+                                "psubscribe",
+                                "punsubscribe",
+                            ]:
                                 is_read = True
                             else:
                                 is_write = True  # PUBLISH and other pubsub commands
@@ -643,7 +657,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     # Use original count if available and different from parsed count
                     final_count = count
                     if original_count is not None and original_count != count:
-                        logging.warning(f"Using original count for {cmd}: {original_count:,} instead of parsed {count:,}")
+                        logging.warning(
+                            f"Using original count for {cmd}: {original_count:,} instead of parsed {count:,}"
+                        )
                         final_count = original_count
 
                     priority[cmd.lower()] = final_count
@@ -871,8 +887,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             write_percentage = (benchmark_write_count / benchmark_rw_count) * 100
 
             logging.info(f"READ/WRITE COMMAND DISTRIBUTION:")
-            logging.info(f"  Read commands:  {benchmark_read_count:6d} ({read_percentage:5.1f}%)")
-            logging.info(f"  Write commands: {benchmark_write_count:6d} ({write_percentage:5.1f}%)")
+            logging.info(
+                f"  Read commands:  {benchmark_read_count:6d} ({read_percentage:5.1f}%)"
+            )
+            logging.info(
+                f"  Write commands: {benchmark_write_count:6d} ({write_percentage:5.1f}%)"
+            )
             logging.info(f"  Total R/W:      {benchmark_rw_count:6d} (100.0%)")
         else:
             logging.info("No read/write commands detected in benchmark ACL categories")
@@ -888,8 +908,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
             logging.info(f"")
             logging.info(f"FAST/SLOW COMMAND DISTRIBUTION:")
-            logging.info(f"  Fast commands: {benchmark_fast_count:6d} ({fast_percentage:5.1f}%)")
-            logging.info(f"  Slow commands: {benchmark_slow_count:6d} ({slow_percentage:5.1f}%)")
+            logging.info(
+                f"  Fast commands: {benchmark_fast_count:6d} ({fast_percentage:5.1f}%)"
+            )
+            logging.info(
+                f"  Slow commands: {benchmark_slow_count:6d} ({slow_percentage:5.1f}%)"
+            )
             logging.info(f"  Total F/S:     {benchmark_fs_count:6d} (100.0%)")
         else:
             logging.info("No fast/slow commands detected in benchmark ACL categories")
@@ -923,7 +947,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 read_formatted = format_number_with_suffix(read_count)
                 write_formatted = format_number_with_suffix(write_count)
 
-                logging.info(f"  {group.upper():>12} ({group_pct:4.1f}%): {read_formatted:>8} read ({read_pct:5.1f}%), {write_formatted:>8} write ({write_pct:5.1f}%)")
+                logging.info(
+                    f"  {group.upper():>12} ({group_pct:4.1f}%): {read_formatted:>8} read ({read_pct:5.1f}%), {write_formatted:>8} write ({write_pct:5.1f}%)"
+                )
 
                 total_read_all += read_count
                 total_write_all += write_count
@@ -935,9 +961,13 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 total_read_formatted = format_number_with_suffix(total_read_all)
                 total_write_formatted = format_number_with_suffix(total_write_all)
 
-                logging.info(f"  {'TOTAL':>12} (100.0%): {total_read_formatted:>8} read ({total_read_pct:5.1f}%), {total_write_formatted:>8} write ({total_write_pct:5.1f}%)")
+                logging.info(
+                    f"  {'TOTAL':>12} (100.0%): {total_read_formatted:>8} read ({total_read_pct:5.1f}%), {total_write_formatted:>8} write ({total_write_pct:5.1f}%)"
+                )
     else:
-        logging.info("BENCHMARK TEST SUITES ANALYSIS: No commands with ACL categories found")
+        logging.info(
+            "BENCHMARK TEST SUITES ANALYSIS: No commands with ACL categories found"
+        )
 
     # CommandStats CSV analysis
     if csv_total_command_count > 0:
@@ -955,8 +985,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             write_percentage = (csv_write_count / csv_rw_count) * 100
 
             logging.info(f"READ/WRITE COMMAND DISTRIBUTION:")
-            logging.info(f"  Read commands:  {csv_read_count:8d} ({read_percentage:5.1f}%)")
-            logging.info(f"  Write commands: {csv_write_count:8d} ({write_percentage:5.1f}%)")
+            logging.info(
+                f"  Read commands:  {csv_read_count:8d} ({read_percentage:5.1f}%)"
+            )
+            logging.info(
+                f"  Write commands: {csv_write_count:8d} ({write_percentage:5.1f}%)"
+            )
             logging.info(f"  Total R/W:      {csv_rw_count:8d} (100.0%)")
         else:
             logging.info("No read/write commands detected in CSV ACL categories")
@@ -972,8 +1006,12 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
 
             logging.info(f"")
             logging.info(f"FAST/SLOW COMMAND DISTRIBUTION:")
-            logging.info(f"  Fast commands: {csv_fast_count:8d} ({fast_percentage:5.1f}%)")
-            logging.info(f"  Slow commands: {csv_slow_count:8d} ({slow_percentage:5.1f}%)")
+            logging.info(
+                f"  Fast commands: {csv_fast_count:8d} ({fast_percentage:5.1f}%)"
+            )
+            logging.info(
+                f"  Slow commands: {csv_slow_count:8d} ({slow_percentage:5.1f}%)"
+            )
             logging.info(f"  Total F/S:     {csv_fs_count:8d} (100.0%)")
         else:
             logging.info("No fast/slow commands detected in CSV ACL categories")
@@ -1007,7 +1045,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 read_formatted = format_number_with_suffix(read_count)
                 write_formatted = format_number_with_suffix(write_count)
 
-                logging.info(f"  {group.upper():>12} ({group_pct:4.1f}%): {read_formatted:>8} read ({read_pct:5.1f}%), {write_formatted:>8} write ({write_pct:5.1f}%)")
+                logging.info(
+                    f"  {group.upper():>12} ({group_pct:4.1f}%): {read_formatted:>8} read ({read_pct:5.1f}%), {write_formatted:>8} write ({write_pct:5.1f}%)"
+                )
 
                 total_read_all += read_count
                 total_write_all += write_count
@@ -1019,7 +1059,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                 total_read_formatted = format_number_with_suffix(total_read_all)
                 total_write_formatted = format_number_with_suffix(total_write_all)
 
-                logging.info(f"  {'TOTAL':>12} (100.0%): {total_read_formatted:>8} read ({total_read_pct:5.1f}%), {total_write_formatted:>8} write ({total_write_pct:5.1f}%)")
+                logging.info(
+                    f"  {'TOTAL':>12} (100.0%): {total_read_formatted:>8} read ({total_read_pct:5.1f}%), {total_write_formatted:>8} write ({total_write_pct:5.1f}%)"
+                )
 
         # Validate parsing accuracy by comparing with provided percentages
         if csv_provided_percentages and csv_original_counts:
@@ -1032,7 +1074,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             total_provided_percentage = sum(csv_provided_percentages.values())
 
             logging.info(f"Total original count: {total_original:,}")
-            logging.info(f"Sum of provided percentages: {total_provided_percentage:.6f}%")
+            logging.info(
+                f"Sum of provided percentages: {total_provided_percentage:.6f}%"
+            )
 
             # Check if our billion parsing matches original counts
             parsing_errors = 0
@@ -1042,7 +1086,9 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
                     original_value = csv_original_counts[cmd]
                     if parsed_value != original_value:
                         parsing_errors += 1
-                        logging.warning(f"Parsing mismatch for {cmd}: parsed={parsed_value:,} vs original={original_value:,}")
+                        logging.warning(
+                            f"Parsing mismatch for {cmd}: parsed={parsed_value:,} vs original={original_value:,}"
+                        )
 
             if parsing_errors == 0:
                 logging.info("✓ All billion/million/thousand parsing is accurate")
@@ -1053,10 +1099,14 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             if abs(total_provided_percentage - 100.0) < 0.001:
                 logging.info("✓ Provided percentages sum to 100%")
             else:
-                logging.warning(f"✗ Provided percentages sum to {total_provided_percentage:.6f}% (not 100%)")
+                logging.warning(
+                    f"✗ Provided percentages sum to {total_provided_percentage:.6f}% (not 100%)"
+                )
     else:
         logging.info("")
-        logging.info("COMMANDSTATS CSV ANALYSIS: No CSV file provided or no commands found")
+        logging.info(
+            "COMMANDSTATS CSV ANALYSIS: No CSV file provided or no commands found"
+        )
 
     logging.info("=" * 80)
     # Save pipeline count to CSV
@@ -1184,11 +1234,20 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
     # Benchmark group breakdown
     csv_filename = "benchmark_group_read_write_breakdown.csv"
     with open(csv_filename, "w", newline="") as csvfile:
-        fieldnames = ["group", "read_count", "write_count", "total_count", "read_percentage", "write_percentage"]
+        fieldnames = [
+            "group",
+            "read_count",
+            "write_count",
+            "total_count",
+            "read_percentage",
+            "write_percentage",
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        all_groups = set(benchmark_group_read.keys()) | set(benchmark_group_write.keys())
+        all_groups = set(benchmark_group_read.keys()) | set(
+            benchmark_group_write.keys()
+        )
         for group in sorted(all_groups):
             read_count = benchmark_group_read.get(group, 0)
             write_count = benchmark_group_write.get(group, 0)
@@ -1196,21 +1255,30 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             read_pct = (read_count / total_count * 100) if total_count > 0 else 0
             write_pct = (write_count / total_count * 100) if total_count > 0 else 0
 
-            writer.writerow({
-                "group": group,
-                "read_count": read_count,
-                "write_count": write_count,
-                "total_count": total_count,
-                "read_percentage": round(read_pct, 2),
-                "write_percentage": round(write_pct, 2)
-            })
+            writer.writerow(
+                {
+                    "group": group,
+                    "read_count": read_count,
+                    "write_count": write_count,
+                    "total_count": total_count,
+                    "read_percentage": round(read_pct, 2),
+                    "write_percentage": round(write_pct, 2),
+                }
+            )
 
     logging.info(f"Benchmark group read/write breakdown saved to {csv_filename}")
 
     # CommandStats group breakdown
     csv_filename = "commandstats_group_read_write_breakdown.csv"
     with open(csv_filename, "w", newline="") as csvfile:
-        fieldnames = ["group", "read_count", "write_count", "total_count", "read_percentage", "write_percentage"]
+        fieldnames = [
+            "group",
+            "read_count",
+            "write_count",
+            "total_count",
+            "read_percentage",
+            "write_percentage",
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -1222,13 +1290,15 @@ def generate_stats_cli_command_logic(args, project_name, project_version):
             read_pct = (read_count / total_count * 100) if total_count > 0 else 0
             write_pct = (write_count / total_count * 100) if total_count > 0 else 0
 
-            writer.writerow({
-                "group": group,
-                "read_count": read_count,
-                "write_count": write_count,
-                "total_count": total_count,
-                "read_percentage": round(read_pct, 2),
-                "write_percentage": round(write_pct, 2)
-            })
+            writer.writerow(
+                {
+                    "group": group,
+                    "read_count": read_count,
+                    "write_count": write_count,
+                    "total_count": total_count,
+                    "read_percentage": round(read_pct, 2),
+                    "write_percentage": round(write_pct, 2),
+                }
+            )
 
     logging.info(f"CommandStats group read/write breakdown saved to {csv_filename}")
