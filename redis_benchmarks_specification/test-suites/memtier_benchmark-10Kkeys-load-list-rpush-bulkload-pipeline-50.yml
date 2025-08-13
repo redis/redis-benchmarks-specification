@@ -1,0 +1,39 @@
+ersion: 0.4
+name: memtier_benchmark-10Kkeys-load-list-rpush-bulkload-pipeline-50
+description: |
+  Runs memtier_benchmark to stress multi-element RPUSH on a single LIST key using
+  high pipelining and concurrency. This targets quicklist multi-insert behavior and
+  bulk argument parsing performance (context: Redis PR #13860).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+tested-groups:
+- list
+tested-commands:
+- rpush
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >-
+    --pipeline 50
+    --command "RPUSH __key__ a b c d e f g h i j k l m n o p q r s t u v w x y z
+    aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz
+    ab bc cd de ef fg gh hi ij jk kl lm mn no op pq qr rs st tu uv vw wx xy yz za
+    ac bd ce df eg fh gi hj ik jl km ln mo np oq pr qs rt su tv uw vx" --distinct-client-seed
+    --test-time 120 -c 50 -t 4 --hide-histogram --key-minimum=1 --key-maximum 10000
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 39
