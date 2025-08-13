@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.314"
+version = "0.1.322"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
@@ -27,6 +27,7 @@ pandas = "^2.1.2"
 numpy = "^2.0.0"
 jsonpath-ng = "^1.6.1"
 
+seaborn = "^0.13.2"
 [tool.poetry.dev-dependencies]
 click = "8.1.7"
 black = "24.4.2"

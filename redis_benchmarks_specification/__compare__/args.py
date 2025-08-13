@@ -47,6 +47,30 @@ def create_compare_arguments(parser):
         help="specify a test (or a comma separated list of tests) to use for comparison. If none is specified by default will use all of them.",
     )
     parser.add_argument(
+        "--extra-filters",
+        type=str,
+        default="",
+        help="specify extra filters to pass to baseline and comparison.",
+    )
+    parser.add_argument(
+        "--use-test-suites-folder",
+        action="store_true",
+        default=False,
+        help="Use test names from YAML files in test-suites folder instead of database",
+    )
+    parser.add_argument(
+        "--generate-boxplot",
+        action="store_true",
+        default=False,
+        help="Generate box plot showing performance change distribution per command",
+    )
+    parser.add_argument(
+        "--boxplot-output",
+        type=str,
+        default="command_performance_boxplot.png",
+        help="Output filename for the box plot (supports .png, .svg, .pdf)",
+    )
+    parser.add_argument(
         "--defaults_filename",
         type=str,
         default="defaults.yml",
@@ -155,6 +179,13 @@ def create_compare_arguments(parser):
     parser.add_argument("--simple-table", type=bool, default=False)
     parser.add_argument("--use_metric_context_path", type=bool, default=False)
     parser.add_argument("--testname_regex", type=str, default=".*", required=False)
+    parser.add_argument(
+        "--command-group-regex",
+        type=str,
+        default=".*",
+        required=False,
+        help="Filter commands by command group using regex. Only commands belonging to matching groups will be included in boxplot and summary.",
+    )
     parser.add_argument(
         "--regression_str", type=str, default="REGRESSION", required=False
     )
