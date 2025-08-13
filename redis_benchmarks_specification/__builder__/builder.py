@@ -74,6 +74,18 @@ def main():
         "--arch", type=str, default="amd64", help="arch to build artifacts"
     )
     parser.add_argument(
+        "--builder-group",
+        type=str,
+        default=STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+        help="Consumer group name to read from the stream",
+    )
+    parser.add_argument(
+        "--builder-id",
+        type=str,
+        default="1",
+        help="Consumer id to read from the stream",
+    )
+    parser.add_argument(
         "--setups-folder",
         type=str,
         default=SPECS_PATH_SETUPS,
@@ -149,7 +161,14 @@ def main():
 
     build_spec_image_prefetch(builders_folder, different_build_specs)
 
-    builder_consumer_group_create(conn)
+    builder_group = args.builder_group
+    builder_id = args.builder_id
+    if builder_group is None:
+        builder_group = STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
+    if builder_id is None:
+        builder_id = "1"
+
+    builder_consumer_group_create(conn, builder_group)
     if args.github_token is not None:
         logging.info("detected a github token. will update as much as possible!!! =)")
     previous_id = args.consumer_start_id
@@ -162,28 +181,26 @@ def main():
             args.docker_air_gap,
             arch,
             args.github_token,
+            builder_group,
+            builder_id,
         )
 
 
-def builder_consumer_group_create(conn, id="$"):
+def builder_consumer_group_create(
+    conn, builder_group=STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, id="$"
+):
     try:
         conn.xgroup_create(
             STREAM_KEYNAME_GH_EVENTS_COMMIT,
-            STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+            builder_group,
             mkstream=True,
             id=id,
         )
         logging.info(
-            "Created consumer group named {} to distribute work.".format(
-                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
-            )
+            "Created consumer group named {} to distribute work.".format(builder_group)
         )
     except redis.exceptions.ResponseError:
-        logging.info(
-            "Consumer group named {} already existed.".format(
-                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
-            )
-        )
+        logging.info("Consumer group named {} already existed.".format(builder_group))
 
 
 def check_benchmark_build_comment(comments):
@@ -205,14 +222,22 @@ def builder_process_stream(
     docker_air_gap=False,
     arch="amd64",
     github_token=None,
+    builder_group=None,
+    builder_id=None,
 ):
     new_builds_count = 0
     auto_approve_github_comments = True
     build_stream_fields_arr = []
-    logging.info("Entering blocking read waiting for work.")
-    consumer_name = "{}-proc#{}".format(STREAM_GH_EVENTS_COMMIT_BUILDERS_CG, "1")
+    if builder_group is None:
+        builder_group = STREAM_GH_EVENTS_COMMIT_BUILDERS_CG
+    if builder_id is None:
+        builder_id = "1"
+    consumer_name = "{}-proc#{}".format(builder_group, builder_id)
+    logging.info(
+        f"Entering blocking read waiting for work. building for arch: {arch}. Using consumer id {consumer_name}"
+    )
     newTestInfo = conn.xreadgroup(
-        STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+        builder_group,
         consumer_name,
         {STREAM_KEYNAME_GH_EVENTS_COMMIT: previous_id},
         count=1,
@@ -229,6 +254,21 @@ def builder_process_stream(
         # tag = ""
         docker_client = docker.from_env()
         from pathlib import Path
+
+        build_request_arch = None
+        if b"arch" in testDetails:
+            build_request_arch = testDetails[b"arch"].decode()
+        elif b"build_arch" in testDetails:
+            build_request_arch = testDetails[b"build_arch"].decode()
+        else:
+            logging.info("No arch info found on the stream.")
+        if build_request_arch is not None and build_request_arch != arch:
+            logging.info(
+                "skipping build request given requested build arch {}!={}".format(
+                    build_request_arch, arch
+                )
+            )
+            return previous_id, new_builds_count, build_stream_fields_arr
 
         home = str(Path.home())
         if b"git_hash" in testDetails:

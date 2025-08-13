@@ -107,6 +107,43 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
+
+
+def print_directory_logs(directory_path, description=""):
+    """Print all .log files in a directory for debugging purposes."""
+    if not os.path.exists(directory_path):
+        logging.warning(f"Directory {directory_path} does not exist")
+        return
+
+    logging.info(
+        f"Printing all .log files in {description} directory: {directory_path}"
+    )
+    try:
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                # Only process .log files
+                if not file.endswith(".log"):
+                    continue
+
+                file_path = os.path.join(root, file)
+                logging.info(f"Found log file: {file_path}")
+                try:
+                    # Try to read and print the log file content
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if content.strip():  # Only print non-empty files
+                            logging.info(f"Content of {file_path}:")
+                            logging.info("-" * 40)
+                            logging.info(content)
+                            logging.info("-" * 40)
+                        else:
+                            logging.info(f"Log file {file_path} is empty")
+                except Exception as e:
+                    logging.warning(f"Could not read log file {file_path}: {e}")
+    except Exception as e:
+        logging.error(f"Error walking directory {directory_path}: {e}")
+
+
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     extract_db_cpu_limit,
     generate_cpuset_cpus,
@@ -1319,6 +1356,18 @@ def process_self_contained_coordinator_stream(
 
                                     print("-" * 60)
 
+                                # Print all log files in the temporary directories for debugging
+                                logging.critical(
+                                    "Printing all files in temporary directories for debugging..."
+                                )
+                                try:
+                                    print_directory_logs(temporary_dir, "Redis server")
+                                    print_directory_logs(temporary_dir_client, "Client")
+                                except Exception as log_error:
+                                    logging.error(
+                                        f"Failed to print directory logs: {log_error}"
+                                    )
+
                                 test_result = False
                             # tear-down
                             logging.info("Tearing down setup")
@@ -1349,14 +1398,27 @@ def process_self_contained_coordinator_stream(
                                                 )
                                             )
                                             pass
-                                logging.info(
-                                    "Removing temporary dirs {} and {}".format(
-                                        temporary_dir, temporary_dir_client
-                                    )
-                                )
 
-                                shutil.rmtree(temporary_dir, ignore_errors=True)
-                                shutil.rmtree(temporary_dir_client, ignore_errors=True)
+                                # Only remove temporary directories if test passed
+                                if test_result:
+                                    logging.info(
+                                        "Test passed. Removing temporary dirs {} and {}".format(
+                                            temporary_dir, temporary_dir_client
+                                        )
+                                    )
+                                    shutil.rmtree(temporary_dir, ignore_errors=True)
+                                    shutil.rmtree(
+                                        temporary_dir_client, ignore_errors=True
+                                    )
+                                else:
+                                    logging.warning(
+                                        "Test failed. Preserving temporary dirs for debugging: {} and {}".format(
+                                            temporary_dir, temporary_dir_client
+                                        )
+                                    )
+                                    # Print all log files in the temporary directories for debugging
+                                    print_directory_logs(temporary_dir, "Redis server")
+                                    print_directory_logs(temporary_dir_client, "Client")
 
                             overall_result &= test_result
 
