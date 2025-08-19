@@ -1390,6 +1390,31 @@ def process_self_contained_coordinator_stream(
                 logging.info(f"Exit requested by user. Skipping test {test_name}.")
                 break
 
+            # Filter by command regex if specified
+            if hasattr(args, "commands_regex") and args.commands_regex != ".*":
+                if "tested-commands" in benchmark_config:
+                    tested_commands = benchmark_config["tested-commands"]
+                    command_regex_compiled = re.compile(
+                        args.commands_regex, re.IGNORECASE
+                    )
+                    command_match = False
+                    for command in tested_commands:
+                        if re.search(command_regex_compiled, command):
+                            command_match = True
+                            logging.info(
+                                f"Including test {test_name} (matches command: {command})"
+                            )
+                            break
+                    if not command_match:
+                        logging.info(
+                            f"Skipping test {test_name} (commands: {tested_commands} do not match regex: {args.commands_regex})"
+                        )
+                        continue
+                else:
+                    logging.warning(
+                        f"Test {test_name} does not contain 'tested-commands' property. Cannot filter by commands."
+                    )
+
             if tls_enabled:
                 test_name = test_name + "-tls"
                 logging.info(

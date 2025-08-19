@@ -217,4 +217,10 @@ def spec_cli_args(parser):
         default=-1,
         help="Wait x sections for build. If -1, waits forever.",
     )
+    parser.add_argument(
+        "--command-regex",
+        type=str,
+        default=".*",
+        help="Filter tests by command using regex. Only tests that include commands matching this regex will be processed.",
+    )
     return parser

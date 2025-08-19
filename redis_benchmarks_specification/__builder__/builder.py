@@ -462,6 +462,7 @@ def builder_process_stream(
                     tests_priority_lower_limit,
                     tests_priority_upper_limit,
                     tests_regexp,
+                    ".*",  # command_regexp - default to all commands
                     use_git_timestamp,
                     server_name,
                     github_org,
@@ -602,6 +603,7 @@ def generate_benchmark_stream_request(
     tests_priority_lower_limit=0,
     tests_priority_upper_limit=10000,
     tests_regexp=".*",
+    command_regexp=".*",
     use_git_timestamp=False,
     server_name="redis",
     github_org="redis",
@@ -618,6 +620,7 @@ def generate_benchmark_stream_request(
         "tests_priority_upper_limit": tests_priority_upper_limit,
         "tests_priority_lower_limit": tests_priority_lower_limit,
         "tests_groups_regexp": tests_groups_regexp,
+        "command_regexp": command_regexp,
         "server_name": server_name,
         "github_org": github_org,
         "github_repo": github_repo,

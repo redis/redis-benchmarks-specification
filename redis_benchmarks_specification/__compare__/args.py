@@ -187,6 +187,13 @@ def create_compare_arguments(parser):
         help="Filter commands by command group using regex. Only commands belonging to matching groups will be included in boxplot and summary.",
     )
     parser.add_argument(
+        "--command-regex",
+        type=str,
+        default=".*",
+        required=False,
+        help="Filter tests by command using regex. Only tests that include commands matching this regex will be processed.",
+    )
+    parser.add_argument(
         "--regression_str", type=str, default="REGRESSION", required=False
     )
     parser.add_argument(

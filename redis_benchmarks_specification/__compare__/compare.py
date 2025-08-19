@@ -424,6 +424,7 @@ def compare_command_logic(args, project_name, project_version):
         testsuites_folder,
         args.extra_filters,
         getattr(args, "command_group_regex", ".*"),
+        getattr(args, "command_regex", ".*"),
     )
     total_regressions = len(regressions_list)
     total_improvements = len(improvements_list)
@@ -742,6 +743,7 @@ def compute_regression_table(
     test_suites_folder=None,
     extra_filters="",
     command_group_regex=".*",
+    command_regex=".*",
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -810,6 +812,10 @@ def compute_regression_table(
         test_names = get_test_names_from_db(
             rts, tags_regex_string, test_names, used_key
         )
+
+    # Apply command regex filtering to tests_with_config
+    tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
+
     (
         detected_regressions,
         table_full,
@@ -1455,10 +1461,18 @@ def from_rts_to_regression_table(
                 unstable_list.append([test_name, "n/a"])
 
             baseline_v_str = prepare_value_str(
-                baseline_pct_change, baseline_v, baseline_values, simplify_table
+                baseline_pct_change,
+                baseline_v,
+                baseline_values,
+                simplify_table,
+                metric_name,
             )
             comparison_v_str = prepare_value_str(
-                comparison_pct_change, comparison_v, comparison_values, simplify_table
+                comparison_pct_change,
+                comparison_v,
+                comparison_values,
+                simplify_table,
+                metric_name,
             )
 
             if metric_mode == "higher-better":
@@ -1668,13 +1682,47 @@ def check_multi_value_filter(baseline_str):
     return multi_value_baseline
 
 
-def prepare_value_str(baseline_pct_change, baseline_v, baseline_values, simplify_table):
-    if baseline_v < 1.0:
-        baseline_v_str = " {:.2f}".format(baseline_v)
-    elif baseline_v < 10.0:
-        baseline_v_str = " {:.1f}".format(baseline_v)
+def is_latency_metric(metric_name):
+    """Check if a metric represents latency and should use 3-digit precision"""
+    latency_indicators = [
+        "latency",
+        "percentile",
+        "usec",
+        "msec",
+        "overallQuantiles",
+        "latencystats",
+        "p50",
+        "p95",
+        "p99",
+        "p999",
+    ]
+    metric_name_lower = metric_name.lower()
+    return any(indicator in metric_name_lower for indicator in latency_indicators)
+
+
+def prepare_value_str(
+    baseline_pct_change, baseline_v, baseline_values, simplify_table, metric_name=""
+):
+    """Prepare value string with appropriate precision based on metric type"""
+    # Use 3-digit precision for latency metrics
+    if is_latency_metric(metric_name):
+        if baseline_v < 1.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        elif baseline_v < 10.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        elif baseline_v < 100.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        else:
+            baseline_v_str = " {:.3f}".format(baseline_v)
     else:
-        baseline_v_str = " {:.0f}".format(baseline_v)
+        # Original formatting for non-latency metrics
+        if baseline_v < 1.0:
+            baseline_v_str = " {:.2f}".format(baseline_v)
+        elif baseline_v < 10.0:
+            baseline_v_str = " {:.1f}".format(baseline_v)
+        else:
+            baseline_v_str = " {:.0f}".format(baseline_v)
+
     stamp_b = ""
     if baseline_pct_change > 10.0:
         stamp_b = "UNSTABLE "
@@ -1715,6 +1763,37 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
         )
     )
     return test_names
+
+
+def filter_tests_by_command_regex(tests_with_config, command_regex=".*"):
+    """Filter tests based on command regex matching tested-commands"""
+    if command_regex == ".*":
+        return tests_with_config
+
+    logging.info(f"Filtering tests by command regex: {command_regex}")
+    command_regex_compiled = re.compile(command_regex, re.IGNORECASE)
+    filtered_tests = {}
+
+    for test_name, test_config in tests_with_config.items():
+        tested_commands = test_config.get("tested-commands", [])
+
+        # Check if any tested command matches the regex
+        command_match = False
+        for command in tested_commands:
+            if re.search(command_regex_compiled, command):
+                command_match = True
+                logging.info(f"Including test {test_name} (matches command: {command})")
+                break
+
+        if command_match:
+            filtered_tests[test_name] = test_config
+        else:
+            logging.info(f"Excluding test {test_name} (commands: {tested_commands})")
+
+    logging.info(
+        f"Command regex filtering: {len(filtered_tests)} tests remaining out of {len(tests_with_config)}"
+    )
+    return filtered_tests
 
 
 def get_test_names_from_yaml_files(test_suites_folder, tags_regex_string):

@@ -637,6 +637,13 @@ def process_self_contained_coordinator_stream(
                     f"detected a command groups regexp definition on the streamdata {command_groups_regexp}"
                 )
 
+            command_regexp = None
+            if b"command_regexp" in testDetails:
+                command_regexp = testDetails[b"command_regexp"].decode()
+                logging.info(
+                    f"detected a command regexp definition on the streamdata {command_regexp}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -692,6 +699,7 @@ def process_self_contained_coordinator_stream(
                     tests_regexp,
                     testsuite_spec_files,
                     command_groups_regexp,
+                    command_regexp,
                 )
 
                 for test_file in filtered_test_files:
@@ -1595,6 +1603,7 @@ def filter_test_files(
     tests_regexp,
     testsuite_spec_files,
     command_groups_regexp=None,
+    command_regexp=None,
 ):
     filtered_test_files = []
     for test_file in testsuite_spec_files:
@@ -1656,6 +1665,29 @@ def filter_test_files(
                 else:
                     logging.warning(
                         f"The file {test_file} (test name = {test_name}) does not contain the property 'tested-groups'. Cannot filter based uppon groups..."
+                    )
+
+            # Filter by command regex if specified
+            if command_regexp is not None and command_regexp != ".*":
+                if "tested-commands" in benchmark_config:
+                    tested_commands = benchmark_config["tested-commands"]
+                    command_regex_compiled = re.compile(command_regexp, re.IGNORECASE)
+                    found = False
+                    for command in tested_commands:
+                        if re.search(command_regex_compiled, command):
+                            found = True
+                            logging.info(
+                                f"found the command {command} matching regex {command_regexp}"
+                            )
+                            break
+                    if found is False:
+                        logging.info(
+                            f"Skipping {test_file} given the following commands: {tested_commands} does not match command regex {command_regexp}"
+                        )
+                        continue
+                else:
+                    logging.warning(
+                        f"The file {test_file} (test name = {test_name}) does not contain the property 'tested-commands'. Cannot filter based upon commands..."
                     )
 
             if "priority" in benchmark_config:

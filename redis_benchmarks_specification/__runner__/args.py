@@ -83,6 +83,12 @@ def create_client_runner_args(project_name):
         default=".*",
         help="Interpret PATTERN as a regular expression to filter test names",
     )
+    parser.add_argument(
+        "--commands-regex",
+        type=str,
+        default=".*",
+        help="Filter tests by command using regex. Only tests that include commands matching this regex will be processed (e.g., 'bitcount|bitpos').",
+    )
     parser.add_argument("--db_server_host", type=str, default="localhost")
     parser.add_argument("--db_server_password", type=str, default=None)
     parser.add_argument("--db_server_port", type=int, default=6379)
