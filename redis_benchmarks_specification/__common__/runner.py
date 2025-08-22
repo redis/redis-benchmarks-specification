@@ -101,7 +101,7 @@ def get_benchmark_specs(testsuites_folder, test="", test_regex=".*"):
             for test_name in original_files:
                 match_obj = re.search(test_regexp_string, test_name)
                 if match_obj is None:
-                    logging.info(
+                    logging.debug(
                         "Skipping test file: {} given it does not match regex {}".format(
                             test_name, test_regexp_string
                         )

@@ -89,6 +89,16 @@ def create_client_runner_args(project_name):
         default=".*",
         help="Filter tests by command using regex. Only tests that include commands matching this regex will be processed (e.g., 'bitcount|bitpos').",
     )
+    parser.add_argument(
+        "-u",
+        "--uri",
+        type=str,
+        default=None,
+        help="Server URI on format redis://user:password@host:port/dbnum. "
+        "User, password and dbnum are optional. For authentication "
+        "without a username, use username 'default'. For TLS, use "
+        "the scheme 'rediss'. If provided, overrides individual host/port/password arguments.",
+    )
     parser.add_argument("--db_server_host", type=str, default="localhost")
     parser.add_argument("--db_server_password", type=str, default=None)
     parser.add_argument("--db_server_port", type=int, default=6379)

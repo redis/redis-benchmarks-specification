@@ -12,6 +12,7 @@ import traceback
 from pathlib import Path
 import re
 import tqdm
+from urllib.parse import urlparse
 import docker
 import redis
 from docker.models.containers import Container
@@ -88,6 +89,73 @@ def signal_handler(signum, frame):
         logging.info("Ctrl+C detected again. Force exiting...")
         print("\nForce exiting...")
         sys.exit(1)
+
+
+def parse_redis_uri(uri):
+    """
+    Parse Redis URI and extract connection parameters.
+
+    Args:
+        uri (str): Redis URI in format redis://user:password@host:port/dbnum
+                   or rediss://user:password@host:port/dbnum for TLS
+
+    Returns:
+        dict: Dictionary containing parsed connection parameters
+    """
+    if not uri:
+        return {}
+
+    try:
+        parsed = urlparse(uri)
+
+        # Extract connection parameters
+        params = {}
+
+        # Host (required)
+        if parsed.hostname:
+            params["host"] = parsed.hostname
+
+        # Port (optional, defaults to 6379)
+        if parsed.port:
+            params["port"] = parsed.port
+
+        # Username and password
+        if parsed.username:
+            params["username"] = parsed.username
+        if parsed.password:
+            params["password"] = parsed.password
+
+        # Database number
+        if parsed.path and len(parsed.path) > 1:  # path starts with '/'
+            try:
+                params["db"] = int(parsed.path[1:])  # Remove leading '/'
+            except ValueError:
+                logging.warning(f"Invalid database number in URI: {parsed.path[1:]}")
+
+        # TLS detection
+        if parsed.scheme == "rediss":
+            params["tls_enabled"] = True
+        elif parsed.scheme == "redis":
+            params["tls_enabled"] = False
+        else:
+            logging.warning(
+                f"Unknown scheme in URI: {parsed.scheme}. Assuming non-TLS."
+            )
+            params["tls_enabled"] = False
+
+        logging.info(
+            f"Parsed Redis URI: host={params.get('host', 'N/A')}, "
+            f"port={params.get('port', 'N/A')}, "
+            f"username={params.get('username', 'N/A')}, "
+            f"db={params.get('db', 'N/A')}, "
+            f"tls={params.get('tls_enabled', False)}"
+        )
+
+        return params
+
+    except Exception as e:
+        logging.error(f"Failed to parse Redis URI '{uri}': {e}")
+        return {}
 
 
 def run_local_command_with_timeout(command_str, timeout_seconds, description="command"):
@@ -1443,35 +1511,80 @@ def process_self_contained_coordinator_stream(
                     build_variant_name = "NA"
                     git_branch = None
 
-                    port = args.db_server_port
-                    host = args.db_server_host
+                    # Parse URI if provided, otherwise use individual arguments
+                    if hasattr(args, "uri") and args.uri:
+                        uri_params = parse_redis_uri(args.uri)
+                        port = uri_params.get("port", args.db_server_port)
+                        host = uri_params.get("host", args.db_server_host)
+                        password = uri_params.get("password", args.db_server_password)
+                        # Override TLS setting from URI if specified
+                        if "tls_enabled" in uri_params:
+                            tls_enabled = uri_params["tls_enabled"]
+                            if tls_enabled:
+                                test_name = test_name + "-tls"
+                                logging.info(
+                                    "TLS enabled via URI. Appending -tls to testname."
+                                )
+                        # Note: username and db are handled by redis-py automatically when using URI
+                        logging.info(
+                            f"Using connection parameters from URI: host={host}, port={port}, tls={tls_enabled}"
+                        )
+                    else:
+                        port = args.db_server_port
+                        host = args.db_server_host
+                        password = args.db_server_password
+                        logging.info(
+                            f"Using individual connection arguments: host={host}, port={port}"
+                        )
+
                     unix_socket = args.unix_socket
-                    password = args.db_server_password
                     oss_cluster_api_enabled = args.cluster_mode
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
                         ssl_cert_reqs = None
 
-                    # Build Redis connection parameters
-                    redis_params = {
-                        "host": host,
-                        "port": port,
-                        "password": password,
-                        "ssl": tls_enabled,
-                        "ssl_cert_reqs": ssl_cert_reqs,
-                        "ssl_check_hostname": False,
-                    }
+                    # Create Redis connection - use URI if provided, otherwise use individual parameters
+                    if hasattr(args, "uri") and args.uri:
+                        # Use URI connection (redis-py handles URI parsing automatically)
+                        redis_params = {}
 
-                    # Only add SSL certificate parameters if they are provided
-                    if tls_enabled:
-                        if tls_key is not None and tls_key != "":
-                            redis_params["ssl_keyfile"] = tls_key
-                        if tls_cert is not None and tls_cert != "":
-                            redis_params["ssl_certfile"] = tls_cert
-                        if tls_cacert is not None and tls_cacert != "":
-                            redis_params["ssl_ca_certs"] = tls_cacert
+                        # Only add SSL parameters if TLS is enabled
+                        if tls_enabled:
+                            redis_params["ssl_cert_reqs"] = ssl_cert_reqs
+                            redis_params["ssl_check_hostname"] = False
+                            if tls_key is not None and tls_key != "":
+                                redis_params["ssl_keyfile"] = tls_key
+                            if tls_cert is not None and tls_cert != "":
+                                redis_params["ssl_certfile"] = tls_cert
+                            if tls_cacert is not None and tls_cacert != "":
+                                redis_params["ssl_ca_certs"] = tls_cacert
 
-                    r = redis.StrictRedis(**redis_params)
+                        r = redis.StrictRedis.from_url(args.uri, **redis_params)
+                        logging.info(f"Connected to Redis using URI: {args.uri}")
+                    else:
+                        # Use individual connection parameters
+                        redis_params = {
+                            "host": host,
+                            "port": port,
+                            "password": password,
+                            "ssl": tls_enabled,
+                            "ssl_cert_reqs": ssl_cert_reqs,
+                            "ssl_check_hostname": False,
+                        }
+
+                        # Only add SSL certificate parameters if they are provided
+                        if tls_enabled:
+                            if tls_key is not None and tls_key != "":
+                                redis_params["ssl_keyfile"] = tls_key
+                            if tls_cert is not None and tls_cert != "":
+                                redis_params["ssl_certfile"] = tls_cert
+                            if tls_cacert is not None and tls_cacert != "":
+                                redis_params["ssl_ca_certs"] = tls_cacert
+
+                        r = redis.StrictRedis(**redis_params)
+                        logging.info(
+                            f"Connected to Redis using individual parameters: {host}:{port}"
+                        )
                     setup_name = "oss-standalone"
                     r.ping()
 
