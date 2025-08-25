@@ -1,9 +1,14 @@
+# Import warning suppression first
+from redis_benchmarks_specification.__common__.suppress_warnings import *
+
 import datetime
 import json
 import logging
 import pathlib
 import shutil
+import subprocess
 import tempfile
+import threading
 import traceback
 import re
 import docker
@@ -13,6 +18,9 @@ import os
 from pathlib import Path
 import sys
 import time
+import base64
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
 from docker.models.containers import Container
 from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import (
@@ -59,6 +67,7 @@ from redis_benchmarks_specification.__compare__.compare import (
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
     prepare_memtier_benchmark_parameters,
+    validate_benchmark_metrics,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
@@ -107,6 +116,376 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
+
+# Global variables for HTTP server control
+_reset_queue_requested = False
+_exclusive_hardware = False
+_http_auth_username = None
+_http_auth_password = None
+_flush_timestamp = None
+
+
+class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for coordinator endpoints"""
+
+    def log_message(self, format, *args):
+        """Override to use our logging system"""
+        logging.info(f"HTTP {format % args}")
+
+    def _authenticate(self):
+        """Check if the request is authenticated"""
+        global _http_auth_username, _http_auth_password
+
+        # Check for Authorization header
+        auth_header = self.headers.get("Authorization")
+        if not auth_header:
+            return False
+
+        # Parse Basic auth
+        try:
+            if not auth_header.startswith("Basic "):
+                return False
+
+            # Decode base64 credentials
+            encoded_credentials = auth_header[6:]  # Remove 'Basic ' prefix
+            decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+            username, password = decoded_credentials.split(":", 1)
+
+            # Verify credentials
+            return username == _http_auth_username and password == _http_auth_password
+
+        except Exception as e:
+            logging.warning(f"Authentication error: {e}")
+            return False
+
+    def _send_auth_required(self):
+        """Send 401 Unauthorized response"""
+        self.send_response(401)
+        self.send_header(
+            "WWW-Authenticate", 'Basic realm="Redis Benchmarks Coordinator"'
+        )
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        response = {
+            "error": "Authentication required",
+            "message": "Please provide valid credentials using Basic authentication",
+        }
+        self.wfile.write(json.dumps(response).encode())
+
+    def do_GET(self):
+        """Handle GET requests"""
+        # Check authentication
+        if not self._authenticate():
+            self._send_auth_required()
+            return
+
+        parsed_path = urlparse(self.path)
+
+        if parsed_path.path == "/ping":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            response = {
+                "status": "healthy",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "service": "redis-benchmarks-self-contained-coordinator",
+            }
+            self.wfile.write(json.dumps(response).encode())
+
+        elif parsed_path.path == "/containers":
+            # Check for stuck containers
+            stuck_containers = self._check_stuck_containers()
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            response = {
+                "status": "success",
+                "stuck_containers": stuck_containers,
+                "total_stuck": len(stuck_containers),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            }
+            self.wfile.write(json.dumps(response).encode())
+
+        else:
+            self.send_response(404)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def do_POST(self):
+        """Handle POST requests"""
+        # Check authentication
+        if not self._authenticate():
+            self._send_auth_required()
+            return
+
+        global _reset_queue_requested, _flush_timestamp
+
+        parsed_path = urlparse(self.path)
+
+        if parsed_path.path == "/reset-queue":
+            try:
+                # Read request body
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length > 0:
+                    post_data = self.rfile.read(content_length)
+                    try:
+                        request_data = json.loads(post_data.decode())
+                    except json.JSONDecodeError:
+                        request_data = {}
+                else:
+                    request_data = {}
+
+                # Set the reset flag
+                _reset_queue_requested = True
+                logging.info("Queue reset requested via HTTP endpoint")
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                response = {
+                    "status": "success",
+                    "message": "Queue reset requested",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+                self.wfile.write(json.dumps(response).encode())
+
+            except Exception as e:
+                logging.error(f"Error handling reset-queue request: {e}")
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+        elif parsed_path.path == "/flush":
+            try:
+                # Read request body (optional)
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length > 0:
+                    post_data = self.rfile.read(content_length)
+                    try:
+                        request_data = json.loads(post_data.decode())
+                    except json.JSONDecodeError:
+                        request_data = {}
+                else:
+                    request_data = {}
+
+                # Record flush timestamp
+                flush_time = datetime.datetime.utcnow()
+                _flush_timestamp = flush_time
+
+                logging.info(
+                    "Flush requested via HTTP endpoint - stopping all containers and processes"
+                )
+
+                # Perform flush cleanup
+                self._perform_flush_cleanup()
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                response = {
+                    "status": "success",
+                    "message": "Flush completed - all containers stopped and processes killed",
+                    "flush_timestamp": flush_time.isoformat(),
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+                self.wfile.write(json.dumps(response).encode())
+
+            except Exception as e:
+                logging.error(f"Error during flush operation: {e}")
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                response = {
+                    "status": "error",
+                    "message": f"Flush failed: {str(e)}",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+                self.wfile.write(json.dumps(response).encode())
+
+        else:
+            self.send_response(404)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def _perform_flush_cleanup(self):
+        """Perform flush cleanup: stop all containers and kill memtier processes"""
+        import subprocess
+
+        # Kill all memtier processes
+        try:
+            logging.info("Killing all memtier_benchmark processes")
+            result = subprocess.run(
+                ["pkill", "-f", "memtier_benchmark"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logging.info("Successfully killed memtier_benchmark processes")
+            else:
+                logging.info("No memtier_benchmark processes found to kill")
+
+            result = subprocess.run(
+                ["pkill", "-f", "memtier"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logging.info("Successfully killed memtier processes")
+            else:
+                logging.info("No memtier processes found to kill")
+        except Exception as e:
+            logging.warning(f"Error killing memtier processes: {e}")
+
+        # Stop all Docker containers with force if needed
+        try:
+            logging.info("Stopping all Docker containers")
+            client = docker.from_env()
+            containers = client.containers.list()
+
+            if not containers:
+                logging.info("No running containers found")
+                return
+
+            logging.info(f"Found {len(containers)} running containers")
+
+            for container in containers:
+                try:
+                    # Get container info
+                    created_time = container.attrs["Created"]
+                    uptime = (
+                        datetime.datetime.utcnow()
+                        - datetime.datetime.fromisoformat(
+                            created_time.replace("Z", "+00:00")
+                        )
+                    )
+
+                    logging.info(
+                        f"Stopping container: {container.name} ({container.id[:12]}) - uptime: {uptime}"
+                    )
+
+                    # Try graceful stop first
+                    container.stop(timeout=10)
+                    logging.info(f"Successfully stopped container: {container.name}")
+
+                except Exception as e:
+                    logging.warning(f"Error stopping container {container.name}: {e}")
+                    try:
+                        # Force kill if graceful stop failed
+                        logging.info(f"Force killing container: {container.name}")
+                        container.kill()
+                        logging.info(
+                            f"Successfully force killed container: {container.name}"
+                        )
+                    except Exception as e2:
+                        logging.error(
+                            f"Failed to force kill container {container.name}: {e2}"
+                        )
+
+        except Exception as e:
+            logging.warning(f"Error accessing Docker client: {e}")
+
+        logging.info("Flush cleanup completed")
+
+    def _check_stuck_containers(self, max_hours=2):
+        """Check for containers running longer than max_hours and return info"""
+        try:
+            client = docker.from_env()
+            containers = client.containers.list()
+            stuck_containers = []
+
+            for container in containers:
+                try:
+                    created_time = container.attrs["Created"]
+                    uptime = (
+                        datetime.datetime.utcnow()
+                        - datetime.datetime.fromisoformat(
+                            created_time.replace("Z", "+00:00")
+                        )
+                    )
+                    uptime_hours = uptime.total_seconds() / 3600
+
+                    if uptime_hours > max_hours:
+                        stuck_containers.append(
+                            {
+                                "name": container.name,
+                                "id": container.id[:12],
+                                "image": (
+                                    container.image.tags[0]
+                                    if container.image.tags
+                                    else "unknown"
+                                ),
+                                "uptime_hours": round(uptime_hours, 2),
+                                "status": container.status,
+                            }
+                        )
+                except Exception as e:
+                    logging.warning(f"Error checking container {container.name}: {e}")
+
+            return stuck_containers
+        except Exception as e:
+            logging.warning(f"Error accessing Docker client: {e}")
+            return []
+
+
+def start_http_server(port=8080):
+    """Start the HTTP server in a separate thread"""
+
+    def run_server():
+        try:
+            server = HTTPServer(("0.0.0.0", port), CoordinatorHTTPHandler)
+            logging.info(f"Starting HTTP server on port {port}")
+            logging.info(f"Available endpoints:")
+            logging.info(f"  GET  /ping - Health check")
+            logging.info(f"  GET  /containers - Check for stuck containers")
+            logging.info(
+                f"  POST /reset-queue - Reset pending streams and skip running tests"
+            )
+            logging.info(
+                f"  POST /flush - Stop all containers and processes, ignore work before flush time"
+            )
+            server.serve_forever()
+        except Exception as e:
+            logging.error(f"HTTP server error: {e}")
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    return server_thread
+
+
+def cleanup_system_processes():
+    """Clean up memtier processes and docker containers for exclusive hardware mode"""
+    global _exclusive_hardware
+
+    if not _exclusive_hardware:
+        return
+
+    logging.info("Exclusive hardware mode: Cleaning up system processes")
+
+    try:
+        # Kill all memtier_benchmark processes
+        logging.info("Killing all memtier_benchmark processes")
+        subprocess.run(["pkill", "-f", "memtier_benchmark"], check=False)
+
+        # Stop all docker containers
+        logging.info("Stopping all docker containers")
+        docker_client = docker.from_env()
+        containers = docker_client.containers.list()
+        for container in containers:
+            try:
+                logging.info(
+                    f"Stopping container: {container.name} ({container.id[:12]})"
+                )
+                container.stop(timeout=10)
+                container.remove(force=True)
+            except Exception as e:
+                logging.warning(f"Error stopping container {container.id[:12]}: {e}")
+
+        # Wait a moment for cleanup to complete
+        time.sleep(2)
+        logging.info("System cleanup completed")
+
+    except Exception as e:
+        logging.error(f"Error during system cleanup: {e}")
 
 
 def print_directory_logs(directory_path, description=""):
@@ -157,6 +536,8 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
 
 
 def main():
+    global _exclusive_hardware, _http_auth_username, _http_auth_password
+
     _, _, project_version = populate_with_poetry_data()
     project_name = "redis-benchmarks-spec runner(self-contained)"
     parser = create_self_contained_coordinator_args(
@@ -164,6 +545,7 @@ def main():
     )
     args = parser.parse_args()
 
+    # Configure logging first, before any logging calls
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
         logging.basicConfig(
@@ -180,6 +562,23 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
+
+    # Set global exclusive hardware flag
+    _exclusive_hardware = args.exclusive_hardware
+    if _exclusive_hardware:
+        logging.info("Exclusive hardware mode enabled")
+
+    # Set HTTP authentication credentials and start server only if credentials are provided
+    _http_auth_username = args.http_auth_username
+    _http_auth_password = args.http_auth_password
+
+    if _http_auth_username and _http_auth_password:
+        logging.info(
+            "Starting HTTP server with authentication on port {}".format(args.http_port)
+        )
+        start_http_server(args.http_port)
+    else:
+        logging.info("HTTP server disabled - no authentication credentials provided")
     logging.info(get_version_string(project_name, project_version))
     topologies_folder = os.path.abspath(args.setups_folder + "/topologies")
     logging.info("Using topologies folder dir {}".format(topologies_folder))
@@ -569,6 +968,23 @@ def process_self_contained_coordinator_stream(
                 git_timestamp_ms,
                 run_arch,
             ) = extract_build_info_from_streamdata(testDetails)
+
+            # Check if this work should be ignored due to flush
+            global _flush_timestamp
+            if (
+                _flush_timestamp is not None
+                and use_git_timestamp
+                and git_timestamp_ms is not None
+            ):
+                # Convert flush timestamp to milliseconds for comparison
+                flush_timestamp_ms = int(_flush_timestamp.timestamp() * 1000)
+                if git_timestamp_ms < flush_timestamp_ms:
+                    logging.info(
+                        f"Ignoring work with git_timestamp_ms {git_timestamp_ms} "
+                        f"(before flush timestamp {flush_timestamp_ms}). Stream id: {stream_id}"
+                    )
+                    return stream_id, False, 0
+
             tf_github_org = default_github_org
             if b"github_org" in testDetails:
                 tf_github_org = testDetails[b"github_org"].decode()
@@ -739,6 +1155,14 @@ def process_self_contained_coordinator_stream(
                     command_regexp,
                 )
 
+                logging.info(
+                    f"Adding {len(filtered_test_files)} tests to pending test list"
+                )
+
+                # Use pipeline for efficient bulk operations
+                pipeline = github_event_conn.pipeline()
+                test_names_added = []
+
                 for test_file in filtered_test_files:
                     with open(test_file, "r") as stream:
                         (
@@ -746,13 +1170,19 @@ def process_self_contained_coordinator_stream(
                             benchmark_config,
                             test_name,
                         ) = get_final_benchmark_config(None, None, stream, "")
-                    github_event_conn.lpush(stream_test_list_pending, test_name)
-                    github_event_conn.expire(
-                        stream_test_list_pending, REDIS_BINS_EXPIRE_SECS
+                    pipeline.lpush(stream_test_list_pending, test_name)
+                    test_names_added.append(test_name)
+                    logging.debug(
+                        f"Queued test named {test_name} for addition to pending test list"
                     )
-                    logging.info(
-                        f"Added test named {test_name} to the pending test list in key {stream_test_list_pending}"
-                    )
+
+                # Set expiration and execute pipeline
+                pipeline.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
+                pipeline.execute()
+
+                logging.info(
+                    f"Successfully added {len(test_names_added)} tests to pending test list in key {stream_test_list_pending}"
+                )
 
                 pending_tests = len(filtered_test_files)
                 failed_tests = 0
@@ -781,6 +1211,22 @@ def process_self_contained_coordinator_stream(
                         )
 
                 for test_file in filtered_test_files:
+                    # Check if queue reset was requested
+                    global _reset_queue_requested
+                    if _reset_queue_requested:
+                        logging.info(
+                            "Queue reset requested. Skipping remaining tests and clearing queues."
+                        )
+                        # Clear all pending tests from the queue
+                        github_event_conn.delete(stream_test_list_pending)
+                        github_event_conn.delete(stream_test_list_running)
+                        logging.info("Cleared pending and running test queues")
+                        _reset_queue_requested = False
+                        break
+
+                    # Clean up system processes if in exclusive hardware mode
+                    cleanup_system_processes()
+
                     redis_containers = []
                     client_containers = []
                     with open(test_file, "r") as stream:
@@ -794,8 +1240,8 @@ def process_self_contained_coordinator_stream(
                         github_event_conn.expire(
                             stream_test_list_running, REDIS_BINS_EXPIRE_SECS
                         )
-                        logging.info(
-                            f"Added test named {test_name} to the pending test list in key {stream_test_list_running}"
+                        logging.debug(
+                            f"Added test named {test_name} to the running test list in key {stream_test_list_running}"
                         )
                         (
                             _,
@@ -1094,25 +1540,111 @@ def process_self_contained_coordinator_stream(
                                 )
                                 # run the benchmark
                                 benchmark_start_time = datetime.datetime.now()
-                                try:
-                                    client_container_stdout = (
-                                        docker_client.containers.run(
-                                            image=client_container_image,
-                                            volumes={
-                                                temporary_dir_client: {
-                                                    "bind": client_mnt_point,
-                                                    "mode": "rw",
-                                                },
-                                            },
-                                            auto_remove=True,
-                                            privileged=True,
-                                            working_dir=benchmark_tool_workdir,
-                                            command=benchmark_command_str,
-                                            network_mode="host",
-                                            detach=False,
-                                            cpuset_cpus=client_cpuset_cpus,
-                                        )
+
+                                # Calculate container timeout
+                                container_timeout = 300  # 5 minutes default
+                                buffer_timeout = 60  # Default buffer
+
+                                # Try to extract test time from command and add buffer
+                                import re
+
+                                test_time_match = re.search(
+                                    r"--?test-time[=\s]+(\d+)", benchmark_command_str
+                                )
+                                if test_time_match:
+                                    test_time = int(test_time_match.group(1))
+                                    container_timeout = test_time + buffer_timeout
+                                    logging.info(
+                                        f"Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
                                     )
+                                else:
+                                    logging.info(
+                                        f"Using default container timeout: {container_timeout}s"
+                                    )
+
+                                try:
+                                    # Start container with detach=True to enable timeout handling
+                                    container = docker_client.containers.run(
+                                        image=client_container_image,
+                                        volumes={
+                                            temporary_dir_client: {
+                                                "bind": client_mnt_point,
+                                                "mode": "rw",
+                                            },
+                                        },
+                                        auto_remove=False,  # Don't auto-remove so we can get logs if timeout
+                                        privileged=True,
+                                        working_dir=benchmark_tool_workdir,
+                                        command=benchmark_command_str,
+                                        network_mode="host",
+                                        detach=True,  # Detach to enable timeout
+                                        cpuset_cpus=client_cpuset_cpus,
+                                    )
+
+                                    logging.info(
+                                        f"Started container {container.name} ({container.id[:12]}) with {container_timeout}s timeout"
+                                    )
+
+                                    # Wait for container with timeout
+                                    try:
+                                        result = container.wait(
+                                            timeout=container_timeout
+                                        )
+                                        client_container_stdout = container.logs(
+                                            stdout=True, stderr=False
+                                        ).decode("utf-8")
+                                        container_stderr = container.logs(
+                                            stdout=False, stderr=True
+                                        ).decode("utf-8")
+
+                                        # Check exit code
+                                        if result["StatusCode"] != 0:
+                                            logging.error(
+                                                f"Container exited with code {result['StatusCode']}"
+                                            )
+                                            logging.error(
+                                                f"Container stderr: {container_stderr}"
+                                            )
+                                            raise docker.errors.ContainerError(
+                                                container,
+                                                result["StatusCode"],
+                                                benchmark_command_str,
+                                                client_container_stdout,
+                                                container_stderr,
+                                            )
+
+                                        logging.info(
+                                            f"Container {container.name} completed successfully"
+                                        )
+
+                                    except Exception as timeout_error:
+                                        if "timeout" in str(timeout_error).lower():
+                                            logging.error(
+                                                f"Container {container.name} timed out after {container_timeout}s"
+                                            )
+                                            # Get logs before killing
+                                            try:
+                                                timeout_logs = container.logs(
+                                                    stdout=True, stderr=True
+                                                ).decode("utf-8")
+                                                logging.error(
+                                                    f"Container logs before timeout: {timeout_logs}"
+                                                )
+                                            except:
+                                                pass
+                                            # Kill the container
+                                            container.kill()
+                                            raise Exception(
+                                                f"Container timed out after {container_timeout} seconds"
+                                            )
+                                        else:
+                                            raise timeout_error
+                                    finally:
+                                        # Clean up container
+                                        try:
+                                            container.remove(force=True)
+                                        except:
+                                            pass
                                 except docker.errors.ContainerError as e:
                                     logging.info(
                                         "stdout: {}".format(
@@ -1250,6 +1782,23 @@ def process_self_contained_coordinator_stream(
                                     results_dict = post_process_vector_db(
                                         temporary_dir_client
                                     )
+
+                                    # Validate benchmark metrics for vector-db-benchmark
+                                    is_valid, validation_error = (
+                                        validate_benchmark_metrics(
+                                            results_dict,
+                                            test_name,
+                                            benchmark_config,
+                                            default_metrics,
+                                        )
+                                    )
+                                    if not is_valid:
+                                        logging.error(
+                                            f"Test {test_name} failed metric validation: {validation_error}"
+                                        )
+                                        test_result = False
+                                        failed_tests += 1
+                                        continue
                                 else:
                                     post_process_benchmark_results(
                                         benchmark_tool,
@@ -1276,6 +1825,24 @@ def process_self_contained_coordinator_stream(
                                         "r",
                                     ) as json_file:
                                         results_dict = json.load(json_file)
+
+                                        # Validate benchmark metrics
+                                        is_valid, validation_error = (
+                                            validate_benchmark_metrics(
+                                                results_dict,
+                                                test_name,
+                                                benchmark_config,
+                                                default_metrics,
+                                            )
+                                        )
+                                        if not is_valid:
+                                            logging.error(
+                                                f"Test {test_name} failed metric validation: {validation_error}"
+                                            )
+                                            test_result = False
+                                            failed_tests += 1
+                                            continue
+
                                         print_results_table_stdout(
                                             benchmark_config,
                                             default_metrics,
@@ -1429,6 +1996,9 @@ def process_self_contained_coordinator_stream(
                                     print_directory_logs(temporary_dir_client, "Client")
 
                             overall_result &= test_result
+
+                    # Clean up system processes after test completion if in exclusive hardware mode
+                    cleanup_system_processes()
 
                     github_event_conn.lrem(stream_test_list_running, 1, test_name)
                     github_event_conn.lpush(stream_test_list_completed, test_name)
@@ -1592,7 +2162,7 @@ def process_self_contained_coordinator_stream(
                                     e.__str__()
                                 )
                             )
-                    logging.info(
+                    logging.debug(
                         f"Added test named {test_name} to the completed test list in key {stream_test_list_completed}"
                     )
         else:
@@ -1838,22 +2408,92 @@ def data_prepopulation_step(
         # run the benchmark
         preload_start_time = datetime.datetime.now()
 
-        client_container_stdout = docker_client.containers.run(
-            image=preload_image,
-            volumes={
-                temporary_dir: {
-                    "bind": client_mnt_point,
-                    "mode": "rw",
+        # Set preload timeout (preload can take longer than benchmarks)
+        preload_timeout = 1800  # 30 minutes default for data loading
+        logging.info(f"Starting preload container with {preload_timeout}s timeout")
+
+        try:
+            # Start container with detach=True to enable timeout handling
+            container = docker_client.containers.run(
+                image=preload_image,
+                volumes={
+                    temporary_dir: {
+                        "bind": client_mnt_point,
+                        "mode": "rw",
+                    },
                 },
-            },
-            auto_remove=True,
-            privileged=True,
-            working_dir=benchmark_tool_workdir,
-            command=preload_command_str,
-            network_mode="host",
-            detach=False,
-            cpuset_cpus=client_cpuset_cpus,
-        )
+                auto_remove=False,  # Don't auto-remove so we can get logs if timeout
+                privileged=True,
+                working_dir=benchmark_tool_workdir,
+                command=preload_command_str,
+                network_mode="host",
+                detach=True,  # Detach to enable timeout
+                cpuset_cpus=client_cpuset_cpus,
+            )
+
+            logging.info(
+                f"Started preload container {container.name} ({container.id[:12]}) with {preload_timeout}s timeout"
+            )
+
+            # Wait for container with timeout
+            try:
+                result = container.wait(timeout=preload_timeout)
+                client_container_stdout = container.logs(
+                    stdout=True, stderr=False
+                ).decode("utf-8")
+                container_stderr = container.logs(stdout=False, stderr=True).decode(
+                    "utf-8"
+                )
+
+                # Check exit code
+                if result["StatusCode"] != 0:
+                    logging.error(
+                        f"Preload container exited with code {result['StatusCode']}"
+                    )
+                    logging.error(f"Preload container stderr: {container_stderr}")
+                    raise docker.errors.ContainerError(
+                        container,
+                        result["StatusCode"],
+                        preload_command_str,
+                        client_container_stdout,
+                        container_stderr,
+                    )
+
+                logging.info(
+                    f"Preload container {container.name} completed successfully"
+                )
+
+            except Exception as timeout_error:
+                if "timeout" in str(timeout_error).lower():
+                    logging.error(
+                        f"Preload container {container.name} timed out after {preload_timeout}s"
+                    )
+                    # Get logs before killing
+                    try:
+                        timeout_logs = container.logs(stdout=True, stderr=True).decode(
+                            "utf-8"
+                        )
+                        logging.error(
+                            f"Preload container logs before timeout: {timeout_logs}"
+                        )
+                    except:
+                        pass
+                    # Kill the container
+                    container.kill()
+                    raise Exception(
+                        f"Preload container timed out after {preload_timeout} seconds"
+                    )
+                else:
+                    raise timeout_error
+            finally:
+                # Clean up container
+                try:
+                    container.remove(force=True)
+                except:
+                    pass
+        except Exception as e:
+            logging.error(f"Preload container failed: {e}")
+            raise e
 
         preload_end_time = datetime.datetime.now()
         preload_duration_seconds = calculate_client_tool_duration_and_check(

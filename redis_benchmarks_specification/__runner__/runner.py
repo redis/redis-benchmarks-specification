@@ -1,3 +1,6 @@
+# Import warning suppression first
+from redis_benchmarks_specification.__common__.suppress_warnings import *
+
 import datetime
 import json
 import logging
@@ -19,15 +22,11 @@ from docker.models.containers import Container
 from pytablewriter import CsvTableWriter, MarkdownTableWriter
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
-    local_profilers_platform_checks,
-    profilers_start_if_required,
-    profilers_stop_if_required,
 )
 from redisbench_admin.run.common import (
     get_start_time_vars,
     merge_default_and_config_metrics,
     prepare_benchmark_parameters,
-    dbconfig_keyspacelen_check,
 )
 
 from redis_benchmarks_specification.__common__.runner import (
@@ -156,6 +155,99 @@ def parse_redis_uri(uri):
     except Exception as e:
         logging.error(f"Failed to parse Redis URI '{uri}': {e}")
         return {}
+
+
+def validate_benchmark_metrics(
+    results_dict, test_name, benchmark_config=None, default_metrics=None
+):
+    """
+    Validate benchmark metrics to ensure they contain reasonable values.
+    Fails the test if critical metrics indicate something is wrong.
+
+    Args:
+        results_dict: Dictionary containing benchmark results
+        test_name: Name of the test being validated
+        benchmark_config: Benchmark configuration (unused, for compatibility)
+        default_metrics: Default metrics configuration (unused, for compatibility)
+
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        # Define validation rules
+        throughput_patterns = [
+            "ops/sec",
+            "qps",
+            "totals.ops/sec",
+            "all_stats.totals.ops/sec",
+        ]
+
+        latency_patterns = ["p50", "p95", "p99", "p999", "percentile"]
+
+        validation_errors = []
+
+        def check_nested_dict(data, path=""):
+            """Recursively check nested dictionary for metrics"""
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    current_path = f"{path}.{key}" if path else key
+                    check_nested_dict(value, current_path)
+            elif isinstance(data, (int, float)):
+                metric_path_lower = path.lower()
+
+                # Skip Waits metrics as they can legitimately be 0
+                if "waits" in metric_path_lower:
+                    return
+
+                # Skip general latency metrics that can legitimately be 0
+                # Only validate specific percentile latencies (p50, p95, etc.)
+                if any(
+                    pattern in metric_path_lower
+                    for pattern in [
+                        "average latency",
+                        "totals.latency",
+                        "all_stats.totals.latency",
+                    ]
+                ):
+                    return
+
+                # Check throughput metrics
+                for pattern in throughput_patterns:
+                    if pattern in metric_path_lower:
+                        if data <= 10:  # Below 10 QPS threshold
+                            validation_errors.append(
+                                f"Throughput metric '{path}' has invalid value: {data} "
+                                f"(below 10 QPS threshold)"
+                            )
+                        break
+
+                # Check latency metrics
+                for pattern in latency_patterns:
+                    if pattern in metric_path_lower:
+                        if data <= 0.0:  # Invalid latency
+                            validation_errors.append(
+                                f"Latency metric '{path}' has invalid value: {data} "
+                                f"(should be > 0.0)"
+                            )
+                        break
+
+        # Validate the results dictionary
+        check_nested_dict(results_dict)
+
+        if validation_errors:
+            error_msg = f"Test {test_name} failed metric validation:\n" + "\n".join(
+                validation_errors
+            )
+            logging.error(error_msg)
+            return False, error_msg
+
+        logging.info(f"Test {test_name} passed metric validation")
+        return True, None
+
+    except Exception as e:
+        logging.warning(f"Error during metric validation for test {test_name}: {e}")
+        # Don't fail the test if validation itself fails
+        return True, None
 
 
 def run_local_command_with_timeout(command_str, timeout_seconds, description="command"):
@@ -2753,6 +2845,23 @@ def process_self_contained_coordinator_stream(
                             "Using aggregated JSON results from multi-client execution"
                         )
                         results_dict = json.loads(client_container_stdout)
+
+                        # Validate benchmark metrics
+                        is_valid, validation_error = validate_benchmark_metrics(
+                            results_dict, test_name, benchmark_config, default_metrics
+                        )
+                        if not is_valid:
+                            logging.error(
+                                f"Test {test_name} failed metric validation: {validation_error}"
+                            )
+                            test_result = False
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=full_result_path,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                         # Print results table for multi-client
                         print_results_table_stdout(
                             benchmark_config,
@@ -2815,6 +2924,23 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
+
+                        # Validate benchmark metrics
+                        is_valid, validation_error = validate_benchmark_metrics(
+                            results_dict, test_name, benchmark_config, default_metrics
+                        )
+                        if not is_valid:
+                            logging.error(
+                                f"Test {test_name} failed metric validation: {validation_error}"
+                            )
+                            test_result = False
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=full_result_path,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                         print_results_table_stdout(
                             benchmark_config,
                             default_metrics,

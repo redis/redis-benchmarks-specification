@@ -615,6 +615,9 @@ def process_self_contained_coordinator_stream(
                                 metadata,
                                 build_variant_name,
                                 running_platform,
+                                None,
+                                None,
+                                disable_target_tables=True,
                             )
                             test_result = True
                             total_test_suite_runs = total_test_suite_runs + 1

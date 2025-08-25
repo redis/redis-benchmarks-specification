@@ -291,13 +291,7 @@ def export_redis_metrics(
             metric_name,
             metric_value,
         ) in overall_end_time_metrics.items():
-            tsname_metric = "{}/{}/{}/benchmark_end/{}/{}".format(
-                sprefix,
-                test_name,
-                by_variant,
-                setup_name,
-                metric_name,
-            )
+            tsname_metric = f"{sprefix}/{test_name}/{by_variant}/benchmark_end/{running_platform}/{setup_name}/{metric_name}"
 
             logging.debug(
                 "Adding a redis server side metric collected at the end of benchmark."
@@ -404,6 +398,7 @@ def exporter_datasink_common(
         running_platform,
         None,
         git_hash,
+        disable_target_tables=True,
     )
     if collect_memory_metrics:
         logging.info("Collecting memory metrics")

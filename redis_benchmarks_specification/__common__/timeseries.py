@@ -838,34 +838,47 @@ def common_exporter_logic(
         and artifact_version != ""
         and artifact_version != "N/A"
     ):
-        # extract per-version datapoints
-        total_hs_ts = len(per_hash_time_series_dict.keys())
-        logging.info(
-            f"Extending the by.hash {git_hash} timeseries ({total_hs_ts}) with version info {artifact_version}"
-        )
-        for hash_timeserie in per_hash_time_series_dict.values():
-            hash_timeserie["labels"]["version"] = artifact_version
-        (
-            _,
-            per_version_time_series_dict,
-            version_target_tables,
-        ) = extract_perversion_timeseries_from_results(
-            used_ts,
-            metrics,
-            results_dict,
-            artifact_version,
-            tf_github_org,
-            tf_github_repo,
-            deployment_name,
-            deployment_type,
-            test_name,
-            tf_triggering_env,
-            metadata_tags,
-            build_variant_name,
-            running_platform,
-            testcase_metric_context_paths,
-        )
-        total_break_by_added += 1
+        # Check if version 255.255.255 should only be pushed for unstable branch
+        should_push_version = True
+        if artifact_version == "255.255.255":
+            if tf_github_branch != "unstable":
+                logging.info(
+                    f"Skipping version 255.255.255 data push for branch '{tf_github_branch}' "
+                    f"(only pushing for 'unstable' branch)"
+                )
+                should_push_version = False
+            else:
+                logging.info(f"Pushing version 255.255.255 data for unstable branch")
+
+        if should_push_version:
+            # extract per-version datapoints
+            total_hs_ts = len(per_hash_time_series_dict.keys())
+            logging.info(
+                f"Extending the by.hash {git_hash} timeseries ({total_hs_ts}) with version info {artifact_version}"
+            )
+            for hash_timeserie in per_hash_time_series_dict.values():
+                hash_timeserie["labels"]["version"] = artifact_version
+            (
+                _,
+                per_version_time_series_dict,
+                version_target_tables,
+            ) = extract_perversion_timeseries_from_results(
+                used_ts,
+                metrics,
+                results_dict,
+                artifact_version,
+                tf_github_org,
+                tf_github_repo,
+                deployment_name,
+                deployment_type,
+                test_name,
+                tf_triggering_env,
+                metadata_tags,
+                build_variant_name,
+                running_platform,
+                testcase_metric_context_paths,
+            )
+            total_break_by_added += 1
     else:
         logging.warning(
             "there was no git VERSION information to push data brokedown by VERSION"
@@ -1118,6 +1131,7 @@ def add_standardized_metric_byversion(
             tf_triggering_env,
             metadata_tags,
             build_variant_name,
+            running_platform,
         )
         labels["version"] = artifact_version
         labels["deployment_name+version"] = "{} {}".format(
@@ -1169,6 +1183,7 @@ def timeseries_test_sucess_flow(
     running_platform=None,
     timeseries_dict=None,
     git_hash=None,
+    disable_target_tables=False,
 ):
     testcase_metric_context_paths = []
     version_target_tables = None
@@ -1205,7 +1220,7 @@ def timeseries_test_sucess_flow(
             )
         )
         push_data_to_redistimeseries(rts, timeseries_dict)
-        if version_target_tables is not None:
+        if not disable_target_tables and version_target_tables is not None:
             logging.info(
                 "There are a total of {} distinct target tables by version".format(
                     len(version_target_tables.keys())
@@ -1225,7 +1240,12 @@ def timeseries_test_sucess_flow(
                 rts.hset(
                     version_target_table_keyname, None, None, version_target_table_dict
                 )
-        if branch_target_tables is not None:
+        elif disable_target_tables:
+            logging.info(
+                "Target tables disabled - skipping version target table creation"
+            )
+
+        if not disable_target_tables and branch_target_tables is not None:
             logging.info(
                 "There are a total of {} distinct target tables by branch".format(
                     len(branch_target_tables.keys())
@@ -1246,6 +1266,10 @@ def timeseries_test_sucess_flow(
                 rts.hset(
                     branch_target_table_keyname, None, None, branch_target_table_dict
                 )
+        elif disable_target_tables:
+            logging.info(
+                "Target tables disabled - skipping branch target table creation"
+            )
         if test_name is not None:
             if type(test_name) is str:
                 update_secondary_result_keys(

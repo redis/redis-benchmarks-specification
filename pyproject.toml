@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.1.328"
+version = "0.1.334"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
