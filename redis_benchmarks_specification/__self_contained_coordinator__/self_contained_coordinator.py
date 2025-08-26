@@ -674,14 +674,13 @@ def main():
     grafana_profile_dashboard = args.grafana_profile_dashboard
 
     defaults_filename = args.defaults_filename
-    (
-        _,
-        _,
-        default_metrics,
-        _,
-        _,
-        _,
-    ) = get_defaults(defaults_filename)
+    get_defaults_result = get_defaults(defaults_filename)
+    # Handle variable number of return values from get_defaults
+    if len(get_defaults_result) >= 3:
+        default_metrics = get_defaults_result[2]
+    else:
+        default_metrics = []
+        logging.warning("get_defaults returned fewer values than expected, using empty default_metrics")
 
     # Consumer id
     consumer_pos = args.consumer_pos

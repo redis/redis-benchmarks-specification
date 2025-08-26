@@ -1067,6 +1067,9 @@ def add_standardized_metric_bybranch(
         labels["deployment_name+branch"] = "{} {}".format(
             deployment_name, tf_github_branch
         )
+        labels["running_platform+branch"] = "{} {}".format(
+            running_platform, tf_github_branch
+        )
         labels["test_name"] = str(test_name)
         labels["metric"] = str(metric_name)
         logging.info(
@@ -1136,6 +1139,9 @@ def add_standardized_metric_byversion(
         labels["version"] = artifact_version
         labels["deployment_name+version"] = "{} {}".format(
             deployment_name, artifact_version
+        )
+        labels["running_platform+version"] = "{} {}".format(
+            running_platform, artifact_version
         )
         labels["test_name"] = str(test_name)
         labels["metric"] = str(metric_name)
