@@ -102,6 +102,7 @@ from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    get_arch_specific_stream_name,
     S3_BUCKET_NAME,
 )
 from redis_benchmarks_specification.__common__.spec import (
@@ -650,7 +651,7 @@ def main():
 
     logging.info("checking build spec requirements")
     running_platform = args.platform_name
-    build_runners_consumer_group_create(gh_event_conn, running_platform)
+    build_runners_consumer_group_create(gh_event_conn, running_platform, args.arch)
 
     # Clear pending messages and reset consumer group position by default (unless explicitly skipped)
     if not args.skip_clear_pending_on_startup:
@@ -659,9 +660,9 @@ def main():
             "Clearing pending messages and resetting consumer group position on startup (default behavior)"
         )
         clear_pending_messages_for_consumer(
-            gh_event_conn, running_platform, consumer_pos
+            gh_event_conn, running_platform, consumer_pos, args.arch
         )
-        reset_consumer_group_to_latest(gh_event_conn, running_platform)
+        reset_consumer_group_to_latest(gh_event_conn, running_platform, args.arch)
     else:
         logging.info(
             "Skipping pending message cleanup and consumer group reset as requested"
@@ -819,10 +820,15 @@ def self_contained_coordinator_blocking_read(
             get_runners_consumer_group_name(platform_name), consumer_name
         )
     )
+    # Use architecture-specific stream
+    arch_specific_stream = get_arch_specific_stream_name(arch)
+    logging.info(
+        f"Reading work from architecture-specific stream: {arch_specific_stream}"
+    )
     newTestInfo = github_event_conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
         consumer_name,
-        {STREAM_KEYNAME_NEW_BUILD_EVENTS: stream_id},
+        {arch_specific_stream: stream_id},
         count=1,
         block=0,
     )
@@ -872,26 +878,35 @@ def self_contained_coordinator_blocking_read(
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
-        if overall_result is True:
-            ack_reply = github_event_conn.xack(
-                STREAM_KEYNAME_NEW_BUILD_EVENTS,
-                get_runners_consumer_group_name(platform_name),
-                stream_id,
-            )
-            if type(ack_reply) == bytes:
-                ack_reply = ack_reply.decode()
-            if ack_reply == "1" or ack_reply == 1:
+
+        # Always acknowledge the message, even if it was filtered out
+        arch_specific_stream = get_arch_specific_stream_name(arch)
+        ack_reply = github_event_conn.xack(
+            arch_specific_stream,
+            get_runners_consumer_group_name(platform_name),
+            stream_id,
+        )
+        if type(ack_reply) == bytes:
+            ack_reply = ack_reply.decode()
+        if ack_reply == "1" or ack_reply == 1:
+            if overall_result is True:
                 logging.info(
-                    "Sucessfully acknowledge BENCHMARK variation stream with id {}.".format(
+                    "Successfully acknowledged BENCHMARK variation stream with id {} (processed).".format(
                         stream_id
                     )
                 )
             else:
-                logging.error(
-                    "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
-                        stream_id, ack_reply
+                logging.info(
+                    "Successfully acknowledged BENCHMARK variation stream with id {} (filtered/skipped).".format(
+                        stream_id
                     )
                 )
+        else:
+            logging.error(
+                "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
+                    stream_id, ack_reply
+                )
+            )
     return overall_result, stream_id, num_process_streams, num_process_test_suites
 
 

@@ -38,6 +38,7 @@ from redisbench_admin.utils.results import post_process_benchmark_results
 
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    get_arch_specific_stream_name,
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
     S3_BUCKET_NAME,
 )
@@ -71,12 +72,16 @@ from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation
 )
 
 
-def build_runners_consumer_group_create(conn, running_platform, id="$"):
+def build_runners_consumer_group_create(conn, running_platform, arch="amd64", id="$"):
     consumer_group_name = get_runners_consumer_group_name(running_platform)
+    arch_specific_stream = get_arch_specific_stream_name(arch)
     logging.info("Will use consumer group named {}.".format(consumer_group_name))
+    logging.info(
+        "Will read from architecture-specific stream: {}.".format(arch_specific_stream)
+    )
     try:
         conn.xgroup_create(
-            STREAM_KEYNAME_NEW_BUILD_EVENTS,
+            arch_specific_stream,
             consumer_group_name,
             mkstream=True,
             id=id,
@@ -99,17 +104,23 @@ def get_runners_consumer_group_name(running_platform):
     return consumer_group_name
 
 
-def clear_pending_messages_for_consumer(conn, running_platform, consumer_pos):
+def clear_pending_messages_for_consumer(
+    conn, running_platform, consumer_pos, arch="amd64"
+):
     """Clear all pending messages for a specific consumer on startup"""
     consumer_group_name = get_runners_consumer_group_name(running_platform)
     consumer_name = "{}-self-contained-proc#{}".format(
         consumer_group_name, consumer_pos
     )
+    arch_specific_stream = get_arch_specific_stream_name(arch)
+    logging.info(
+        f"Clearing pending messages from architecture-specific stream: {arch_specific_stream}"
+    )
 
     try:
         # Get pending messages for this specific consumer
         pending_info = conn.xpending_range(
-            STREAM_KEYNAME_NEW_BUILD_EVENTS,
+            arch_specific_stream,
             consumer_group_name,
             min="-",
             max="+",
@@ -125,7 +136,7 @@ def clear_pending_messages_for_consumer(conn, running_platform, consumer_pos):
 
             # Acknowledge all pending messages to clear them
             ack_count = conn.xack(
-                STREAM_KEYNAME_NEW_BUILD_EVENTS, consumer_group_name, *message_ids
+                arch_specific_stream, consumer_group_name, *message_ids
             )
 
             logging.info(
@@ -143,15 +154,19 @@ def clear_pending_messages_for_consumer(conn, running_platform, consumer_pos):
         logging.error(f"Unexpected error clearing pending messages: {e}")
 
 
-def reset_consumer_group_to_latest(conn, running_platform):
+def reset_consumer_group_to_latest(conn, running_platform, arch="amd64"):
     """Reset the consumer group position to only read new messages (skip old ones)"""
     consumer_group_name = get_runners_consumer_group_name(running_platform)
+    arch_specific_stream = get_arch_specific_stream_name(arch)
+    logging.info(
+        f"Resetting consumer group position for architecture-specific stream: {arch_specific_stream}"
+    )
 
     try:
         # Set the consumer group position to '$' (latest) to skip all existing messages
-        conn.xgroup_setid(STREAM_KEYNAME_NEW_BUILD_EVENTS, consumer_group_name, id="$")
+        conn.xgroup_setid(arch_specific_stream, consumer_group_name, id="$")
         logging.info(
-            f"Reset consumer group {consumer_group_name} position to latest - will only process new messages"
+            f"Reset consumer group {consumer_group_name} position to latest on stream {arch_specific_stream} - will only process new messages"
         )
 
     except redis.exceptions.ResponseError as e:

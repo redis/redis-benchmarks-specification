@@ -138,7 +138,7 @@ def spec_cli_args(parser):
     parser.add_argument("--gh_repo", type=str, default="redis")
     parser.add_argument("--server_name", type=str, default=None)
     parser.add_argument("--run_image", type=str, default="redis")
-    parser.add_argument("--build_arch", type=str, default=None)
+    parser.add_argument("--arch", type=str, default="amd64")
     parser.add_argument("--id", type=str, default="dockerhub")
     parser.add_argument("--mnt_point", type=str, default="")
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)

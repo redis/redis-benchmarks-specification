@@ -44,6 +44,7 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    get_arch_specific_stream_name,
 )
 from redis_benchmarks_specification.__common__.package import (
     get_version_string,
@@ -84,7 +85,7 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         args.id,
         conn,
         args.run_image,
-        args.build_arch,
+        args.arch,
         testDetails,
         "n/a",
         [],
@@ -104,6 +105,12 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         0,
         10000,
         args.tests_regexp,
+        ".*",  # command_regexp
+        False,  # use_git_timestamp
+        "redis",  # server_name
+        "redis",  # github_org
+        "redis",  # github_repo
+        None,  # existing_artifact_keys
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org
@@ -118,9 +125,12 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         store_airgap_image_redis(conn, docker_client, args.run_image)
 
     if result is True:
-        benchmark_stream_id = conn.xadd(
-            STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+        # Use architecture-specific stream
+        arch_specific_stream = get_arch_specific_stream_name(args.arch)
+        logging.info(
+            f"CLI adding work to architecture-specific stream: {arch_specific_stream}"
         )
+        benchmark_stream_id = conn.xadd(arch_specific_stream, build_stream_fields)
         logging.info(
             "sucessfully requested a new run {}. Stream id: {}".format(
                 build_stream_fields, benchmark_stream_id
@@ -432,9 +442,9 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
             commit_dict["github_org"] = args.gh_org
             commit_dict["github_repo"] = args.gh_repo
-            if args.build_arch is not None:
-                commit_dict["build_arch"] = args.build_arch
-                commit_dict["arch"] = args.build_arch
+            if args.arch is not None:
+                commit_dict["build_arch"] = args.arch
+                commit_dict["arch"] = args.arch
             if args.server_name is not None and args.server_name != "":
                 commit_dict["server_name"] = args.server_name
             if args.build_artifacts != "":
