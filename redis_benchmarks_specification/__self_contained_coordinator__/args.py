@@ -201,4 +201,10 @@ def create_self_contained_coordinator_args(project_name):
         default=None,
         help="Password for HTTP endpoint authentication. HTTP server is disabled if not provided.",
     )
+    parser.add_argument(
+        "--skip-clear-pending-on-startup",
+        default=False,
+        action="store_true",
+        help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
+    )
     return parser

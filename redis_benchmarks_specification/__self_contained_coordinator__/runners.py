@@ -99,6 +99,70 @@ def get_runners_consumer_group_name(running_platform):
     return consumer_group_name
 
 
+def clear_pending_messages_for_consumer(conn, running_platform, consumer_pos):
+    """Clear all pending messages for a specific consumer on startup"""
+    consumer_group_name = get_runners_consumer_group_name(running_platform)
+    consumer_name = "{}-self-contained-proc#{}".format(
+        consumer_group_name, consumer_pos
+    )
+
+    try:
+        # Get pending messages for this specific consumer
+        pending_info = conn.xpending_range(
+            STREAM_KEYNAME_NEW_BUILD_EVENTS,
+            consumer_group_name,
+            min="-",
+            max="+",
+            count=1000,  # Get up to 1000 pending messages
+            consumername=consumer_name,
+        )
+
+        if pending_info:
+            message_ids = [msg["message_id"] for msg in pending_info]
+            logging.info(
+                f"Found {len(message_ids)} pending messages for consumer {consumer_name}. Clearing them..."
+            )
+
+            # Acknowledge all pending messages to clear them
+            ack_count = conn.xack(
+                STREAM_KEYNAME_NEW_BUILD_EVENTS, consumer_group_name, *message_ids
+            )
+
+            logging.info(
+                f"Successfully cleared {ack_count} pending messages for consumer {consumer_name}"
+            )
+        else:
+            logging.info(f"No pending messages found for consumer {consumer_name}")
+
+    except redis.exceptions.ResponseError as e:
+        if "NOGROUP" in str(e):
+            logging.info(f"Consumer group {consumer_group_name} does not exist yet")
+        else:
+            logging.warning(f"Error clearing pending messages: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error clearing pending messages: {e}")
+
+
+def reset_consumer_group_to_latest(conn, running_platform):
+    """Reset the consumer group position to only read new messages (skip old ones)"""
+    consumer_group_name = get_runners_consumer_group_name(running_platform)
+
+    try:
+        # Set the consumer group position to '$' (latest) to skip all existing messages
+        conn.xgroup_setid(STREAM_KEYNAME_NEW_BUILD_EVENTS, consumer_group_name, id="$")
+        logging.info(
+            f"Reset consumer group {consumer_group_name} position to latest - will only process new messages"
+        )
+
+    except redis.exceptions.ResponseError as e:
+        if "NOGROUP" in str(e):
+            logging.info(f"Consumer group {consumer_group_name} does not exist yet")
+        else:
+            logging.warning(f"Error resetting consumer group position: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error resetting consumer group position: {e}")
+
+
 def process_self_contained_coordinator_stream(
     conn,
     datasink_push_results_redistimeseries,

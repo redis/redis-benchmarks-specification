@@ -1482,7 +1482,9 @@ def process_self_contained_coordinator_stream(
         default_metrics = get_defaults_result[2]
     else:
         default_metrics = []
-        logging.warning("get_defaults returned fewer values than expected, using empty default_metrics")
+        logging.warning(
+            "get_defaults returned fewer values than expected, using empty default_metrics"
+        )
 
     # For memory comparison mode, analyze datasets before starting
     if memory_comparison_only:
@@ -1932,7 +1934,7 @@ def process_self_contained_coordinator_stream(
                                     benchmark_tool_global=benchmark_tool_global,
                                 )
                                 continue
-                            logging.info(
+                            logging.debug(
                                 "Test {} priority ({}) is within the priority limit [{},{}]".format(
                                     test_name,
                                     priority,

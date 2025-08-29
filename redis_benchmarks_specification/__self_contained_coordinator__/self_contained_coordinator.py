@@ -75,6 +75,8 @@ from redis_benchmarks_specification.__self_contained_coordinator__.args import (
 from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
     build_runners_consumer_group_create,
     get_runners_consumer_group_name,
+    clear_pending_messages_for_consumer,
+    reset_consumer_group_to_latest,
 )
 from redis_benchmarks_specification.__setups__.topologies import get_topologies
 
@@ -649,6 +651,22 @@ def main():
     logging.info("checking build spec requirements")
     running_platform = args.platform_name
     build_runners_consumer_group_create(gh_event_conn, running_platform)
+
+    # Clear pending messages and reset consumer group position by default (unless explicitly skipped)
+    if not args.skip_clear_pending_on_startup:
+        consumer_pos = args.consumer_pos
+        logging.info(
+            "Clearing pending messages and resetting consumer group position on startup (default behavior)"
+        )
+        clear_pending_messages_for_consumer(
+            gh_event_conn, running_platform, consumer_pos
+        )
+        reset_consumer_group_to_latest(gh_event_conn, running_platform)
+    else:
+        logging.info(
+            "Skipping pending message cleanup and consumer group reset as requested"
+        )
+
     stream_id = None
     docker_client = docker.from_env()
     home = str(Path.home())
@@ -680,7 +698,9 @@ def main():
         default_metrics = get_defaults_result[2]
     else:
         default_metrics = []
-        logging.warning("get_defaults returned fewer values than expected, using empty default_metrics")
+        logging.warning(
+            "get_defaults returned fewer values than expected, using empty default_metrics"
+        )
 
     # Consumer id
     consumer_pos = args.consumer_pos
@@ -2271,14 +2291,14 @@ def filter_test_files(
                 continue
 
             if command_groups_regexp is not None:
-                logging.info(
+                logging.debug(
                     "Filtering all test command groups via a regular expression: {}".format(
                         command_groups_regexp
                     )
                 )
                 if "tested-groups" in benchmark_config:
                     command_groups = benchmark_config["tested-groups"]
-                    logging.info(
+                    logging.debug(
                         f"The file {test_file} (test name = {test_name}) contains the following groups: {command_groups}"
                     )
                     groups_regex_string = re.compile(command_groups_regexp)
@@ -2287,14 +2307,14 @@ def filter_test_files(
                         match_obj = re.search(groups_regex_string, command_group)
                         if match_obj is not None:
                             found = True
-                            logging.info(f"found the command group {command_group}")
+                            logging.debug(f"found the command group {command_group}")
                     if found is False:
                         logging.info(
                             f"Skipping {test_file} given the following groups: {command_groups} does not match command group regex {command_groups_regexp}"
                         )
                         continue
                 else:
-                    logging.warning(
+                    logging.debug(
                         f"The file {test_file} (test name = {test_name}) does not contain the property 'tested-groups'. Cannot filter based uppon groups..."
                     )
 
