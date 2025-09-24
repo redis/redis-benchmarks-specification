@@ -20,6 +20,12 @@ from redisbench_admin.profilers.profilers_local import (
     profilers_start_if_required,
     profilers_stop_if_required,
 )
+
+from redisbench_admin.profilers.profilers_local import (
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
+)
 from redisbench_admin.run.common import (
     get_start_time_vars,
     prepare_benchmark_parameters,

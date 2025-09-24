@@ -33,6 +33,14 @@ from redis_benchmarks_specification.__common__.runner import (
     export_redis_metrics,
 )
 
+from redisbench_admin.profilers.profilers_local import (
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
+)
+from redisbench_admin.run.common import (
+    dbconfig_keyspacelen_check,
+)
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -2441,20 +2449,20 @@ def process_self_contained_coordinator_stream(
                     )
                     arbitrary_command = False
 
-                    if (
-                        arbitrary_command
-                        and oss_cluster_api_enabled
-                        and "memtier" in benchmark_tool
-                    ):
-                        logging.warning(
-                            "Forcing skip this test given there is an arbitrary commmand and memtier usage. Check https://github.com/RedisLabs/memtier_benchmark/pull/117 ."
-                        )
-                        delete_temporary_files(
-                            temporary_dir_client=temporary_dir_client,
-                            full_result_path=None,
-                            benchmark_tool_global=benchmark_tool_global,
-                        )
-                        continue
+                    # if (
+                    #     arbitrary_command
+                    #     and oss_cluster_api_enabled
+                    #     and "memtier" in benchmark_tool
+                    # ):
+                    #     logging.warning(
+                    #         "Forcing skip this test given there is an arbitrary commmand and memtier usage. Check https://github.com/RedisLabs/memtier_benchmark/pull/117 ."
+                    #     )
+                    #     delete_temporary_files(
+                    #         temporary_dir_client=temporary_dir_client,
+                    #         full_result_path=None,
+                    #         benchmark_tool_global=benchmark_tool_global,
+                    #     )
+                    #     continue
 
                     # Check if we have multiple client configurations
                     client_configs = extract_client_configs(benchmark_config)
@@ -3640,12 +3648,12 @@ def data_prepopulation_step(
             1,
             unix_socket,
         )
-        if arbitrary_command is True and oss_cluster_api_enabled:
-            logging.warning(
-                "Skipping this test given it implies arbitrary command on an cluster setup. Not supported on memtier: https://github.com/RedisLabs/memtier_benchmark/pull/117"
-            )
-            result = False
-            return result
+        # if arbitrary_command is True and oss_cluster_api_enabled:
+        #     logging.warning(
+        #         "Skipping this test given it implies arbitrary command on an cluster setup. Not supported on memtier: https://github.com/RedisLabs/memtier_benchmark/pull/117"
+        #     )
+        #     result = False
+        #     return result
 
         # run the benchmark
         preload_start_time = datetime.datetime.now()

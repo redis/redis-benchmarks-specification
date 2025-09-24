@@ -1,0 +1,65 @@
+version: 0.4
+name: memtier_benchmark-playbook-rate-limiting-lua-100k-sessions
+description: |
+  Runs memtier_benchmark to model a **bitmap-based rate limit gate** using Lua: the script performs
+  a `BITCOUNT` on a single bitmap key and **allows** if the count is below a configurable threshold,
+  otherwise **denies** (no other data structures or mutations are performed).
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+
+  init_commands:
+  - '"SETBIT" "1" "100000" "1"'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --hide-histogram
+      --command "SETBIT __key__ __key__ 1"
+      --key-maximum 100000
+      --key-minimum 1
+      --key-prefix ""
+      -t 1 -c 1
+      --command-key-pattern R
+      --distinct-client-seed
+      -n 100000
+      --pipeline 50
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+
+tested-commands:
+- bitcount
+- eval
+tested-groups:
+- bitmap
+- scripting
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --hide-histogram
+    --key-maximum 100000
+    --key-minimum 1
+    --key-prefix ""
+    --command='EVAL "local k=KEYS[1];local limit=tonumber(ARGV[1]);local c=redis.call(\"BITCOUNT\",k);if c>=limit then return {0,0,c} else return {1,limit-c,c} end" 1 __key__ 2000000'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+
+priority: 19
