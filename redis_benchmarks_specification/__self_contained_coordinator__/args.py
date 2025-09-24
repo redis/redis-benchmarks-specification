@@ -28,6 +28,12 @@ def create_self_contained_coordinator_args(project_name):
         description=project_name,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=project_name,
+        help="Show version information and exit",
+    )
     parser.add_argument("--event_stream_host", type=str, default=GH_REDIS_SERVER_HOST)
     parser.add_argument("--event_stream_port", type=int, default=GH_REDIS_SERVER_PORT)
     parser.add_argument("--event_stream_pass", type=str, default=GH_REDIS_SERVER_AUTH)
@@ -170,5 +176,35 @@ def create_self_contained_coordinator_args(project_name):
         type=str,
         default="",
         help="Filter tests to run only with the specified topology (e.g. oss-standalone)",
+    )
+    parser.add_argument(
+        "--exclusive-hardware",
+        default=False,
+        action="store_true",
+        help="Enable exclusive hardware mode. Kills all memtier processes and stops all docker containers before and after each test.",
+    )
+    parser.add_argument(
+        "--http-port",
+        type=int,
+        default=8080,
+        help="Port for HTTP server endpoints (/ping health check and /reset-queue POST endpoint).",
+    )
+    parser.add_argument(
+        "--http-auth-username",
+        type=str,
+        default=None,
+        help="Username for HTTP endpoint authentication. HTTP server is disabled if not provided.",
+    )
+    parser.add_argument(
+        "--http-auth-password",
+        type=str,
+        default=None,
+        help="Password for HTTP endpoint authentication. HTTP server is disabled if not provided.",
+    )
+    parser.add_argument(
+        "--skip-clear-pending-on-startup",
+        default=False,
+        action="store_true",
+        help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
     )
     return parser

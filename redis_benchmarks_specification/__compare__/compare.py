@@ -15,9 +15,28 @@ import datetime as dt
 import os
 from tqdm import tqdm
 import argparse
+import numpy as np
 
 from io import StringIO
 import sys
+
+# Import command categorization function
+try:
+    from utils.summary import categorize_command
+except ImportError:
+    # Fallback if utils.summary is not available
+    def categorize_command(command):
+        return "unknown"
+
+
+# Optional matplotlib import for box plot generation
+try:
+    import matplotlib.pyplot as plt
+
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    logging.warning("matplotlib not available, box plot generation will be disabled")
 
 from redis_benchmarks_specification.__common__.github import (
     update_comment_if_needed,
@@ -355,6 +374,8 @@ def compare_command_logic(args, project_name, project_version):
         total_stable,
         total_unstable,
         total_comparison_points,
+        boxplot_data,
+        command_change,
     ) = compute_regression_table(
         rts,
         tf_github_org,
@@ -399,6 +420,11 @@ def compare_command_logic(args, project_name, project_version):
         args.regression_str,
         args.improvement_str,
         tests_with_config,
+        args.use_test_suites_folder,
+        testsuites_folder,
+        args.extra_filters,
+        getattr(args, "command_group_regex", ".*"),
+        getattr(args, "command_regex", ".*"),
     )
     total_regressions = len(regressions_list)
     total_improvements = len(improvements_list)
@@ -432,7 +458,26 @@ def compare_command_logic(args, project_name, project_version):
         args.regressions_percent_lower_limit,
         regressions_list,
         improvements_list,
+        args.improvement_str,
+        args.regression_str,
     )
+
+    # Generate box plot if requested
+    if args.generate_boxplot and command_change:
+        if MATPLOTLIB_AVAILABLE:
+            logging.info(f"Generating box plot with {len(command_change)} commands...")
+            generate_command_performance_boxplot_from_command_data(
+                command_change,
+                args.boxplot_output,
+                args.regression_str,
+                args.improvement_str,
+                getattr(args, "command_group_regex", ".*"),
+            )
+        else:
+            logging.error(
+                "Box plot generation requested but matplotlib is not available"
+            )
+
     return (
         detected_regressions,
         "",
@@ -474,6 +519,8 @@ def prepare_regression_comment(
     regressions_percent_lower_limit,
     regressions_list=[],
     improvements_list=[],
+    improvement_str="Improvement",
+    regression_str="Regression",
 ):
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
@@ -513,21 +560,24 @@ def prepare_regression_comment(
                 )
             )
         if total_improvements > 0:
-            comparison_summary += "- Detected a total of {} improvements above the improvement water line.\n".format(
-                total_improvements
+            comparison_summary += "- Detected a total of {} improvements above the improvement water line ({}).\n".format(
+                total_improvements, improvement_str
             )
             if len(improvements_list) > 0:
-                regression_values = [l[1] for l in improvements_list]
-                regression_df = pd.DataFrame(regression_values)
-                median_regression = round(float(regression_df.median().iloc[0]), 1)
-                max_regression = round(float(regression_df.max().iloc[0]), 1)
-                min_regression = round(float(regression_df.min().iloc[0]), 1)
+                improvement_values = [l[1] for l in improvements_list]
+                improvement_df = pd.DataFrame(improvement_values)
+                median_improvement = round(float(improvement_df.median().iloc[0]), 1)
+                max_improvement = round(float(improvement_df.max().iloc[0]), 1)
+                min_improvement = round(float(improvement_df.min().iloc[0]), 1)
+                p25_improvement = round(float(improvement_df.quantile(0.25).iloc[0]), 1)
+                p75_improvement = round(float(improvement_df.quantile(0.75).iloc[0]), 1)
 
-                comparison_summary += f"   - Median/Common-Case improvement was {median_regression}% and ranged from [{min_regression}%,{max_regression}%].\n"
+                comparison_summary += f"   - The median improvement ({improvement_str}) was {median_improvement}%, with values ranging from {min_improvement}% to {max_improvement}%.\n"
+                comparison_summary += f"   - Quartile distribution: P25={p25_improvement}%, P50={median_improvement}%, P75={p75_improvement}%.\n"
 
         if total_regressions > 0:
-            comparison_summary += "- Detected a total of {} regressions bellow the regression water line {}.\n".format(
-                total_regressions, regressions_percent_lower_limit
+            comparison_summary += "- Detected a total of {} regressions below the regression water line of {} ({}).\n".format(
+                total_regressions, regressions_percent_lower_limit, regression_str
             )
             if len(regressions_list) > 0:
                 regression_values = [l[1] for l in regressions_list]
@@ -535,8 +585,11 @@ def prepare_regression_comment(
                 median_regression = round(float(regression_df.median().iloc[0]), 1)
                 max_regression = round(float(regression_df.max().iloc[0]), 1)
                 min_regression = round(float(regression_df.min().iloc[0]), 1)
+                p25_regression = round(float(regression_df.quantile(0.25).iloc[0]), 1)
+                p75_regression = round(float(regression_df.quantile(0.75).iloc[0]), 1)
 
-                comparison_summary += f"   - Median/Common-Case regression was {median_regression}% and ranged from [{min_regression}%,{max_regression}%].\n"
+                comparison_summary += f"   - The median regression ({regression_str}) was {median_regression}%, with values ranging from {min_regression}% to {max_regression}%.\n"
+                comparison_summary += f"   - Quartile distribution: P25={p25_regression}%, P50={median_regression}%, P75={p75_regression}%.\n"
 
         comment_body += comparison_summary
         comment_body += "\n"
@@ -686,6 +739,11 @@ def compute_regression_table(
     regression_str="REGRESSION",
     improvement_str="IMPROVEMENT",
     tests_with_config={},
+    use_test_suites_folder=False,
+    test_suites_folder=None,
+    extra_filters="",
+    command_group_regex=".*",
+    command_regex=".*",
 ):
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
@@ -746,10 +804,18 @@ def compute_regression_table(
     if test != "":
         test_names = test.split(",")
         logging.info("Using test name {}".format(test_names))
+    elif use_test_suites_folder:
+        test_names = get_test_names_from_yaml_files(
+            test_suites_folder, tags_regex_string
+        )
     else:
         test_names = get_test_names_from_db(
             rts, tags_regex_string, test_names, used_key
         )
+
+    # Apply command regex filtering to tests_with_config
+    tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
+
     (
         detected_regressions,
         table_full,
@@ -770,6 +836,7 @@ def compute_regression_table(
         no_datapoints_list,
         group_change,
         command_change,
+        boxplot_data,
     ) = from_rts_to_regression_table(
         baseline_deployment_name,
         comparison_deployment_name,
@@ -803,6 +870,7 @@ def compute_regression_table(
         regression_str,
         improvement_str,
         tests_with_config,
+        extra_filters,
     )
     logging.info(
         "Printing differential analysis between {} and {}".format(
@@ -818,19 +886,40 @@ def compute_regression_table(
     )
 
     table_output += "<details>\n  <summary>By GROUP change csv:</summary>\n\n"
-    table_output += "\ncommand_group,min_change,max_change  \n"
+    table_output += (
+        "\ncommand_group,min_change,q1_change,median_change,q3_change,max_change  \n"
+    )
     for group_name, changes_list in group_change.items():
-        max_change = max(changes_list)
         min_change = min(changes_list)
-        table_output += f"{group_name},{min_change:.3f},{max_change:.3f}\n"
+        q1_change = np.percentile(changes_list, 25)
+        median_change = np.median(changes_list)
+        q3_change = np.percentile(changes_list, 75)
+        max_change = max(changes_list)
+        table_output += f"{group_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
     table_output += "\n</details>\n"
     table_output += "\n\n"
     table_output += "<details>\n  <summary>By COMMAND change csv:</summary>\n\n"
-    table_output += "\ncommand,min_change,max_change  \n"
-    for command_name, changes_list in command_change.items():
-        max_change = max(changes_list)
+    table_output += (
+        "\ncommand,min_change,q1_change,median_change,q3_change,max_change  \n"
+    )
+
+    # Filter commands by command group regex if specified
+    filtered_command_change = command_change
+    if command_group_regex != ".*":
+        group_regex = re.compile(command_group_regex)
+        filtered_command_change = {}
+        for command_name, changes_list in command_change.items():
+            command_group = categorize_command(command_name.lower())
+            if re.search(group_regex, command_group):
+                filtered_command_change[command_name] = changes_list
+
+    for command_name, changes_list in filtered_command_change.items():
         min_change = min(changes_list)
-        table_output += f"{command_name},{min_change:.3f},{max_change:.3f}\n"
+        q1_change = np.percentile(changes_list, 25)
+        median_change = np.median(changes_list)
+        q3_change = np.percentile(changes_list, 75)
+        max_change = max(changes_list)
+        table_output += f"{command_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
     table_output += "\n</details>\n"
 
     if total_unstable > 0:
@@ -954,6 +1043,8 @@ def compute_regression_table(
         total_stable,
         total_unstable,
         total_comparison_points,
+        boxplot_data,
+        command_change,
     )
 
 
@@ -1067,11 +1158,11 @@ def get_by_strings(
 
     if comparison_hash is not None:
         # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
+        # if comparison_covered:
+        #     logging.error(
+        #         "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
+        #     )
+        #     exit(1)
         comparison_covered = True
         by_str_comparison = "hash"
         comparison_str = comparison_hash
@@ -1124,6 +1215,7 @@ def from_rts_to_regression_table(
     regression_str="REGRESSION",
     improvement_str="IMPROVEMENT",
     tests_with_config={},
+    extra_filters="",
 ):
     print_all = print_regressions_only is False and print_improvements_only is False
     table_full = []
@@ -1150,6 +1242,9 @@ def from_rts_to_regression_table(
     group_change = {}
     command_change = {}
     original_metric_mode = metric_mode
+
+    # Data collection for box plot
+    boxplot_data = []
     for test_name in test_names:
         tested_groups = []
         tested_commands = []
@@ -1176,6 +1271,8 @@ def from_rts_to_regression_table(
             "github_repo={}".format(baseline_github_repo),
             "triggering_env={}".format(tf_triggering_env_baseline),
         ]
+        if extra_filters != "":
+            filters_baseline.append(extra_filters)
         if baseline_str != "":
             filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
         if baseline_deployment_name != "":
@@ -1200,6 +1297,8 @@ def from_rts_to_regression_table(
             filters_comparison.append(
                 "deployment_name={}".format(comparison_deployment_name)
             )
+        if extra_filters != "":
+            filters_comparison.append(extra_filters)
         if comparison_github_org != "":
             filters_comparison.append(f"github_org={comparison_github_org}")
         if "hash" not in by_str_baseline:
@@ -1362,10 +1461,18 @@ def from_rts_to_regression_table(
                 unstable_list.append([test_name, "n/a"])
 
             baseline_v_str = prepare_value_str(
-                baseline_pct_change, baseline_v, baseline_values, simplify_table
+                baseline_pct_change,
+                baseline_v,
+                baseline_values,
+                simplify_table,
+                metric_name,
             )
             comparison_v_str = prepare_value_str(
-                comparison_pct_change, comparison_v, comparison_values, simplify_table
+                comparison_pct_change,
+                comparison_v,
+                comparison_values,
+                simplify_table,
+                metric_name,
             )
 
             if metric_mode == "higher-better":
@@ -1377,6 +1484,9 @@ def from_rts_to_regression_table(
                 percentage_change = (
                     -(float(baseline_v) - float(comparison_v)) / float(baseline_v)
                 ) * 100.0
+
+            # Collect data for box plot
+            boxplot_data.append((test_name, percentage_change))
         else:
             logging.warn(
                 f"Missing data for test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
@@ -1540,6 +1650,7 @@ def from_rts_to_regression_table(
         no_datapoints_list,
         group_change,
         command_change,
+        boxplot_data,
     )
 
 
@@ -1571,13 +1682,47 @@ def check_multi_value_filter(baseline_str):
     return multi_value_baseline
 
 
-def prepare_value_str(baseline_pct_change, baseline_v, baseline_values, simplify_table):
-    if baseline_v < 1.0:
-        baseline_v_str = " {:.2f}".format(baseline_v)
-    elif baseline_v < 10.0:
-        baseline_v_str = " {:.1f}".format(baseline_v)
+def is_latency_metric(metric_name):
+    """Check if a metric represents latency and should use 3-digit precision"""
+    latency_indicators = [
+        "latency",
+        "percentile",
+        "usec",
+        "msec",
+        "overallQuantiles",
+        "latencystats",
+        "p50",
+        "p95",
+        "p99",
+        "p999",
+    ]
+    metric_name_lower = metric_name.lower()
+    return any(indicator in metric_name_lower for indicator in latency_indicators)
+
+
+def prepare_value_str(
+    baseline_pct_change, baseline_v, baseline_values, simplify_table, metric_name=""
+):
+    """Prepare value string with appropriate precision based on metric type"""
+    # Use 3-digit precision for latency metrics
+    if is_latency_metric(metric_name):
+        if baseline_v < 1.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        elif baseline_v < 10.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        elif baseline_v < 100.0:
+            baseline_v_str = " {:.3f}".format(baseline_v)
+        else:
+            baseline_v_str = " {:.3f}".format(baseline_v)
     else:
-        baseline_v_str = " {:.0f}".format(baseline_v)
+        # Original formatting for non-latency metrics
+        if baseline_v < 1.0:
+            baseline_v_str = " {:.2f}".format(baseline_v)
+        elif baseline_v < 10.0:
+            baseline_v_str = " {:.1f}".format(baseline_v)
+        else:
+            baseline_v_str = " {:.0f}".format(baseline_v)
+
     stamp_b = ""
     if baseline_pct_change > 10.0:
         stamp_b = "UNSTABLE "
@@ -1618,6 +1763,444 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
         )
     )
     return test_names
+
+
+def filter_tests_by_command_regex(tests_with_config, command_regex=".*"):
+    """Filter tests based on command regex matching tested-commands"""
+    if command_regex == ".*":
+        return tests_with_config
+
+    logging.info(f"Filtering tests by command regex: {command_regex}")
+    command_regex_compiled = re.compile(command_regex, re.IGNORECASE)
+    filtered_tests = {}
+
+    for test_name, test_config in tests_with_config.items():
+        tested_commands = test_config.get("tested-commands", [])
+
+        # Check if any tested command matches the regex
+        command_match = False
+        for command in tested_commands:
+            if re.search(command_regex_compiled, command):
+                command_match = True
+                logging.info(f"Including test {test_name} (matches command: {command})")
+                break
+
+        if command_match:
+            filtered_tests[test_name] = test_config
+        else:
+            logging.info(f"Excluding test {test_name} (commands: {tested_commands})")
+
+    logging.info(
+        f"Command regex filtering: {len(filtered_tests)} tests remaining out of {len(tests_with_config)}"
+    )
+    return filtered_tests
+
+
+def get_test_names_from_yaml_files(test_suites_folder, tags_regex_string):
+    """Get test names from YAML files in test-suites folder"""
+    from redis_benchmarks_specification.__common__.runner import get_benchmark_specs
+
+    # Get all YAML files
+    yaml_files = get_benchmark_specs(test_suites_folder, test="", test_regex=".*")
+
+    # Extract test names (remove path and .yml extension)
+    test_names = []
+    for yaml_file in yaml_files:
+        test_name = os.path.basename(yaml_file).replace(".yml", "")
+        # Apply regex filtering like database version
+        match_obj = re.search(tags_regex_string, test_name)
+        if match_obj is not None:
+            test_names.append(test_name)
+
+    test_names.sort()
+    logging.info(
+        "Based on test-suites folder ({}) we have {} comparison points: {}".format(
+            test_suites_folder, len(test_names), test_names
+        )
+    )
+    return test_names
+
+
+def extract_command_from_test_name(test_name):
+    """Extract Redis command from test name"""
+    # Common patterns in test names
+    test_name_lower = test_name.lower()
+
+    # Handle specific patterns
+    if "memtier_benchmark" in test_name_lower:
+        # Look for command patterns in memtier test names
+        for cmd in [
+            "get",
+            "set",
+            "hget",
+            "hset",
+            "hgetall",
+            "hmset",
+            "hmget",
+            "hdel",
+            "hexists",
+            "hkeys",
+            "hvals",
+            "hincrby",
+            "hincrbyfloat",
+            "hsetnx",
+            "hscan",
+            "multi",
+            "exec",
+        ]:
+            if cmd in test_name_lower:
+                return cmd.upper()
+
+    # Try to extract command from test name directly
+    parts = test_name.split("-")
+    for part in parts:
+        part_upper = part.upper()
+        # Check if it looks like a Redis command
+        if len(part_upper) >= 3 and part_upper.isalpha():
+            return part_upper
+
+    return "UNKNOWN"
+
+
+def generate_command_performance_boxplot_from_command_data(
+    command_change,
+    output_filename,
+    regression_str="Regression",
+    improvement_str="Improvement",
+    command_group_regex=".*",
+):
+    """Generate vertical box plot showing performance change distribution per command using command_change data"""
+    if not MATPLOTLIB_AVAILABLE:
+        logging.error("matplotlib not available, cannot generate box plot")
+        return
+
+    try:
+        if not command_change:
+            logging.warning("No command data found for box plot generation")
+            return
+
+        # Filter commands by command group regex
+        if command_group_regex != ".*":
+            logging.info(
+                f"Filtering commands by command group regex: {command_group_regex}"
+            )
+            group_regex = re.compile(command_group_regex)
+            filtered_command_change = {}
+
+            for cmd, changes in command_change.items():
+                command_group = categorize_command(cmd.lower())
+                if re.search(group_regex, command_group):
+                    filtered_command_change[cmd] = changes
+                    logging.info(f"Including command {cmd} (group: {command_group})")
+                else:
+                    logging.info(f"Excluding command {cmd} (group: {command_group})")
+
+            command_change = filtered_command_change
+
+            if not command_change:
+                logging.warning(
+                    f"No commands found matching command group regex: {command_group_regex}"
+                )
+                return
+
+            logging.info(f"After filtering: {len(command_change)} commands remaining")
+
+        # Sort commands by median performance change for better visualization
+        commands_with_median = [
+            (cmd, np.median(changes)) for cmd, changes in command_change.items()
+        ]
+        commands_with_median.sort(key=lambda x: x[1])
+        commands = [cmd for cmd, _ in commands_with_median]
+
+        # Prepare data for plotting (vertical orientation)
+        data_for_plot = [command_change[cmd] for cmd in commands]
+
+        # Create labels with test count
+        labels_with_count = [
+            f"{cmd}\n({len(command_change[cmd])} tests)" for cmd in commands
+        ]
+
+        # Create the plot (vertical orientation)
+        plt.figure(figsize=(10, 16))
+
+        # Create horizontal box plot (which makes it vertical when we rotate)
+        positions = range(1, len(commands) + 1)
+        box_plot = plt.boxplot(
+            data_for_plot,
+            positions=positions,
+            patch_artist=True,
+            showfliers=True,
+            flierprops={"marker": "o", "markersize": 4},
+            vert=False,
+        )  # vert=False makes it horizontal (commands on Y-axis)
+
+        # Color the boxes and add value annotations
+        for i, (patch, cmd) in enumerate(zip(box_plot["boxes"], commands)):
+            changes = command_change[cmd]
+            median_change = np.median(changes)
+            min_change = min(changes)
+            max_change = max(changes)
+
+            # Color based on median performance
+            if median_change > 0:
+                patch.set_facecolor("lightcoral")  # Red for improvements
+                patch.set_alpha(0.7)
+            else:
+                patch.set_facecolor("lightblue")  # Blue for degradations
+                patch.set_alpha(0.7)
+
+            # Store values for later annotation (after xlim is set)
+            y_pos = i + 1  # Position corresponds to the box position
+
+            # Store annotation data for after xlim is set
+            if not hasattr(plt, "_annotation_data"):
+                plt._annotation_data = []
+            plt._annotation_data.append(
+                {
+                    "y_pos": y_pos,
+                    "min_change": min_change,
+                    "median_change": median_change,
+                    "max_change": max_change,
+                }
+            )
+
+        # Calculate optimal x-axis limits for maximum visibility
+        all_values = []
+        for changes in command_change.values():
+            all_values.extend(changes)
+
+        if all_values:
+            data_min = min(all_values)
+            data_max = max(all_values)
+
+            logging.info(f"Box plot data range: {data_min:.3f}% to {data_max:.3f}%")
+
+            # Add minimal padding - tight to the data
+            data_range = data_max - data_min
+            if data_range == 0:
+                # If all values are the same, add minimal symmetric padding
+                padding = max(abs(data_min) * 0.05, 0.5)  # At least 5% or 0.5
+                x_min = data_min - padding
+                x_max = data_max + padding
+            else:
+                # Add minimal padding: 2% on each side
+                padding = data_range * 0.02
+                x_min = data_min - padding
+                x_max = data_max + padding
+
+            # Only include 0 if it's actually within or very close to the data range
+            if data_min <= 0 <= data_max:
+                # 0 is within the data range, keep current limits
+                pass
+            elif data_min > 0 and data_min < data_range * 0.1:
+                # All positive values, but 0 is very close - include it
+                x_min = 0
+            elif data_max < 0 and abs(data_max) < data_range * 0.1:
+                # All negative values, but 0 is very close - include it
+                x_max = 0
+
+            plt.xlim(x_min, x_max)
+            logging.info(f"Box plot x-axis limits set to: {x_min:.3f}% to {x_max:.3f}%")
+
+        # Add vertical line at 0% (only if 0 is visible)
+        current_xlim = plt.xlim()
+        if current_xlim[0] <= 0 <= current_xlim[1]:
+            plt.axvline(x=0, color="black", linestyle="-", linewidth=1, alpha=0.8)
+
+        # Add background shading with current limits
+        x_min, x_max = plt.xlim()
+        if x_max > 0:
+            plt.axvspan(max(0, x_min), x_max, alpha=0.1, color="red")
+        if x_min < 0:
+            plt.axvspan(x_min, min(0, x_max), alpha=0.1, color="blue")
+
+        # Add value annotations within the plot area
+        if hasattr(plt, "_annotation_data"):
+            x_range = x_max - x_min
+            for data in plt._annotation_data:
+                y_pos = data["y_pos"]
+                min_change = data["min_change"]
+                median_change = data["median_change"]
+                max_change = data["max_change"]
+
+                # Position annotations inside the plot area
+                # Use the actual values' positions with small offsets
+                offset = x_range * 0.01  # Small offset for readability
+
+                # Position each annotation near its corresponding value
+                plt.text(
+                    max_change + offset,
+                    y_pos + 0.15,
+                    f"{max_change:.1f}%",
+                    fontsize=7,
+                    va="center",
+                    ha="left",
+                    color="darkred",
+                    weight="bold",
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        facecolor="white",
+                        alpha=0.8,
+                        edgecolor="none",
+                    ),
+                )
+                plt.text(
+                    median_change + offset,
+                    y_pos,
+                    f"{median_change:.1f}%",
+                    fontsize=7,
+                    va="center",
+                    ha="left",
+                    color="black",
+                    weight="bold",
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        facecolor="yellow",
+                        alpha=0.8,
+                        edgecolor="none",
+                    ),
+                )
+                plt.text(
+                    min_change + offset,
+                    y_pos - 0.15,
+                    f"{min_change:.1f}%",
+                    fontsize=7,
+                    va="center",
+                    ha="left",
+                    color="darkblue",
+                    weight="bold",
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        facecolor="white",
+                        alpha=0.8,
+                        edgecolor="none",
+                    ),
+                )
+
+            # Clean up the temporary data
+            delattr(plt, "_annotation_data")
+
+        # Set Y-axis labels (commands)
+        plt.yticks(positions, labels_with_count, fontsize=10)
+
+        # Customize the plot
+        title = f"Performance Change Distribution by Redis Command\nRedis is better ← | → Valkey is better"
+        plt.title(title, fontsize=14, fontweight="bold", pad=20)
+        plt.xlabel("Performance Change (%)", fontsize=12)
+        plt.ylabel("Redis Commands", fontsize=12)
+        plt.grid(True, alpha=0.3, axis="x")
+
+        # Add legend for box colors (at the bottom)
+        from matplotlib.patches import Patch
+
+        legend_elements = [
+            Patch(
+                facecolor="lightcoral", alpha=0.7, label="Positive % = Valkey is better"
+            ),
+            Patch(
+                facecolor="lightblue", alpha=0.7, label="Negative % = Redis is better"
+            ),
+        ]
+        plt.legend(
+            handles=legend_elements,
+            bbox_to_anchor=(0.5, -0.05),
+            loc="upper center",
+            fontsize=10,
+            ncol=2,
+        )
+
+        # Add statistics text
+        total_commands = len(command_change)
+        total_measurements = sum(len(changes) for changes in command_change.values())
+        plt.figtext(
+            0.02,
+            0.02,
+            f"Commands: {total_commands} | Total measurements: {total_measurements}",
+            fontsize=10,
+            style="italic",
+        )
+
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(output_filename, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        logging.info(f"Box plot saved to {output_filename}")
+
+        # Print summary statistics
+        logging.info("Command performance summary:")
+        for cmd in commands:
+            changes = command_change[cmd]
+            min_change = min(changes)
+            max_change = max(changes)
+            median_change = np.median(changes)
+            q1_change = np.percentile(changes, 25)
+            q3_change = np.percentile(changes, 75)
+            logging.info(
+                f"  {cmd}: min={min_change:.3f}%, max={max_change:.3f}%, median={median_change:.3f}% ({len(changes)} measurements)"
+            )
+
+        # Print quartile summary for boxplot readiness
+        logging.info("Command performance quartile summary (boxplot ready):")
+        for cmd in commands:
+            changes = command_change[cmd]
+            min_change = min(changes)
+            q1_change = np.percentile(changes, 25)
+            median_change = np.median(changes)
+            q3_change = np.percentile(changes, 75)
+            max_change = max(changes)
+            logging.info(
+                f"  {cmd}: min={min_change:.3f}%, Q1={q1_change:.3f}%, median={median_change:.3f}%, Q3={q3_change:.3f}%, max={max_change:.3f}%"
+            )
+
+    except Exception as e:
+        logging.error(f"Error generating box plot: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+
+def generate_command_performance_boxplot(comparison_data, output_filename):
+    """Generate box plot showing performance change distribution per command"""
+    if not MATPLOTLIB_AVAILABLE:
+        logging.error("matplotlib not available, cannot generate box plot")
+        return
+
+    try:
+        # Group data by command
+        command_data = {}
+
+        for test_name, pct_change in comparison_data:
+            command = extract_command_from_test_name(test_name)
+            if command not in command_data:
+                command_data[command] = []
+            command_data[command].append(pct_change)
+
+        if not command_data:
+            logging.warning("No command data found for box plot generation")
+            return
+
+        # Filter out commands with insufficient data
+        filtered_command_data = {
+            cmd: changes
+            for cmd, changes in command_data.items()
+            if len(changes) >= 1 and cmd != "UNKNOWN"
+        }
+
+        if not filtered_command_data:
+            logging.warning("No valid command data found for box plot generation")
+            return
+
+        # Use the new function with the filtered data
+        generate_command_performance_boxplot_from_command_data(
+            filtered_command_data, output_filename, command_group_regex=".*"
+        )
+
+    except Exception as e:
+        logging.error(f"Error generating box plot: {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 def get_line(

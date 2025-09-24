@@ -28,6 +28,7 @@ from redis_benchmarks_specification.__common__.env import (
     SPECS_PATH_SETUPS,
     STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    get_arch_specific_stream_name,
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
     REDIS_BINS_EXPIRE_SECS,
@@ -45,6 +46,69 @@ from redis_benchmarks_specification.__common__.package import (
 )
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
+
+
+def clear_pending_messages_for_builder_consumer(conn, builder_group, builder_id):
+    """Clear all pending messages for a specific builder consumer on startup"""
+    consumer_name = f"{builder_group}-proc#{builder_id}"
+
+    try:
+        # Get pending messages for this specific consumer
+        pending_info = conn.xpending_range(
+            STREAM_KEYNAME_GH_EVENTS_COMMIT,
+            builder_group,
+            min="-",
+            max="+",
+            count=1000,  # Get up to 1000 pending messages
+            consumername=consumer_name,
+        )
+
+        if pending_info:
+            message_ids = [msg["message_id"] for msg in pending_info]
+            logging.info(
+                f"Found {len(message_ids)} pending messages for builder consumer {consumer_name}. Clearing them..."
+            )
+
+            # Acknowledge all pending messages to clear them
+            ack_count = conn.xack(
+                STREAM_KEYNAME_GH_EVENTS_COMMIT, builder_group, *message_ids
+            )
+
+            logging.info(
+                f"Successfully cleared {ack_count} pending messages for builder consumer {consumer_name}"
+            )
+        else:
+            logging.info(
+                f"No pending messages found for builder consumer {consumer_name}"
+            )
+
+    except redis.exceptions.ResponseError as e:
+        if "NOGROUP" in str(e):
+            logging.info(f"Builder consumer group {builder_group} does not exist yet")
+        else:
+            logging.warning(f"Error clearing pending messages: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error clearing pending messages: {e}")
+
+
+def reset_builder_consumer_group_to_latest(conn, builder_group):
+    """Reset the builder consumer group position to only read new messages (skip old ones)"""
+    try:
+        # Set the consumer group position to '$' (latest) to skip all existing messages
+        conn.xgroup_setid(STREAM_KEYNAME_GH_EVENTS_COMMIT, builder_group, id="$")
+        logging.info(
+            f"Reset builder consumer group {builder_group} position to latest - will only process new messages"
+        )
+
+    except redis.exceptions.ResponseError as e:
+        if "NOGROUP" in str(e):
+            logging.info(f"Builder consumer group {builder_group} does not exist yet")
+        else:
+            logging.warning(f"Error resetting builder consumer group position: {e}")
+    except Exception as e:
+        logging.error(
+            f"Unexpected error resetting builder consumer group position: {e}"
+        )
 
 
 class ZipFileWithPermissions(ZipFile):
@@ -104,6 +168,12 @@ def main():
     )
     parser.add_argument("--github_token", type=str, default=PERFORMANCE_GH_TOKEN)
     parser.add_argument("--pull-request", type=str, default=None, nargs="?", const="")
+    parser.add_argument(
+        "--skip-clear-pending-on-startup",
+        default=False,
+        action="store_true",
+        help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
+    )
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -169,6 +239,19 @@ def main():
         builder_id = "1"
 
     builder_consumer_group_create(conn, builder_group)
+
+    # Clear pending messages and reset consumer group position by default (unless explicitly skipped)
+    if not args.skip_clear_pending_on_startup:
+        logging.info(
+            "Clearing pending messages and resetting builder consumer group position on startup (default behavior)"
+        )
+        clear_pending_messages_for_builder_consumer(conn, builder_group, builder_id)
+        reset_builder_consumer_group_to_latest(conn, builder_group)
+    else:
+        logging.info(
+            "Skipping pending message cleanup and builder consumer group reset as requested"
+        )
+
     if args.github_token is not None:
         logging.info("detected a github token. will update as much as possible!!! =)")
     previous_id = args.consumer_start_id
@@ -268,7 +351,32 @@ def builder_process_stream(
                     build_request_arch, arch
                 )
             )
+            # Acknowledge the message even though we're skipping it
+            ack_reply = conn.xack(
+                STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                streamId,
+            )
+            if type(ack_reply) == bytes:
+                ack_reply = ack_reply.decode()
+            if ack_reply == "1" or ack_reply == 1:
+                logging.info(
+                    "Successfully acknowledged build variation stream with id {} (filtered by arch).".format(
+                        streamId
+                    )
+                )
+            else:
+                logging.error(
+                    "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
+                        streamId, ack_reply
+                    )
+                )
             return previous_id, new_builds_count, build_stream_fields_arr
+        else:
+            logging.info(
+                "No arch info found on the stream. Using default arch {}.".format(arch)
+            )
+            build_request_arch = arch
 
         home = str(Path.home())
         if b"git_hash" in testDetails:
@@ -429,6 +537,105 @@ def builder_process_stream(
                 if b"server_name" in testDetails:
                     server_name = testDetails[b"server_name"].decode()
 
+                # Check if artifacts already exist before building
+                prefix = f"build_spec={build_spec}/github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
+
+                # Create a comprehensive build signature that includes all build-affecting parameters
+                import hashlib
+
+                build_signature_parts = [
+                    str(id),  # build config ID
+                    str(build_command),  # build command
+                    str(build_vars_str),  # environment variables
+                    str(compiler),  # compiler
+                    str(cpp_compiler),  # C++ compiler
+                    str(build_image),  # build image
+                    str(build_os),  # OS
+                    str(build_arch),  # architecture
+                    ",".join(sorted(build_artifacts)),  # artifacts list
+                ]
+                build_signature = hashlib.sha256(
+                    ":".join(build_signature_parts).encode()
+                ).hexdigest()[:16]
+
+                # Check if all artifacts already exist
+                all_artifacts_exist = True
+                artifact_keys = {}
+                for artifact in build_artifacts:
+                    bin_key = f"zipped:artifacts:{prefix}:{id}:{build_signature}:{artifact}.zip"
+                    artifact_keys[artifact] = bin_key
+                    if not conn.exists(bin_key):
+                        all_artifacts_exist = False
+                        break
+
+                if all_artifacts_exist:
+                    logging.info(
+                        f"Artifacts for {git_hash}:{id} with build signature {build_signature} already exist, reusing them"
+                    )
+                    # Skip build and reuse existing artifacts
+                    build_stream_fields, result = generate_benchmark_stream_request(
+                        id,
+                        conn,
+                        run_image,
+                        build_arch,
+                        testDetails,
+                        build_os,
+                        build_artifacts,
+                        build_command,
+                        build_config_metadata,
+                        build_image,
+                        build_vars_str,
+                        compiler,
+                        cpp_compiler,
+                        git_branch,
+                        git_hash,
+                        git_timestamp_ms,
+                        git_version,
+                        pull_request,
+                        None,  # redis_temporary_dir not needed for reuse
+                        tests_groups_regexp,
+                        tests_priority_lower_limit,
+                        tests_priority_upper_limit,
+                        tests_regexp,
+                        ".*",  # command_regexp - default to all commands
+                        use_git_timestamp,
+                        server_name,
+                        github_org,
+                        github_repo,
+                        artifact_keys,  # Pass existing artifact keys
+                    )
+                    # Add to benchmark stream even when reusing artifacts
+                    if result is True:
+                        arch_specific_stream = get_arch_specific_stream_name(build_arch)
+                        logging.info(
+                            f"Adding reused build work to architecture-specific stream: {arch_specific_stream}"
+                        )
+                        benchmark_stream_id = conn.xadd(
+                            arch_specific_stream, build_stream_fields
+                        )
+                        logging.info(
+                            "successfully reused build variant {} for redis git_sha {}. Stream id: {}".format(
+                                id, git_hash, benchmark_stream_id
+                            )
+                        )
+                        streamId_decoded = streamId.decode()
+                        benchmark_stream_id_decoded = benchmark_stream_id.decode()
+                        builder_list_completed = (
+                            f"builder:{streamId_decoded}:builds_completed"
+                        )
+                        conn.lpush(builder_list_completed, benchmark_stream_id_decoded)
+                        conn.expire(builder_list_completed, REDIS_BINS_EXPIRE_SECS)
+                        logging.info(
+                            f"Adding information of build->benchmark stream info in list {builder_list_completed}. Adding benchmark stream id: {benchmark_stream_id_decoded}"
+                        )
+                        build_stream_fields_arr.append(build_stream_fields)
+                        new_builds_count = new_builds_count + 1
+                    continue  # Skip to next build spec
+
+                logging.info(
+                    f"Building artifacts for {git_hash}:{id} with build signature {build_signature}"
+                )
+
                 build_start_datetime = datetime.datetime.utcnow()
                 logging.info(
                     "Using the following build command {}.".format(build_command)
@@ -502,14 +709,20 @@ def builder_process_stream(
                     tests_priority_lower_limit,
                     tests_priority_upper_limit,
                     tests_regexp,
+                    ".*",  # command_regexp - default to all commands
                     use_git_timestamp,
                     server_name,
                     github_org,
                     github_repo,
+                    None,  # existing_artifact_keys - None for new builds
                 )
                 if result is True:
+                    arch_specific_stream = get_arch_specific_stream_name(build_arch)
+                    logging.info(
+                        f"Adding new build work to architecture-specific stream: {arch_specific_stream}"
+                    )
                     benchmark_stream_id = conn.xadd(
-                        STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                        arch_specific_stream, build_stream_fields
                     )
                     logging.info(
                         "sucessfully built build variant {} for redis git_sha {}. Stream id: {}".format(
@@ -642,10 +855,12 @@ def generate_benchmark_stream_request(
     tests_priority_lower_limit=0,
     tests_priority_upper_limit=10000,
     tests_regexp=".*",
+    command_regexp=".*",
     use_git_timestamp=False,
     server_name="redis",
     github_org="redis",
     github_repo="redis",
+    existing_artifact_keys=None,
 ):
     build_stream_fields = {
         "id": id,
@@ -658,6 +873,7 @@ def generate_benchmark_stream_request(
         "tests_priority_upper_limit": tests_priority_upper_limit,
         "tests_priority_lower_limit": tests_priority_lower_limit,
         "tests_groups_regexp": tests_groups_regexp,
+        "command_regexp": command_regexp,
         "server_name": server_name,
         "github_org": github_org,
         "github_repo": github_repo,
@@ -688,21 +904,50 @@ def generate_benchmark_stream_request(
     if git_timestamp_ms is not None:
         build_stream_fields["git_timestamp_ms"] = git_timestamp_ms
 
-    prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
-    for artifact in build_artifacts:
-        bin_key = f"zipped:artifacts:{prefix}:{id}:{artifact}.zip"
-        if artifact == "redisearch.so":
-            bin_artifact = open(
-                f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}",
-                "rb",
-            ).read()
-        else:
-            bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
-        bin_artifact_len = len(bytes(bin_artifact))
-        assert bin_artifact_len > 0
-        conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
-        build_stream_fields[artifact] = bin_key
-        build_stream_fields["{}_len_bytes".format(artifact)] = bin_artifact_len
+    if existing_artifact_keys is not None:
+        # Use existing artifact keys (for reuse case)
+        for artifact in build_artifacts:
+            bin_key = existing_artifact_keys[artifact]
+            build_stream_fields[artifact] = bin_key
+            # Get the length from the existing artifact
+            bin_artifact_len = conn.strlen(bin_key)
+            build_stream_fields["{}_len_bytes".format(artifact)] = bin_artifact_len
+    else:
+        # Build new artifacts and store them
+        prefix = f"github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
+
+        # Create build signature for new artifacts
+        import hashlib
+
+        build_signature_parts = [
+            str(id),  # build config ID
+            str(build_command),  # build command
+            str(build_vars_str),  # environment variables
+            str(compiler),  # compiler
+            str(cpp_compiler),  # C++ compiler
+            str(build_image),  # build image
+            str(build_os),  # OS
+            str(build_arch),  # architecture
+            ",".join(sorted(build_artifacts)),  # artifacts list
+        ]
+        build_signature = hashlib.sha256(
+            ":".join(build_signature_parts).encode()
+        ).hexdigest()[:16]
+
+        for artifact in build_artifacts:
+            bin_key = f"zipped:artifacts:{prefix}:{id}:{build_signature}:{artifact}.zip"
+            if artifact == "redisearch.so":
+                bin_artifact = open(
+                    f"{redis_temporary_dir}modules/redisearch/src/bin/linux-x64-release/search-community/{artifact}",
+                    "rb",
+                ).read()
+            else:
+                bin_artifact = open(f"{redis_temporary_dir}src/{artifact}", "rb").read()
+            bin_artifact_len = len(bytes(bin_artifact))
+            assert bin_artifact_len > 0
+            conn.set(bin_key, bytes(bin_artifact), ex=REDIS_BINS_EXPIRE_SECS)
+            build_stream_fields[artifact] = bin_key
+            build_stream_fields["{}_len_bytes".format(artifact)] = bin_artifact_len
     result = True
     if b"platform" in testDetails:
         build_stream_fields["platform"] = testDetails[b"platform"]
