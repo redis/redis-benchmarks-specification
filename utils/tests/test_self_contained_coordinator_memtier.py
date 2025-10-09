@@ -248,6 +248,7 @@ def test_self_contained_coordinator_dockerhub_preload():
                 build_arch,
                 testDetails,
                 build_os,
+                existing_artifact_keys=None,
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
@@ -1317,6 +1318,7 @@ def test_self_contained_coordinator_duplicated_ts():
                     build_os,
                     git_timestamp_ms=timestamp,
                     use_git_timestamp=True,
+                    existing_artifact_keys=None,
                 )
                 build_stream_fields["mnt_point"] = ""
                 if result is True:

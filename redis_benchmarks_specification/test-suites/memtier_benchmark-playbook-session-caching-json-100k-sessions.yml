@@ -1,0 +1,109 @@
+version: 0.4
+name: memtier_benchmark-session-caching-json-100k-sessions
+description: |
+  Runs memtier_benchmark to simulate a session caching workload for a SaaS application.
+  This benchmark focuses exclusively on JSON-based session storage, where each session
+  is stored as a Redis JSON document (`session:<id>`) with fields like user ID, timestamps, device info,
+  and metadata (total ~400–600B).
+
+  The benchmark models a typical read-heavy cache usage pattern, with an approximate
+  **read:write ratio of 90:10**, reflecting session retrievals and infrequent updates.
+
+  Command groups:
+    - Session cache reads (`JSON.GET`): ~90%
+    - Session cache writes (`JSON.SET`): ~10%
+
+  To better approximate real-world access patterns, the benchmark uses a **Zipfian key distribution**
+  (`--command-key-pattern=Z`). This simulates **skewed access** where a small subset of sessions (hot keys)
+  receives a majority of reads — a common pattern in production workloads.
+
+  While Zipfian is technically a power-law distribution, it effectively mimics **Poisson-like behavior**
+  in large-scale systems, where access frequency is uneven but statistically predictable.
+  This access skew mirrors real-life scenarios such as:
+    - Frequently accessed or "sticky" user sessions
+    - Popular user accounts or active devices
+    - Hot caches for trending or recently used resources
+
+  Using Zipfian distribution allows this benchmark to capture **contention**, **cache pressure**, and
+  **read amplification** effects that occur in real SaaS applications under load.
+
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    local seed = 12345
+    math.randomseed(seed)
+    local now = tonumber(redis.call('TIME')[1])
+    local function rand_str(len)
+      local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      local res = ''
+      for i = 1, len do
+        local idx = math.random(#chars)
+        res = res .. chars:sub(idx, idx)
+      end
+      return res
+    end
+    for i = 1, 100000 do
+      local session_id = 'session:' .. i
+      local user_id = 'user-' .. i
+      local org_id = 'org-' .. i
+      local session_data = {
+        userId = user_id,
+        organizationId = org_id,
+        role = 'member',
+        createdAt = tostring(now - math.random(3600)),
+        lastAccessed = tostring(now),
+        ipAddress = '192.168.1.' .. (i % 255),
+        device = 'device-' .. rand_str(8),
+        authMethod = 'password',
+        status = 'active',
+        metadata = rand_str(200 + (i % 100))
+      }
+      redis.call('JSON.SET', session_id, '$', cjson.encode(session_data))
+    end
+    return 'OK'
+
+tested-groups:
+- json
+
+tested-commands:
+- json.get
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --data-size-range=400-600
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.GET session:__key__"
+    --command-key-pattern=Z
+    --command-ratio=90
+    --command="JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-__key__\\\",\\\"organizationId\\\":\\\"org-__key__\\\",\\\"role\\\":\\\"admin\\\",\\\"email\\\":\\\"user__key__@example.com\\\",\\\"name\\\":\\\"User __key__\\\",\\\"permissions\\\":[\\\"read\\\",\\\"write\\\"],\\\"lastActivity\\\":__key__,\\\"ipAddress\\\":\\\"192.168.1.__key__\\\",\\\"userAgent\\\":\\\"Mozilla/5.0\\\",\\\"createdAt\\\":__key__}\""
+    --command-key-pattern=Z
+    --command-ratio=10
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

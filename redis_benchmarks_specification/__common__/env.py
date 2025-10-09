@@ -32,6 +32,20 @@ STREAM_KEYNAME_NEW_BUILD_EVENTS = os.getenv(
     "STREAM_KEYNAME_NEW_BUILD_EVENTS", "oss:api:gh/redis/redis/builds"
 )
 
+
+# Function to get architecture-specific build events stream name
+def get_arch_specific_stream_name(arch):
+    """Get architecture-specific stream name for build events"""
+    base_stream = STREAM_KEYNAME_NEW_BUILD_EVENTS
+    if arch in ["amd64", "x86_64"]:
+        return f"{base_stream}:amd64"
+    elif arch in ["arm64", "aarch64"]:
+        return f"{base_stream}:arm64"
+    else:
+        # Fallback to base stream for unknown architectures
+        return base_stream
+
+
 STREAM_GH_NEW_BUILD_RUNNERS_CG = os.getenv(
     "STREAM_GH_NEW_BUILD_RUNNERS_CG", "runners-cg:redis/redis/commits"
 )

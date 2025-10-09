@@ -1,3 +1,6 @@
+# Import warning suppression first
+from redis_benchmarks_specification.__common__.suppress_warnings import *
+
 import datetime
 import json
 import logging
@@ -12,27 +15,32 @@ import traceback
 from pathlib import Path
 import re
 import tqdm
+from urllib.parse import urlparse
 import docker
 import redis
 from docker.models.containers import Container
 from pytablewriter import CsvTableWriter, MarkdownTableWriter
 from redisbench_admin.profilers.profilers_local import (
     check_compatible_system_and_kernel_and_prepare_profile,
-    local_profilers_platform_checks,
-    profilers_start_if_required,
-    profilers_stop_if_required,
 )
 from redisbench_admin.run.common import (
     get_start_time_vars,
     merge_default_and_config_metrics,
     prepare_benchmark_parameters,
-    dbconfig_keyspacelen_check,
 )
 
 from redis_benchmarks_specification.__common__.runner import (
     export_redis_metrics,
 )
 
+from redisbench_admin.profilers.profilers_local import (
+    local_profilers_platform_checks,
+    profilers_start_if_required,
+    profilers_stop_if_required,
+)
+from redisbench_admin.run.common import (
+    dbconfig_keyspacelen_check,
+)
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
 from redisbench_admin.utils.benchmark_config import (
@@ -88,6 +96,166 @@ def signal_handler(signum, frame):
         logging.info("Ctrl+C detected again. Force exiting...")
         print("\nForce exiting...")
         sys.exit(1)
+
+
+def parse_redis_uri(uri):
+    """
+    Parse Redis URI and extract connection parameters.
+
+    Args:
+        uri (str): Redis URI in format redis://user:password@host:port/dbnum
+                   or rediss://user:password@host:port/dbnum for TLS
+
+    Returns:
+        dict: Dictionary containing parsed connection parameters
+    """
+    if not uri:
+        return {}
+
+    try:
+        parsed = urlparse(uri)
+
+        # Extract connection parameters
+        params = {}
+
+        # Host (required)
+        if parsed.hostname:
+            params["host"] = parsed.hostname
+
+        # Port (optional, defaults to 6379)
+        if parsed.port:
+            params["port"] = parsed.port
+
+        # Username and password
+        if parsed.username:
+            params["username"] = parsed.username
+        if parsed.password:
+            params["password"] = parsed.password
+
+        # Database number
+        if parsed.path and len(parsed.path) > 1:  # path starts with '/'
+            try:
+                params["db"] = int(parsed.path[1:])  # Remove leading '/'
+            except ValueError:
+                logging.warning(f"Invalid database number in URI: {parsed.path[1:]}")
+
+        # TLS detection
+        if parsed.scheme == "rediss":
+            params["tls_enabled"] = True
+        elif parsed.scheme == "redis":
+            params["tls_enabled"] = False
+        else:
+            logging.warning(
+                f"Unknown scheme in URI: {parsed.scheme}. Assuming non-TLS."
+            )
+            params["tls_enabled"] = False
+
+        logging.info(
+            f"Parsed Redis URI: host={params.get('host', 'N/A')}, "
+            f"port={params.get('port', 'N/A')}, "
+            f"username={params.get('username', 'N/A')}, "
+            f"db={params.get('db', 'N/A')}, "
+            f"tls={params.get('tls_enabled', False)}"
+        )
+
+        return params
+
+    except Exception as e:
+        logging.error(f"Failed to parse Redis URI '{uri}': {e}")
+        return {}
+
+
+def validate_benchmark_metrics(
+    results_dict, test_name, benchmark_config=None, default_metrics=None
+):
+    """
+    Validate benchmark metrics to ensure they contain reasonable values.
+    Fails the test if critical metrics indicate something is wrong.
+
+    Args:
+        results_dict: Dictionary containing benchmark results
+        test_name: Name of the test being validated
+        benchmark_config: Benchmark configuration (unused, for compatibility)
+        default_metrics: Default metrics configuration (unused, for compatibility)
+
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        # Define validation rules
+        throughput_patterns = [
+            "ops/sec",
+            "qps",
+            "totals.ops/sec",
+            "all_stats.totals.ops/sec",
+        ]
+
+        latency_patterns = ["p50", "p95", "p99", "p999", "percentile"]
+
+        validation_errors = []
+
+        def check_nested_dict(data, path=""):
+            """Recursively check nested dictionary for metrics"""
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    current_path = f"{path}.{key}" if path else key
+                    check_nested_dict(value, current_path)
+            elif isinstance(data, (int, float)):
+                metric_path_lower = path.lower()
+
+                # Skip Waits metrics as they can legitimately be 0
+                if "waits" in metric_path_lower:
+                    return
+
+                # Skip general latency metrics that can legitimately be 0
+                # Only validate specific percentile latencies (p50, p95, etc.)
+                if any(
+                    pattern in metric_path_lower
+                    for pattern in [
+                        "average latency",
+                        "totals.latency",
+                        "all_stats.totals.latency",
+                    ]
+                ):
+                    return
+
+                # Check throughput metrics
+                for pattern in throughput_patterns:
+                    if pattern in metric_path_lower:
+                        if data <= 10:  # Below 10 QPS threshold
+                            validation_errors.append(
+                                f"Throughput metric '{path}' has invalid value: {data} "
+                                f"(below 10 QPS threshold)"
+                            )
+                        break
+
+                # Check latency metrics
+                for pattern in latency_patterns:
+                    if pattern in metric_path_lower:
+                        if data <= 0.0:  # Invalid latency
+                            validation_errors.append(
+                                f"Latency metric '{path}' has invalid value: {data} "
+                                f"(should be > 0.0)"
+                            )
+                        break
+
+        # Validate the results dictionary
+        check_nested_dict(results_dict)
+
+        if validation_errors:
+            error_msg = f"Test {test_name} failed metric validation:\n" + "\n".join(
+                validation_errors
+            )
+            logging.error(error_msg)
+            return False, error_msg
+
+        logging.info(f"Test {test_name} passed metric validation")
+        return True, None
+
+    except Exception as e:
+        logging.warning(f"Error during metric validation for test {test_name}: {e}")
+        # Don't fail the test if validation itself fails
+        return True, None
 
 
 def run_local_command_with_timeout(command_str, timeout_seconds, description="command"):
@@ -1316,14 +1484,15 @@ def process_self_contained_coordinator_stream(
     dry_run_include_preload = args.dry_run_include_preload
     defaults_filename = args.defaults_filename
     override_test_runs = args.override_test_runs
-    (
-        _,
-        _,
-        default_metrics,
-        _,
-        _,
-        _,
-    ) = get_defaults(defaults_filename)
+    get_defaults_result = get_defaults(defaults_filename)
+    # Handle variable number of return values from get_defaults
+    if len(get_defaults_result) >= 3:
+        default_metrics = get_defaults_result[2]
+    else:
+        default_metrics = []
+        logging.warning(
+            "get_defaults returned fewer values than expected, using empty default_metrics"
+        )
 
     # For memory comparison mode, analyze datasets before starting
     if memory_comparison_only:
@@ -1390,6 +1559,31 @@ def process_self_contained_coordinator_stream(
                 logging.info(f"Exit requested by user. Skipping test {test_name}.")
                 break
 
+            # Filter by command regex if specified
+            if hasattr(args, "commands_regex") and args.commands_regex != ".*":
+                if "tested-commands" in benchmark_config:
+                    tested_commands = benchmark_config["tested-commands"]
+                    command_regex_compiled = re.compile(
+                        args.commands_regex, re.IGNORECASE
+                    )
+                    command_match = False
+                    for command in tested_commands:
+                        if re.search(command_regex_compiled, command):
+                            command_match = True
+                            logging.info(
+                                f"Including test {test_name} (matches command: {command})"
+                            )
+                            break
+                    if not command_match:
+                        logging.info(
+                            f"Skipping test {test_name} (commands: {tested_commands} do not match regex: {args.commands_regex})"
+                        )
+                        continue
+                else:
+                    logging.warning(
+                        f"Test {test_name} does not contain 'tested-commands' property. Cannot filter by commands."
+                    )
+
             if tls_enabled:
                 test_name = test_name + "-tls"
                 logging.info(
@@ -1418,35 +1612,80 @@ def process_self_contained_coordinator_stream(
                     build_variant_name = "NA"
                     git_branch = None
 
-                    port = args.db_server_port
-                    host = args.db_server_host
+                    # Parse URI if provided, otherwise use individual arguments
+                    if hasattr(args, "uri") and args.uri:
+                        uri_params = parse_redis_uri(args.uri)
+                        port = uri_params.get("port", args.db_server_port)
+                        host = uri_params.get("host", args.db_server_host)
+                        password = uri_params.get("password", args.db_server_password)
+                        # Override TLS setting from URI if specified
+                        if "tls_enabled" in uri_params:
+                            tls_enabled = uri_params["tls_enabled"]
+                            if tls_enabled:
+                                test_name = test_name + "-tls"
+                                logging.info(
+                                    "TLS enabled via URI. Appending -tls to testname."
+                                )
+                        # Note: username and db are handled by redis-py automatically when using URI
+                        logging.info(
+                            f"Using connection parameters from URI: host={host}, port={port}, tls={tls_enabled}"
+                        )
+                    else:
+                        port = args.db_server_port
+                        host = args.db_server_host
+                        password = args.db_server_password
+                        logging.info(
+                            f"Using individual connection arguments: host={host}, port={port}"
+                        )
+
                     unix_socket = args.unix_socket
-                    password = args.db_server_password
                     oss_cluster_api_enabled = args.cluster_mode
                     ssl_cert_reqs = "required"
                     if tls_skip_verify:
                         ssl_cert_reqs = None
 
-                    # Build Redis connection parameters
-                    redis_params = {
-                        "host": host,
-                        "port": port,
-                        "password": password,
-                        "ssl": tls_enabled,
-                        "ssl_cert_reqs": ssl_cert_reqs,
-                        "ssl_check_hostname": False,
-                    }
+                    # Create Redis connection - use URI if provided, otherwise use individual parameters
+                    if hasattr(args, "uri") and args.uri:
+                        # Use URI connection (redis-py handles URI parsing automatically)
+                        redis_params = {}
 
-                    # Only add SSL certificate parameters if they are provided
-                    if tls_enabled:
-                        if tls_key is not None and tls_key != "":
-                            redis_params["ssl_keyfile"] = tls_key
-                        if tls_cert is not None and tls_cert != "":
-                            redis_params["ssl_certfile"] = tls_cert
-                        if tls_cacert is not None and tls_cacert != "":
-                            redis_params["ssl_ca_certs"] = tls_cacert
+                        # Only add SSL parameters if TLS is enabled
+                        if tls_enabled:
+                            redis_params["ssl_cert_reqs"] = ssl_cert_reqs
+                            redis_params["ssl_check_hostname"] = False
+                            if tls_key is not None and tls_key != "":
+                                redis_params["ssl_keyfile"] = tls_key
+                            if tls_cert is not None and tls_cert != "":
+                                redis_params["ssl_certfile"] = tls_cert
+                            if tls_cacert is not None and tls_cacert != "":
+                                redis_params["ssl_ca_certs"] = tls_cacert
 
-                    r = redis.StrictRedis(**redis_params)
+                        r = redis.StrictRedis.from_url(args.uri, **redis_params)
+                        logging.info(f"Connected to Redis using URI: {args.uri}")
+                    else:
+                        # Use individual connection parameters
+                        redis_params = {
+                            "host": host,
+                            "port": port,
+                            "password": password,
+                            "ssl": tls_enabled,
+                            "ssl_cert_reqs": ssl_cert_reqs,
+                            "ssl_check_hostname": False,
+                        }
+
+                        # Only add SSL certificate parameters if they are provided
+                        if tls_enabled:
+                            if tls_key is not None and tls_key != "":
+                                redis_params["ssl_keyfile"] = tls_key
+                            if tls_cert is not None and tls_cert != "":
+                                redis_params["ssl_certfile"] = tls_cert
+                            if tls_cacert is not None and tls_cacert != "":
+                                redis_params["ssl_ca_certs"] = tls_cacert
+
+                        r = redis.StrictRedis(**redis_params)
+                        logging.info(
+                            f"Connected to Redis using individual parameters: {host}:{port}"
+                        )
                     setup_name = "oss-standalone"
                     r.ping()
 
@@ -1703,7 +1942,7 @@ def process_self_contained_coordinator_stream(
                                     benchmark_tool_global=benchmark_tool_global,
                                 )
                                 continue
-                            logging.info(
+                            logging.debug(
                                 "Test {} priority ({}) is within the priority limit [{},{}]".format(
                                     test_name,
                                     priority,
@@ -2600,6 +2839,23 @@ def process_self_contained_coordinator_stream(
                             "Using aggregated JSON results from multi-client execution"
                         )
                         results_dict = json.loads(client_container_stdout)
+
+                        # Validate benchmark metrics
+                        is_valid, validation_error = validate_benchmark_metrics(
+                            results_dict, test_name, benchmark_config, default_metrics
+                        )
+                        if not is_valid:
+                            logging.error(
+                                f"Test {test_name} failed metric validation: {validation_error}"
+                            )
+                            test_result = False
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=full_result_path,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                         # Print results table for multi-client
                         print_results_table_stdout(
                             benchmark_config,
@@ -2662,6 +2918,23 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
+
+                        # Validate benchmark metrics
+                        is_valid, validation_error = validate_benchmark_metrics(
+                            results_dict, test_name, benchmark_config, default_metrics
+                        )
+                        if not is_valid:
+                            logging.error(
+                                f"Test {test_name} failed metric validation: {validation_error}"
+                            )
+                            test_result = False
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=full_result_path,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                         print_results_table_stdout(
                             benchmark_config,
                             default_metrics,
