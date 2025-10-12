@@ -26,7 +26,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 180 --command "PFMERGE merged memtier-1 memtier-2 memtier-3" -c 50 -t 4 --hide-histogram
+  arguments: --test-time 60 --command "PFMERGE merged memtier-1 memtier-2 memtier-3" -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
