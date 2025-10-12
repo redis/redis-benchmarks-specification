@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-multiple-hll-pfmerge-100B-values
+description: Runs memtier_benchmark, pre-loading multiple HyperLogLog keys with 100B sized random elements using PFADD, then testing PFMERGE performance by merging these pre-loaded HLLs.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 3
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --random-data --command "PFADD __key__ __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum 3 -n 30000 -c 1 -t 1 --hide-histogram'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- hyperloglog
+tested-commands:
+- pfmerge
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 60 --command "PFMERGE merged memtier-1 memtier-2 memtier-3" -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 62
