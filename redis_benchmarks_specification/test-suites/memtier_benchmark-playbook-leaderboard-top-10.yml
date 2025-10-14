@@ -1,0 +1,68 @@
+version: 0.4
+name: memtier_benchmark-playbook-leaderboard-top-10
+description: Runs memtier_benchmark, for a keyspace length of 10K keys loading/querying ZSETs. Esports/live events with constant score changes, occasional bursts of reads. writes ≈ 60, reads ≈ 40%.
+  with encoding:listpack with 10 elements.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    local seed = 12345
+    math.randomseed(seed)
+    local function rand_str(len)
+      local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      local res = ''
+      for i = 1, len do
+        local idx = math.random(#chars)
+        res = res .. chars:sub(idx, idx)
+      end
+      return res
+    end
+    -- Pre-generate 10 score-member pairs
+    local score_member_pairs = {}
+    for i = 1, 10 do
+      local member = rand_str(5 + (i % 100))
+      local score = math.random()
+      table.insert(score_member_pairs, score)
+      table.insert(score_member_pairs, member)
+    end
+    -- Use the same pairs for all keys
+    for k = 1, 10000 do
+      local key = tostring(k)
+      local args = {'ZADD', key}
+      for i = 1, #score_member_pairs do
+        table.insert(args, score_member_pairs[i])
+      end
+      redis.call(unpack(args))
+    end
+    
+    return 'OK'
+
+
+tested-commands:
+- zadd
+- zrevrange
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 --key-prefix "" -c 50 -t 4 --command "ZADD __key__ 0.3479570710789212 n4mST4 0.1269842722113171 1zmQGj7 0.7361287822649483 axpOHLr4 0.49967623571850184 hMq6ApPeC 0.12911917880602142 b2OI9vcs9B 0.6721155451015176 4xbl6DLBgTh 0.3228822230933617 c7bcAV6IMOx3 0.17765798614251332 ACJdDg0xcUFoq 0.8334002894504928 dxdBdPrbPZcOJZ 0.5262324435292894 tpesg0ALZOzbgTM" --random-data 
+    --command-key-pattern="R" --command-ratio 60 --command "ZREVRANGE __key__ 0 1 WITHSCORES" --command-key-pattern="R" --command-ratio 40
+    --key-minimum=1 --key-maximum 10000 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+tested-groups:
+- sorted-set
+priority: 12
