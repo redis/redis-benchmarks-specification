@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-playbook-leaderboard-top-1000
 description: Runs memtier_benchmark, for a keyspace length of 10K keys loading/querying ZSETs. Esports/live events with constant score changes, occasional bursts of reads. writes ≈ 60, reads ≈ 40%.
-  with encoding:listpack with 1000 elements.
+  with encoding:skiplist with 1000 elements.
 
 dbconfig:
   configuration-parameters:
@@ -34,11 +34,11 @@ dbconfig:
     -- Use the same pairs for all keys
     for k = 1, 10000 do
       local key = tostring(k)
-      local args = {'ZADD', key}
+      local args = {key}
       for i = 1, #score_member_pairs do
         table.insert(args, score_member_pairs[i])
       end
-      redis.call(unpack(args))
+      redis.call('ZADD', unpack(args))
     end
     
     return 'OK'

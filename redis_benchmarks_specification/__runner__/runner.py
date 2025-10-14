@@ -3283,7 +3283,13 @@ def used_memory_check(
 ):
     used_memory = 0
     for conn in redis_conns:
-        used_memory = used_memory + conn.info("memory")["used_memory"]
+        info_mem = conn.info("memory")
+        if "used_memory" in info_mem:
+            used_memory = used_memory + info_mem["used_memory"]
+        else:
+            logging.warning(
+                "used_memory not present in Redis memory info. Cannot enforce memory checks."
+            )
     used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
     logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
     if used_memory > benchmark_required_memory:
