@@ -46,6 +46,7 @@ dbconfig:
 
 tested-commands:
 - zadd
+- zrevrange
 redis-topologies:
 - oss-standalone
 build-variants:
