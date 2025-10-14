@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-playbook-leaderboard-top-1000
 description: Runs memtier_benchmark, for a keyspace length of 10K keys loading/querying ZSETs. Esports/live events with constant score changes, occasional bursts of reads. writes ≈ 60, reads ≈ 40%.
-  with encoding:listpack with 1000 elements.
+  with encoding:skiplist with 1000 elements.
 
 dbconfig:
   configuration-parameters:
