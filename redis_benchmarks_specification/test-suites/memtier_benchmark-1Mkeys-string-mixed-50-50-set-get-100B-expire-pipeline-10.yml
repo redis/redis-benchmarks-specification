@@ -36,7 +36,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: '"--data-size" "100" --distinct-client-seed --command "SET __key__ __data__
-    EX 10" --command "GET __key__" --key-pattern R:R --key-minimum=1 --key-maximum
+    EX 10" --command "GET __key__" --command-key-pattern R --key-minimum=1 --key-maximum
     1000000 --test-time 180 -c 25 -t 4 --hide-histogram --pipeline 10'
   resources:
     requests:
