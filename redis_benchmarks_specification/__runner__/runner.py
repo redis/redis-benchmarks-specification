@@ -1686,7 +1686,7 @@ def process_self_contained_coordinator_stream(
                         logging.info(
                             f"Connected to Redis using individual parameters: {host}:{port}"
                         )
-                    setup_name = "oss-standalone"
+                    setup_name = topology_spec_name
                     r.ping()
 
                     # Auto-detect server information if not explicitly provided
@@ -2440,7 +2440,7 @@ def process_self_contained_coordinator_stream(
                         start_time_str,
                         git_hash,
                         test_name,
-                        setup_type,
+                        setup_name,
                     )
                     logging.info(
                         "Will store benchmark json output to local file {}".format(
