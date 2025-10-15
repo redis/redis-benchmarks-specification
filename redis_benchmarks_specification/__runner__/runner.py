@@ -2872,6 +2872,7 @@ def process_self_contained_coordinator_stream(
                             test_name,
                             results_matrix,
                             redis_conns,
+                            setup_name,
                         )
                     else:
                         # Single client - read from file as usual
@@ -2950,6 +2951,7 @@ def process_self_contained_coordinator_stream(
                             test_name,
                             results_matrix,
                             redis_conns,
+                            setup_name,
                         )
 
                     dataset_load_duration_seconds = 0
@@ -3525,6 +3527,7 @@ def prepare_overall_total_test_results(
     test_name,
     overall_results_matrix,
     redis_conns=None,
+    topology=None,
 ):
     # check which metrics to extract
     (
@@ -3560,8 +3563,13 @@ def prepare_overall_total_test_results(
 
         return x[0]  # Use original path
 
+    # Include topology in the test name if provided
+    test_name_with_topology = test_name
+    if topology:
+        test_name_with_topology = f"{topology}-{test_name}"
+
     current_test_results_matrix = [
-        [test_name, get_overall_display_name(x), f"{x[3]:.3f}"]
+        [test_name_with_topology, get_overall_display_name(x), f"{x[3]:.3f}"]
         for x in current_test_results_matrix
     ]
     overall_results_matrix.extend(current_test_results_matrix)
