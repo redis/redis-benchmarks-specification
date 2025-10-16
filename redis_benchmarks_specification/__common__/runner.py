@@ -275,6 +275,7 @@ def export_redis_metrics(
         by_variants["by.branch/{}".format(tf_github_branch)] = {
             "branch": tf_github_branch
         }
+    print(f"DEBUG export_redis_metrics: artifact_version={artifact_version!r} (type={type(artifact_version)}), git_hash={git_hash!r}, tf_github_branch={tf_github_branch!r}")
     logging.info(
         f"export_redis_metrics: artifact_version={artifact_version} (type={type(artifact_version)}), git_hash={git_hash}, tf_github_branch={tf_github_branch}"
     )
@@ -286,8 +287,10 @@ def export_redis_metrics(
         by_variants["by.version/{}".format(artifact_version)] = {
             "version": artifact_version
         }
+        print(f"DEBUG: Created by.version variant for version: {artifact_version!r}")
         logging.info(f"Created by.version variant for version: {artifact_version}")
     else:
+        print(f"DEBUG: Skipping by.version - artifact_version={artifact_version!r}")
         logging.warning(
             f"Skipping by.version variant creation: artifact_version={artifact_version}"
         )
