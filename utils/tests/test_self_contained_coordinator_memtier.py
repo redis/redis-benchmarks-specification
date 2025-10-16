@@ -271,7 +271,9 @@ def test_self_contained_coordinator_dockerhub_preload():
             assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -399,7 +401,9 @@ def test_self_contained_coordinator_dockerhub():
             assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -527,7 +531,9 @@ def test_self_contained_coordinator_dockerhub_iothreads():
             assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -663,7 +669,9 @@ def test_self_contained_coordinator_dockerhub_valkey():
             assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -799,7 +807,9 @@ def test_dockerhub_via_cli():
         assert conn.xlen(arch_specific_stream) > 0
         running_platform = "fco-ThinkPad-T490"
 
-        build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+        build_runners_consumer_group_create(
+            conn, running_platform, arch=build_arch, id="0"
+        )
         datasink_conn = redis.StrictRedis(port=db_port)
         docker_client = docker.from_env()
         home = str(Path.home())
@@ -931,7 +941,9 @@ def test_dockerhub_via_cli_airgap():
         assert conn.xlen(arch_specific_stream) > 0
         running_platform = "fco-ThinkPad-T490"
 
-        build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+        build_runners_consumer_group_create(
+            conn, running_platform, arch=build_arch, id="0"
+        )
         datasink_conn = redis.StrictRedis(port=db_port)
         docker_client = docker.from_env()
         home = str(Path.home())
@@ -1355,7 +1367,9 @@ def test_self_contained_coordinator_duplicated_ts():
             # process the 2 stream requests
             for _ in range(0, 2):
 
-                build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
+                build_runners_consumer_group_create(
+                    conn, running_platform, arch=build_arch, id="0"
+                )
                 datasink_conn = redis.StrictRedis(port=db_port)
                 docker_client = docker.from_env()
                 home = str(Path.home())
