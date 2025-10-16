@@ -334,7 +334,7 @@ def test_self_contained_coordinator_dockerhub_preload():
             assert result == True
             assert number_processed_streams == 1
             assert num_process_test_suites == 1
-            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-generic-touch-pipeline-10/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-generic-touch-pipeline-10/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone/memory_maxmemory"
             assert datasink_conn.exists(by_version_key)
             rts = datasink_conn.ts()
             # check we have by version metrics
@@ -465,7 +465,7 @@ def test_self_contained_coordinator_dockerhub():
             assert result == True
             assert number_processed_streams == 1
             assert num_process_test_suites == 1
-            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone/memory_maxmemory"
             assert datasink_conn.exists(by_version_key)
             rts = datasink_conn.ts()
             # check we have by version metrics
@@ -596,7 +596,7 @@ def test_self_contained_coordinator_dockerhub_iothreads():
             assert result == True
             assert number_processed_streams == 1
             assert num_process_test_suites == 1
-            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone-02-io-threads/memory_maxmemory"
+            by_version_key = f"ci.benchmarks.redis/ci/redis/redis/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone-02-io-threads/memory_maxmemory"
             assert datasink_conn.exists(by_version_key)
             rts = datasink_conn.ts()
             # check we have by version metrics
@@ -735,7 +735,7 @@ def test_self_contained_coordinator_dockerhub_valkey():
             assert result == True
             assert number_processed_streams == 1
             assert num_process_test_suites == 1
-            by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+            by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone/memory_maxmemory"
             assert datasink_conn.exists(by_version_key)
             rts = datasink_conn.ts()
             # check we have by version metrics
@@ -873,7 +873,7 @@ def test_dockerhub_via_cli():
         assert result == True
         assert number_processed_streams == 1
         assert num_process_test_suites == 1
-        by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+        by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone/memory_maxmemory"
         assert datasink_conn.exists(by_version_key)
         rts = datasink_conn.ts()
         # check we have by version metrics
@@ -1007,7 +1007,7 @@ def test_dockerhub_via_cli_airgap():
         assert result == True
         assert number_processed_streams == 1
         assert num_process_test_suites == 1
-        by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/oss-standalone/memory_maxmemory"
+        by_version_key = f"ci.benchmarks.redis/ci/{github_org}/{github_repo}/memtier_benchmark-1Mkeys-load-string-with-10B-values/by.version/{redis_version}/benchmark_end/{running_platform}/oss-standalone/memory_maxmemory"
         assert datasink_conn.exists(by_version_key)
         rts = datasink_conn.ts()
         # check we have by version metrics
