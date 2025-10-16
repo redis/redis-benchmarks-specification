@@ -250,6 +250,7 @@ def test_self_contained_coordinator_dockerhub_preload():
                 testDetails,
                 build_os,
                 existing_artifact_keys=None,
+                git_version=redis_version,
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
@@ -380,6 +381,7 @@ def test_self_contained_coordinator_dockerhub():
                 build_arch,
                 testDetails,
                 build_os,
+                git_version=redis_version,
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
@@ -510,6 +512,7 @@ def test_self_contained_coordinator_dockerhub_iothreads():
                 build_arch,
                 testDetails,
                 build_os,
+                git_version=redis_version,
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
@@ -645,6 +648,7 @@ def test_self_contained_coordinator_dockerhub_valkey():
                 build_os,
                 [],
                 "sudo bash -c 'make -j'",
+                git_version=redis_version,
             )
             build_stream_fields["github_repo"] = github_repo
             build_stream_fields["github_org"] = github_org
@@ -1347,6 +1351,7 @@ def test_self_contained_coordinator_duplicated_ts():
                     git_timestamp_ms=timestamp,
                     use_git_timestamp=True,
                     existing_artifact_keys=None,
+                    git_version=redis_version,
                 )
                 build_stream_fields["mnt_point"] = ""
                 if result is True:
