@@ -2672,13 +2672,20 @@ def process_self_contained_coordinator_stream(
                             if not success:
                                 logging.error(f"Memtier benchmark failed: {stderr}")
                                 # Clean up database after failure (timeout or error)
-                                if args.flushall_on_every_test_end or args.flushall_on_every_test_start:
-                                    logging.warning("Benchmark failed - cleaning up database with FLUSHALL")
+                                if (
+                                    args.flushall_on_every_test_end
+                                    or args.flushall_on_every_test_start
+                                ):
+                                    logging.warning(
+                                        "Benchmark failed - cleaning up database with FLUSHALL"
+                                    )
                                     try:
                                         for r in redis_conns:
                                             r.flushall()
                                     except Exception as e:
-                                        logging.error(f"FLUSHALL failed after benchmark failure: {e}")
+                                        logging.error(
+                                            f"FLUSHALL failed after benchmark failure: {e}"
+                                        )
                                 # Continue with the test but log the failure
                                 client_container_stdout = f"ERROR: {stderr}"
 
@@ -3025,8 +3032,13 @@ def process_self_contained_coordinator_stream(
                     test_result = False
 
                     # Clean up database after exception to prevent contamination of next test
-                    if args.flushall_on_every_test_end or args.flushall_on_every_test_start:
-                        logging.warning("Exception caught - cleaning up database with FLUSHALL")
+                    if (
+                        args.flushall_on_every_test_end
+                        or args.flushall_on_every_test_start
+                    ):
+                        logging.warning(
+                            "Exception caught - cleaning up database with FLUSHALL"
+                        )
                         try:
                             for r in redis_conns:
                                 r.flushall()
