@@ -80,6 +80,22 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         decode_responses=False,
     )
     conn.ping()
+
+    # Extract version from Docker image tag if possible
+    # e.g., "redis:7.4.0" -> "7.4.0"
+    # e.g., "valkey/valkey:7.2.6-bookworm" -> "7.2.6"
+    git_version = None
+    if ":" in args.run_image:
+        tag = args.run_image.split(":")[-1]
+        # Try to extract version number from tag
+        # Common patterns: "7.4.0", "7.2.6-bookworm", "latest"
+        import re
+
+        version_match = re.match(r"^(\d+\.\d+\.\d+)", tag)
+        if version_match:
+            git_version = version_match.group(1)
+            logging.info(f"Extracted git_version '{git_version}' from image tag")
+
     testDetails = {}
     build_stream_fields, result = generate_benchmark_stream_request(
         args.id,
@@ -96,7 +112,7 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         None,
         None,
         None,
-        None,
+        git_version,  # Pass extracted version
         None,
         None,
         None,
