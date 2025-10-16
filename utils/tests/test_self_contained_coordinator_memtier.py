@@ -20,6 +20,7 @@ from redis_benchmarks_specification.__cli__.cli import (
 )
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_NEW_BUILD_EVENTS,
+    get_arch_specific_stream_name,
 )
 from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
@@ -252,8 +253,9 @@ def test_self_contained_coordinator_dockerhub_preload():
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
                 benchmark_stream_id = conn.xadd(
-                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                    arch_specific_stream, build_stream_fields
                 )
                 logging.info(
                     "sucessfully requested a new run {}. Stream id: {}".format(
@@ -264,11 +266,12 @@ def test_self_contained_coordinator_dockerhub_preload():
             build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
-            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, "0")
+            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -378,8 +381,9 @@ def test_self_contained_coordinator_dockerhub():
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
                 benchmark_stream_id = conn.xadd(
-                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                    arch_specific_stream, build_stream_fields
                 )
                 logging.info(
                     "sucessfully requested a new run {}. Stream id: {}".format(
@@ -390,11 +394,12 @@ def test_self_contained_coordinator_dockerhub():
             build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
-            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, "0")
+            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -504,8 +509,9 @@ def test_self_contained_coordinator_dockerhub_iothreads():
             )
             build_stream_fields["mnt_point"] = ""
             if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
                 benchmark_stream_id = conn.xadd(
-                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                    arch_specific_stream, build_stream_fields
                 )
                 logging.info(
                     "sucessfully requested a new run {}. Stream id: {}".format(
@@ -516,11 +522,12 @@ def test_self_contained_coordinator_dockerhub_iothreads():
             build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
             expected_datapoint_ts = None
 
-            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, "0")
+            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -641,8 +648,9 @@ def test_self_contained_coordinator_dockerhub_valkey():
                 f"requesting stream with following info: {build_stream_fields}"
             )
             if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
                 benchmark_stream_id = conn.xadd(
-                    STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                    arch_specific_stream, build_stream_fields
                 )
                 logging.info(
                     "sucessfully requested a new run {}. Stream id: {}".format(
@@ -650,11 +658,12 @@ def test_self_contained_coordinator_dockerhub_valkey():
                     )
                 )
 
-            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) > 0
             running_platform = "fco-ThinkPad-T490"
 
-            build_runners_consumer_group_create(conn, running_platform, "0")
+            build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
             datasink_conn = redis.StrictRedis(port=db_port)
             docker_client = docker.from_env()
             home = str(Path.home())
@@ -783,11 +792,14 @@ def test_dockerhub_via_cli():
             assert e.code == 0
 
         # confirm request was made via the cli
-        assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-        assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+        # CLI adds to arch-specific stream (defaults to amd64)
+        build_arch = "amd64"
+        arch_specific_stream = get_arch_specific_stream_name(build_arch)
+        assert conn.exists(arch_specific_stream)
+        assert conn.xlen(arch_specific_stream) > 0
         running_platform = "fco-ThinkPad-T490"
 
-        build_runners_consumer_group_create(conn, running_platform, "0")
+        build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
         datasink_conn = redis.StrictRedis(port=db_port)
         docker_client = docker.from_env()
         home = str(Path.home())
@@ -912,11 +924,14 @@ def test_dockerhub_via_cli_airgap():
             assert e.code == 0
 
         # confirm request was made via the cli
-        assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-        assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) > 0
+        # CLI adds to arch-specific stream (defaults to amd64)
+        build_arch = "amd64"
+        arch_specific_stream = get_arch_specific_stream_name(build_arch)
+        assert conn.exists(arch_specific_stream)
+        assert conn.xlen(arch_specific_stream) > 0
         running_platform = "fco-ThinkPad-T490"
 
-        build_runners_consumer_group_create(conn, running_platform, "0")
+        build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
         datasink_conn = redis.StrictRedis(port=db_port)
         docker_client = docker.from_env()
         home = str(Path.home())
@@ -1308,6 +1323,7 @@ def test_self_contained_coordinator_duplicated_ts():
 
             # generate 2 stream requests with the same timestamp
             timestamp = int(datetime.datetime.now().timestamp())
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
             for _ in range(0, 2):
                 build_stream_fields, result = generate_benchmark_stream_request(
                     id,
@@ -1323,7 +1339,7 @@ def test_self_contained_coordinator_duplicated_ts():
                 build_stream_fields["mnt_point"] = ""
                 if result is True:
                     benchmark_stream_id = conn.xadd(
-                        STREAM_KEYNAME_NEW_BUILD_EVENTS, build_stream_fields
+                        arch_specific_stream, build_stream_fields
                     )
                     logging.info(
                         "sucessfully requested a new run {}. Stream id: {}".format(
@@ -1331,15 +1347,15 @@ def test_self_contained_coordinator_duplicated_ts():
                         )
                     )
 
-            assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
-            assert conn.xlen(STREAM_KEYNAME_NEW_BUILD_EVENTS) == 2
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) == 2
 
             running_platform = "fco-ThinkPad-T490"
 
             # process the 2 stream requests
             for _ in range(0, 2):
 
-                build_runners_consumer_group_create(conn, running_platform, "0")
+                build_runners_consumer_group_create(conn, running_platform, arch=build_arch, id="0")
                 datasink_conn = redis.StrictRedis(port=db_port)
                 docker_client = docker.from_env()
                 home = str(Path.home())
