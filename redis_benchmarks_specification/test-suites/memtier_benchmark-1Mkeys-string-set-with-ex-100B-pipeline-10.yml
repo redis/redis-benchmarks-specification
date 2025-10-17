@@ -12,7 +12,7 @@ dbconfig:
     tool: memtier_benchmark
     arguments: '"--data-size" "100" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
       "-t" "2" "--hide-histogram" "--key-minimum" "1"  "--key-maximum" "1000000" -n
-      allkeys" --pipeline 50'
+      "allkeys" --pipeline 50'
   resources:
     requests:
       memory: 1g
