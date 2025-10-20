@@ -2885,6 +2885,14 @@ def process_self_contained_coordinator_stream(
                         )
                         results_dict = json.loads(client_container_stdout)
 
+                        # Write aggregated results to file so it can be preserved
+                        full_result_path = local_benchmark_output_filename
+                        with open(full_result_path, "w") as json_file:
+                            json.dump(results_dict, json_file, indent=2)
+                        logging.info(
+                            f"Wrote aggregated multi-client results to {full_result_path}"
+                        )
+
                         # Validate benchmark metrics
                         is_valid, validation_error = validate_benchmark_metrics(
                             results_dict, test_name, benchmark_config, default_metrics
