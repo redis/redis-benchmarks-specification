@@ -1,70 +1,74 @@
 {
   "bitmap": {
-    "display": "Bitmap",
-    "description": "Operations on the Bitmap data type"
+    "description": "Operations on the Bitmap data type",
+    "display": "Bitmap"
   },
   "cluster": {
-    "display": "Cluster",
-    "description": "Redis Cluster management"
+    "description": "Redis Cluster management",
+    "display": "Cluster"
   },
   "connection": {
-    "display": "Connection",
-    "description": "Client connections management"
+    "description": "Client connections management",
+    "display": "Connection"
   },
   "generic": {
-    "display": "Generic",
-    "description": "Generic commands"
+    "description": "Generic commands",
+    "display": "Generic"
   },
   "geo": {
-    "display": "Geospatial indices",
-    "description": "Operations on the Geospatial Index data type"
+    "description": "Operations on the Geospatial Index data type",
+    "display": "Geospatial indices"
   },
   "hash": {
-    "display": "Hash",
-    "description": "Operations on the Hash data type"
+    "description": "Operations on the Hash data type",
+    "display": "Hash"
   },
   "hyperloglog": {
-    "display": "HyperLogLog",
-    "description": "Operations on the HyperLogLog data type"
+    "description": "Operations on the HyperLogLog data type",
+    "display": "HyperLogLog"
   },
+  "json": [
+    "JSON.GET",
+    "JSON.SET"
+  ],
   "list": {
-    "display": "List",
-    "description": "Operations on the List data type"
+    "description": "Operations on the List data type",
+    "display": "List"
   },
   "pubsub": {
-    "display": "Pub/Sub",
-    "description": "Pub/Sub commands"
+    "description": "Pub/Sub commands",
+    "display": "Pub/Sub"
   },
   "scripting": {
-    "display": "Scripting and Functions",
-    "description": "Redis server-side scripting and functions"
+    "description": "Redis server-side scripting and functions",
+    "display": "Scripting and Functions"
   },
   "sentinel": {
-    "display": "Sentinel",
-    "description": "Redis Sentinel commands"
+    "description": "Redis Sentinel commands",
+    "display": "Sentinel"
   },
   "server": {
-    "display": "Server",
-    "description": "Server management commands"
+    "description": "Server management commands",
+    "display": "Server"
   },
   "set": {
-    "display": "Set",
-    "description": "Operations on the Set data type"
+    "description": "Operations on the Set data type",
+    "display": "Set"
   },
   "sorted-set": {
-    "display": "Sorted Set",
-    "description": "Operations on the Sorted Set data type"
+    "description": "Operations on the Sorted Set data type",
+    "display": "Sorted Set"
   },
   "stream": {
-    "display": "Stream",
-    "description": "Operations on the Stream data type"
+    "description": "Operations on the Stream data type",
+    "display": "Stream"
   },
   "string": {
-    "display": "String",
-    "description": "Operations on the String data type"
+    "description": "Operations on the String data type",
+    "display": "String"
   },
   "transactions": {
-    "display": "Transactions",
-    "description": "Redis Transaction management"
+    "description": "Redis Transaction management",
+    "display": "Transactions"
   }
 }
