@@ -35,6 +35,7 @@ dbconfig:
 tested-commands:
 - smembers
 - sdiff
+- sunion
 redis-topologies:
 - oss-standalone
 build-variants:

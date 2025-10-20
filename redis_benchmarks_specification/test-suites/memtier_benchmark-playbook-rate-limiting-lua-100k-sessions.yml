@@ -34,7 +34,6 @@ tested-commands:
 - bitcount
 - eval
 tested-groups:
-- bitmap
 - scripting
 
 redis-topologies:
