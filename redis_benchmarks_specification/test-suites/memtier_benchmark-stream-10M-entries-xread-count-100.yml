@@ -1,0 +1,36 @@
+version: 0.4
+name: memtier_benchmark-stream-10M-entries-xread-count-100
+description: 'Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, then testing XREAD performance with COUNT 100.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 50000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1M-stream-entries
+  dataset_description: This dataset contains 1 stream key with 1M entries, each with a field containing 100 bytes of data.
+tested-commands:
+- xread
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="XREAD COUNT 100 STREAMS stream-key 0" --hide-histogram -n 1000 -c 25 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- stream
+priority: 95
