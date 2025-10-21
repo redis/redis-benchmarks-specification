@@ -1,6 +1,6 @@
 version: 0.4
-name: memtier_benchmark-stream-10M-entries-xreadgroup-count-100
-description: "Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, creating a consumer group, then testing XREADGROUP performance with COUNT 100."
+name: memtier_benchmark-stream-10M-entries-xreadgroup-count-100-noack
+description: "Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, creating a consumer group, then testing XREADGROUP performance with COUNT 100 and NOACK enabled."
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -28,7 +28,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream-key >" --hide-histogram -n 1000 -c 25 -t 4
+  arguments: --command="XREADGROUP GROUP test-group consumer1 COUNT 100 NOACK STREAMS stream-key >" --hide-histogram -n 1000 -c 25 -t 4
   resources:
     requests:
       cpus: "4"
