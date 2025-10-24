@@ -2281,14 +2281,14 @@ def filter_test_files(
             continue
 
         if tests_regexp != ".*":
-            logging.info(
+            logging.debug(
                 "Filtering all tests via a regular expression: {}".format(tests_regexp)
             )
             tags_regex_string = re.compile(tests_regexp)
 
             match_obj = re.search(tags_regex_string, test_file)
             if match_obj is None:
-                logging.info(
+                logging.debug(
                     "Skipping {} given it does not match regex {}".format(
                         test_file, tests_regexp
                     )
