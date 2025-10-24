@@ -1438,12 +1438,12 @@ def process_single_test_comparison(
 
     if baseline_v != "N/A" and comparison_v == "N/A":
         logging.warning(
-            "Baseline contains datapoints but comparison not for test: {test_name}"
+            f"Baseline contains datapoints but comparison not for test: {test_name}"
         )
         result['baseline_only'] = True
     if comparison_v != "N/A" and baseline_v == "N/A":
         logging.warning(
-            "Comparison contains datapoints but baseline not for test: {test_name}"
+            f"Comparison contains datapoints but baseline not for test: {test_name}"
         )
         result['comparison_only'] = True
     if (
