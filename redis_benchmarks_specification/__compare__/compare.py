@@ -16,6 +16,7 @@ import os
 from tqdm import tqdm
 import argparse
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 
 from io import StringIO
 import sys
@@ -1182,6 +1183,388 @@ def get_by_strings(
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
 
 
+def process_single_test_comparison(
+    test_name,
+    tests_with_config,
+    original_metric_mode,
+    baseline_str,
+    comparison_str,
+    by_str_baseline,
+    by_str_comparison,
+    metric_name,
+    test_filter,
+    baseline_github_repo,
+    comparison_github_repo,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
+    extra_filters,
+    baseline_deployment_name,
+    comparison_deployment_name,
+    baseline_github_org,
+    comparison_github_org,
+    running_platform_baseline,
+    running_platform_comparison,
+    rts,
+    from_ts_ms,
+    to_ts_ms,
+    last_n_baseline,
+    last_n_comparison,
+    verbose,
+    regressions_percent_lower_limit,
+    simplify_table,
+    regression_str,
+    improvement_str,
+    progress,
+):
+    """
+    Process comparison analysis for a single test.
+
+    Returns a dictionary containing all the results and side effects that need to be
+    accumulated by the caller.
+    """
+    tested_groups = []
+    tested_commands = []
+    if test_name in tests_with_config:
+        test_spec = tests_with_config[test_name]
+        if "tested-groups" in test_spec:
+            tested_groups = test_spec["tested-groups"]
+        if "tested-commands" in test_spec:
+            tested_commands = test_spec["tested-commands"]
+    else:
+        logging.error(f"Test does not contain spec info: {test_name}")
+
+    metric_mode = original_metric_mode
+    compare_version = "main"
+    # GE
+    github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
+    test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
+    test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
+    multi_value_baseline = check_multi_value_filter(baseline_str)
+    multi_value_comparison = check_multi_value_filter(comparison_str)
+
+    filters_baseline = [
+        "metric={}".format(metric_name),
+        "{}={}".format(test_filter, test_name),
+        "github_repo={}".format(baseline_github_repo),
+        "triggering_env={}".format(tf_triggering_env_baseline),
+    ]
+    if extra_filters != "":
+        filters_baseline.append(extra_filters)
+    if baseline_str != "":
+        filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
+    if baseline_deployment_name != "":
+        filters_baseline.append(
+            "deployment_name={}".format(baseline_deployment_name)
+        )
+    if baseline_github_org != "":
+        filters_baseline.append(f"github_org={baseline_github_org}")
+    if running_platform_baseline is not None and running_platform_baseline != "":
+        filters_baseline.append(
+            "running_platform={}".format(running_platform_baseline)
+        )
+    filters_comparison = [
+        "metric={}".format(metric_name),
+        "{}={}".format(test_filter, test_name),
+        "github_repo={}".format(comparison_github_repo),
+        "triggering_env={}".format(tf_triggering_env_comparison),
+    ]
+    if comparison_str != "":
+        filters_comparison.append("{}={}".format(by_str_comparison, comparison_str))
+    if comparison_deployment_name != "":
+        filters_comparison.append(
+            "deployment_name={}".format(comparison_deployment_name)
+        )
+    if extra_filters != "":
+        filters_comparison.append(extra_filters)
+    if comparison_github_org != "":
+        filters_comparison.append(f"github_org={comparison_github_org}")
+    if "hash" not in by_str_baseline:
+        filters_baseline.append("hash==")
+    if "hash" not in by_str_comparison:
+        filters_comparison.append("hash==")
+    if (
+        running_platform_comparison is not None
+        and running_platform_comparison != ""
+    ):
+        filters_comparison.append(
+            "running_platform={}".format(running_platform_comparison)
+        )
+    baseline_timeseries = rts.ts().queryindex(filters_baseline)
+    comparison_timeseries = rts.ts().queryindex(filters_comparison)
+
+    # avoiding target time-series
+    comparison_timeseries = [x for x in comparison_timeseries if "target" not in x]
+    baseline_timeseries = [x for x in baseline_timeseries if "target" not in x]
+    progress.update()
+    if verbose:
+        logging.info(
+            "Baseline timeseries for {}: {}. test={}".format(
+                baseline_str, len(baseline_timeseries), test_name
+            )
+        )
+        logging.info(
+            "Comparison timeseries for {}: {}. test={}".format(
+                comparison_str, len(comparison_timeseries), test_name
+            )
+        )
+    if len(baseline_timeseries) > 1 and multi_value_baseline is False:
+        baseline_timeseries = get_only_Totals(baseline_timeseries)
+
+    # Initialize result dictionary
+    result = {
+        'skip_test': False,
+        'no_datapoints_baseline': False,
+        'no_datapoints_comparison': False,
+        'no_datapoints_both': False,
+        'baseline_only': False,
+        'comparison_only': False,
+        'detected_regression': False,
+        'detected_improvement': False,
+        'unstable': False,
+        'should_add_line': False,
+        'line': None,
+        'percentage_change': 0.0,
+        'tested_groups': tested_groups,
+        'tested_commands': tested_commands,
+        'boxplot_data': None,
+    }
+
+    if len(baseline_timeseries) == 0:
+        logging.warning(
+            f"No datapoints for test={test_name} for baseline timeseries {baseline_timeseries}"
+        )
+        result['no_datapoints_baseline'] = True
+        result['no_datapoints_both'] = True
+
+    if len(comparison_timeseries) == 0:
+        logging.warning(
+            f"No datapoints for test={test_name} for comparison timeseries {comparison_timeseries}"
+        )
+        result['no_datapoints_comparison'] = True
+        result['no_datapoints_both'] = True
+
+    if len(baseline_timeseries) != 1 and multi_value_baseline is False:
+        if verbose:
+            logging.warning(
+                "Skipping this test given the value of timeseries !=1. Baseline timeseries {}".format(
+                    len(baseline_timeseries)
+                )
+            )
+            if len(baseline_timeseries) > 1:
+                logging.warning(
+                    "\t\tTime-series: {}".format(", ".join(baseline_timeseries))
+                )
+        result['skip_test'] = True
+        return result
+
+    if len(comparison_timeseries) > 1 and multi_value_comparison is False:
+        comparison_timeseries = get_only_Totals(comparison_timeseries)
+    if len(comparison_timeseries) != 1 and multi_value_comparison is False:
+        if verbose:
+            logging.warning(
+                "Comparison timeseries {}".format(len(comparison_timeseries))
+            )
+        result['skip_test'] = True
+        return result
+
+    baseline_v = "N/A"
+    comparison_v = "N/A"
+    baseline_values = []
+    baseline_datapoints = []
+    comparison_values = []
+    comparison_datapoints = []
+    percentage_change = 0.0
+    baseline_v_str = "N/A"
+    comparison_v_str = "N/A"
+    largest_variance = 0
+    baseline_pct_change = "N/A"
+    comparison_pct_change = "N/A"
+
+    note = ""
+    try:
+        for ts_name_baseline in baseline_timeseries:
+            datapoints_inner = rts.ts().revrange(
+                ts_name_baseline, from_ts_ms, to_ts_ms
+            )
+            baseline_datapoints.extend(datapoints_inner)
+        (
+            baseline_pct_change,
+            baseline_v,
+            largest_variance,
+        ) = get_v_pct_change_and_largest_var(
+            baseline_datapoints,
+            baseline_pct_change,
+            baseline_v,
+            baseline_values,
+            largest_variance,
+            last_n_baseline,
+            verbose,
+        )
+        for ts_name_comparison in comparison_timeseries:
+            datapoints_inner = rts.ts().revrange(
+                ts_name_comparison, from_ts_ms, to_ts_ms
+            )
+            comparison_datapoints.extend(datapoints_inner)
+
+        (
+            comparison_pct_change,
+            comparison_v,
+            largest_variance,
+        ) = get_v_pct_change_and_largest_var(
+            comparison_datapoints,
+            comparison_pct_change,
+            comparison_v,
+            comparison_values,
+            largest_variance,
+            last_n_comparison,
+            verbose,
+        )
+
+        waterline = regressions_percent_lower_limit
+        # if regressions_percent_lower_limit < largest_variance:
+        #     note = "waterline={:.1f}%.".format(largest_variance)
+        #     waterline = largest_variance
+
+    except redis.exceptions.ResponseError as e:
+        logging.error(
+            "Detected a redis.exceptions.ResponseError. {}".format(e.__str__())
+        )
+        pass
+    except ZeroDivisionError as e:
+        logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
+        pass
+
+    unstable = False
+
+    if baseline_v != "N/A" and comparison_v == "N/A":
+        logging.warning(
+            f"Baseline contains datapoints but comparison not for test: {test_name}"
+        )
+        result['baseline_only'] = True
+    if comparison_v != "N/A" and baseline_v == "N/A":
+        logging.warning(
+            f"Comparison contains datapoints but baseline not for test: {test_name}"
+        )
+        result['comparison_only'] = True
+    if (
+        baseline_v != "N/A"
+        and comparison_pct_change != "N/A"
+        and comparison_v != "N/A"
+        and baseline_pct_change != "N/A"
+    ):
+        if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
+            note = "UNSTABLE (very high variance)"
+            unstable = True
+            result['unstable'] = True
+
+        baseline_v_str = prepare_value_str(
+            baseline_pct_change,
+            baseline_v,
+            baseline_values,
+            simplify_table,
+            metric_name,
+        )
+        comparison_v_str = prepare_value_str(
+            comparison_pct_change,
+            comparison_v,
+            comparison_values,
+            simplify_table,
+            metric_name,
+        )
+
+        if metric_mode == "higher-better":
+            percentage_change = (
+                float(comparison_v) / float(baseline_v) - 1
+            ) * 100.0
+        else:
+            # lower-better
+            percentage_change = (
+                -(float(baseline_v) - float(comparison_v)) / float(baseline_v)
+            ) * 100.0
+
+        # Collect data for box plot
+        result['boxplot_data'] = (test_name, percentage_change)
+    else:
+        logging.warn(
+            f"Missing data for test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
+        )
+
+    result['percentage_change'] = percentage_change
+
+    if baseline_v != "N/A" or comparison_v != "N/A":
+        detected_regression = False
+        detected_improvement = False
+        noise_waterline = 3
+
+        # For higher-better metrics: negative change = regression, positive change = improvement
+        # For lower-better metrics: positive change = regression, negative change = improvement
+        if metric_mode == "higher-better":
+            # Higher is better: negative change is bad (regression), positive change is good (improvement)
+            if percentage_change < 0.0:
+                if -waterline >= percentage_change:
+                    detected_regression = True
+                    note = note + f" {regression_str}"
+                elif percentage_change < -noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {regression_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+
+            if percentage_change > 0.0:
+                if percentage_change > waterline:
+                    detected_improvement = True
+                    note = note + f" {improvement_str}"
+                elif percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {improvement_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+        else:
+            # Lower is better: positive change is bad (regression), negative change is good (improvement)
+            if percentage_change > 0.0:
+                if percentage_change >= waterline:
+                    detected_regression = True
+                    note = note + f" {regression_str}"
+                elif percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {regression_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+
+            if percentage_change < 0.0:
+                if -percentage_change > waterline:
+                    detected_improvement = True
+                    note = note + f" {improvement_str}"
+                elif -percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {improvement_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+
+        result['detected_regression'] = detected_regression
+        result['detected_improvement'] = detected_improvement
+
+        line = get_line(
+            baseline_v_str,
+            comparison_v_str,
+            note,
+            percentage_change,
+            test_link,
+        )
+        result['line'] = line
+    else:
+        logging.warning(
+            "There were no datapoints both for baseline and comparison for test: {test_name}"
+        )
+        result['no_datapoints_both'] = True
+
+    return result
+
+
 def from_rts_to_regression_table(
     baseline_deployment_name,
     comparison_deployment_name,
@@ -1245,353 +1628,118 @@ def from_rts_to_regression_table(
 
     # Data collection for box plot
     boxplot_data = []
-    for test_name in test_names:
-        tested_groups = []
-        tested_commands = []
-        if test_name in tests_with_config:
-            test_spec = tests_with_config[test_name]
-            if "tested-groups" in test_spec:
-                tested_groups = test_spec["tested-groups"]
-            if "tested-commands" in test_spec:
-                tested_commands = test_spec["tested-commands"]
-        else:
-            logging.error(f"Test does not contain spec info: {test_name}")
-        metric_mode = original_metric_mode
-        compare_version = "main"
-        # GE
-        github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
-        test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
-        test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
-        multi_value_baseline = check_multi_value_filter(baseline_str)
-        multi_value_comparison = check_multi_value_filter(comparison_str)
 
-        filters_baseline = [
-            "metric={}".format(metric_name),
-            "{}={}".format(test_filter, test_name),
-            "github_repo={}".format(baseline_github_repo),
-            "triggering_env={}".format(tf_triggering_env_baseline),
-        ]
-        if extra_filters != "":
-            filters_baseline.append(extra_filters)
-        if baseline_str != "":
-            filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
-        if baseline_deployment_name != "":
-            filters_baseline.append(
-                "deployment_name={}".format(baseline_deployment_name)
-            )
-        if baseline_github_org != "":
-            filters_baseline.append(f"github_org={baseline_github_org}")
-        if running_platform_baseline is not None and running_platform_baseline != "":
-            filters_baseline.append(
-                "running_platform={}".format(running_platform_baseline)
-            )
-        filters_comparison = [
-            "metric={}".format(metric_name),
-            "{}={}".format(test_filter, test_name),
-            "github_repo={}".format(comparison_github_repo),
-            "triggering_env={}".format(tf_triggering_env_comparison),
-        ]
-        if comparison_str != "":
-            filters_comparison.append("{}={}".format(by_str_comparison, comparison_str))
-        if comparison_deployment_name != "":
-            filters_comparison.append(
-                "deployment_name={}".format(comparison_deployment_name)
-            )
-        if extra_filters != "":
-            filters_comparison.append(extra_filters)
-        if comparison_github_org != "":
-            filters_comparison.append(f"github_org={comparison_github_org}")
-        if "hash" not in by_str_baseline:
-            filters_baseline.append("hash==")
-        if "hash" not in by_str_comparison:
-            filters_comparison.append("hash==")
-        if (
-            running_platform_comparison is not None
-            and running_platform_comparison != ""
-        ):
-            filters_comparison.append(
-                "running_platform={}".format(running_platform_comparison)
-            )
-        baseline_timeseries = rts.ts().queryindex(filters_baseline)
-        comparison_timeseries = rts.ts().queryindex(filters_comparison)
+    # First loop: Collect all test results using parallel processing
+    test_results = []
 
-        # avoiding target time-series
-        comparison_timeseries = [x for x in comparison_timeseries if "target" not in x]
-        baseline_timeseries = [x for x in baseline_timeseries if "target" not in x]
-        progress.update()
-        if verbose:
-            logging.info(
-                "Baseline timeseries for {}: {}. test={}".format(
-                    baseline_str, len(baseline_timeseries), test_name
-                )
-            )
-            logging.info(
-                "Comparison timeseries for {}: {}. test={}".format(
-                    comparison_str, len(comparison_timeseries), test_name
-                )
-            )
-        if len(baseline_timeseries) > 1 and multi_value_baseline is False:
-            baseline_timeseries = get_only_Totals(baseline_timeseries)
+    def process_test_wrapper(test_name):
+        """Wrapper function to process a single test and return test_name with result"""
+        result = process_single_test_comparison(
+            test_name,
+            tests_with_config,
+            original_metric_mode,
+            baseline_str,
+            comparison_str,
+            by_str_baseline,
+            by_str_comparison,
+            metric_name,
+            test_filter,
+            baseline_github_repo,
+            comparison_github_repo,
+            tf_triggering_env_baseline,
+            tf_triggering_env_comparison,
+            extra_filters,
+            baseline_deployment_name,
+            comparison_deployment_name,
+            baseline_github_org,
+            comparison_github_org,
+            running_platform_baseline,
+            running_platform_comparison,
+            rts,
+            from_ts_ms,
+            to_ts_ms,
+            last_n_baseline,
+            last_n_comparison,
+            verbose,
+            regressions_percent_lower_limit,
+            simplify_table,
+            regression_str,
+            improvement_str,
+            progress,
+        )
+        return (test_name, result)
 
-        if len(baseline_timeseries) == 0:
-            logging.warning(
-                f"No datapoints for test={test_name} for baseline timeseries {baseline_timeseries}"
-            )
+    # Use ThreadPoolExecutor to process tests in parallel
+    with ThreadPoolExecutor() as executor:
+        test_results = list(executor.map(process_test_wrapper, test_names))
+
+    # Second loop: Process all collected results
+    for test_name, result in test_results:
+        # Handle the results from the extracted function
+        if result['skip_test']:
+            continue
+
+        if result['no_datapoints_baseline']:
             no_datapoints_baseline_list.append(test_name)
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
 
-        if len(comparison_timeseries) == 0:
-            logging.warning(
-                f"No datapoints for test={test_name} for comparison timeseries {comparison_timeseries}"
-            )
+        if result['no_datapoints_comparison']:
             no_datapoints_comparison_list.append(test_name)
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
 
-        if len(baseline_timeseries) != 1 and multi_value_baseline is False:
-            if verbose:
-                logging.warning(
-                    "Skipping this test given the value of timeseries !=1. Baseline timeseries {}".format(
-                        len(baseline_timeseries)
-                    )
-                )
-                if len(baseline_timeseries) > 1:
-                    logging.warning(
-                        "\t\tTime-series: {}".format(", ".join(baseline_timeseries))
-                    )
-            continue
-
-        if len(comparison_timeseries) > 1 and multi_value_comparison is False:
-            comparison_timeseries = get_only_Totals(comparison_timeseries)
-        if len(comparison_timeseries) != 1 and multi_value_comparison is False:
-            if verbose:
-                logging.warning(
-                    "Comparison timeseries {}".format(len(comparison_timeseries))
-                )
-            continue
-
-        baseline_v = "N/A"
-        comparison_v = "N/A"
-        baseline_values = []
-        baseline_datapoints = []
-        comparison_values = []
-        comparison_datapoints = []
-        percentage_change = 0.0
-        baseline_v_str = "N/A"
-        comparison_v_str = "N/A"
-        largest_variance = 0
-        baseline_pct_change = "N/A"
-        comparison_pct_change = "N/A"
-
-        note = ""
-        try:
-            for ts_name_baseline in baseline_timeseries:
-                datapoints_inner = rts.ts().revrange(
-                    ts_name_baseline, from_ts_ms, to_ts_ms
-                )
-                baseline_datapoints.extend(datapoints_inner)
-            (
-                baseline_pct_change,
-                baseline_v,
-                largest_variance,
-            ) = get_v_pct_change_and_largest_var(
-                baseline_datapoints,
-                baseline_pct_change,
-                baseline_v,
-                baseline_values,
-                largest_variance,
-                last_n_baseline,
-                verbose,
-            )
-            for ts_name_comparison in comparison_timeseries:
-                datapoints_inner = rts.ts().revrange(
-                    ts_name_comparison, from_ts_ms, to_ts_ms
-                )
-                comparison_datapoints.extend(datapoints_inner)
-
-            (
-                comparison_pct_change,
-                comparison_v,
-                largest_variance,
-            ) = get_v_pct_change_and_largest_var(
-                comparison_datapoints,
-                comparison_pct_change,
-                comparison_v,
-                comparison_values,
-                largest_variance,
-                last_n_comparison,
-                verbose,
-            )
-
-            waterline = regressions_percent_lower_limit
-            # if regressions_percent_lower_limit < largest_variance:
-            #     note = "waterline={:.1f}%.".format(largest_variance)
-            #     waterline = largest_variance
-
-        except redis.exceptions.ResponseError as e:
-            logging.error(
-                "Detected a redis.exceptions.ResponseError. {}".format(e.__str__())
-            )
-            pass
-        except ZeroDivisionError as e:
-            logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
-            pass
-        unstable = False
-
-        if baseline_v != "N/A" and comparison_v == "N/A":
-            logging.warning(
-                "Baseline contains datapoints but comparison not for test: {test_name}"
-            )
+        if result['baseline_only']:
             baseline_only_list.append(test_name)
-        if comparison_v != "N/A" and baseline_v == "N/A":
-            logging.warning(
-                "Comparison contains datapoints but baseline not for test: {test_name}"
-            )
+
+        if result['comparison_only']:
             comparison_only_list.append(test_name)
-        if (
-            baseline_v != "N/A"
-            and comparison_pct_change != "N/A"
-            and comparison_v != "N/A"
-            and baseline_pct_change != "N/A"
-        ):
-            if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
-                note = "UNSTABLE (very high variance)"
-                unstable = True
-                unstable_list.append([test_name, "n/a"])
 
-            baseline_v_str = prepare_value_str(
-                baseline_pct_change,
-                baseline_v,
-                baseline_values,
-                simplify_table,
-                metric_name,
-            )
-            comparison_v_str = prepare_value_str(
-                comparison_pct_change,
-                comparison_v,
-                comparison_values,
-                simplify_table,
-                metric_name,
-            )
+        if result['unstable']:
+            unstable_list.append([test_name, "n/a"])
 
-            if metric_mode == "higher-better":
-                percentage_change = (
-                    float(comparison_v) / float(baseline_v) - 1
-                ) * 100.0
-            else:
-                # lower-better
-                percentage_change = (
-                    -(float(baseline_v) - float(comparison_v)) / float(baseline_v)
-                ) * 100.0
+        if result['boxplot_data']:
+            boxplot_data.append(result['boxplot_data'])
 
-            # Collect data for box plot
-            boxplot_data.append((test_name, percentage_change))
-        else:
-            logging.warn(
-                f"Missing data for test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
-            )
-        if baseline_v != "N/A" or comparison_v != "N/A":
-            detected_regression = False
-            detected_improvement = False
+        # Handle group and command changes
+        for test_group in result['tested_groups']:
+            if test_group not in group_change:
+                group_change[test_group] = []
+            group_change[test_group].append(result['percentage_change'])
 
-            # For higher-better metrics: negative change = regression, positive change = improvement
-            # For lower-better metrics: positive change = regression, negative change = improvement
-            if metric_mode == "higher-better":
-                # Higher is better: negative change is bad (regression), positive change is good (improvement)
-                if percentage_change < 0.0:
-                    if -waterline >= percentage_change:
-                        detected_regression = True
-                        total_regressions = total_regressions + 1
-                        note = note + f" {regression_str}"
-                        detected_regressions.append(test_name)
-                    elif percentage_change < -noise_waterline:
-                        if simplify_table is False:
-                            note = note + f" potential {regression_str}"
-                    else:
-                        if simplify_table is False:
-                            note = note + " No Change"
+        for test_command in result['tested_commands']:
+            if test_command not in command_change:
+                command_change[test_command] = []
+            command_change[test_command].append(result['percentage_change'])
 
-                if percentage_change > 0.0:
-                    if percentage_change > waterline:
-                        detected_improvement = True
-                        total_improvements = total_improvements + 1
-                        note = note + f" {improvement_str}"
-                    elif percentage_change > noise_waterline:
-                        if simplify_table is False:
-                            note = note + f" potential {improvement_str}"
-                    else:
-                        if simplify_table is False:
-                            note = note + " No Change"
-            else:
-                # Lower is better: positive change is bad (regression), negative change is good (improvement)
-                if percentage_change > 0.0:
-                    if percentage_change >= waterline:
-                        detected_regression = True
-                        total_regressions = total_regressions + 1
-                        note = note + f" {regression_str}"
-                        detected_regressions.append(test_name)
-                    elif percentage_change > noise_waterline:
-                        if simplify_table is False:
-                            note = note + f" potential {regression_str}"
-                    else:
-                        if simplify_table is False:
-                            note = note + " No Change"
+        # Handle regression/improvement detection and table updates
+        if result['line'] is not None:
+            detected_regression = result['detected_regression']
+            detected_improvement = result['detected_improvement']
+            unstable = result['unstable']
+            line = result['line']
+            percentage_change = result['percentage_change']
 
-                if percentage_change < 0.0:
-                    if -percentage_change > waterline:
-                        detected_improvement = True
-                        total_improvements = total_improvements + 1
-                        note = note + f" {improvement_str}"
-                    elif -percentage_change > noise_waterline:
-                        if simplify_table is False:
-                            note = note + f" potential {improvement_str}"
-                    else:
-                        if simplify_table is False:
-                            note = note + " No Change"
-
-            for test_group in tested_groups:
-                if test_group not in group_change:
-                    group_change[test_group] = []
-                group_change[test_group].append(percentage_change)
-
-            for test_command in tested_commands:
-                if test_command not in command_change:
-                    command_change[test_command] = []
-                command_change[test_command].append(percentage_change)
-
-            if (
-                detected_improvement is False
-                and detected_regression is False
-                and not unstable
-            ):
-                total_stable = total_stable + 1
-
-            if unstable:
-                total_unstable += 1
-
-            should_add_line = False
-            line = get_line(
-                baseline_v_str,
-                comparison_v_str,
-                note,
-                percentage_change,
-                test_link,
-            )
             if detected_regression:
+                total_regressions = total_regressions + 1
+                detected_regressions.append(test_name)
                 regressions_list.append([test_name, percentage_change])
                 table_regressions.append(line)
 
             if detected_improvement:
+                total_improvements = total_improvements + 1
                 improvements_list.append([test_name, percentage_change])
                 table_improvements.append(line)
 
             if unstable:
+                total_unstable += 1
                 table_unstable.append(line)
             else:
                 if not detected_regression and not detected_improvement:
+                    total_stable = total_stable + 1
                     table_stable.append(line)
 
+            should_add_line = False
             if print_regressions_only and detected_regression:
                 should_add_line = True
             if print_improvements_only and detected_improvement:
@@ -1604,10 +1752,7 @@ def from_rts_to_regression_table(
             if should_add_line:
                 total_comparison_points = total_comparison_points + 1
                 table_full.append(line)
-        else:
-            logging.warning(
-                "There were no datapoints both for baseline and comparison for test: {test_name}"
-            )
+        elif result['no_datapoints_both']:
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
     logging.warning(
@@ -1736,19 +1881,33 @@ def prepare_value_str(
     return baseline_v_str
 
 
+def filter_test_names_by_regex(test_names, tags_regex_string):
+    """
+    Filter test names based on regex pattern.
+
+    Args:
+        test_names: List of test names to filter
+        tags_regex_string: Regex pattern to match against test names
+
+    Returns:
+        List of filtered test names that match the regex pattern
+    """
+    final_test_names = []
+    for test_name in test_names:
+        if not isinstance(test_name, str):
+            test_name = test_name.decode()
+        match_obj = re.search(tags_regex_string, test_name)
+        if match_obj is not None:
+            final_test_names.append(test_name)
+    return final_test_names
+
+
 def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
     try:
         test_names = rts.smembers(used_key)
         test_names = list(test_names)
         test_names.sort()
-        final_test_names = []
-        for test_name in test_names:
-            if not isinstance(test_name, str):
-                test_name = test_name.decode()
-            match_obj = re.search(tags_regex_string, test_name)
-            if match_obj is not None:
-                final_test_names.append(test_name)
-        test_names = final_test_names
+        test_names = filter_test_names_by_regex(test_names, tags_regex_string)
 
     except redis.exceptions.ResponseError as e:
         logging.warning(
