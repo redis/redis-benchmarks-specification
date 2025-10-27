@@ -1554,6 +1554,14 @@ def process_self_contained_coordinator_stream(
                 None, None, stream, ""
             )
 
+            # Use override topology if provided, otherwise use all topologies from config
+            if hasattr(args, "override_topology") and args.override_topology:
+                benchmark_topologies = [args.override_topology]
+                logging.info(f"Using override topology: {args.override_topology}")
+            else:
+                benchmark_topologies = benchmark_config["redis-topologies"]
+                logging.info(f"Running for a total of {len(benchmark_topologies)} topologies: {benchmark_topologies}")
+
             # Check if user requested exit via Ctrl+C
             if _exit_requested:
                 logging.info(f"Exit requested by user. Skipping test {test_name}.")
@@ -1592,7 +1600,7 @@ def process_self_contained_coordinator_stream(
                     )
                 )
 
-            for topology_spec_name in benchmark_config["redis-topologies"]:
+            for topology_spec_name in benchmark_topologies:
                 test_result = False
                 benchmark_tool_global = ""
                 full_result_path = None
