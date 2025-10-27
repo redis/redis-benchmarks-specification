@@ -175,13 +175,20 @@ def validate_benchmark_metrics(
     Args:
         results_dict: Dictionary containing benchmark results
         test_name: Name of the test being validated
-        benchmark_config: Benchmark configuration (unused, for compatibility)
+        benchmark_config: Benchmark configuration (optional, contains tested-commands)
         default_metrics: Default metrics configuration (unused, for compatibility)
 
     Returns:
         tuple: (is_valid, error_message)
     """
     try:
+        # Get tested commands from config if available
+        tested_commands = []
+        if benchmark_config and "tested-commands" in benchmark_config:
+            tested_commands = [
+                cmd.lower() for cmd in benchmark_config["tested-commands"]
+            ]
+
         # Define validation rules
         throughput_patterns = [
             "ops/sec",
@@ -218,6 +225,29 @@ def validate_benchmark_metrics(
                     ]
                 ):
                     return
+
+                # Skip operation-specific metrics for operations not being tested
+                # For example, skip Gets.Ops/sec if only SET commands are tested
+                if tested_commands:
+                    skip_metric = False
+                    operation_types = [
+                        "gets",
+                        "sets",
+                        "hgets",
+                        "hsets",
+                        "lpush",
+                        "rpush",
+                        "sadd",
+                    ]
+                    for op_type in operation_types:
+                        if (
+                            op_type in metric_path_lower
+                            and op_type not in tested_commands
+                        ):
+                            skip_metric = True
+                            break
+                    if skip_metric:
+                        return
 
                 # Check throughput metrics
                 for pattern in throughput_patterns:
@@ -2680,13 +2710,20 @@ def process_self_contained_coordinator_stream(
                             if not success:
                                 logging.error(f"Memtier benchmark failed: {stderr}")
                                 # Clean up database after failure (timeout or error)
-                                if args.flushall_on_every_test_end or args.flushall_on_every_test_start:
-                                    logging.warning("Benchmark failed - cleaning up database with FLUSHALL")
+                                if (
+                                    args.flushall_on_every_test_end
+                                    or args.flushall_on_every_test_start
+                                ):
+                                    logging.warning(
+                                        "Benchmark failed - cleaning up database with FLUSHALL"
+                                    )
                                     try:
                                         for r in redis_conns:
                                             r.flushall()
                                     except Exception as e:
-                                        logging.error(f"FLUSHALL failed after benchmark failure: {e}")
+                                        logging.error(
+                                            f"FLUSHALL failed after benchmark failure: {e}"
+                                        )
                                 # Continue with the test but log the failure
                                 client_container_stdout = f"ERROR: {stderr}"
 
@@ -3033,8 +3070,13 @@ def process_self_contained_coordinator_stream(
                     test_result = False
 
                     # Clean up database after exception to prevent contamination of next test
-                    if args.flushall_on_every_test_end or args.flushall_on_every_test_start:
-                        logging.warning("Exception caught - cleaning up database with FLUSHALL")
+                    if (
+                        args.flushall_on_every_test_end
+                        or args.flushall_on_every_test_start
+                    ):
+                        logging.warning(
+                            "Exception caught - cleaning up database with FLUSHALL"
+                        )
                         try:
                             for r in redis_conns:
                                 r.flushall()
