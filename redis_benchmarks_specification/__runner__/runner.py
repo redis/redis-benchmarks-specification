@@ -354,6 +354,18 @@ def calculate_process_timeout(command_str, buffer_timeout):
         int: Timeout in seconds
     """
     default_timeout = 300  # 5 minutes default
+    run_count = 1
+    if "run-count" in command_str:
+        # Try to extract test time and add buffer
+        # Handle both --test-time (memtier) and -test-time (pubsub-sub-bench)
+        run_count_match = re.search(r"--?run-count[=\s]+(\d+)", command_str)
+        if run_count_match:
+            run_count = int(run_count_match.group(1))
+            logging.info(f"Detected run count of: {run_count}")
+        run_count_match = re.search(r"-?x[=\s]+(\d+)", command_str)
+        if run_count_match:
+            run_count = int(run_count_match.group(1))
+            logging.info(f"Detected run count (from -x) of: {run_count}")
 
     if "test-time" in command_str:
         # Try to extract test time and add buffer
@@ -361,9 +373,9 @@ def calculate_process_timeout(command_str, buffer_timeout):
         test_time_match = re.search(r"--?test-time[=\s]+(\d+)", command_str)
         if test_time_match:
             test_time = int(test_time_match.group(1))
-            timeout = test_time + buffer_timeout
+            timeout = (test_time + buffer_timeout) * run_count
             logging.info(
-                f"Set process timeout to {timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
+                f"Set process timeout to {timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer) x {run_count} runs)"
             )
             return timeout
 
@@ -1590,7 +1602,9 @@ def process_self_contained_coordinator_stream(
                 logging.info(f"Using override topology: {args.override_topology}")
             else:
                 benchmark_topologies = benchmark_config["redis-topologies"]
-                logging.info(f"Running for a total of {len(benchmark_topologies)} topologies: {benchmark_topologies}")
+                logging.info(
+                    f"Running for a total of {len(benchmark_topologies)} topologies: {benchmark_topologies}"
+                )
 
             # Check if user requested exit via Ctrl+C
             if _exit_requested:

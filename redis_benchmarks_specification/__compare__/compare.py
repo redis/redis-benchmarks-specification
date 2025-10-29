@@ -1253,15 +1253,11 @@ def process_single_test_comparison(
     if baseline_str != "":
         filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
     if baseline_deployment_name != "":
-        filters_baseline.append(
-            "deployment_name={}".format(baseline_deployment_name)
-        )
+        filters_baseline.append("deployment_name={}".format(baseline_deployment_name))
     if baseline_github_org != "":
         filters_baseline.append(f"github_org={baseline_github_org}")
     if running_platform_baseline is not None and running_platform_baseline != "":
-        filters_baseline.append(
-            "running_platform={}".format(running_platform_baseline)
-        )
+        filters_baseline.append("running_platform={}".format(running_platform_baseline))
     filters_comparison = [
         "metric={}".format(metric_name),
         "{}={}".format(test_filter, test_name),
@@ -1282,10 +1278,7 @@ def process_single_test_comparison(
         filters_baseline.append("hash==")
     if "hash" not in by_str_comparison:
         filters_comparison.append("hash==")
-    if (
-        running_platform_comparison is not None
-        and running_platform_comparison != ""
-    ):
+    if running_platform_comparison is not None and running_platform_comparison != "":
         filters_comparison.append(
             "running_platform={}".format(running_platform_comparison)
         )
@@ -1312,36 +1305,36 @@ def process_single_test_comparison(
 
     # Initialize result dictionary
     result = {
-        'skip_test': False,
-        'no_datapoints_baseline': False,
-        'no_datapoints_comparison': False,
-        'no_datapoints_both': False,
-        'baseline_only': False,
-        'comparison_only': False,
-        'detected_regression': False,
-        'detected_improvement': False,
-        'unstable': False,
-        'should_add_line': False,
-        'line': None,
-        'percentage_change': 0.0,
-        'tested_groups': tested_groups,
-        'tested_commands': tested_commands,
-        'boxplot_data': None,
+        "skip_test": False,
+        "no_datapoints_baseline": False,
+        "no_datapoints_comparison": False,
+        "no_datapoints_both": False,
+        "baseline_only": False,
+        "comparison_only": False,
+        "detected_regression": False,
+        "detected_improvement": False,
+        "unstable": False,
+        "should_add_line": False,
+        "line": None,
+        "percentage_change": 0.0,
+        "tested_groups": tested_groups,
+        "tested_commands": tested_commands,
+        "boxplot_data": None,
     }
 
     if len(baseline_timeseries) == 0:
         logging.warning(
             f"No datapoints for test={test_name} for baseline timeseries {baseline_timeseries}"
         )
-        result['no_datapoints_baseline'] = True
-        result['no_datapoints_both'] = True
+        result["no_datapoints_baseline"] = True
+        result["no_datapoints_both"] = True
 
     if len(comparison_timeseries) == 0:
         logging.warning(
             f"No datapoints for test={test_name} for comparison timeseries {comparison_timeseries}"
         )
-        result['no_datapoints_comparison'] = True
-        result['no_datapoints_both'] = True
+        result["no_datapoints_comparison"] = True
+        result["no_datapoints_both"] = True
 
     if len(baseline_timeseries) != 1 and multi_value_baseline is False:
         if verbose:
@@ -1354,7 +1347,7 @@ def process_single_test_comparison(
                 logging.warning(
                     "\t\tTime-series: {}".format(", ".join(baseline_timeseries))
                 )
-        result['skip_test'] = True
+        result["skip_test"] = True
         return result
 
     if len(comparison_timeseries) > 1 and multi_value_comparison is False:
@@ -1364,7 +1357,7 @@ def process_single_test_comparison(
             logging.warning(
                 "Comparison timeseries {}".format(len(comparison_timeseries))
             )
-        result['skip_test'] = True
+        result["skip_test"] = True
         return result
 
     baseline_v = "N/A"
@@ -1383,9 +1376,7 @@ def process_single_test_comparison(
     note = ""
     try:
         for ts_name_baseline in baseline_timeseries:
-            datapoints_inner = rts.ts().revrange(
-                ts_name_baseline, from_ts_ms, to_ts_ms
-            )
+            datapoints_inner = rts.ts().revrange(ts_name_baseline, from_ts_ms, to_ts_ms)
             baseline_datapoints.extend(datapoints_inner)
         (
             baseline_pct_change,
@@ -1440,12 +1431,12 @@ def process_single_test_comparison(
         logging.warning(
             f"Baseline contains datapoints but comparison not for test: {test_name}"
         )
-        result['baseline_only'] = True
+        result["baseline_only"] = True
     if comparison_v != "N/A" and baseline_v == "N/A":
         logging.warning(
             f"Comparison contains datapoints but baseline not for test: {test_name}"
         )
-        result['comparison_only'] = True
+        result["comparison_only"] = True
     if (
         baseline_v != "N/A"
         and comparison_pct_change != "N/A"
@@ -1455,7 +1446,7 @@ def process_single_test_comparison(
         if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
             note = "UNSTABLE (very high variance)"
             unstable = True
-            result['unstable'] = True
+            result["unstable"] = True
 
         baseline_v_str = prepare_value_str(
             baseline_pct_change,
@@ -1473,9 +1464,7 @@ def process_single_test_comparison(
         )
 
         if metric_mode == "higher-better":
-            percentage_change = (
-                float(comparison_v) / float(baseline_v) - 1
-            ) * 100.0
+            percentage_change = (float(comparison_v) / float(baseline_v) - 1) * 100.0
         else:
             # lower-better
             percentage_change = (
@@ -1483,13 +1472,13 @@ def process_single_test_comparison(
             ) * 100.0
 
         # Collect data for box plot
-        result['boxplot_data'] = (test_name, percentage_change)
+        result["boxplot_data"] = (test_name, percentage_change)
     else:
         logging.warn(
             f"Missing data for test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
         )
 
-    result['percentage_change'] = percentage_change
+    result["percentage_change"] = percentage_change
 
     if baseline_v != "N/A" or comparison_v != "N/A":
         detected_regression = False
@@ -1545,8 +1534,8 @@ def process_single_test_comparison(
                     if simplify_table is False:
                         note = note + " No Change"
 
-        result['detected_regression'] = detected_regression
-        result['detected_improvement'] = detected_improvement
+        result["detected_regression"] = detected_regression
+        result["detected_improvement"] = detected_improvement
 
         line = get_line(
             baseline_v_str,
@@ -1555,12 +1544,12 @@ def process_single_test_comparison(
             percentage_change,
             test_link,
         )
-        result['line'] = line
+        result["line"] = line
     else:
         logging.warning(
             "There were no datapoints both for baseline and comparison for test: {test_name}"
         )
-        result['no_datapoints_both'] = True
+        result["no_datapoints_both"] = True
 
     return result
 
@@ -1676,49 +1665,49 @@ def from_rts_to_regression_table(
     # Second loop: Process all collected results
     for test_name, result in test_results:
         # Handle the results from the extracted function
-        if result['skip_test']:
+        if result["skip_test"]:
             continue
 
-        if result['no_datapoints_baseline']:
+        if result["no_datapoints_baseline"]:
             no_datapoints_baseline_list.append(test_name)
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
 
-        if result['no_datapoints_comparison']:
+        if result["no_datapoints_comparison"]:
             no_datapoints_comparison_list.append(test_name)
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
 
-        if result['baseline_only']:
+        if result["baseline_only"]:
             baseline_only_list.append(test_name)
 
-        if result['comparison_only']:
+        if result["comparison_only"]:
             comparison_only_list.append(test_name)
 
-        if result['unstable']:
+        if result["unstable"]:
             unstable_list.append([test_name, "n/a"])
 
-        if result['boxplot_data']:
-            boxplot_data.append(result['boxplot_data'])
+        if result["boxplot_data"]:
+            boxplot_data.append(result["boxplot_data"])
 
         # Handle group and command changes
-        for test_group in result['tested_groups']:
+        for test_group in result["tested_groups"]:
             if test_group not in group_change:
                 group_change[test_group] = []
-            group_change[test_group].append(result['percentage_change'])
+            group_change[test_group].append(result["percentage_change"])
 
-        for test_command in result['tested_commands']:
+        for test_command in result["tested_commands"]:
             if test_command not in command_change:
                 command_change[test_command] = []
-            command_change[test_command].append(result['percentage_change'])
+            command_change[test_command].append(result["percentage_change"])
 
         # Handle regression/improvement detection and table updates
-        if result['line'] is not None:
-            detected_regression = result['detected_regression']
-            detected_improvement = result['detected_improvement']
-            unstable = result['unstable']
-            line = result['line']
-            percentage_change = result['percentage_change']
+        if result["line"] is not None:
+            detected_regression = result["detected_regression"]
+            detected_improvement = result["detected_improvement"]
+            unstable = result["unstable"]
+            line = result["line"]
+            percentage_change = result["percentage_change"]
 
             if detected_regression:
                 total_regressions = total_regressions + 1
@@ -1752,7 +1741,7 @@ def from_rts_to_regression_table(
             if should_add_line:
                 total_comparison_points = total_comparison_points + 1
                 table_full.append(line)
-        elif result['no_datapoints_both']:
+        elif result["no_datapoints_both"]:
             if test_name not in no_datapoints_list:
                 no_datapoints_list.append(test_name)
     logging.warning(
