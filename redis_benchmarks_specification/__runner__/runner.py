@@ -2948,6 +2948,10 @@ def process_self_contained_coordinator_stream(
                             full_result_path = "{}/{}".format(
                                 temporary_dir_client, local_benchmark_output_filename
                             )
+                        elif "pubsub-sub-bench" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
                         elif "vector-db-benchmark" in benchmark_tool:
                             # For vector-db-benchmark, look for summary JSON file
                             summary_files = [
@@ -3123,12 +3127,23 @@ def process_self_contained_coordinator_stream(
                         client_aggregated_results_folder,
                         local_benchmark_output_filename,
                     )
-                    logging.info(
-                        "Preserving local results file {} into {}".format(
-                            full_result_path, dest_fpath
+                    # Safety check: ensure full_result_path exists before copying
+                    if full_result_path is None:
+                        logging.error(
+                            f"Cannot preserve results: full_result_path is None for test {test_name}. "
+                            f"This may indicate a missing benchmark tool handler in the result path construction."
                         )
-                    )
-                    shutil.copy(full_result_path, dest_fpath)
+                    elif not os.path.exists(full_result_path):
+                        logging.error(
+                            f"Cannot preserve results: file does not exist at {full_result_path} for test {test_name}"
+                        )
+                    else:
+                        logging.info(
+                            "Preserving local results file {} into {}".format(
+                                full_result_path, dest_fpath
+                            )
+                        )
+                        shutil.copy(full_result_path, dest_fpath)
                 overall_result &= test_result
 
                 delete_temporary_files(
