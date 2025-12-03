@@ -34,7 +34,7 @@ dbconfig:
 tested-groups:
 - hash
 tested-commands:
-- hgetall
+- httl
 redis-topologies:
 - oss-standalone
 build-variants:
