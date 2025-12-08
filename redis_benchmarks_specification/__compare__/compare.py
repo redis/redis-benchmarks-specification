@@ -367,66 +367,140 @@ def compare_command_logic(args, project_name, project_version):
     )
     grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
 
-    (
-        detected_regressions,
-        table_output,
-        improvements_list,
-        regressions_list,
-        total_stable,
-        total_unstable,
-        total_comparison_points,
-        boxplot_data,
-        command_change,
-    ) = compute_regression_table(
-        rts,
-        tf_github_org,
-        tf_github_repo,
-        triggering_env_baseline,
-        triggering_env_comparison,
-        metric_name,
-        comparison_branch,
-        baseline_branch,
-        baseline_tag,
-        comparison_tag,
-        baseline_deployment_name,
-        comparison_deployment_name,
-        print_improvements_only,
-        print_regressions_only,
-        skip_unstable,
-        regressions_percent_lower_limit,
-        simplify_table,
-        test,
-        testname_regex,
-        verbose,
-        last_n_baseline,
-        last_n_comparison,
-        metric_mode,
-        from_date,
-        from_ts_ms,
-        to_date,
-        to_ts_ms,
-        use_metric_context_path,
-        running_platform_baseline,
-        running_platform_comparison,
-        baseline_target_version,
-        comparison_target_version,
-        baseline_hash,
-        comparison_hash,
-        baseline_github_repo,
-        comparison_github_repo,
-        baseline_target_branch,
-        comparison_target_branch,
-        baseline_github_org,
-        comparison_github_org,
-        args.regression_str,
-        args.improvement_str,
-        tests_with_config,
-        args.use_test_suites_folder,
-        testsuites_folder,
-        args.extra_filters,
-        getattr(args, "command_group_regex", ".*"),
-        getattr(args, "command_regex", ".*"),
-    )
+    # Check if environment comparison mode is enabled
+    compare_by_env = getattr(args, "compare_by_env", False)
+
+    if compare_by_env:
+        logging.info("Environment comparison mode enabled")
+        # Extract environment list from deployment names in the user's example
+        env_list = [
+            "oss-standalone",
+            "oss-standalone-02-io-threads",
+            "oss-standalone-04-io-threads",
+            "oss-standalone-08-io-threads",
+        ]
+
+        (
+            detected_regressions,
+            table_output,
+            improvements_list,
+            regressions_list,
+            total_stable,
+            total_unstable,
+            total_comparison_points,
+            boxplot_data,
+            command_change,
+        ) = compute_env_comparison_table(
+            rts,
+            tf_github_org,
+            tf_github_repo,
+            triggering_env_baseline,
+            triggering_env_comparison,
+            metric_name,
+            comparison_branch,
+            baseline_branch,
+            baseline_tag,
+            comparison_tag,
+            env_list,
+            print_improvements_only,
+            print_regressions_only,
+            skip_unstable,
+            regressions_percent_lower_limit,
+            simplify_table,
+            test,
+            testname_regex,
+            verbose,
+            last_n_baseline,
+            last_n_comparison,
+            metric_mode,
+            from_date,
+            from_ts_ms,
+            to_date,
+            to_ts_ms,
+            use_metric_context_path,
+            running_platform_baseline,
+            running_platform_comparison,
+            baseline_target_version,
+            comparison_target_version,
+            baseline_hash,
+            comparison_hash,
+            baseline_github_repo,
+            comparison_github_repo,
+            baseline_target_branch,
+            comparison_target_branch,
+            baseline_github_org,
+            comparison_github_org,
+            args.regression_str,
+            args.improvement_str,
+            tests_with_config,
+            args.use_test_suites_folder,
+            testsuites_folder,
+            args.extra_filters,
+            getattr(args, "command_group_regex", ".*"),
+            getattr(args, "command_regex", ".*"),
+        )
+    else:
+        logging.info("Default test comparison mode")
+        (
+            detected_regressions,
+            table_output,
+            improvements_list,
+            regressions_list,
+            total_stable,
+            total_unstable,
+            total_comparison_points,
+            boxplot_data,
+            command_change,
+        ) = compute_regression_table(
+            rts,
+            tf_github_org,
+            tf_github_repo,
+            triggering_env_baseline,
+            triggering_env_comparison,
+            metric_name,
+            comparison_branch,
+            baseline_branch,
+            baseline_tag,
+            comparison_tag,
+            baseline_deployment_name,
+            comparison_deployment_name,
+            print_improvements_only,
+            print_regressions_only,
+            skip_unstable,
+            regressions_percent_lower_limit,
+            simplify_table,
+            test,
+            testname_regex,
+            verbose,
+            last_n_baseline,
+            last_n_comparison,
+            metric_mode,
+            from_date,
+            from_ts_ms,
+            to_date,
+            to_ts_ms,
+            use_metric_context_path,
+            running_platform_baseline,
+            running_platform_comparison,
+            baseline_target_version,
+            comparison_target_version,
+            baseline_hash,
+            comparison_hash,
+            baseline_github_repo,
+            comparison_github_repo,
+            baseline_target_branch,
+            comparison_target_branch,
+            baseline_github_org,
+            comparison_github_org,
+            args.regression_str,
+            args.improvement_str,
+            tests_with_config,
+            args.use_test_suites_folder,
+            testsuites_folder,
+            args.extra_filters,
+            getattr(args, "command_group_regex", ".*"),
+            getattr(args, "command_regex", ".*"),
+        )
     total_regressions = len(regressions_list)
     total_improvements = len(improvements_list)
     prepare_regression_comment(
@@ -694,6 +768,306 @@ def extract_default_branch_and_metric(defaults_filename):
                             )
                         )
     return default_baseline_branch, default_metrics_str
+
+
+def compute_env_comparison_table(
+    rts,
+    tf_github_org,
+    tf_github_repo,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
+    metric_name,
+    comparison_branch,
+    baseline_branch="unstable",
+    baseline_tag=None,
+    comparison_tag=None,
+    env_list=None,
+    print_improvements_only=False,
+    print_regressions_only=False,
+    skip_unstable=False,
+    regressions_percent_lower_limit=5.0,
+    simplify_table=False,
+    test="",
+    testname_regex=".*",
+    verbose=False,
+    last_n_baseline=-1,
+    last_n_comparison=-1,
+    metric_mode="higher-better",
+    from_date=None,
+    from_ts_ms=None,
+    to_date=None,
+    to_ts_ms=None,
+    use_metric_context_path=None,
+    running_platform_baseline=None,
+    running_platform_comparison=None,
+    baseline_target_version=None,
+    comparison_target_version=None,
+    comparison_hash=None,
+    baseline_hash=None,
+    baseline_github_repo="redis",
+    comparison_github_repo="redis",
+    baseline_target_branch=None,
+    comparison_target_branch=None,
+    baseline_github_org="redis",
+    comparison_github_org="redis",
+    regression_str="REGRESSION",
+    improvement_str="IMPROVEMENT",
+    tests_with_config={},
+    use_test_suites_folder=False,
+    test_suites_folder=None,
+    extra_filters="",
+    command_group_regex=".*",
+    command_regex=".*",
+):
+    """
+    Compute environment comparison table for a specific test across different environments.
+    """
+    START_TIME_NOW_UTC, _, _ = get_start_time_vars()
+    START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
+    if from_date is None:
+        from_date = START_TIME_LAST_MONTH_UTC
+    if to_date is None:
+        to_date = START_TIME_NOW_UTC
+    if from_ts_ms is None:
+        from_ts_ms = int(from_date.timestamp() * 1000)
+    if to_ts_ms is None:
+        to_ts_ms = int(to_date.timestamp() * 1000)
+
+    # Extract test names from the test parameter
+    test_names = []
+    if test != "":
+        test_names = test.split(",")
+
+    # If no specific test provided, we need at least one test for environment comparison
+    if not test_names:
+        logging.error(
+            "Environment comparison requires specifying at least one test via --test parameter"
+        )
+        return None, "", [], [], 0, 0, 0, [], False
+
+    # For environment comparison, we focus on the first test if multiple are provided
+    test_name = test_names[0]
+    if len(test_names) > 1:
+        logging.warning(
+            f"Environment comparison mode: using only the first test '{test_name}' from the provided list"
+        )
+
+    # Default environment list if not provided
+    if env_list is None:
+        env_list = [
+            "oss-standalone",
+            "oss-standalone-02-io-threads",
+            "oss-standalone-04-io-threads",
+            "oss-standalone-08-io-threads",
+        ]
+
+    logging.info(f"Comparing environments {env_list} for test '{test_name}'")
+
+    # Build baseline and comparison strings
+    baseline_str, by_str_baseline, comparison_str, by_str_comparison = get_by_strings(
+        baseline_branch,
+        comparison_branch,
+        baseline_tag,
+        comparison_tag,
+        baseline_target_version,
+        comparison_target_version,
+        baseline_hash,
+        comparison_hash,
+        baseline_target_branch,
+        comparison_target_branch,
+    )
+
+    test_filter = "test_name"
+
+    (
+        detected_regressions,
+        table_full,
+        table_stable,
+        table_unstable,
+        table_improvements,
+        table_regressions,
+        total_improvements,
+        total_regressions,
+        total_stable,
+        total_unstable,
+        total_comparison_points,
+        regressions_list,
+        improvements_list,
+        unstable_list,
+        baseline_only_list,
+        comparison_only_list,
+        no_datapoints_list,
+        group_change,
+        command_change,
+        boxplot_data,
+    ) = from_rts_to_env_comparison_table(
+        test_name,
+        env_list,
+        baseline_str,
+        comparison_str,
+        by_str_baseline,
+        by_str_comparison,
+        from_ts_ms,
+        to_ts_ms,
+        last_n_baseline,
+        last_n_comparison,
+        metric_mode,
+        metric_name,
+        print_improvements_only,
+        print_regressions_only,
+        skip_unstable,
+        regressions_percent_lower_limit,
+        rts,
+        simplify_table,
+        test_filter,
+        tf_triggering_env_baseline,
+        tf_triggering_env_comparison,
+        verbose,
+        running_platform_baseline,
+        running_platform_comparison,
+        baseline_github_repo,
+        comparison_github_repo,
+        baseline_github_org,
+        comparison_github_org,
+        regression_str,
+        improvement_str,
+        tests_with_config,
+        extra_filters,
+    )
+
+    # Generate table output
+    table_output = f"## Environment Comparison for Test: {test_name}\n\n"
+    table_output += f"**Metric:** {metric_name} ({metric_mode})\n\n"
+    table_output += (
+        f"**Baseline:** {baseline_github_org}/{baseline_github_repo} {baseline_str}\n\n"
+    )
+    table_output += f"**Comparison:** {comparison_github_org}/{comparison_github_repo} {comparison_str}\n\n"
+
+    if total_unstable > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Unstable Environments\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Environment",
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_unstable,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        env_names_str = "|".join([l[0] for l in unstable_list])
+        table_output += f"Unstable environment names: {env_names_str}\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
+
+    if total_regressions > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Regressions by Environment\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Environment",
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_regressions,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        env_names_str = "|".join([l[0] for l in regressions_list])
+        table_output += f"Regression environment names: {env_names_str}\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
+
+    if total_improvements > 0:
+        old_stdout = sys.stdout
+        sys.stdout = mystdout = StringIO()
+        table_output += "#### Improvements by Environment\n\n"
+        writer_regressions = MarkdownTableWriter(
+            table_name="",
+            headers=[
+                "Environment",
+                f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+                f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
+                "% change ({})".format(metric_mode),
+                "Note",
+            ],
+            value_matrix=table_improvements,
+        )
+        writer_regressions.dump(mystdout, False)
+        table_output += mystdout.getvalue()
+        table_output += "\n\n"
+        env_names_str = "|".join([l[0] for l in improvements_list])
+        table_output += f"Improvements environment names: {env_names_str}\n\n"
+        mystdout.close()
+        sys.stdout = old_stdout
+
+    old_stdout = sys.stdout
+    sys.stdout = mystdout = StringIO()
+    writer_full = MarkdownTableWriter(
+        table_name="",
+        headers=[
+            "Environment",
+            f"Baseline {baseline_github_org}/{baseline_github_repo} {baseline_str} (median obs. +- std.dev)",
+            f"Comparison {comparison_github_org}/{comparison_github_repo} {comparison_str} (median obs. +- std.dev)",
+            "% change ({})".format(metric_mode),
+            "Note",
+        ],
+        value_matrix=table_full,
+    )
+    table_output += f"<details>\n  <summary>Full Environment Results for Test: {test_name}:</summary>\n\n"
+
+    writer_full.dump(mystdout, False)
+
+    sys.stdout = old_stdout
+    table_output += mystdout.getvalue()
+    table_output += "\n</details>\n"
+
+    len_baseline_only_list = len(baseline_only_list)
+    if len_baseline_only_list > 0:
+        table_output += f"\n  WARNING: There were {len_baseline_only_list} environments with datapoints only on baseline.\n\n"
+        baseline_only_env_names_str = "|".join([l for l in baseline_only_list])
+        table_output += (
+            f"  Baseline only environment names: {baseline_only_env_names_str}\n\n"
+        )
+
+    len_comparison_only_list = len(comparison_only_list)
+    if len_comparison_only_list > 0:
+        table_output += f"\n  WARNING: There were {len_comparison_only_list} environments with datapoints only on comparison.\n\n"
+        comparison_only_env_names_str = "|".join([l for l in comparison_only_list])
+        table_output += (
+            f"  Comparison only environment names: {comparison_only_env_names_str}\n\n"
+        )
+
+    len_no_datapoints_list = len(no_datapoints_list)
+    if len_no_datapoints_list > 0:
+        table_output += f"\n  WARNING: There were {len_no_datapoints_list} environments with no datapoints.\n\n"
+        no_datapoints_env_names_str = "|".join([l for l in no_datapoints_list])
+        table_output += (
+            f"  No datapoints environment names: {no_datapoints_env_names_str}\n\n"
+        )
+
+    return (
+        detected_regressions,
+        table_output,
+        improvements_list,
+        regressions_list,
+        total_stable,
+        total_unstable,
+        total_comparison_points,
+        boxplot_data,
+        command_change,
+    )
 
 
 def compute_regression_table(
@@ -1554,6 +1928,476 @@ def process_single_test_comparison(
     return result
 
 
+def process_single_env_comparison(
+    env_name,
+    test_name,
+    tests_with_config,
+    original_metric_mode,
+    baseline_str,
+    comparison_str,
+    by_str_baseline,
+    by_str_comparison,
+    metric_name,
+    test_filter,
+    baseline_github_repo,
+    comparison_github_repo,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
+    extra_filters,
+    baseline_github_org,
+    comparison_github_org,
+    running_platform_baseline,
+    running_platform_comparison,
+    rts,
+    from_ts_ms,
+    to_ts_ms,
+    last_n_baseline,
+    last_n_comparison,
+    verbose,
+    regressions_percent_lower_limit,
+    simplify_table,
+    regression_str,
+    improvement_str,
+    progress,
+):
+    """
+    Process comparison analysis for a single environment for a specific test.
+    This is similar to process_single_test_comparison but focuses on environment comparison.
+    """
+    result = {
+        "baseline_only": False,
+        "comparison_only": False,
+        "unstable": False,
+        "detected_regression": False,
+        "detected_improvement": False,
+        "no_datapoints_both": False,
+        "percentage_change": "N/A",
+        "line": [],
+        "boxplot_data": None,
+    }
+
+    baseline_datapoints = []
+    comparison_datapoints = []
+    baseline_values = []
+    comparison_values = []
+    baseline_v = "N/A"
+    comparison_v = "N/A"
+    baseline_pct_change = "N/A"
+    comparison_pct_change = "N/A"
+    percentage_change = "N/A"
+    largest_variance = 0.0
+
+    metric_mode = original_metric_mode
+    compare_version = "main"
+    # GE
+    github_link = "https://github.com/redis/redis-benchmarks-specification/blob"
+    test_path = f"redis_benchmarks_specification/test-suites/{test_name}.yml"
+    test_link = f"[{test_name}]({github_link}/{compare_version}/{test_path})"
+    multi_value_baseline = check_multi_value_filter(baseline_str)
+    multi_value_comparison = check_multi_value_filter(comparison_str)
+
+    # Build filters for baseline environment
+    filters_baseline = [
+        "metric={}".format(metric_name),
+        "{}={}".format(test_filter, test_name),
+        "github_repo={}".format(baseline_github_repo),
+        "triggering_env={}".format(tf_triggering_env_baseline),
+        "deployment_name={}".format(env_name),  # Use env_name as deployment_name
+    ]
+    if extra_filters != "":
+        filters_baseline.append(extra_filters)
+    if baseline_str != "":
+        filters_baseline.append("{}={}".format(by_str_baseline, baseline_str))
+    if baseline_github_org != "":
+        filters_baseline.append(f"github_org={baseline_github_org}")
+    if running_platform_baseline is not None and running_platform_baseline != "":
+        filters_baseline.append("running_platform={}".format(running_platform_baseline))
+
+    # Build filters for comparison environment (same environment, different branch/version)
+    filters_comparison = [
+        "metric={}".format(metric_name),
+        "{}={}".format(test_filter, test_name),
+        "github_repo={}".format(comparison_github_repo),
+        "triggering_env={}".format(tf_triggering_env_comparison),
+        "deployment_name={}".format(env_name),  # Use same env_name
+    ]
+    if comparison_str != "":
+        filters_comparison.append("{}={}".format(by_str_comparison, comparison_str))
+    if extra_filters != "":
+        filters_comparison.append(extra_filters)
+    if comparison_github_org != "":
+        filters_comparison.append(f"github_org={comparison_github_org}")
+    if "hash" not in by_str_baseline:
+        filters_baseline.append("hash==")
+    if "hash" not in by_str_comparison:
+        filters_comparison.append("hash==")
+    if running_platform_comparison is not None and running_platform_comparison != "":
+        filters_comparison.append(
+            "running_platform={}".format(running_platform_comparison)
+        )
+
+    baseline_timeseries = rts.ts().queryindex(filters_baseline)
+    comparison_timeseries = rts.ts().queryindex(filters_comparison)
+
+    # avoiding target time-series
+    comparison_timeseries = [x for x in comparison_timeseries if "target" not in x]
+    baseline_timeseries = [x for x in baseline_timeseries if "target" not in x]
+    progress.update()
+    if verbose:
+        logging.info(
+            "Baseline timeseries for {} (env: {}): {}. test={}".format(
+                baseline_str, env_name, len(baseline_timeseries), test_name
+            )
+        )
+        logging.info(
+            "Comparison timeseries for {} (env: {}): {}. test={}".format(
+                comparison_str, env_name, len(comparison_timeseries), test_name
+            )
+        )
+    if len(baseline_timeseries) > 1 and multi_value_baseline is False:
+        baseline_timeseries = get_only_Totals(baseline_timeseries)
+    if len(comparison_timeseries) > 1 and multi_value_comparison is False:
+        comparison_timeseries = get_only_Totals(comparison_timeseries)
+
+    note = ""
+    try:
+        for ts_name_baseline in baseline_timeseries:
+            datapoints_inner = rts.ts().revrange(ts_name_baseline, from_ts_ms, to_ts_ms)
+            baseline_datapoints.extend(datapoints_inner)
+        (
+            baseline_pct_change,
+            baseline_v,
+            largest_variance,
+        ) = get_v_pct_change_and_largest_var(
+            baseline_datapoints,
+            baseline_pct_change,
+            baseline_v,
+            baseline_values,
+            largest_variance,
+            last_n_baseline,
+            verbose,
+        )
+        for ts_name_comparison in comparison_timeseries:
+            datapoints_inner = rts.ts().revrange(
+                ts_name_comparison, from_ts_ms, to_ts_ms
+            )
+            comparison_datapoints.extend(datapoints_inner)
+
+        (
+            comparison_pct_change,
+            comparison_v,
+            largest_variance,
+        ) = get_v_pct_change_and_largest_var(
+            comparison_datapoints,
+            comparison_pct_change,
+            comparison_v,
+            comparison_values,
+            largest_variance,
+            last_n_comparison,
+            verbose,
+        )
+
+        waterline = regressions_percent_lower_limit
+
+    except redis.exceptions.ResponseError as e:
+        logging.error(
+            "Detected a redis.exceptions.ResponseError. {}".format(e.__str__())
+        )
+        pass
+    except ZeroDivisionError as e:
+        logging.error("Detected a ZeroDivisionError. {}".format(e.__str__()))
+        pass
+
+    unstable = False
+
+    if baseline_v != "N/A" and comparison_v == "N/A":
+        logging.warning(
+            f"Baseline contains datapoints but comparison not for env: {env_name}, test: {test_name}"
+        )
+        result["baseline_only"] = True
+    if comparison_v != "N/A" and baseline_v == "N/A":
+        logging.warning(
+            f"Comparison contains datapoints but baseline not for env: {env_name}, test: {test_name}"
+        )
+        result["comparison_only"] = True
+    if (
+        baseline_v != "N/A"
+        and comparison_pct_change != "N/A"
+        and comparison_v != "N/A"
+        and baseline_pct_change != "N/A"
+    ):
+        if comparison_pct_change > 10.0 or baseline_pct_change > 10.0:
+            note = "UNSTABLE (very high variance)"
+            unstable = True
+            result["unstable"] = True
+
+        baseline_v_str = prepare_value_str(
+            baseline_pct_change,
+            baseline_v,
+            baseline_values,
+            simplify_table,
+            metric_name,
+        )
+        comparison_v_str = prepare_value_str(
+            comparison_pct_change,
+            comparison_v,
+            comparison_values,
+            simplify_table,
+            metric_name,
+        )
+
+        if metric_mode == "higher-better":
+            percentage_change = (float(comparison_v) / float(baseline_v) - 1) * 100.0
+        else:
+            # lower-better
+            percentage_change = (
+                -(float(baseline_v) - float(comparison_v)) / float(baseline_v)
+            ) * 100.0
+
+        # Collect data for box plot
+        result["boxplot_data"] = (env_name, percentage_change)
+    else:
+        logging.warn(
+            f"Missing data for env {env_name}, test {test_name}. baseline_v={baseline_v} (pct_change={baseline_pct_change}), comparison_v={comparison_v} (pct_change={comparison_pct_change}) "
+        )
+
+    result["percentage_change"] = percentage_change
+
+    if (
+        baseline_v != "N/A"
+        and comparison_v != "N/A"
+        and percentage_change != "N/A"
+        and unstable is False
+    ):
+        detected_regression = False
+        detected_improvement = False
+        noise_waterline = 1.0
+
+        if percentage_change > 0.0:
+            if percentage_change > waterline:
+                detected_regression = True
+                note = note + f" {regression_str}"
+            elif percentage_change > noise_waterline:
+                if simplify_table is False:
+                    note = note + f" potential {regression_str}"
+            else:
+                if simplify_table is False:
+                    note = note + " No Change"
+
+        if percentage_change < 0.0:
+            if -percentage_change > waterline:
+                detected_improvement = True
+                note = note + f" {improvement_str}"
+            elif -percentage_change > noise_waterline:
+                if simplify_table is False:
+                    note = note + f" potential {improvement_str}"
+            else:
+                if simplify_table is False:
+                    note = note + " No Change"
+
+        result["detected_regression"] = detected_regression
+        result["detected_improvement"] = detected_improvement
+
+        line = get_line(
+            baseline_v_str,
+            comparison_v_str,
+            note,
+            percentage_change,
+            env_name,  # Use env_name instead of test_link for environment comparison
+        )
+        result["line"] = line
+    else:
+        logging.warning(
+            f"There were no datapoints both for baseline and comparison for env: {env_name}, test: {test_name}"
+        )
+        result["no_datapoints_both"] = True
+
+    return result
+
+
+def from_rts_to_env_comparison_table(
+    test_name,
+    env_list,
+    baseline_str,
+    comparison_str,
+    by_str_baseline,
+    by_str_comparison,
+    from_ts_ms,
+    to_ts_ms,
+    last_n_baseline,
+    last_n_comparison,
+    metric_mode,
+    metric_name,
+    print_improvements_only,
+    print_regressions_only,
+    skip_unstable,
+    regressions_percent_lower_limit,
+    rts,
+    simplify_table,
+    test_filter,
+    tf_triggering_env_baseline,
+    tf_triggering_env_comparison,
+    verbose,
+    running_platform_baseline=None,
+    running_platform_comparison=None,
+    baseline_github_repo="redis",
+    comparison_github_repo="redis",
+    baseline_github_org="redis",
+    comparison_github_org="redis",
+    regression_str="REGRESSION",
+    improvement_str="IMPROVEMENT",
+    tests_with_config={},
+    extra_filters="",
+):
+    """
+    Compare environments for a single test instead of tests for a single environment.
+    Returns comparison data organized by environment.
+    """
+    original_metric_mode = metric_mode
+
+    # Initialize result containers
+    table_full = []
+    table_stable = []
+    table_unstable = []
+    table_improvements = []
+    table_regressions = []
+    regressions_list = []
+    improvements_list = []
+    unstable_list = []
+    baseline_only_list = []
+    comparison_only_list = []
+    no_datapoints_list = []
+    boxplot_data = []
+
+    total_improvements = 0
+    total_regressions = 0
+    total_stable = 0
+    total_unstable = 0
+    total_comparison_points = 0
+    detected_regressions = False
+
+    # Progress tracking
+    from tqdm import tqdm
+
+    progress = tqdm(total=len(env_list), desc=f"Processing envs for {test_name[:30]}")
+
+    def process_env_wrapper(env_name):
+        """Wrapper function to process a single environment and return env_name with result"""
+        result = process_single_env_comparison(
+            env_name,
+            test_name,
+            tests_with_config,
+            original_metric_mode,
+            baseline_str,
+            comparison_str,
+            by_str_baseline,
+            by_str_comparison,
+            metric_name,
+            test_filter,
+            baseline_github_repo,
+            comparison_github_repo,
+            tf_triggering_env_baseline,
+            tf_triggering_env_comparison,
+            extra_filters,
+            baseline_github_org,
+            comparison_github_org,
+            running_platform_baseline,
+            running_platform_comparison,
+            rts,
+            from_ts_ms,
+            to_ts_ms,
+            last_n_baseline,
+            last_n_comparison,
+            verbose,
+            regressions_percent_lower_limit,
+            simplify_table,
+            regression_str,
+            improvement_str,
+            progress,
+        )
+        return env_name, result
+
+    # Process all environments
+    for env_name in env_list:
+        env_name, result = process_env_wrapper(env_name)
+
+        if result["no_datapoints_both"]:
+            no_datapoints_list.append(env_name)
+            continue
+
+        if result["baseline_only"]:
+            baseline_only_list.append(env_name)
+            continue
+
+        if result["comparison_only"]:
+            comparison_only_list.append(env_name)
+            continue
+
+        if result["unstable"]:
+            unstable_list.append((env_name, result["line"]))
+            table_unstable.append(result["line"])
+            total_unstable += 1
+            if skip_unstable is False:
+                table_full.append(result["line"])
+                total_comparison_points += 1
+            continue
+
+        if result["detected_regression"]:
+            detected_regressions = True
+            regressions_list.append((env_name, result["percentage_change"]))
+            table_regressions.append(result["line"])
+            total_regressions += 1
+
+        if result["detected_improvement"]:
+            improvements_list.append((env_name, result["percentage_change"]))
+            table_improvements.append(result["line"])
+            total_improvements += 1
+
+        if (
+            not result["detected_regression"]
+            and not result["detected_improvement"]
+            and not result["unstable"]
+        ):
+            total_stable += 1
+            table_stable.append(result["line"])
+
+        # Add to full table if not filtered out
+        if not (
+            print_improvements_only and not result["detected_improvement"]
+        ) and not (print_regressions_only and not result["detected_regression"]):
+            table_full.append(result["line"])
+            total_comparison_points += 1
+
+        # Collect boxplot data
+        if result["boxplot_data"]:
+            boxplot_data.append(result["boxplot_data"])
+
+    progress.close()
+
+    return (
+        detected_regressions,
+        table_full,
+        table_stable,
+        table_unstable,
+        table_improvements,
+        table_regressions,
+        total_improvements,
+        total_regressions,
+        total_stable,
+        total_unstable,
+        total_comparison_points,
+        regressions_list,
+        improvements_list,
+        unstable_list,
+        baseline_only_list,
+        comparison_only_list,
+        no_datapoints_list,
+        False,  # group_change (not applicable for env comparison)
+        False,  # command_change (not applicable for env comparison)
+        boxplot_data,
+    )
+
+
 def from_rts_to_regression_table(
     baseline_deployment_name,
     comparison_deployment_name,
@@ -1795,6 +2639,8 @@ def get_only_Totals(baseline_timeseries):
     )
     new_base = []
     for ts_name in baseline_timeseries:
+        if "8.5.0" in ts_name:
+            continue
         if "io-threads" in ts_name:
             continue
         if "oss-cluster" in ts_name:
