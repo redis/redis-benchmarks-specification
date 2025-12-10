@@ -19,7 +19,7 @@ dbconfig:
   resources:
     requests:
       memory: 2g
-  dataset_description: This dataset contains 100K hash keys, each with 50 fields
+  dataset_description: This dataset contains 100K hash keys, each with 5 fields
     and each field has a data size of 10 bytes.
 tested-groups:
 - hash
