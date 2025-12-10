@@ -25,7 +25,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --test-time 120 --distinct-client-seed "--data-size" "10" --command "HSETEX 
-    __key__ EX 36000 FIELDS 50 
+    __key__ EX 1 FIELDS 50 
     field:1 __data__ field:2 __data__ field:3 __data__ field:4 __data__ field:5
     __data__ field:6 __data__ field:7 __data__ field:8 __data__ field:9 __data__ field:10
     __data__ field:11 __data__ field:12 __data__ field:13 __data__ field:14 __data__
