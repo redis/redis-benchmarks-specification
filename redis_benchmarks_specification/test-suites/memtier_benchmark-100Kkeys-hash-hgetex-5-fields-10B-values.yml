@@ -12,7 +12,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "10" --command "HSETEX __key__ EX 3600 FIELDS 50 field:1 __data__ field:2
+    arguments: '"--data-size" "10" --command "HSETEX __key__ EX 3600 FIELDS 5 field:1 __data__ field:2
       __data__ field:3 __data__ field:4 __data__ field:5 __data__" --command-key-pattern="P"
       --key-minimum=1 --key-maximum 100001 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
       50'
