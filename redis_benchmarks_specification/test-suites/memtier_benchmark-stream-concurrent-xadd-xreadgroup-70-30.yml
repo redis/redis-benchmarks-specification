@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-stream-concurrent-xadd-xreadgroup-70-30
+description:
+  Starting with a pre-loaded stream of 500K entries, the benchmark tests concurrent stream operations with a consumer group for distributed processing.
+  70% of commands produce messages with XADD, while 30% consume with XREADGROUP COUNT 10.
+  500K initial entries plus 200K * 70% minus 200K * 10 * (15% + 15%) ≈ 40K left in the stream at the end.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 2500 -c 50 -t 4 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key producer-consumer-group 0 MKSTREAM
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-concurrent-producer-consumer-500k-seed
+  dataset_description: This dataset starts with 500K pre-loaded stream entries, then tests concurrent stream operations with a consumer group for distributed processing.
+tested-commands:
+  - xadd
+  - xreadgroup
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
+    --command="XREADGROUP GROUP producer-consumer-group consumer1 COUNT 10 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=15
+    --command="XREADGROUP GROUP producer-consumer-group consumer2 COUNT 10 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=15
+    --hide-histogram
+    -n 1000
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+tested-groups:
+  - stream
+priority: 95

@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-100Kkeys-hash-hexpire-50-fields-10B-values
+description: Runs memtier_benchmark, for a keyspace length of 100K keys pre-loading
+  HASHes in which the value has a data size of 10 Bytes. After pre-loading the data
+  it issues HEXPIRE command.
+dbconfig:
+  dataset_name: 1Mkeys-hash-50-fields-10B-size
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" --command "HSET __key__ field:1 __data__ field:2
+      __data__ field:3 __data__ field:4 __data__ field:5 __data__ field:6 __data__
+      field:7 __data__ field:8 __data__ field:9 __data__ field:10 __data__ field:11
+      __data__ field:12 __data__ field:13 __data__ field:14 __data__ field:15 __data__
+      field:16 __data__ field:17 __data__ field:18 __data__ field:19 __data__ field:20
+      __data__ field:21 __data__ field:22 __data__ field:23 __data__ field:24 __data__
+      field:25 __data__ field:26 __data__ field:27 __data__ field:28 __data__ field:29
+      __data__ field:30 __data__ field:31 __data__ field:32 __data__ field:33 __data__
+      field:34 __data__ field:35 __data__ field:36 __data__ field:37 __data__ field:38
+      __data__ field:39 __data__ field:40 __data__ field:41 __data__ field:42 __data__
+      field:43 __data__ field:44 __data__ field:45 __data__ field:46 __data__ field:47
+      __data__ field:48 __data__ field:49 __data__ field:50 __data__" --command-key-pattern="P"
+      --key-minimum=1 --key-maximum 100001 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 2g
+  dataset_description: This dataset contains 100K hash keys, each with 50 fields
+    and each field has a data size of 10 bytes.
+tested-groups:
+- hash
+tested-commands:
+- hexpire
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: ' --command "HEXPIRE __key__ 3600 FIELDS 50 field:1 field:2 field:3 field:4 field:5 field:6 field:7 field:8 field:9 field:10 field:11 field:12 field:13 field:14 field:15 field:16 field:17 field:18 field:19 field:20 field:21 field:22 field:23 field:24 field:25 field:26 field:27 field:28 field:29 field:30 field:31 field:32 field:33 field:34 field:35 field:36 field:37 field:38 field:39 field:40 field:41 field:42 field:43 field:44 field:45 field:46 field:47 field:48 field:49 field:50" --command-key-pattern="R" --key-minimum=1
+    --key-maximum 100000 --test-time 120 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 96

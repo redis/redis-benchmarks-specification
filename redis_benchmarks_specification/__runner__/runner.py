@@ -175,13 +175,20 @@ def validate_benchmark_metrics(
     Args:
         results_dict: Dictionary containing benchmark results
         test_name: Name of the test being validated
-        benchmark_config: Benchmark configuration (unused, for compatibility)
+        benchmark_config: Benchmark configuration (optional, contains tested-commands)
         default_metrics: Default metrics configuration (unused, for compatibility)
 
     Returns:
         tuple: (is_valid, error_message)
     """
     try:
+        # Get tested commands from config if available
+        tested_commands = []
+        if benchmark_config and "tested-commands" in benchmark_config:
+            tested_commands = [
+                cmd.lower() for cmd in benchmark_config["tested-commands"]
+            ]
+
         # Define validation rules
         throughput_patterns = [
             "ops/sec",
@@ -218,6 +225,29 @@ def validate_benchmark_metrics(
                     ]
                 ):
                     return
+
+                # Skip operation-specific metrics for operations not being tested
+                # For example, skip Gets.Ops/sec if only SET commands are tested
+                if tested_commands:
+                    skip_metric = False
+                    operation_types = [
+                        "gets",
+                        "sets",
+                        "hgets",
+                        "hsets",
+                        "lpush",
+                        "rpush",
+                        "sadd",
+                    ]
+                    for op_type in operation_types:
+                        if (
+                            op_type in metric_path_lower
+                            and op_type not in tested_commands
+                        ):
+                            skip_metric = True
+                            break
+                    if skip_metric:
+                        return
 
                 # Check throughput metrics
                 for pattern in throughput_patterns:
@@ -324,6 +354,18 @@ def calculate_process_timeout(command_str, buffer_timeout):
         int: Timeout in seconds
     """
     default_timeout = 300  # 5 minutes default
+    run_count = 1
+    if "run-count" in command_str:
+        # Try to extract test time and add buffer
+        # Handle both --test-time (memtier) and -test-time (pubsub-sub-bench)
+        run_count_match = re.search(r"--?run-count[=\s]+(\d+)", command_str)
+        if run_count_match:
+            run_count = int(run_count_match.group(1))
+            logging.info(f"Detected run count of: {run_count}")
+        run_count_match = re.search(r"-?x[=\s]+(\d+)", command_str)
+        if run_count_match:
+            run_count = int(run_count_match.group(1))
+            logging.info(f"Detected run count (from -x) of: {run_count}")
 
     if "test-time" in command_str:
         # Try to extract test time and add buffer
@@ -331,9 +373,9 @@ def calculate_process_timeout(command_str, buffer_timeout):
         test_time_match = re.search(r"--?test-time[=\s]+(\d+)", command_str)
         if test_time_match:
             test_time = int(test_time_match.group(1))
-            timeout = test_time + buffer_timeout
+            timeout = (test_time + buffer_timeout) * run_count
             logging.info(
-                f"Set process timeout to {timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
+                f"Set process timeout to {timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer) x {run_count} runs)"
             )
             return timeout
 
@@ -1554,6 +1596,16 @@ def process_self_contained_coordinator_stream(
                 None, None, stream, ""
             )
 
+            # Use override topology if provided, otherwise use all topologies from config
+            if hasattr(args, "override_topology") and args.override_topology:
+                benchmark_topologies = [args.override_topology]
+                logging.info(f"Using override topology: {args.override_topology}")
+            else:
+                benchmark_topologies = benchmark_config["redis-topologies"]
+                logging.info(
+                    f"Running for a total of {len(benchmark_topologies)} topologies: {benchmark_topologies}"
+                )
+
             # Check if user requested exit via Ctrl+C
             if _exit_requested:
                 logging.info(f"Exit requested by user. Skipping test {test_name}.")
@@ -1592,7 +1644,7 @@ def process_self_contained_coordinator_stream(
                     )
                 )
 
-            for topology_spec_name in benchmark_config["redis-topologies"]:
+            for topology_spec_name in benchmark_topologies:
                 test_result = False
                 benchmark_tool_global = ""
                 full_result_path = None
@@ -1686,7 +1738,7 @@ def process_self_contained_coordinator_stream(
                         logging.info(
                             f"Connected to Redis using individual parameters: {host}:{port}"
                         )
-                    setup_name = "oss-standalone"
+                    setup_name = topology_spec_name
                     r.ping()
 
                     # Auto-detect server information if not explicitly provided
@@ -2440,7 +2492,7 @@ def process_self_contained_coordinator_stream(
                         start_time_str,
                         git_hash,
                         test_name,
-                        setup_type,
+                        setup_name,
                     )
                     logging.info(
                         "Will store benchmark json output to local file {}".format(
@@ -2671,6 +2723,21 @@ def process_self_contained_coordinator_stream(
 
                             if not success:
                                 logging.error(f"Memtier benchmark failed: {stderr}")
+                                # Clean up database after failure (timeout or error)
+                                if (
+                                    args.flushall_on_every_test_end
+                                    or args.flushall_on_every_test_start
+                                ):
+                                    logging.warning(
+                                        "Benchmark failed - cleaning up database with FLUSHALL"
+                                    )
+                                    try:
+                                        for r in redis_conns:
+                                            r.flushall()
+                                    except Exception as e:
+                                        logging.error(
+                                            f"FLUSHALL failed after benchmark failure: {e}"
+                                        )
                                 # Continue with the test but log the failure
                                 client_container_stdout = f"ERROR: {stderr}"
 
@@ -2872,11 +2939,16 @@ def process_self_contained_coordinator_stream(
                             test_name,
                             results_matrix,
                             redis_conns,
+                            setup_name,
                         )
                     else:
                         # Single client - read from file as usual
                         full_result_path = local_benchmark_output_filename
                         if "memtier_benchmark" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
+                        elif "pubsub-sub-bench" in benchmark_tool:
                             full_result_path = "{}/{}".format(
                                 temporary_dir_client, local_benchmark_output_filename
                             )
@@ -2950,6 +3022,7 @@ def process_self_contained_coordinator_stream(
                             test_name,
                             results_matrix,
                             redis_conns,
+                            setup_name,
                         )
 
                     dataset_load_duration_seconds = 0
@@ -3014,6 +3087,20 @@ def process_self_contained_coordinator_stream(
                     print("-" * 60)
                     test_result = False
 
+                    # Clean up database after exception to prevent contamination of next test
+                    if (
+                        args.flushall_on_every_test_end
+                        or args.flushall_on_every_test_start
+                    ):
+                        logging.warning(
+                            "Exception caught - cleaning up database with FLUSHALL"
+                        )
+                        try:
+                            for r in redis_conns:
+                                r.flushall()
+                        except Exception as e:
+                            logging.error(f"FLUSHALL failed after exception: {e}")
+
                     # Check if user requested exit via Ctrl+C
                     if _exit_requested:
                         logging.info(
@@ -3040,12 +3127,23 @@ def process_self_contained_coordinator_stream(
                         client_aggregated_results_folder,
                         local_benchmark_output_filename,
                     )
-                    logging.info(
-                        "Preserving local results file {} into {}".format(
-                            full_result_path, dest_fpath
+                    # Safety check: ensure full_result_path exists before copying
+                    if full_result_path is None:
+                        logging.error(
+                            f"Cannot preserve results: full_result_path is None for test {test_name}. "
+                            f"This may indicate a missing benchmark tool handler in the result path construction."
                         )
-                    )
-                    shutil.copy(full_result_path, dest_fpath)
+                    elif not os.path.exists(full_result_path):
+                        logging.error(
+                            f"Cannot preserve results: file does not exist at {full_result_path} for test {test_name}"
+                        )
+                    else:
+                        logging.info(
+                            "Preserving local results file {} into {}".format(
+                                full_result_path, dest_fpath
+                            )
+                        )
+                        shutil.copy(full_result_path, dest_fpath)
                 overall_result &= test_result
 
                 delete_temporary_files(
@@ -3283,7 +3381,13 @@ def used_memory_check(
 ):
     used_memory = 0
     for conn in redis_conns:
-        used_memory = used_memory + conn.info("memory")["used_memory"]
+        info_mem = conn.info("memory")
+        if "used_memory" in info_mem:
+            used_memory = used_memory + info_mem["used_memory"]
+        else:
+            logging.warning(
+                "used_memory not present in Redis memory info. Cannot enforce memory checks."
+            )
     used_memory_gb = int(math.ceil(float(used_memory) / 1024.0 / 1024.0 / 1024.0))
     logging.info("Benchmark used memory at {}: {}g".format(stage, used_memory_gb))
     if used_memory > benchmark_required_memory:
@@ -3519,6 +3623,7 @@ def prepare_overall_total_test_results(
     test_name,
     overall_results_matrix,
     redis_conns=None,
+    topology=None,
 ):
     # check which metrics to extract
     (
@@ -3554,8 +3659,13 @@ def prepare_overall_total_test_results(
 
         return x[0]  # Use original path
 
+    # Include topology in the test name if provided
+    test_name_with_topology = test_name
+    if topology:
+        test_name_with_topology = f"{topology}-{test_name}"
+
     current_test_results_matrix = [
-        [test_name, get_overall_display_name(x), f"{x[3]:.3f}"]
+        [test_name_with_topology, get_overall_display_name(x), f"{x[3]:.3f}"]
         for x in current_test_results_matrix
     ]
     overall_results_matrix.extend(current_test_results_matrix)

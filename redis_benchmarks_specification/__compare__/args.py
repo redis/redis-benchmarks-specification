@@ -230,4 +230,11 @@ def create_compare_arguments(parser):
         action="store_true",
         help="Skip interactive approval of changes to github before applying.",
     )
+    parser.add_argument(
+        "--compare-by-env",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Compare by environments for each test instead of comparing by tests for each environment (default behavior).",
+    )
     return parser

@@ -34,11 +34,11 @@ dbconfig:
     -- Use the same pairs for all keys
     for k = 1, 10000 do
       local key = tostring(k)
-      local args = {'ZADD', key}
+      local args = {key}
       for i = 1, #score_member_pairs do
         table.insert(args, score_member_pairs[i])
       end
-      redis.call(unpack(args))
+      redis.call('ZADD', unpack(args))
     end
     
     return 'OK'

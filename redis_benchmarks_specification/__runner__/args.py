@@ -325,4 +325,10 @@ def create_client_runner_args(project_name):
         default=None,
         help="Password for HTTP basic authentication to remote profiling endpoint. Optional.",
     )
+    parser.add_argument(
+        "--override-topology",
+        type=str,
+        default="oss-standalone",
+        help="Override the redis-topologies from the benchmark config and use only the specified topology name instead.",
+    )
     return parser

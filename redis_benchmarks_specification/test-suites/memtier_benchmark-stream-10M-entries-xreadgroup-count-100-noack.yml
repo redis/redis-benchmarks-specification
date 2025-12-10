@@ -1,0 +1,38 @@
+version: 0.4
+name: memtier_benchmark-stream-10M-entries-xreadgroup-count-100-noack
+description: "Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, creating a consumer group, then testing XREADGROUP performance with COUNT 100 and NOACK enabled."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 50000 -c 50 -t 4 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key test-group 0 MKSTREAM
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1k-stream-entries-with-consumer-group
+  dataset_description: This dataset contains 1 stream key with 10M entries, each with a field containing 100 bytes of data, and a consumer group named 'test-group'.
+tested-commands:
+  - xreadgroup
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="XREADGROUP GROUP test-group consumer1 COUNT 100 NOACK STREAMS stream-key >" --hide-histogram -n 1000 -c 25 -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+tested-groups:
+  - stream
+priority: 94

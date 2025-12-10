@@ -1,7 +1,7 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-string-setget200c-1KiB-pipeline-10
+name: memtier_benchmark-1Mkeys-string-setget200c-512B-pipeline-1
 description: Runs memtier_benchmark, for a keyspace of 1M keys with 10% SETs and 90%
-  GETs (mixed) with a data size of 1000 Bytes and pipeline 10.
+  GETs (mixed) with a data size of 512 Bytes and pipeline 10.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -10,14 +10,14 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --data-size 1000 --pipeline 50 -n allkeys --ratio 1:0 --key-pattern
+    arguments: --data-size 512 --pipeline 50 -n allkeys --ratio 1:0 --key-pattern
       P:P -c 1 -t 4 --hide-histogram --key-minimum 1 --key-maximum 1000000
   resources:
     requests:
       memory: 1g
-  dataset_name: 1Mkeys-string-1KiB-size
+  dataset_name: 1Mkeys-string-512B-size
   dataset_description: This dataset contains 1 million string keys, each with a data
-    size of 1 KiB.
+    size of 512B.
 tested-commands:
 - set
 - get
@@ -35,7 +35,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "1000" --ratio 1:10 --key-pattern R:R --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram --pipeline 10'
+  arguments: '"--data-size" "512" --ratio 1:10 --key-pattern R:R --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram --pipeline 1'
   resources:
     requests:
       cpus: '4'
