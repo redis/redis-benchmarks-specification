@@ -1,8 +1,8 @@
 version: 0.4
-name: memtier_benchmark-100Kkeys-load-hash-50-fields-with-10B-values-long-expiration
+name: memtier_benchmark-100Kkeys-load-hash-50-fields-with-1000B-values-expiration
 description: Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES
-  with 50 fields each. Each field value has a data size of 10 Bytes and has really 
-  long expiration meaning expiration is not expected to affect performance during the benchmark.
+  with 50 fields each. Each field value has a data size of 1000 Bytes and has expiration,
+  and the encoding is hashtable.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -24,8 +24,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 120 --distinct-client-seed "--data-size" "10" --command "HSETEX 
-    __key__ EX 3600 FIELDS 50 
+  arguments: --test-time 120 --distinct-client-seed "--data-size" "1000" --command "HSETEX 
+    __key__ EX 60 FIELDS 50 
     field:1 __data__ field:2 __data__ field:3 __data__ field:4 __data__ field:5
     __data__ field:6 __data__ field:7 __data__ field:8 __data__ field:9 __data__ field:10
     __data__ field:11 __data__ field:12 __data__ field:13 __data__ field:14 __data__
@@ -37,7 +37,7 @@ clientconfig:
     __data__ field:38 __data__ field:39 __data__ field:40 __data__ field:41 __data__
     field:42 __data__ field:43 __data__ field:44 __data__ field:45 __data__ field:46
     __data__ field:47 __data__ field:48 __data__ field:49 __data__ field:50 __data__"
-    --command-key-pattern="R" --key-minimum=1 --key-maximum 100000 -c 50 -t 4 --hide-histogram
+    --command-key-pattern="R" --key-minimum=1 --random-data --key-maximum 100000 -c 50 -t 4 --hide-histogram
   resources:
     requests:
       cpus: '4'
