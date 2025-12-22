@@ -1114,7 +1114,7 @@ def compute_regression_table(
     regression_str="REGRESSION",
     improvement_str="IMPROVEMENT",
     tests_with_config={},
-    use_test_suites_folder=False,
+    use_test_suites_folder=True,
     test_suites_folder=None,
     extra_filters="",
     command_group_regex=".*",
@@ -1190,6 +1190,12 @@ def compute_regression_table(
 
     # Apply command regex filtering to tests_with_config
     tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
+
+    # Apply command group regex filtering to tests_with_config
+    tests_with_config = filter_tests_by_command_group_regex(
+        tests_with_config, command_group_regex
+    )
+    test_names = list(tests_with_config.keys())
 
     (
         detected_regressions,
@@ -2757,6 +2763,41 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
         )
     )
     return test_names
+
+
+def filter_tests_by_command_group_regex(tests_with_config, command_group_regex=".*"):
+    """Filter tests based on command regex matching tested-commands"""
+    if command_group_regex == ".*":
+        return tests_with_config
+
+    logging.info(f"Filtering tests by command group regex: {command_group_regex}")
+    command_regex_compiled = re.compile(command_group_regex, re.IGNORECASE)
+    filtered_tests = {}
+
+    for test_name, test_config in tests_with_config.items():
+        tested_groups = test_config.get("tested-groups", [])
+
+        # Check if any tested command matches the regex
+        command_match = False
+        for command in tested_groups:
+            if re.search(command_regex_compiled, command):
+                command_match = True
+                logging.info(
+                    f"Including test {test_name} (matches command group: {command})"
+                )
+                break
+
+        if command_match:
+            filtered_tests[test_name] = test_config
+        else:
+            logging.info(
+                f"Excluding test {test_name} (command groups: {tested_groups})"
+            )
+
+    logging.info(
+        f"Command regex group filtering: {len(filtered_tests)} tests remaining out of {len(tests_with_config)}"
+    )
+    return filtered_tests
 
 
 def filter_tests_by_command_regex(tests_with_config, command_regex=".*"):

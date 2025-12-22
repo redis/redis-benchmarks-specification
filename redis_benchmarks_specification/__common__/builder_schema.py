@@ -4,6 +4,10 @@
 #  All rights reserved.
 #
 import logging
+import os
+import tempfile
+import zipfile
+import git
 from urllib.error import URLError
 from urllib.request import urlopen
 from github import Github
@@ -21,6 +25,7 @@ def commit_schema_to_stream(
     gh_org,
     gh_repo,
     gh_token=None,
+    local_repo_path=None,
 ):
     """uses to the provided JSON dict of fields and pushes that info to the corresponding stream"""
     fields = fields
@@ -47,6 +52,8 @@ def commit_schema_to_stream(
             fields,
             use_git_timestamp,
             gh_token,
+            None,  # gh_branch
+            local_repo_path,
         )
         reply_fields["use_git_timestamp"] = fields["use_git_timestamp"]
         if "git_timestamp_ms" in fields:
@@ -62,28 +69,78 @@ def commit_schema_to_stream(
     return result, reply_fields, error_msg
 
 
-def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields):
+def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path=None):
     error_msg = None
     result = False
     binary_value = None
     bin_key = "zipped:source:{}/{}/archive/{}.zip".format(gh_org, gh_repo, git_hash)
-    github_url = "https://github.com/{}/{}/archive/{}.zip".format(
-        gh_org, gh_repo, git_hash
-    )
-    try:
-        logging.info("Fetching data from {}".format(github_url))
-        response = urlopen(github_url, timeout=5)
-        content = response.read()
-        fields["zip_archive_key"] = bin_key
-        fields["zip_archive_len"] = len(bytes(content))
-        binary_value = bytes(content)
-        result = True
-    except URLError as e:
-        error_msg = "Catched URLError while fetching {} content. Error {}".format(
-            github_url, e.__str__()
+
+    if local_repo_path is not None:
+        # Create ZIP archive from local repository
+        try:
+            logging.info(
+                "Creating ZIP archive from local repository: {}".format(local_repo_path)
+            )
+
+            # Create a temporary ZIP file
+            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            temp_zip.close()
+
+            # Create ZIP archive from the local repository at the specific commit
+            repo = git.Repo(local_repo_path)
+
+            # Get the commit object
+            commit = repo.commit(git_hash)
+
+            # Create archive using git archive command with prefix to match GitHub structure
+            # GitHub creates archives with directory name like "redis-{commit_hash}"
+            archive_prefix = "{}-{}/".format(gh_repo, git_hash)
+            with open(temp_zip.name, "wb") as zip_file:
+                repo.archive(zip_file, commit, format="zip", prefix=archive_prefix)
+
+            # Read the ZIP file content
+            with open(temp_zip.name, "rb") as zip_file:
+                binary_value = zip_file.read()
+
+            # Clean up temporary file
+            os.unlink(temp_zip.name)
+
+            fields["zip_archive_key"] = bin_key
+            fields["zip_archive_len"] = len(binary_value)
+            result = True
+            logging.info(
+                "Successfully created ZIP archive from local repository. Size: {} bytes ({:.2f} MB)".format(
+                    len(binary_value), len(binary_value) / (1024 * 1024)
+                )
+            )
+
+        except Exception as e:
+            error_msg = (
+                "Error creating ZIP archive from local repository {}: {}".format(
+                    local_repo_path, str(e)
+                )
+            )
+            logging.error(error_msg)
+            result = False
+    else:
+        # Fetch from GitHub as before
+        github_url = "https://github.com/{}/{}/archive/{}.zip".format(
+            gh_org, gh_repo, git_hash
         )
-        logging.error(error_msg)
-        result = False
+        try:
+            logging.info("Fetching data from {}".format(github_url))
+            response = urlopen(github_url, timeout=5)
+            content = response.read()
+            fields["zip_archive_key"] = bin_key
+            fields["zip_archive_len"] = len(bytes(content))
+            binary_value = bytes(content)
+            result = True
+        except URLError as e:
+            error_msg = "Catched URLError while fetching {} content. Error {}".format(
+                github_url, e.__str__()
+            )
+            logging.error(error_msg)
+            result = False
 
     return result, bin_key, binary_value, error_msg
 
@@ -96,16 +153,29 @@ def get_commit_dict_from_sha(
     use_git_timestamp=False,
     gh_token=None,
     gh_branch=None,
+    local_repo_path=None,
 ):
     commit = None
-    # using an access token
-    if gh_token is not None:
+    # using an access token - but only if we're not using a local repository
+    if gh_token is not None and local_repo_path is None:
         g = Github(gh_token)
         repo = g.get_repo("{}/{}".format(gh_org, gh_repo))
         commit = repo.get_commit(sha=git_hash)
         commit_dict["git_timestamp_ms"] = int(
             commit.commit.author.date.timestamp() * 1000.0
         )
+    elif local_repo_path is not None:
+        # For local repositories, get timestamp from local git repo
+        try:
+            local_repo = git.Repo(local_repo_path)
+            local_commit = local_repo.commit(git_hash)
+            commit_dict["git_timestamp_ms"] = int(local_commit.committed_date * 1000.0)
+        except Exception as e:
+            logging.warning(
+                "Could not get timestamp from local repository: {}".format(str(e))
+            )
+            if "git_timestamp_ms" not in commit_dict:
+                use_git_timestamp = False
     else:
         if "git_timestamp_ms" not in commit_dict:
             use_git_timestamp = False
@@ -119,6 +189,7 @@ def get_commit_dict_from_sha(
         gh_repo,
         git_hash,
         commit_dict,
+        local_repo_path,
     )
     return result, error_msg, commit_dict, commit, binary_key, binary_value
 
