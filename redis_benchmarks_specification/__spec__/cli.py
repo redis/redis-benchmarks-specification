@@ -226,7 +226,14 @@ def cli_command_logic(args, project_name, project_version):
                     binary_key,
                     binary_value,
                 ) = get_commit_dict_from_sha(
-                    cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token, None, local_repo_path
+                    cdict["git_hash"],
+                    "redis",
+                    "redis",
+                    cdict,
+                    True,
+                    args.gh_token,
+                    None,
+                    local_repo_path,
                 )
                 if result is True:
                     result, reply_fields, error_msg = request_build_from_commit_info(

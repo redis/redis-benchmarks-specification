@@ -75,15 +75,15 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path
     binary_value = None
     bin_key = "zipped:source:{}/{}/archive/{}.zip".format(gh_org, gh_repo, git_hash)
 
-
-
     if local_repo_path is not None:
         # Create ZIP archive from local repository
         try:
-            logging.info("Creating ZIP archive from local repository: {}".format(local_repo_path))
+            logging.info(
+                "Creating ZIP archive from local repository: {}".format(local_repo_path)
+            )
 
             # Create a temporary ZIP file
-            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
             temp_zip.close()
 
             # Create ZIP archive from the local repository at the specific commit
@@ -95,11 +95,11 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path
             # Create archive using git archive command with prefix to match GitHub structure
             # GitHub creates archives with directory name like "redis-{commit_hash}"
             archive_prefix = "{}-{}/".format(gh_repo, git_hash)
-            with open(temp_zip.name, 'wb') as zip_file:
-                repo.archive(zip_file, commit, format='zip', prefix=archive_prefix)
+            with open(temp_zip.name, "wb") as zip_file:
+                repo.archive(zip_file, commit, format="zip", prefix=archive_prefix)
 
             # Read the ZIP file content
-            with open(temp_zip.name, 'rb') as zip_file:
+            with open(temp_zip.name, "rb") as zip_file:
                 binary_value = zip_file.read()
 
             # Clean up temporary file
@@ -108,13 +108,17 @@ def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path
             fields["zip_archive_key"] = bin_key
             fields["zip_archive_len"] = len(binary_value)
             result = True
-            logging.info("Successfully created ZIP archive from local repository. Size: {} bytes ({:.2f} MB)".format(
-                len(binary_value), len(binary_value) / (1024 * 1024)
-            ))
+            logging.info(
+                "Successfully created ZIP archive from local repository. Size: {} bytes ({:.2f} MB)".format(
+                    len(binary_value), len(binary_value) / (1024 * 1024)
+                )
+            )
 
         except Exception as e:
-            error_msg = "Error creating ZIP archive from local repository {}: {}".format(
-                local_repo_path, str(e)
+            error_msg = (
+                "Error creating ZIP archive from local repository {}: {}".format(
+                    local_repo_path, str(e)
+                )
             )
             logging.error(error_msg)
             result = False
@@ -165,11 +169,11 @@ def get_commit_dict_from_sha(
         try:
             local_repo = git.Repo(local_repo_path)
             local_commit = local_repo.commit(git_hash)
-            commit_dict["git_timestamp_ms"] = int(
-                local_commit.committed_date * 1000.0
-            )
+            commit_dict["git_timestamp_ms"] = int(local_commit.committed_date * 1000.0)
         except Exception as e:
-            logging.warning("Could not get timestamp from local repository: {}".format(str(e)))
+            logging.warning(
+                "Could not get timestamp from local repository: {}".format(str(e))
+            )
             if "git_timestamp_ms" not in commit_dict:
                 use_git_timestamp = False
     else:

@@ -1192,7 +1192,9 @@ def compute_regression_table(
     tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
 
     # Apply command group regex filtering to tests_with_config
-    tests_with_config = filter_tests_by_command_group_regex(tests_with_config, command_group_regex)
+    tests_with_config = filter_tests_by_command_group_regex(
+        tests_with_config, command_group_regex
+    )
     test_names = list(tests_with_config.keys())
 
     (
@@ -2762,6 +2764,7 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
     )
     return test_names
 
+
 def filter_tests_by_command_group_regex(tests_with_config, command_group_regex=".*"):
     """Filter tests based on command regex matching tested-commands"""
     if command_group_regex == ".*":
@@ -2779,13 +2782,17 @@ def filter_tests_by_command_group_regex(tests_with_config, command_group_regex="
         for command in tested_groups:
             if re.search(command_regex_compiled, command):
                 command_match = True
-                logging.info(f"Including test {test_name} (matches command group: {command})")
+                logging.info(
+                    f"Including test {test_name} (matches command group: {command})"
+                )
                 break
 
         if command_match:
             filtered_tests[test_name] = test_config
         else:
-            logging.info(f"Excluding test {test_name} (command groups: {tested_groups})")
+            logging.info(
+                f"Excluding test {test_name} (command groups: {tested_groups})"
+            )
 
     logging.info(
         f"Command regex group filtering: {len(filtered_tests)} tests remaining out of {len(tests_with_config)}"
