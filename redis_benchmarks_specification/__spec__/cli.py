@@ -215,6 +215,9 @@ def cli_command_logic(args, project_name, project_version):
         for rep in range(0, 1):
             for cdict in filtered_hash_commits:
 
+                # Pass local repository path if using local repo
+                local_repo_path = redisDirPath if args.redis_repo is not None else None
+
                 (
                     result,
                     error_msg,
@@ -223,7 +226,7 @@ def cli_command_logic(args, project_name, project_version):
                     binary_key,
                     binary_value,
                 ) = get_commit_dict_from_sha(
-                    cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token
+                    cdict["git_hash"], "redis", "redis", cdict, True, args.gh_token, None, local_repo_path
                 )
                 if result is True:
                     result, reply_fields, error_msg = request_build_from_commit_info(

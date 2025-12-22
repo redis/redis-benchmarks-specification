@@ -431,6 +431,9 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     conn.ping()
     for rep in range(0, 1):
         for cdict in filtered_hash_commits:
+            # Pass local repository path if using local repo
+            local_repo_path = redisDirPath if args.redis_repo is not None else None
+
             (
                 result,
                 error_msg,
@@ -445,6 +448,8 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 cdict,
                 True,
                 args.gh_token,
+                None,  # gh_branch
+                local_repo_path,
             )
             if args.platform:
                 commit_dict["platform"] = args.platform
