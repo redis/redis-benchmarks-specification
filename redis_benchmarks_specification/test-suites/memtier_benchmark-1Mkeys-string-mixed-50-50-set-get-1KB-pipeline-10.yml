@@ -24,6 +24,9 @@ tested-commands:
 tested-groups:
 - string
 redis-topologies:
+- oss-standalone-08-io-threads
+- oss-standalone-04-io-threads
+- oss-standalone-02-io-threads
 - oss-standalone
 build-variants:
 - gcc:15.2.0-amd64-debian-bookworm-default
