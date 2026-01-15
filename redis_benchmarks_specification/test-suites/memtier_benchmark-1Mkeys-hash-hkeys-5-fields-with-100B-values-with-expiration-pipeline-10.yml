@@ -1,0 +1,44 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-hash-hkeys-5-fields-with-100B-values-with-expiration-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HASHES
+  with 5 fields each. Each field value has a data size of 100 Bytes. After loading
+  test HKEYS command.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "HSETEX __key__  EX 432000 FIELDS 5 field1 __data__ field2
+      __data__ field3 __data__ field4 __data__ field5 __data__" --command-key-pattern="P" --random-data 
+      --key-maximum 1000000 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-hash-5-fields-100B-size-with-expiration
+  dataset_description: This dataset contains 1 million hash keys, each with 5 fields
+    and each field has a data size of 100 bytes.
+tested-groups:
+- hash
+tested-commands:
+- hexists
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 --command "HKEYS __key__" --command-key-pattern="R"
+    --key-maximum 1000000 --pipeline 10
+    -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 100
