@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-hash-50-fields-with-10B-values-long-expiration-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HASHES
   with 50 fields each. Each field value has a data size of 10 Bytes and has really 
   long expiration meaning expiration is not expected to affect performance during the benchmark.
 dbconfig:
