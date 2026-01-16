@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-hash-hkeys-5-fields-with-10B-values-with-expiration-pipeline-10
 description: Runs memtier_benchmark, for a keyspace length of 1M keys loading HASHES
-  with 5 fields each. Each field value has a data size of 100 Bytes. After loading
+  with 5 fields each. Each field value has a data size of 10 Bytes. After loading
   test HKEYS command.
 dbconfig:
   configuration-parameters:
