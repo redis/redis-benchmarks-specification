@@ -54,6 +54,17 @@ spec:
         cpus: "9"
         memory: "10g"
 
+  - name: oss-standalone-12-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --io-threads 12 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "13"
+        memory: "10g"
+
   - name: oss-standalone-16-io-threads
     type: oss-standalone
     redis_topology:
