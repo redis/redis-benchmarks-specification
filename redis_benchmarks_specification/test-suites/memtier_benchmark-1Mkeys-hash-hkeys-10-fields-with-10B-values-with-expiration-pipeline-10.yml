@@ -25,7 +25,7 @@ dbconfig:
 tested-groups:
 - hash
 tested-commands:
-- hexists
+- hkeys
 redis-topologies:
 - oss-standalone
 build-variants:

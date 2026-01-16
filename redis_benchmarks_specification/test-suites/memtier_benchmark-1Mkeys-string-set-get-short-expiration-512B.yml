@@ -7,12 +7,16 @@ description: Runs memtier_benchmark, for a keyspace length of 1M keys with a dat
 dbconfig:
   configuration-parameters:
     save: '""'
+  resources:
+    requests:
+      memory: 1g
 tested-commands:
 - set
 - get
 redis-topologies:
 - oss-standalone-08-io-threads
 - oss-standalone
+
 build-variants:
 - gcc:15.2.0-amd64-debian-bookworm-default
 - gcc:15.2.0-arm64-debian-bookworm-default
