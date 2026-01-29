@@ -1,0 +1,40 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-100B-values
+description: Runs memtier_benchmark, for a keyspace length of 1M keys loading STRINGs
+  using MSET with 10 keys per command. Each value has a data size of 100 Bytes.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 100 --key-maximum 1000000 --key-prefix "" --command="SET
+      __key__ __data__"  --command-key-pattern P --key-minimum 1 --hide-histogram
+      -t 2 -c 100 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-100B-size-no-key-prefix
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 100 Bytes. The keys are not prefixed, meaning they are 1,2,3,etc...
+tested-commands:
+- mset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --data-size 100 --key-prefix "" --command "MSET __key__ __data__ 1 __data__ 2 __data__ 3 __data__ 4 __data__ 5 __data__ 6 __data__ 7 __data__ 8 __data__ 9 __data__" -c 50 -t 2 --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+tested-groups:
+- string
+priority: 17
