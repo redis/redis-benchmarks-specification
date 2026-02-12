@@ -30,10 +30,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --key-maximum 1000000  --data-size 100 --key-prefix "" --command "MSET __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__" -c 50 -t 2 --hide-histogram --test-time 180
+  arguments: --key-maximum 1000000  --data-size 100 --key-prefix "" --command "MSET __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__" -c 50 -t 8 --hide-histogram --test-time 180
   resources:
     requests:
-      cpus: '2'
+      cpus: '8'
       memory: 2g
 tested-groups:
 - string
