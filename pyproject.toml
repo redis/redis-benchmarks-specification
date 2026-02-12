@@ -26,6 +26,7 @@ oyaml = "^1.0"
 pandas = "^2.1.2"
 numpy = "^2.0.0"
 jsonpath-ng = "^1.6.1"
+setuptools = "^69.0.0"
 
 seaborn = "^0.13.2"
 [tool.poetry.dev-dependencies]
@@ -65,3 +66,27 @@ redis-benchmarks-spec-sc-coordinator = "redis_benchmarks_specification.__self_co
 redis-benchmarks-spec-cli = "redis_benchmarks_specification.__cli__.cli:main"
 redis-benchmarks-spec-watchdog = "redis_benchmarks_specification.__watchdog__.watchdog:main"
 redis-benchmarks-spec = "redis_benchmarks_specification.__spec__.cli:main"
+
+[tool.coverage.run]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.tox/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:"
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"
