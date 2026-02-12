@@ -42,8 +42,12 @@ jobs:
         tox
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v2
-      if: contains(env.USING_COVERAGE, matrix.python-version)
+      uses: codecov/codecov-action@v4
+      if: contains(env.USING_COVERAGE, matrix.python-version) && contains(env.USING_COVERAGE_OS, matrix.os)
       with:
-        token: ${{secrets.CODECOV_TOKEN}}
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
         fail_ci_if_error: true
+        verbose: true
