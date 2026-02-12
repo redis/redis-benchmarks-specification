@@ -26,6 +26,7 @@ oyaml = "^1.0"
 pandas = "^2.1.2"
 numpy = "^2.0.0"
 jsonpath-ng = "^1.6.1"
+setuptools = "^69.0.0"
 
 seaborn = "^0.13.2"
 [tool.poetry.dev-dependencies]
