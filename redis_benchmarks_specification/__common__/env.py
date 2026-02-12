@@ -2,16 +2,37 @@ import logging
 import os
 
 # default specification paths
-import pkg_resources
 import psutil
 
-SPECS_PATH_SETUPS_DEFAULT_PATH = pkg_resources.resource_filename(
-    "redis_benchmarks_specification", "setups"
-)
+try:
+    # Use importlib.resources for Python 3.9+ (preferred)
+    from importlib.resources import files
 
-SPECS_PATH_TEST_SUITES_DEFAULT_PATH = pkg_resources.resource_filename(
-    "redis_benchmarks_specification", "test-suites"
-)
+    SPECS_PATH_SETUPS_DEFAULT_PATH = str(
+        files("redis_benchmarks_specification") / "setups"
+    )
+    SPECS_PATH_TEST_SUITES_DEFAULT_PATH = str(
+        files("redis_benchmarks_specification") / "test-suites"
+    )
+except ImportError:
+    try:
+        # Fallback to pkg_resources for older environments
+        import pkg_resources
+
+        SPECS_PATH_SETUPS_DEFAULT_PATH = pkg_resources.resource_filename(
+            "redis_benchmarks_specification", "setups"
+        )
+        SPECS_PATH_TEST_SUITES_DEFAULT_PATH = pkg_resources.resource_filename(
+            "redis_benchmarks_specification", "test-suites"
+        )
+    except ImportError:
+        # Final fallback - construct paths manually
+        import redis_benchmarks_specification
+        import pathlib
+
+        base_path = pathlib.Path(redis_benchmarks_specification.__file__).parent
+        SPECS_PATH_SETUPS_DEFAULT_PATH = str(base_path / "setups")
+        SPECS_PATH_TEST_SUITES_DEFAULT_PATH = str(base_path / "test-suites")
 
 SPECS_PATH_SETUPS = os.getenv("SPECS_PATH_SETUPS", SPECS_PATH_SETUPS_DEFAULT_PATH)
 SPECS_PATH_TEST_SUITES = os.getenv(
