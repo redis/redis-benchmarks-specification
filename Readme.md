@@ -2,8 +2,8 @@
 
 
 [![codecov](https://codecov.io/gh/redis/redis-benchmarks-specification/branch/main/graph/badge.svg?token=GS64MV1H4W)](https://codecov.io/gh/redis/redis-benchmarks-specification)
-[![Run tox on Ubuntu 22.04](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox-self-hosted.yml/badge.svg)](https://github.com/redis/redis-benchmarks-specification/actions/workflows/tox-self-hosted.yml)
 [![PyPI version](https://badge.fury.io/py/redis-benchmarks-specification.svg)](https://pypi.org/project/redis-benchmarks-specification)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/redis-benchmarks-specification?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/redis-benchmarks-specification)
 
 <!-- toc -->
 
