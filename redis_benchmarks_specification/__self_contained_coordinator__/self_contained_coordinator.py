@@ -119,6 +119,11 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
+from redis_benchmarks_specification.__self_contained_coordinator__.parca_agent import (
+    check_parca_agent_available,
+    update_parca_agent_labels,
+    extract_test_labels_from_benchmark_config,
+)
 
 # Global variables for HTTP server control
 _reset_queue_requested = False
@@ -126,6 +131,10 @@ _exclusive_hardware = False
 _http_auth_username = None
 _http_auth_password = None
 _flush_timestamp = None
+
+# Global variables for parca-agent integration
+_parca_agent_available = False
+_parca_startup_labels = {}
 
 
 class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
@@ -743,6 +752,18 @@ def main():
                 override_memtier_test_time
             )
         )
+
+    # Check parca-agent availability and set startup labels
+    global _parca_agent_available, _parca_startup_labels
+    _parca_agent_available = check_parca_agent_available()
+    if _parca_agent_available:
+        _parca_startup_labels = {
+            "platform": running_platform,
+            "arch": arch,
+            "coordinator_version": project_version,
+        }
+        logging.info(f"Parca-agent startup labels: {_parca_startup_labels}")
+
     logging.info("Entering blocking read waiting for work.")
     if stream_id is None:
         stream_id = args.consumer_start_id
@@ -1031,6 +1052,16 @@ def process_self_contained_coordinator_stream(
                 logging.info(
                     f"detected a github_org definition on the streamdata: {tf_github_repo}. Overriding the default one: {default_github_repo}"
                 )
+
+            # Build parca-agent build-level labels
+            parca_build_labels = {
+                "git_hash": git_hash,
+                "git_branch": git_branch,
+                "git_version": git_version,
+                "build_variant": build_variant_name,
+                "github_org": tf_github_org,
+                "github_repo": tf_github_repo,
+            }
 
             mnt_point = "/mnt/redis/"
             if b"mnt_point" in testDetails:
@@ -1329,6 +1360,22 @@ def process_self_contained_coordinator_stream(
                             logging.info(
                                 f"Running topology named {topology_spec_name} of type {setup_type}"
                             )
+
+                            # Update parca-agent labels if available
+                            global _parca_agent_available, _parca_startup_labels
+                            if _parca_agent_available:
+                                test_labels = extract_test_labels_from_benchmark_config(
+                                    benchmark_config
+                                )
+                                # Override topology with current iteration's topology
+                                test_labels["topology"] = topology_spec_name
+                                all_labels = {
+                                    **_parca_startup_labels,
+                                    **parca_build_labels,
+                                    **test_labels,
+                                }
+                                update_parca_agent_labels(all_labels)
+
                             test_result = False
                             redis_container = None
                             try:
