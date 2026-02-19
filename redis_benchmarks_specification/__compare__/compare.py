@@ -291,7 +291,9 @@ def compare_command_logic(args, project_name, project_version):
     comparison_github_org = args.comparison_github_org
     baseline_hash = args.baseline_hash
     comparison_hash = args.comparison_hash
-
+    logging.info(
+        f"Using baseline hash: {baseline_hash} and comparison hash: {comparison_hash}"
+    )
     # Log platform and environment information
     if running_platform_baseline == running_platform_comparison:
         if running_platform_baseline is not None:
@@ -378,6 +380,8 @@ def compare_command_logic(args, project_name, project_version):
             "oss-standalone-02-io-threads",
             "oss-standalone-04-io-threads",
             "oss-standalone-08-io-threads",
+            "oss-standalone-12-io-threads",
+            "oss-standalone-16-io-threads",
         ]
 
         (
@@ -484,8 +488,8 @@ def compare_command_logic(args, project_name, project_version):
             running_platform_comparison,
             baseline_target_version,
             comparison_target_version,
-            baseline_hash,
             comparison_hash,
+            baseline_hash,
             baseline_github_repo,
             comparison_github_repo,
             baseline_target_branch,
@@ -535,6 +539,8 @@ def compare_command_logic(args, project_name, project_version):
         improvements_list,
         args.improvement_str,
         args.regression_str,
+        print_improvements_only,
+        print_regressions_only,
     )
 
     # Generate box plot if requested
@@ -596,6 +602,8 @@ def prepare_regression_comment(
     improvements_list=[],
     improvement_str="Improvement",
     regression_str="Regression",
+    print_improvements_only=False,
+    print_regressions_only=False,
 ):
     if total_comparison_points > 0:
         comment_body = "### Automated performance analysis summary\n\n"
@@ -621,20 +629,28 @@ def prepare_regression_comment(
                 triggering_env_baseline, triggering_env_comparison
             )
         comparison_summary = "In summary:\n"
-        if total_stable > 0:
+        if (
+            total_stable > 0
+            and not print_regressions_only
+            and not print_improvements_only
+        ):
             comparison_summary += (
                 "- Detected a total of {} stable tests between versions.\n".format(
                     total_stable,
                 )
             )
 
-        if total_unstable > 0:
+        if (
+            total_unstable > 0
+            and not print_regressions_only
+            and not print_improvements_only
+        ):
             comparison_summary += (
                 "- Detected a total of {} highly unstable benchmarks.\n".format(
                     total_unstable
                 )
             )
-        if total_improvements > 0:
+        if total_improvements > 0 and not print_regressions_only:
             comparison_summary += "- Detected a total of {} improvements above the improvement water line ({}).\n".format(
                 total_improvements, improvement_str
             )
@@ -650,7 +666,7 @@ def prepare_regression_comment(
                 comparison_summary += f"   - The median improvement ({improvement_str}) was {median_improvement}%, with values ranging from {min_improvement}% to {max_improvement}%.\n"
                 comparison_summary += f"   - Quartile distribution: P25={p25_improvement}%, P50={median_improvement}%, P75={p75_improvement}%.\n"
 
-        if total_regressions > 0:
+        if total_regressions > 0 and not print_improvements_only:
             comparison_summary += "- Detected a total of {} regressions below the regression water line of {} ({}).\n".format(
                 total_regressions, regressions_percent_lower_limit, regression_str
             )
@@ -802,8 +818,8 @@ def compute_env_comparison_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    comparison_hash=None,
     baseline_hash=None,
+    comparison_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_target_branch=None,
@@ -822,6 +838,13 @@ def compute_env_comparison_table(
     """
     Compute environment comparison table for a specific test across different environments.
     """
+    # Debug: Log what parameters were received
+    logging.info("=== DEBUG compute_env_comparison_table RECEIVED ===")
+    logging.info(f"baseline_branch: {repr(baseline_branch)}")
+    logging.info(f"baseline_hash: {repr(baseline_hash)}")
+    logging.info(f"comparison_branch: {repr(comparison_branch)}")
+    logging.info(f"comparison_hash: {repr(comparison_hash)}")
+
     START_TIME_NOW_UTC, _, _ = get_start_time_vars()
     START_TIME_LAST_MONTH_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=31)
     if from_date is None:
@@ -1144,8 +1167,8 @@ def compute_regression_table(
         comparison_tag,
         baseline_target_version,
         comparison_target_version,
-        comparison_hash,
         baseline_hash,
+        comparison_hash,
         baseline_target_branch,
         comparison_target_branch,
     )
@@ -1265,43 +1288,41 @@ def compute_regression_table(
         from_human_str,
         baseline_deployment_name,
     )
+    if not simplify_table:
+        table_output += "<details>\n  <summary>By GROUP change csv:</summary>\n\n"
+        table_output += "\ncommand_group,min_change,q1_change,median_change,q3_change,max_change  \n"
+        for group_name, changes_list in group_change.items():
+            min_change = min(changes_list)
+            q1_change = np.percentile(changes_list, 25)
+            median_change = np.median(changes_list)
+            q3_change = np.percentile(changes_list, 75)
+            max_change = max(changes_list)
+            table_output += f"{group_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
+        table_output += "\n</details>\n"
+        table_output += "\n\n"
+        table_output += "<details>\n  <summary>By COMMAND change csv:</summary>\n\n"
+        table_output += (
+            "\ncommand,min_change,q1_change,median_change,q3_change,max_change  \n"
+        )
 
-    table_output += "<details>\n  <summary>By GROUP change csv:</summary>\n\n"
-    table_output += (
-        "\ncommand_group,min_change,q1_change,median_change,q3_change,max_change  \n"
-    )
-    for group_name, changes_list in group_change.items():
-        min_change = min(changes_list)
-        q1_change = np.percentile(changes_list, 25)
-        median_change = np.median(changes_list)
-        q3_change = np.percentile(changes_list, 75)
-        max_change = max(changes_list)
-        table_output += f"{group_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
-    table_output += "\n</details>\n"
-    table_output += "\n\n"
-    table_output += "<details>\n  <summary>By COMMAND change csv:</summary>\n\n"
-    table_output += (
-        "\ncommand,min_change,q1_change,median_change,q3_change,max_change  \n"
-    )
+        # Filter commands by command group regex if specified
+        filtered_command_change = command_change
+        if command_group_regex != ".*":
+            group_regex = re.compile(command_group_regex)
+            filtered_command_change = {}
+            for command_name, changes_list in command_change.items():
+                command_group = categorize_command(command_name.lower())
+                if re.search(group_regex, command_group):
+                    filtered_command_change[command_name] = changes_list
 
-    # Filter commands by command group regex if specified
-    filtered_command_change = command_change
-    if command_group_regex != ".*":
-        group_regex = re.compile(command_group_regex)
-        filtered_command_change = {}
-        for command_name, changes_list in command_change.items():
-            command_group = categorize_command(command_name.lower())
-            if re.search(group_regex, command_group):
-                filtered_command_change[command_name] = changes_list
-
-    for command_name, changes_list in filtered_command_change.items():
-        min_change = min(changes_list)
-        q1_change = np.percentile(changes_list, 25)
-        median_change = np.median(changes_list)
-        q3_change = np.percentile(changes_list, 75)
-        max_change = max(changes_list)
-        table_output += f"{command_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
-    table_output += "\n</details>\n"
+        for command_name, changes_list in filtered_command_change.items():
+            min_change = min(changes_list)
+            q1_change = np.percentile(changes_list, 25)
+            median_change = np.median(changes_list)
+            q3_change = np.percentile(changes_list, 75)
+            max_change = max(changes_list)
+            table_output += f"{command_name},{min_change:.3f},{q1_change:.3f},{median_change:.3f},{q3_change:.3f},{max_change:.3f}\n"
+        table_output += "\n</details>\n"
 
     if total_unstable > 0:
         old_stdout = sys.stdout
@@ -1326,7 +1347,7 @@ def compute_regression_table(
         mystdout.close()
         sys.stdout = old_stdout
 
-    if total_regressions > 0:
+    if total_regressions > 0 and not print_improvements_only:
         old_stdout = sys.stdout
         sys.stdout = mystdout = StringIO()
         table_output += "#### Regressions Table\n\n"
@@ -1349,7 +1370,7 @@ def compute_regression_table(
         mystdout.close()
         sys.stdout = old_stdout
 
-    if total_improvements > 0:
+    if total_improvements > 0 and not print_regressions_only:
         old_stdout = sys.stdout
         sys.stdout = mystdout = StringIO()
         table_output += "#### Improvements Table\n\n"
@@ -1385,36 +1406,35 @@ def compute_regression_table(
         ],
         value_matrix=table_full,
     )
-    table_output += "<details>\n  <summary>Full Results table:</summary>\n\n"
+    if not (print_improvements_only or print_regressions_only):
+        table_output += "<details>\n  <summary>Full Results table:</summary>\n\n"
 
-    writer_full.dump(mystdout, False)
+        writer_full.dump(mystdout, False)
 
-    sys.stdout = old_stdout
-    table_output += mystdout.getvalue()
-    table_output += "\n</details>\n"
-    len_baseline_only_list = len(baseline_only_list)
-    if len_baseline_only_list > 0:
-        table_output += f"\n  WARNING: There were {len_baseline_only_list} benchmarks with datapoints only on baseline.\n\n"
-        baseline_only_test_names_str = "|".join([l for l in baseline_only_list])
-        table_output += (
-            f"  Baseline only test regexp names: {baseline_only_test_names_str}\n\n"
-        )
-    len_comparison_only_list = len(comparison_only_list)
-    if len_comparison_only_list > 0:
-        table_output += f"\n  WARNING: There were {len_comparison_only_list} benchmarks with datapoints only on comparison.\n\n"
-        comparison_only_test_names_str = "|".join([l for l in comparison_only_list])
-        table_output += (
-            f"  Comparison only test regexp names: {comparison_only_test_names_str}\n\n"
-        )
-    len_no_datapoints = len(no_datapoints_list)
-    if len_no_datapoints > 0:
-        table_output += f"\n  WARNING: There were {len_no_datapoints} benchmarks with NO datapoints for both baseline and comparison.\n\n"
-        table_output += "<details>\n  <summary>NO datapoints for both baseline and comparison:</summary>\n\n"
-        no_datapoints_test_names_str = "|".join([l for l in no_datapoints_list])
-        table_output += (
-            f"  NO DATAPOINTS test regexp names: {no_datapoints_test_names_str}\n\n"
-        )
+        sys.stdout = old_stdout
+        table_output += mystdout.getvalue()
         table_output += "\n</details>\n"
+        len_baseline_only_list = len(baseline_only_list)
+        if len_baseline_only_list > 0:
+            table_output += f"\n  WARNING: There were {len_baseline_only_list} benchmarks with datapoints only on baseline.\n\n"
+            baseline_only_test_names_str = "|".join([l for l in baseline_only_list])
+            table_output += (
+                f"  Baseline only test regexp names: {baseline_only_test_names_str}\n\n"
+            )
+        len_comparison_only_list = len(comparison_only_list)
+        if len_comparison_only_list > 0:
+            table_output += f"\n  WARNING: There were {len_comparison_only_list} benchmarks with datapoints only on comparison.\n\n"
+            comparison_only_test_names_str = "|".join([l for l in comparison_only_list])
+            table_output += f"  Comparison only test regexp names: {comparison_only_test_names_str}\n\n"
+        len_no_datapoints = len(no_datapoints_list)
+        if len_no_datapoints > 0:
+            table_output += f"\n  WARNING: There were {len_no_datapoints} benchmarks with NO datapoints for both baseline and comparison.\n\n"
+            table_output += "<details>\n  <summary>NO datapoints for both baseline and comparison:</summary>\n\n"
+            no_datapoints_test_names_str = "|".join([l for l in no_datapoints_list])
+            table_output += (
+                f"  NO DATAPOINTS test regexp names: {no_datapoints_test_names_str}\n\n"
+            )
+            table_output += "\n</details>\n"
 
     return (
         detected_regressions,
@@ -1446,6 +1466,13 @@ def get_by_strings(
     baseline_target_branch=None,
     comparison_target_branch=None,
 ):
+    # Debug: Log the parameters to see what's being passed
+    logging.info("=== DEBUG get_by_strings CALLED ===")
+    logging.info(f"baseline_branch: {repr(baseline_branch)}")
+    logging.info(f"baseline_hash: {repr(baseline_hash)}")
+    logging.info(f"comparison_branch: {repr(comparison_branch)}")
+    logging.info(f"comparison_hash: {repr(comparison_hash)}")
+
     baseline_covered = False
     comparison_covered = False
     by_str_baseline = ""
@@ -1457,11 +1484,14 @@ def get_by_strings(
 
     ################# BASELINE BY ....
 
-    if baseline_branch is not None:
+    if baseline_branch is not None and baseline_branch != "":
         by_str_baseline = "branch"
+        if baseline_covered:
+            baseline_by_arr.append(by_str_baseline)
+            logging.error(get_by_error("baseline", baseline_by_arr))
+            exit(1)
         baseline_covered = True
         baseline_str = baseline_branch
-        baseline_by_arr.append(by_str_baseline)
 
     if baseline_tag is not None:
         by_str_baseline = "version"
@@ -1500,7 +1530,7 @@ def get_by_strings(
 
     ################# COMPARISON BY ....
 
-    if comparison_branch is not None:
+    if comparison_branch is not None and comparison_branch != "":
         by_str_comparison = "branch"
         comparison_covered = True
         comparison_str = comparison_branch
@@ -1560,6 +1590,9 @@ def get_by_strings(
             + "( --comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch or --comparison-target-version ) "
         )
         exit(1)
+
+    logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
+    logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
 
 
@@ -2179,27 +2212,54 @@ def process_single_env_comparison(
         detected_improvement = False
         noise_waterline = 1.0
 
-        if percentage_change > 0.0:
-            if percentage_change > waterline:
-                detected_regression = True
-                note = note + f" {regression_str}"
-            elif percentage_change > noise_waterline:
-                if simplify_table is False:
-                    note = note + f" potential {regression_str}"
-            else:
-                if simplify_table is False:
-                    note = note + " No Change"
+        # For higher-better metrics: negative change = regression, positive change = improvement
+        # For lower-better metrics: positive change = regression, negative change = improvement
+        if metric_mode == "higher-better":
+            # Higher is better: negative change is bad (regression), positive change is good (improvement)
+            if percentage_change < 0.0:
+                if -waterline >= percentage_change:
+                    detected_regression = True
+                    note = note + f" {regression_str}"
+                elif percentage_change < -noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {regression_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
 
-        if percentage_change < 0.0:
-            if -percentage_change > waterline:
-                detected_improvement = True
-                note = note + f" {improvement_str}"
-            elif -percentage_change > noise_waterline:
-                if simplify_table is False:
-                    note = note + f" potential {improvement_str}"
-            else:
-                if simplify_table is False:
-                    note = note + " No Change"
+            if percentage_change > 0.0:
+                if percentage_change > waterline:
+                    detected_improvement = True
+                    note = note + f" {improvement_str}"
+                elif percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {improvement_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+        else:
+            # Lower is better: positive change is bad (regression), negative change is good (improvement)
+            if percentage_change > 0.0:
+                if percentage_change >= waterline:
+                    detected_regression = True
+                    note = note + f" {regression_str}"
+                elif percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {regression_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
+
+            if percentage_change < 0.0:
+                if -percentage_change > waterline:
+                    detected_improvement = True
+                    note = note + f" {improvement_str}"
+                elif -percentage_change > noise_waterline:
+                    if simplify_table is False:
+                        note = note + f" potential {improvement_str}"
+                else:
+                    if simplify_table is False:
+                        note = note + " No Change"
 
         result["detected_regression"] = detected_regression
         result["detected_improvement"] = detected_improvement
@@ -2645,6 +2705,10 @@ def get_only_Totals(baseline_timeseries):
     )
     new_base = []
     for ts_name in baseline_timeseries:
+        if "8.5.0" in ts_name:
+            continue
+        if "sousa" in ts_name:
+            continue
         if "8.5.0" in ts_name:
             continue
         if "io-threads" in ts_name:
