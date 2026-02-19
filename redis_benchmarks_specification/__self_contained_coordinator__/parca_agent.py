@@ -75,10 +75,13 @@ def sanitize_label_value(value: str, max_length: int = 64) -> str:
     """
     Sanitize a label value for use in parca-agent external labels.
 
-    - Replaces '=' and ',' with '_' (these are delimiters in the label format)
+    - Replaces '=' and ';' with '_' (these are delimiters in the label format)
     - Replaces ':' with '-' (common in build variants)
     - Truncates to max_length
     - Returns 'unknown' for empty/None values
+
+    Note: parca-agent uses semicolon (;) as the delimiter between key=value pairs,
+    so we must escape semicolons in values.
     """
     if not value:
         return "unknown"
@@ -87,8 +90,9 @@ def sanitize_label_value(value: str, max_length: int = 64) -> str:
     value = str(value)
 
     # Replace problematic characters
+    # Note: semicolon is the delimiter for parca-agent --metadata-external-labels
     value = value.replace("=", "_")
-    value = value.replace(",", "_")
+    value = value.replace(";", "_")
     value = value.replace(":", "-")
     value = value.replace("'", "")
     value = value.replace('"', "")
@@ -104,14 +108,17 @@ def build_labels_string(labels: Dict[str, str]) -> str:
     """
     Build the labels string for the snap set command.
 
-    Format: key1=value1,key2=value2,...
+    Format: key1=value1;key2=value2;...
+
+    Note: parca-agent uses semicolon (;) as the delimiter between key=value pairs,
+    not comma. See: --metadata-external-labels=KEY=VALUE;...
     """
     parts = []
     for key, value in labels.items():
         if value is not None:
             sanitized_value = sanitize_label_value(value)
             parts.append(f"{key}={sanitized_value}")
-    return ",".join(parts)
+    return ";".join(parts)
 
 
 def update_parca_agent_labels(labels: Dict[str, str], timeout: int = 30) -> bool:
