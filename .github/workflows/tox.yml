@@ -17,6 +17,7 @@ jobs:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
       USING_COVERAGE: "3.10"
       USING_COVERAGE_OS: "ubuntu-latest"
+      TOX_DOCKER_GATEWAY: localhost
 
     runs-on: "ubuntu-latest"
     name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
@@ -49,5 +50,5 @@ jobs:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         verbose: true
