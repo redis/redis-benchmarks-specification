@@ -1,7 +1,7 @@
 version: 0.4
-name: memtier_benchmark-1Mkeys-generic-scan-count-10-incremental-iteration-high-cursor-count
+name: memtier_benchmark-1Mkeys-generic-scan-count-100-incremental-iteration
 description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
-  SCAN performance iterating over the keyspace, with 1K connections, meaning we always have 1K cursors open at any given time.
+  SCAN performance with large COUNT and iterating over the keyspace.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -32,10 +32,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "SCAN 0 COUNT 10" --scan-incremental-iteration --pipeline 1 --command-key-pattern="R"
-    -c 125 -t 8 --hide-histogram --test-time 180
+  arguments: --command "SCAN 0 COUNT 100" --scan-incremental-iteration --pipeline 1 --command-key-pattern="R"
+    -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
-      cpus: '8'
+      cpus: '2'
       memory: 2g
 priority: 44
