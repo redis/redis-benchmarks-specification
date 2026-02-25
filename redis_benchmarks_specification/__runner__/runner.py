@@ -1476,6 +1476,74 @@ def prepare_pubsub_sub_bench_parameters(
     return benchmark_command, benchmark_command_str, arbitrary_command
 
 
+def enrich_results_with_redis_info(
+    results_dict, redis_conn, docker_client=None, benchmark_config=None
+):
+    """
+    Enrich benchmark results with Redis server configuration info.
+    Adds redis_commit (git SHA), io_threads, and memtier_image_id
+    to the configuration section.
+    """
+    try:
+        server_info = redis_conn.info("server")
+        redis_git_sha1 = server_info.get("redis_git_sha1", "")
+        redis_build_id = server_info.get("redis_build_id", "")
+
+        # Use git_sha1 if available and not empty/zero
+        if redis_git_sha1 and str(redis_git_sha1) not in ("", "0", "00000000"):
+            redis_commit = str(redis_git_sha1)
+        elif redis_build_id and str(redis_build_id) not in ("", "0"):
+            redis_commit = str(redis_build_id)
+        else:
+            redis_commit = "unknown"
+
+        # Get io-threads configuration
+        io_threads = "1"
+        try:
+            config = redis_conn.config_get("io-threads")
+            io_threads = config.get("io-threads", "1")
+        except Exception as e:
+            logging.warning(f"Could not retrieve io-threads config: {e}")
+
+        if "configuration" not in results_dict:
+            results_dict["configuration"] = {}
+
+        results_dict["configuration"]["redis_commit"] = redis_commit
+        results_dict["configuration"]["redis_io_threads"] = io_threads
+
+        logging.info(
+            f"Enriched results with redis_commit={redis_commit}, redis_io_threads={io_threads}"
+        )
+    except Exception as e:
+        logging.warning(f"Failed to enrich results with Redis server info: {e}")
+
+    # Add memtier benchmark Docker image ID
+    if docker_client is not None and benchmark_config is not None:
+        try:
+            # Collect all client container image names
+            image_names = extract_client_container_images(benchmark_config)
+            image_ids = []
+            for image_name in image_names:
+                if image_name is not None:
+                    try:
+                        img = docker_client.images.get(image_name)
+                        image_ids.append(img.id)
+                    except Exception as e:
+                        logging.warning(
+                            f"Could not get Docker image ID for {image_name}: {e}"
+                        )
+            if "configuration" not in results_dict:
+                results_dict["configuration"] = {}
+            if len(image_ids) == 1:
+                results_dict["configuration"]["memtier_image_id"] = image_ids[0]
+            elif len(image_ids) > 1:
+                results_dict["configuration"]["memtier_image_id"] = image_ids
+            if image_ids:
+                logging.info(f"Enriched results with memtier_image_id={image_ids}")
+        except Exception as e:
+            logging.warning(f"Failed to enrich results with memtier image ID: {e}")
+
+
 def process_self_contained_coordinator_stream(
     args,
     datasink_push_results_redistimeseries,
@@ -3027,6 +3095,14 @@ def process_self_contained_coordinator_stream(
 
                     dataset_load_duration_seconds = 0
 
+                    # Enrich results with Redis server info
+                    enrich_results_with_redis_info(
+                        results_dict,
+                        redis_conns[0],
+                        docker_client,
+                        benchmark_config,
+                    )
+
                     exporter_datasink_common(
                         benchmark_config,
                         benchmark_duration_seconds,
@@ -3139,11 +3215,10 @@ def process_self_contained_coordinator_stream(
                         )
                     else:
                         logging.info(
-                            "Preserving local results file {} into {}".format(
-                                full_result_path, dest_fpath
-                            )
+                            "Preserving enriched results into {}".format(dest_fpath)
                         )
-                        shutil.copy(full_result_path, dest_fpath)
+                        with open(dest_fpath, "w") as dest_file:
+                            json.dump(results_dict, dest_file, indent="\t")
                 overall_result &= test_result
 
                 delete_temporary_files(
