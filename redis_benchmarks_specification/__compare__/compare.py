@@ -1188,6 +1188,9 @@ def compute_regression_table(
             rts, tags_regex_string, test_names, used_key
         )
 
+    # Apply testname regex filtering to tests_with_config
+    tests_with_config = filter_tests_by_testname_regex(tests_with_config, tags_regex_string)
+
     # Apply command regex filtering to tests_with_config
     tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
 
@@ -2763,6 +2766,31 @@ def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
         )
     )
     return test_names
+
+
+def filter_tests_by_testname_regex(tests_with_config, testname_regex):
+    """
+    Filter tests_with_config based on testname regex pattern.
+
+    Args:
+        tests_with_config: Dictionary of test_name -> test_config
+        testname_regex: Compiled regex pattern to match against test names
+
+    Returns:
+        Dictionary of filtered tests that match the regex pattern
+    """
+    filtered_tests = {}
+    for test_name, test_config in tests_with_config.items():
+        match_obj = re.search(testname_regex, test_name)
+        if match_obj is not None:
+            filtered_tests[test_name] = test_config
+        else:
+            logging.debug(f"Excluding test {test_name} (does not match testname_regex)")
+
+    logging.info(
+        f"Testname regex filtering: {len(filtered_tests)} tests remaining out of {len(tests_with_config)}"
+    )
+    return filtered_tests
 
 
 def filter_tests_by_command_group_regex(tests_with_config, command_group_regex=".*"):
