@@ -1189,7 +1189,9 @@ def compute_regression_table(
         )
 
     # Apply testname regex filtering to tests_with_config
-    tests_with_config = filter_tests_by_testname_regex(tests_with_config, tags_regex_string)
+    tests_with_config = filter_tests_by_testname_regex(
+        tests_with_config, tags_regex_string
+    )
 
     # Apply command regex filtering to tests_with_config
     tests_with_config = filter_tests_by_command_regex(tests_with_config, command_regex)
