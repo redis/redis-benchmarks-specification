@@ -1175,22 +1175,22 @@ def compute_regression_table(
     if use_metric_context_path:
         test_filter = "test_name:metric_context_path"
         used_key = testcases_metric_context_path_setname
-    tags_regex_string = re.compile(testname_regex)
+    testname_regex_compiled = re.compile(testname_regex)
     if test != "":
         test_names = test.split(",")
         logging.info("Using test name {}".format(test_names))
     elif use_test_suites_folder:
         test_names = get_test_names_from_yaml_files(
-            test_suites_folder, tags_regex_string
+            test_suites_folder, testname_regex_compiled
         )
     else:
         test_names = get_test_names_from_db(
-            rts, tags_regex_string, test_names, used_key
+            rts, testname_regex_compiled, test_names, used_key
         )
 
     # Apply testname regex filtering to tests_with_config
     tests_with_config = filter_tests_by_testname_regex(
-        tests_with_config, tags_regex_string
+        tests_with_config, testname_regex_compiled
     )
 
     # Apply command regex filtering to tests_with_config
@@ -2727,13 +2727,13 @@ def prepare_value_str(
     return baseline_v_str
 
 
-def filter_test_names_by_regex(test_names, tags_regex_string):
+def filter_test_names_by_regex(test_names, regex_pattern):
     """
     Filter test names based on regex pattern.
 
     Args:
         test_names: List of test names to filter
-        tags_regex_string: Regex pattern to match against test names
+        regex_pattern: Regex pattern to match against test names
 
     Returns:
         List of filtered test names that match the regex pattern
@@ -2742,18 +2742,18 @@ def filter_test_names_by_regex(test_names, tags_regex_string):
     for test_name in test_names:
         if not isinstance(test_name, str):
             test_name = test_name.decode()
-        match_obj = re.search(tags_regex_string, test_name)
+        match_obj = re.search(regex_pattern, test_name)
         if match_obj is not None:
             final_test_names.append(test_name)
     return final_test_names
 
 
-def get_test_names_from_db(rts, tags_regex_string, test_names, used_key):
+def get_test_names_from_db(rts, regex_pattern, test_names, used_key):
     try:
         test_names = rts.smembers(used_key)
         test_names = list(test_names)
         test_names.sort()
-        test_names = filter_test_names_by_regex(test_names, tags_regex_string)
+        test_names = filter_test_names_by_regex(test_names, regex_pattern)
 
     except redis.exceptions.ResponseError as e:
         logging.warning(
