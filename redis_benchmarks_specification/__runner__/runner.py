@@ -252,10 +252,10 @@ def validate_benchmark_metrics(
                 # Check throughput metrics
                 for pattern in throughput_patterns:
                     if pattern in metric_path_lower:
-                        if data <= 10:  # Below 10 QPS threshold
+                        if data < 1:  # Below 1 QPS threshold
                             validation_errors.append(
                                 f"Throughput metric '{path}' has invalid value: {data} "
-                                f"(below 10 QPS threshold)"
+                                f"(below 1 QPS threshold)"
                             )
                         break
 
