@@ -3,7 +3,7 @@ name: memtier_benchmark-stream-concurrent-xadd-xreadgroup-100-1-1k-consumers-cla
 description:
   Starting with a pre-loaded stream of 500K entries, the benchmark tests concurrent stream operations with a consumer group for distributed processing.
   For each XREADGROUP command, 100 XADD commands are executed.
-  500K initial entries plus 100 XADD minus 1 XREADGROUP ≈ 500K left in the stream at the end.
+  500K initial entries plus 100 * "XADD" - 1 * "XREADGROUP COUNT 100" ≈ 500K entries left in the stream at the end.
 dbconfig:
   configuration-parameters:
     save: '""'
