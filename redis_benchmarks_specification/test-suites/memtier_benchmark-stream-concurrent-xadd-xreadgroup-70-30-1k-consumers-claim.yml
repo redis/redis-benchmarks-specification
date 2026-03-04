@@ -37,7 +37,7 @@ clientconfig:
     --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
     --command="XREADGROUP GROUP producer-consumer-group __key__ COUNT 10 CLAIM 10 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=30
     --hide-histogram --key-minimum 1 --key-maximum 1000
-    -n 1000
+    --test-time 120
     -c 50
     -t 4
   resources:
