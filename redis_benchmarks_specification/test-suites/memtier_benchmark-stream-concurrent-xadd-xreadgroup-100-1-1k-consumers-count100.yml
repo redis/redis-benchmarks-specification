@@ -1,9 +1,9 @@
 version: 0.4
-name: memtier_benchmark-stream-concurrent-xadd-xreadgroup-70-30-1k-consumers-claim-count100
+name: memtier_benchmark-stream-concurrent-xadd-xreadgroup-100-1-1k-consumers-count100
 description:
   Starting with a pre-loaded stream of 500K entries, the benchmark tests concurrent stream operations with a consumer group for distributed processing.
-  70% of commands produce messages with XADD, while 30% consume with XREADGROUP COUNT 100.
-  500K initial entries plus 200K * 70% minus 200K * 100 * (15% + 15%) ≈ -5.86M left in the stream at the end.
+  For each XREADGROUP command, 100 XADD commands are executed.
+  500K initial entries plus 100 XADD minus 1 XREADGROUP ≈ 500K left in the stream at the end.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -34,10 +34,10 @@ clientconfig:
   tool: memtier_benchmark
   arguments: >
     --data-size 100
-    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
-    --command="XREADGROUP GROUP producer-consumer-group __key__ COUNT 100 CLAIM 100 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=30
+    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=100
+    --command="XREADGROUP GROUP producer-consumer-group __key__ COUNT 100 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=1
     --hide-histogram --key-minimum 1 --key-maximum 1000
-    -n 1000
+    --test-time 120
     -c 50
     -t 4
   resources:
