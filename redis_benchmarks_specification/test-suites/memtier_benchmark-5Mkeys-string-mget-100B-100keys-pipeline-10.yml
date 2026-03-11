@@ -1,0 +1,35 @@
+version: 0.4
+name: memtier_benchmark-5Mkeys-string-mget-100B-100keys-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 5M keys with a data
+  size of 100 Bytes for each key, fetching 100 keys per MGET with pipeline 10.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 5000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-minimum 1 --data-size 100 --key-maximum 5000000 --ratio 1:0 -n allkeys --random-data --key-pattern P:P --hide-histogram -t 4 -c 50 --pipeline 50
+  resources:
+    requests:
+      memory: 2g
+tested-commands:
+- mget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments:  --key-minimum 1 --pipeline 10 --key-maximum 5000000 --command "MGET __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__" -c 50 -t 8 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+tested-groups:
+- string
+priority: 1
