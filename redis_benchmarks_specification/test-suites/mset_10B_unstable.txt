@@ -1,0 +1,21 @@
+Redis Unstable
+
+# Results for entire test-suite
+|                                   Test Name                                    |                 Metric JSON Path                 |Metric Value|
+|--------------------------------------------------------------------------------|--------------------------------------------------|-----------:|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Ops/sec"                      |  143991.350|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Latency"                      |       0.000|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Misses/sec"                   |       0.000|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Percentile Latencies"."p50.00"|       0.623|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Percentile Latencies"."p99.00"|       1.111|
+
+Redis 7.4.1 
+# Results for entire test-suite
+|                                   Test Name                                    |                 Metric JSON Path                 |Metric Value|
+|--------------------------------------------------------------------------------|--------------------------------------------------|-----------:|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Ops/sec"                      |  151149.060|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Latency"                      |       0.000|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Misses/sec"                   |       0.000|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Percentile Latencies"."p50.00"|       0.599|
+|oss-standalone-memtier_benchmark-1Mkeys-load-string-mset-10-keys-with-10B-values|"ALL STATS".Totals."Percentile Latencies"."p99.00"|       1.071|
+
