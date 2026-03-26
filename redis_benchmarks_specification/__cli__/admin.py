@@ -930,6 +930,197 @@ def admin_reset_command(conn, args):
     print(f"No runner found for platform: {platform_filter}")
 
 
+def admin_work_command(conn, args):
+    """Show all active/pending work across the fleet — work-centric view.
+
+    For each benchmark stream, shows: who triggered it, fork/branch/hash,
+    which platforms are running/pending/done, and progress per platform.
+    """
+    print("\n=== ACTIVE WORK ===\n")
+
+    # 1. Collect all stream IDs from runner pending messages (= actively being processed)
+    runner_streams = {}  # stream_id -> {arch, platforms_processing}
+    for arch in ["amd64", "arm64"]:
+        stream = get_arch_specific_stream_name(arch)
+        try:
+            groups = conn.xinfo_groups(stream)
+        except redis.exceptions.ResponseError:
+            continue
+
+        for group in groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            lag = group.get("lag", 0)
+
+            grp_prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
+            if grp_prefix not in group_name:
+                continue
+            platform = group_name[len(grp_prefix) :]
+
+            # Get pending messages for this runner
+            pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 20)
+            for msg in pending_msgs:
+                msg_id = msg.get("message_id", b"")
+                if isinstance(msg_id, bytes):
+                    msg_id = msg_id.decode()
+                c_idle = msg.get("time_since_delivered", 0)
+
+                if msg_id not in runner_streams:
+                    runner_streams[msg_id] = {"arch": arch, "platforms": {}}
+                runner_streams[msg_id]["platforms"][platform] = {
+                    "state": "processing",
+                    "idle": c_idle,
+                }
+
+    # 2. Also collect from active queues (streams that have test lists but may not be in pending)
+    platform_keys = conn.keys("ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset")
+    now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
+    day_ago_ms = now_ms - (24 * 60 * 60 * 1000)
+
+    for pk in platform_keys:
+        pk_str = pk.decode() if isinstance(pk, bytes) else pk
+        parts = pk_str.split(":")
+        platform_name = parts[-2]
+
+        stream_ids = conn.zrangebyscore(pk_str, day_ago_ms, "+inf")
+        for sid_raw in stream_ids:
+            sid = sid_raw.decode() if isinstance(sid_raw, bytes) else sid_raw
+            pend, run, done, fail, total = _get_queue_progress(conn, sid, platform_name)
+            if total == 0:
+                continue  # no test data yet
+
+            if sid not in runner_streams:
+                runner_streams[sid] = {"arch": "unknown", "platforms": {}}
+
+            if platform_name not in runner_streams[sid]["platforms"]:
+                runner_streams[sid]["platforms"][platform_name] = {"state": "queued"}
+
+            # Update with progress info
+            runner_streams[sid]["platforms"][platform_name].update(
+                {
+                    "pending": pend,
+                    "running": run,
+                    "completed": done,
+                    "failed": fail,
+                    "total": total,
+                }
+            )
+
+            # Determine state
+            if pend == 0 and run == 0 and done > 0:
+                runner_streams[sid]["platforms"][platform_name]["state"] = "done"
+            elif run > 0:
+                runner_streams[sid]["platforms"][platform_name]["state"] = "running"
+            elif pend > 0:
+                runner_streams[sid]["platforms"][platform_name]["state"] = "pending"
+
+    # 3. Filter to only active work (not all done)
+    active_streams = {}
+    for sid, info in runner_streams.items():
+        has_active = any(
+            p.get("state") in ("processing", "running", "pending", "queued")
+            for p in info["platforms"].values()
+        )
+        if has_active:
+            active_streams[sid] = info
+
+    if not active_streams:
+        print("  No active work found.")
+        return
+
+    # 4. Display each work item
+    # Sort by stream ID (newest first)
+    for sid in sorted(active_streams.keys(), reverse=True):
+        info = active_streams[sid]
+
+        # Resolve build info
+        build_info = _get_build_info(conn, sid)
+        commit_info = _get_commit_info(conn, sid) if not build_info else {}
+        combined = {**commit_info, **build_info}
+
+        org = combined.get("github_org", "?")
+        repo = combined.get("github_repo", "?")
+        branch = combined.get("git_branch", "?")
+        ghash = _short_hash(combined.get("git_hash", "?"))
+        pr = combined.get("pull_request", "")
+        triggered_by = combined.get("triggered_by", "")
+        tests_regexp = combined.get("tests_regexp", ".*")
+        deployment_regexp = combined.get("deployment_name_regexp", ".*")
+
+        age = _format_age(sid)
+
+        # Header
+        print(f"  {sid}  ({age})")
+        if org == "redis" and repo == "redis":
+            print(f"    Repo:     redis/redis")
+        else:
+            print(f"    Repo:     {org}/{repo}")
+        print(f"    Branch:   {branch}  ({ghash})")
+        if pr:
+            print(f"    PR:       #{pr}")
+        if triggered_by:
+            print(f"    By:       {triggered_by}")
+        if tests_regexp != ".*":
+            print(f"    Filter:   {tests_regexp}")
+        if deployment_regexp != ".*":
+            print(f"    Topology: {deployment_regexp}")
+
+        # Platform breakdown
+        print(f"    Platforms:")
+        for platform, pinfo in sorted(info["platforms"].items()):
+            state = pinfo.get("state", "?")
+            total = pinfo.get("total", 0)
+            done = pinfo.get("completed", 0)
+            run = pinfo.get("running", 0)
+            pend = pinfo.get("pending", 0)
+            fail = pinfo.get("failed", 0)
+
+            if state == "done":
+                status_str = f"DONE  {done}/{total}"
+                if fail > 0:
+                    status_str += f" ({fail} failed)"
+            elif state in ("running", "processing"):
+                if total > 0:
+                    pct = int(done / total * 100) if total > 0 else 0
+                    status_str = f"RUNNING  {done}/{total} ({pct}%)"
+                    # ETA
+                    if done > 0 and (pend + run) > 0:
+                        try:
+                            ts = int(sid.split("-")[0])
+                            elapsed = (
+                                datetime.datetime.utcnow()
+                                - datetime.datetime.utcfromtimestamp(ts / 1000)
+                            ).total_seconds()
+                            avg = elapsed / done
+                            eta = avg * (pend + run)
+                            status_str += f"  ETA ~{int(eta / 60)}m"
+                        except Exception:
+                            pass
+                    if fail > 0:
+                        status_str += f"  ({fail} failed)"
+
+                    # Currently running test
+                    running_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{sid}:{platform}:tests_running"
+                    running_tests = conn.lrange(running_key, 0, 0)
+                    if running_tests:
+                        rn = running_tests[0]
+                        rn_str = rn.decode() if isinstance(rn, bytes) else rn
+                        status_str += f"\n                  Running: {rn_str}"
+                else:
+                    status_str = "PROCESSING (tests not queued yet)"
+            elif state == "pending":
+                status_str = f"PENDING  {pend}/{total} waiting"
+            elif state == "queued":
+                status_str = "QUEUED (not started)"
+            else:
+                status_str = state
+
+            print(f"      {platform:<45} {status_str}")
+
+        print()
+
+
 def admin_command_logic(args, project_name, project_version):
     """Main admin command dispatcher."""
     logging.info(f"Using: {project_name} {project_version}")
@@ -940,6 +1131,9 @@ def admin_command_logic(args, project_name, project_version):
         print()
         print("Commands:")
         print("  summary   Fleet overview: all runners, builders, queue depth")
+        print(
+            "  work      All active/pending work: who triggered, fork/branch, platforms, progress"
+        )
         print("  runners   Show each runner, what it's processing, progress + ETA")
         print("  builders  Show each builder, what it's building")
         print("  queues    List benchmark runs per platform with git info")
@@ -981,6 +1175,8 @@ def admin_command_logic(args, project_name, project_version):
         admin_cancel_command(conn, args)
     elif admin_cmd == "summary":
         admin_summary_command(conn, args)
+    elif admin_cmd == "work":
+        admin_work_command(conn, args)
     elif admin_cmd == "skip":
         admin_skip_command(conn, args)
     elif admin_cmd == "reset":
