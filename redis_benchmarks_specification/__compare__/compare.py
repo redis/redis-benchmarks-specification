@@ -515,18 +515,21 @@ def compare_command_logic(args, project_name, project_version):
                     "running_platform={}".format(running_platform_comparison)
                 )
             ts_keys = rts.ts().queryindex(discovery_filters)
+            logging.info(
+                f"Found {len(ts_keys)} time-series keys, parsing deployment names from key structure"
+            )
             discovered_deployments = set()
             for key in ts_keys:
-                if "target" in str(key):
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if "target" in key_str:
                     continue
-                try:
-                    info = rts.ts().info(key)
-                    if hasattr(info, "labels") and "deployment_name" in info.labels:
-                        dep_name = info.labels["deployment_name"]
-                        if re.match(deployment_name_regexp, dep_name):
-                            discovered_deployments.add(dep_name)
-                except Exception:
-                    continue
+                # Parse deployment_name from key structure:
+                # ci.benchmarks.redis/by.X/ci/org/repo/test/variant/platform/deployment_name/...
+                parts = key_str.split("/")
+                if len(parts) >= 10:
+                    dep_name = parts[8]
+                    if re.match(deployment_name_regexp, dep_name):
+                        discovered_deployments.add(dep_name)
             env_list = sorted(discovered_deployments)
             if not env_list:
                 logging.error(

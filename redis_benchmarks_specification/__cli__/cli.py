@@ -640,90 +640,33 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                                 if type(bench_stream_id) == bytes:
                                     bench_stream_id = bench_stream_id.decode()
 
-                                # Try each known platform pattern
-                                platforms_to_check = []
-                                if args.platform:
-                                    platforms_to_check = [args.platform]
-                                else:
-                                    # Scan for platform zsets to find which platform this run is on
-                                    platform_keys = conn.keys(
-                                        "ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset"
-                                    )
-                                    for pk in platform_keys:
-                                        pk_str = (
-                                            pk.decode() if type(pk) == bytes else pk
+                                platforms_discovered = set()
+                                all_platforms_done = False
+
+                                while not all_platforms_done:
+                                    # Discover platforms each iteration (coordinator may not have picked it up yet)
+                                    if args.platform:
+                                        platforms_discovered.add(args.platform)
+                                    else:
+                                        platform_keys = conn.keys(
+                                            "ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset"
                                         )
-                                        platform = pk_str.split(":")[-2]
-                                        if platform != "zset":
-                                            # Check if our stream ID is in this platform's zset
-                                            score = conn.zscore(pk_str, bench_stream_id)
-                                            if score is not None:
-                                                platforms_to_check.append(platform)
-
-                                for platform in platforms_to_check:
-                                    key_prefix = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{bench_stream_id}:{platform}"
-                                    key_pending = f"{key_prefix}:tests_pending"
-                                    key_running = f"{key_prefix}:tests_running"
-                                    key_completed = f"{key_prefix}:tests_completed"
-                                    key_failed = f"{key_prefix}:tests_failed"
-
-                                    logging.info(
-                                        f"Monitoring benchmark progress for stream {bench_stream_id} on platform {platform}"
-                                    )
-
-                                    while True:
-                                        pending = conn.llen(key_pending)
-                                        running = conn.llen(key_running)
-                                        completed = conn.llen(key_completed)
-                                        failed = conn.llen(key_failed)
-                                        total = pending + running + completed + failed
-
-                                        if total == 0:
-                                            # Tests haven't been populated yet
-                                            logging.info(
-                                                f"  Waiting for tests to be queued..."
+                                        for pk in platform_keys:
+                                            pk_str = (
+                                                pk.decode() if type(pk) == bytes else pk
                                             )
-                                        else:
-                                            elapsed = (
-                                                datetime.datetime.utcnow()
-                                                - benchmark_start_datetime
-                                            ).total_seconds()
-                                            eta_str = ""
-                                            if (
-                                                completed > 0
-                                                and (pending + running) > 0
-                                            ):
-                                                avg_per_test = elapsed / completed
-                                                eta_secs = avg_per_test * (
-                                                    pending + running
+                                            platform = pk_str.split(":")[-2]
+                                            if platform != "zset":
+                                                score = conn.zscore(
+                                                    pk_str, bench_stream_id
                                                 )
-                                                eta_str = f" ETA: ~{int(eta_secs / 60)}m{int(eta_secs % 60)}s"
-                                            logging.info(
-                                                f"  Progress: {completed}/{total} completed, "
-                                                f"{running} running, {pending} pending, "
-                                                f"{failed} failed.{eta_str}"
-                                            )
+                                                if score is not None:
+                                                    platforms_discovered.add(platform)
 
-                                            if pending == 0 and running == 0:
-                                                logging.info(
-                                                    f"  Benchmark execution complete! "
-                                                    f"{completed} completed, {failed} failed."
-                                                )
-                                                if failed > 0:
-                                                    failed_tests = conn.lrange(
-                                                        key_failed, 0, -1
-                                                    )
-                                                    for ft in failed_tests:
-                                                        ft_str = (
-                                                            ft.decode()
-                                                            if type(ft) == bytes
-                                                            else ft
-                                                        )
-                                                        logging.warning(
-                                                            f"  FAILED: {ft_str}"
-                                                        )
-                                                break
-
+                                    if not platforms_discovered:
+                                        logging.info(
+                                            f"  Waiting for coordinator to pick up stream {bench_stream_id}..."
+                                        )
                                         # Check timeout
                                         if benchmark_timeout > 0:
                                             elapsed = (
@@ -734,9 +677,88 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                                                 logging.warning(
                                                     f"  Benchmark wait timed out after {benchmark_timeout}s"
                                                 )
+                                                all_platforms_done = True
                                                 break
-
                                         time.sleep(benchmark_sleep_secs)
+                                        continue
+
+                                    # Check progress on all discovered platforms
+                                    all_platforms_done = True
+                                    for platform in platforms_discovered:
+                                        key_prefix = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{bench_stream_id}:{platform}"
+                                        pending = conn.llen(
+                                            f"{key_prefix}:tests_pending"
+                                        )
+                                        running = conn.llen(
+                                            f"{key_prefix}:tests_running"
+                                        )
+                                        completed = conn.llen(
+                                            f"{key_prefix}:tests_completed"
+                                        )
+                                        failed = conn.llen(f"{key_prefix}:tests_failed")
+                                        # failed is subset of completed
+                                        total = pending + running + completed
+
+                                        if total == 0:
+                                            logging.info(
+                                                f"  [{platform}] Waiting for tests to be queued..."
+                                            )
+                                            all_platforms_done = False
+                                        elif pending > 0 or running > 0:
+                                            elapsed = (
+                                                datetime.datetime.utcnow()
+                                                - benchmark_start_datetime
+                                            ).total_seconds()
+                                            eta_str = ""
+                                            if completed > 0:
+                                                avg_per_test = elapsed / completed
+                                                eta_secs = avg_per_test * (
+                                                    pending + running
+                                                )
+                                                eta_str = f" ETA: ~{int(eta_secs / 60)}m{int(eta_secs % 60)}s"
+                                            logging.info(
+                                                f"  [{platform}] {completed}/{total} completed, "
+                                                f"{running} running, {pending} pending, "
+                                                f"{failed} failed.{eta_str}"
+                                            )
+                                            all_platforms_done = False
+                                        else:
+                                            logging.info(
+                                                f"  [{platform}] Complete! "
+                                                f"{completed} done, {failed} failed."
+                                            )
+                                            if failed > 0:
+                                                failed_tests = conn.lrange(
+                                                    f"{key_prefix}:tests_failed",
+                                                    0,
+                                                    -1,
+                                                )
+                                                for ft in failed_tests:
+                                                    ft_str = (
+                                                        ft.decode()
+                                                        if type(ft) == bytes
+                                                        else ft
+                                                    )
+                                                    logging.warning(
+                                                        f"    FAILED: {ft_str}"
+                                                    )
+
+                                    if all_platforms_done:
+                                        break
+
+                                    # Check timeout
+                                    if benchmark_timeout > 0:
+                                        elapsed = (
+                                            datetime.datetime.utcnow()
+                                            - benchmark_start_datetime
+                                        ).total_seconds()
+                                        if elapsed > benchmark_timeout:
+                                            logging.warning(
+                                                f"  Benchmark wait timed out after {benchmark_timeout}s"
+                                            )
+                                            break
+
+                                    time.sleep(benchmark_sleep_secs)
 
                 else:
                     logging.info(

@@ -142,13 +142,17 @@ def _short_info(info):
 
 
 def _get_queue_progress(conn, stream_id, platform):
-    """Get test queue progress for a stream_id on a platform."""
+    """Get test queue progress for a stream_id on a platform.
+
+    Note: failed is a subset of completed (coordinator pushes to both lists),
+    so total = pending + running + completed (not + failed, which would double-count).
+    """
     prefix = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{platform}"
     pending = conn.llen(f"{prefix}:tests_pending")
     running = conn.llen(f"{prefix}:tests_running")
     completed = conn.llen(f"{prefix}:tests_completed")
     failed = conn.llen(f"{prefix}:tests_failed")
-    total = pending + running + completed + failed
+    total = pending + running + completed
     return pending, running, completed, failed, total
 
 
@@ -491,7 +495,8 @@ def admin_status_command(conn, args):
         running = conn.llen(f"{prefix}:tests_running")
         completed = conn.llen(f"{prefix}:tests_completed")
         failed = conn.llen(f"{prefix}:tests_failed")
-        total = pending + running + completed + failed
+        # failed is a subset of completed, so don't double-count
+        total = pending + running + completed
 
         triggered = _format_age(stream_id)
         pct = int(completed / total * 100) if total > 0 else 0
@@ -537,7 +542,8 @@ def admin_status_command(conn, args):
         topo_r = conn.llen(f"{prefix}:topologies_running")
         topo_d = conn.llen(f"{prefix}:topologies_completed")
         topo_f = conn.llen(f"{prefix}:topologies_failed")
-        topo_total = topo_p + topo_r + topo_d + topo_f
+        # failed is subset of completed for topologies too
+        topo_total = topo_p + topo_r + topo_d
 
         if topo_total > 0:
             print(
