@@ -716,6 +716,11 @@ def admin_cancel_command(conn, args):
                 f"Removed {removed} entries matching '{test_name_filter}' from {platform_name} pending queue"
             )
         else:
+            # Signal the coordinator to break out of its test loop
+            reset_key = f"{prefix}:reset_requested"
+            conn.set(reset_key, "1", ex=3600)
+            print(f"  Set reset signal for coordinator")
+
             pending_count = conn.llen(pending_key)
             topo_count = conn.llen(topo_pending_key)
             conn.delete(pending_key)
@@ -771,6 +776,12 @@ def admin_skip_command(conn, args):
                     if isinstance(msg_id, bytes):
                         msg_id = msg_id.decode()
                     msg_ids.append(msg_id)
+
+                    # Signal the coordinator to break out of its test loop
+                    # (checked every iteration alongside the HTTP _reset_queue_requested flag)
+                    reset_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{msg_id}:{platform}:reset_requested"
+                    conn.set(reset_key, "1", ex=3600)  # expires in 1h
+                    print(f"  Set reset signal: {reset_key}")
 
                     # Also flush the test queue lists for this stream on this platform
                     prefix = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{msg_id}:{platform}"

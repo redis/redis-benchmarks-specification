@@ -1309,16 +1309,29 @@ def process_self_contained_coordinator_stream(
                             auto_approve_github, comment_body, github_pr, pr_link
                         )
 
+                # Redis key for CLI-driven reset signal
+                reset_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:reset_requested"
+
                 for test_file in filtered_test_files:
-                    # Check if queue reset was requested
+                    # Check if queue reset was requested (via HTTP or CLI)
                     global _reset_queue_requested
-                    if _reset_queue_requested:
+                    reset_via_redis = False
+                    try:
+                        reset_via_redis = github_event_conn.exists(reset_key)
+                    except Exception:
+                        pass
+                    if _reset_queue_requested or reset_via_redis:
+                        source = "HTTP" if _reset_queue_requested else "CLI (Redis key)"
                         logging.info(
-                            "Queue reset requested. Skipping remaining tests and clearing queues."
+                            f"Queue reset requested via {source}. Skipping remaining tests and clearing queues."
                         )
                         # Clear all pending tests from the queue
                         github_event_conn.delete(stream_test_list_pending)
                         github_event_conn.delete(stream_test_list_running)
+                        github_event_conn.delete(stream_topology_list_pending)
+                        github_event_conn.delete(stream_topology_list_running)
+                        if reset_via_redis:
+                            github_event_conn.delete(reset_key)
                         logging.info("Cleared pending and running test queues")
                         _reset_queue_requested = False
                         break
