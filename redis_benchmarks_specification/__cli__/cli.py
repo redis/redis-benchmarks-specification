@@ -37,6 +37,7 @@ from redis_benchmarks_specification.__cli__.stats import (
 )
 from redis_benchmarks_specification.__cli__.admin import (
     admin_command_logic,
+    _get_caller_identity,
 )
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
@@ -473,6 +474,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
             commit_dict["github_org"] = args.gh_org
             commit_dict["github_repo"] = args.gh_repo
+            commit_dict["triggered_by"] = _get_caller_identity()
             if args.arch is not None:
                 commit_dict["build_arch"] = args.arch
                 commit_dict["arch"] = args.arch

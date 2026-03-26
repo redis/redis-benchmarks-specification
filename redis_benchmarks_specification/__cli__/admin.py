@@ -6,6 +6,9 @@
 
 import datetime
 import logging
+import os
+import socket
+import subprocess
 import redis
 
 from redis_benchmarks_specification.__common__.env import (
@@ -15,6 +18,40 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
     get_arch_specific_stream_name,
 )
+
+
+def _get_caller_identity():
+    """Get identity of who is running this CLI command.
+
+    Returns a string like: "fcosta_oliveira@myhost (cli)"
+    or "github-actions@runner-abc (gh-actions)" if in CI.
+    """
+    # Check if running in GitHub Actions
+    gh_actor = os.getenv("GITHUB_ACTOR", "")
+    gh_run_id = os.getenv("GITHUB_RUN_ID", "")
+    if gh_actor:
+        source = "gh-actions"
+        if gh_run_id:
+            source = f"gh-actions/run/{gh_run_id}"
+        return f"{gh_actor} ({source})"
+
+    # Local CLI: use git user + hostname
+    user = ""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            user = result.stdout.strip()
+    except Exception:
+        pass
+    if not user:
+        user = os.getenv("USER", "unknown")
+    host = socket.gethostname()
+    return f"{user}@{host} (cli)"
 
 
 def _format_idle(idle_ms):
@@ -76,6 +113,7 @@ def _get_build_info(conn, stream_id):
                     b"run_image",
                     b"server_name",
                     b"pull_request",
+                    b"triggered_by",
                 ]:
                     if k in fields:
                         v = fields[k]
@@ -103,6 +141,7 @@ def _get_commit_info(conn, stream_id):
                 b"pull_request",
                 b"tests_regexp",
                 b"deployment_name_regexp",
+                b"triggered_by",
             ]:
                 if k in fields:
                     v = fields[k]
@@ -465,6 +504,8 @@ def admin_status_command(conn, args):
             print(f"  Filter:  {build_info['tests_regexp']}")
         if build_info.get("deployment_name_regexp", ".*") != ".*":
             print(f"  Topo:    {build_info['deployment_name_regexp']}")
+        if build_info.get("triggered_by"):
+            print(f"  By:      {build_info['triggered_by']}")
         print()
 
     # Find which platform(s) this stream is on
@@ -710,16 +751,18 @@ def admin_cancel_command(conn, args):
         pending_key = f"{prefix}:tests_pending"
         topo_pending_key = f"{prefix}:topologies_pending"
 
+        caller = _get_caller_identity()
         if test_name_filter:
             removed = conn.lrem(pending_key, 0, test_name_filter)
             print(
                 f"Removed {removed} entries matching '{test_name_filter}' from {platform_name} pending queue"
             )
+            logging.info(f"Cancel by: {caller}")
         else:
             # Signal the coordinator to break out of its test loop
             reset_key = f"{prefix}:reset_requested"
-            conn.set(reset_key, "1", ex=3600)
-            print(f"  Set reset signal for coordinator")
+            conn.set(reset_key, f"canceled by {caller}", ex=3600)
+            print(f"  Set reset signal for coordinator (by {caller})")
 
             pending_count = conn.llen(pending_key)
             topo_count = conn.llen(topo_pending_key)
@@ -765,7 +808,9 @@ def admin_skip_command(conn, args):
             if platform != platform_filter:
                 continue
 
+            caller = _get_caller_identity()
             print(f"\nSkipping all work for runner: {platform} ({arch})")
+            print(f"  Requested by: {caller}")
 
             # 1. Get and ACK all pending messages
             pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 1000)
@@ -780,7 +825,7 @@ def admin_skip_command(conn, args):
                     # Signal the coordinator to break out of its test loop
                     # (checked every iteration alongside the HTTP _reset_queue_requested flag)
                     reset_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{msg_id}:{platform}:reset_requested"
-                    conn.set(reset_key, "1", ex=3600)  # expires in 1h
+                    conn.set(reset_key, f"skipped by {caller}", ex=3600)
                     print(f"  Set reset signal: {reset_key}")
 
                     # Also flush the test queue lists for this stream on this platform
