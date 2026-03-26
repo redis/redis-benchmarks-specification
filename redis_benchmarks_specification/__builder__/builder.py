@@ -420,6 +420,20 @@ def builder_process_stream(
             if b"tests_groups_regexp" in testDetails:
                 tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
 
+            deployment_name_regexp = ".*"
+            if b"deployment_name_regexp" in testDetails:
+                deployment_name_regexp = testDetails[b"deployment_name_regexp"].decode()
+                logging.info(
+                    f"detected deployment_name_regexp on build stream: {deployment_name_regexp}"
+                )
+
+            command_regexp = ".*"
+            if b"command_regexp" in testDetails:
+                command_regexp = testDetails[b"command_regexp"].decode()
+                logging.info(
+                    f"detected command_regexp on build stream: {command_regexp}"
+                )
+
             github_org = "redis"
             if b"github_org" in testDetails:
                 github_org = testDetails[b"github_org"].decode()
@@ -597,12 +611,13 @@ def builder_process_stream(
                         tests_priority_lower_limit,
                         tests_priority_upper_limit,
                         tests_regexp,
-                        ".*",  # command_regexp - default to all commands
+                        command_regexp,
                         use_git_timestamp,
                         server_name,
                         github_org,
                         github_repo,
                         artifact_keys,  # Pass existing artifact keys
+                        deployment_name_regexp,
                     )
                     # Add to benchmark stream even when reusing artifacts
                     if result is True:
@@ -709,12 +724,13 @@ def builder_process_stream(
                     tests_priority_lower_limit,
                     tests_priority_upper_limit,
                     tests_regexp,
-                    ".*",  # command_regexp - default to all commands
+                    command_regexp,
                     use_git_timestamp,
                     server_name,
                     github_org,
                     github_repo,
                     None,  # existing_artifact_keys - None for new builds
+                    deployment_name_regexp,
                 )
                 if result is True:
                     arch_specific_stream = get_arch_specific_stream_name(build_arch)
@@ -861,6 +877,7 @@ def generate_benchmark_stream_request(
     github_org="redis",
     github_repo="redis",
     existing_artifact_keys=None,
+    deployment_name_regexp=".*",
 ):
     build_stream_fields = {
         "id": id,
@@ -878,6 +895,8 @@ def generate_benchmark_stream_request(
         "github_org": github_org,
         "github_repo": github_repo,
     }
+    if deployment_name_regexp != ".*":
+        build_stream_fields["deployment_name_regexp"] = deployment_name_regexp
     if build_config_metadata is not None:
         build_stream_fields["metadata"] = json.dumps(build_config_metadata)
     if compiler is not None:

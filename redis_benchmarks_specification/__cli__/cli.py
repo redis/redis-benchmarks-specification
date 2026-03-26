@@ -35,6 +35,10 @@ from redis_benchmarks_specification.__cli__.args import spec_cli_args
 from redis_benchmarks_specification.__cli__.stats import (
     generate_stats_cli_command_logic,
 )
+from redis_benchmarks_specification.__cli__.admin import (
+    admin_command_logic,
+    _get_caller_identity,
+)
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_commit_dict_from_sha,
     request_build_from_commit_info,
@@ -121,12 +125,17 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         0,
         10000,
         args.tests_regexp,
-        ".*",  # command_regexp
+        args.command_regex if hasattr(args, "command_regex") else ".*",
         False,  # use_git_timestamp
         "redis",  # server_name
         "redis",  # github_org
         "redis",  # github_repo
         None,  # existing_artifact_keys
+        (
+            args.deployment_name_regexp
+            if hasattr(args, "deployment_name_regexp")
+            else ".*"
+        ),
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org
@@ -169,6 +178,8 @@ def main():
         generate_stats_cli_command_logic(args, project_name, project_version)
     if args.tool == "dockerhub":
         trigger_tests_dockerhub_cli_command_logic(args, project_name, project_version)
+    if args.tool == "admin":
+        admin_command_logic(args, project_name, project_version)
 
 
 def get_commits_by_branch(args, repo):
@@ -463,6 +474,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             commit_dict["tests_groups_regexp"] = tests_groups_regexp
             commit_dict["github_org"] = args.gh_org
             commit_dict["github_repo"] = args.gh_repo
+            commit_dict["triggered_by"] = _get_caller_identity()
             if args.arch is not None:
                 commit_dict["build_arch"] = args.arch
                 commit_dict["arch"] = args.arch
@@ -472,6 +484,10 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 commit_dict["build_artifacts"] = args.build_artifacts
             if args.build_command != "":
                 commit_dict["build_command"] = args.build_command
+            if args.deployment_name_regexp != ".*":
+                commit_dict["deployment_name_regexp"] = args.deployment_name_regexp
+            if args.command_regex != ".*":
+                commit_dict["command_regexp"] = args.command_regex
             if pull_request is not None:
                 logging.info(
                     f"Have a pull request info to include in build request {pull_request}"
@@ -518,7 +534,8 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                         )
                     )
 
-                    if args.wait_build is True:
+                    wait_build = args.wait_build or args.wait_benchmark
+                    if wait_build is True:
                         build_start_datetime = datetime.datetime.utcnow()
                         decoded_stream_id = stream_id.decode()
                         builder_list_streams = (
@@ -609,6 +626,142 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                                     auto_approve, comment_body, github_pr, pr_link
                                 )
 
+                        # Wait for benchmark execution to complete
+                        if (
+                            args.wait_benchmark is True
+                            and len(benchmark_stream_ids) > 0
+                        ):
+                            benchmark_start_datetime = datetime.datetime.utcnow()
+                            benchmark_sleep_secs = 15
+                            benchmark_timeout = args.wait_benchmark_timeout
+                            logging.info(
+                                "Waiting for benchmark execution to complete..."
+                            )
+                            for bench_stream_id_raw in benchmark_stream_ids:
+                                bench_stream_id = bench_stream_id_raw
+                                if type(bench_stream_id) == bytes:
+                                    bench_stream_id = bench_stream_id.decode()
+
+                                platforms_discovered = set()
+                                all_platforms_done = False
+
+                                while not all_platforms_done:
+                                    # Discover platforms each iteration (coordinator may not have picked it up yet)
+                                    if args.platform:
+                                        platforms_discovered.add(args.platform)
+                                    else:
+                                        platform_keys = conn.keys(
+                                            "ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset"
+                                        )
+                                        for pk in platform_keys:
+                                            pk_str = (
+                                                pk.decode() if type(pk) == bytes else pk
+                                            )
+                                            platform = pk_str.split(":")[-2]
+                                            if platform != "zset":
+                                                score = conn.zscore(
+                                                    pk_str, bench_stream_id
+                                                )
+                                                if score is not None:
+                                                    platforms_discovered.add(platform)
+
+                                    if not platforms_discovered:
+                                        logging.info(
+                                            f"  Waiting for coordinator to pick up stream {bench_stream_id}..."
+                                        )
+                                        # Check timeout
+                                        if benchmark_timeout > 0:
+                                            elapsed = (
+                                                datetime.datetime.utcnow()
+                                                - benchmark_start_datetime
+                                            ).total_seconds()
+                                            if elapsed > benchmark_timeout:
+                                                logging.warning(
+                                                    f"  Benchmark wait timed out after {benchmark_timeout}s"
+                                                )
+                                                all_platforms_done = True
+                                                break
+                                        time.sleep(benchmark_sleep_secs)
+                                        continue
+
+                                    # Check progress on all discovered platforms
+                                    all_platforms_done = True
+                                    for platform in platforms_discovered:
+                                        key_prefix = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{bench_stream_id}:{platform}"
+                                        pending = conn.llen(
+                                            f"{key_prefix}:tests_pending"
+                                        )
+                                        running = conn.llen(
+                                            f"{key_prefix}:tests_running"
+                                        )
+                                        completed = conn.llen(
+                                            f"{key_prefix}:tests_completed"
+                                        )
+                                        failed = conn.llen(f"{key_prefix}:tests_failed")
+                                        # failed is subset of completed
+                                        total = pending + running + completed
+
+                                        if total == 0:
+                                            logging.info(
+                                                f"  [{platform}] Waiting for tests to be queued..."
+                                            )
+                                            all_platforms_done = False
+                                        elif pending > 0 or running > 0:
+                                            elapsed = (
+                                                datetime.datetime.utcnow()
+                                                - benchmark_start_datetime
+                                            ).total_seconds()
+                                            eta_str = ""
+                                            if completed > 0:
+                                                avg_per_test = elapsed / completed
+                                                eta_secs = avg_per_test * (
+                                                    pending + running
+                                                )
+                                                eta_str = f" ETA: ~{int(eta_secs / 60)}m{int(eta_secs % 60)}s"
+                                            logging.info(
+                                                f"  [{platform}] {completed}/{total} completed, "
+                                                f"{running} running, {pending} pending, "
+                                                f"{failed} failed.{eta_str}"
+                                            )
+                                            all_platforms_done = False
+                                        else:
+                                            logging.info(
+                                                f"  [{platform}] Complete! "
+                                                f"{completed} done, {failed} failed."
+                                            )
+                                            if failed > 0:
+                                                failed_tests = conn.lrange(
+                                                    f"{key_prefix}:tests_failed",
+                                                    0,
+                                                    -1,
+                                                )
+                                                for ft in failed_tests:
+                                                    ft_str = (
+                                                        ft.decode()
+                                                        if type(ft) == bytes
+                                                        else ft
+                                                    )
+                                                    logging.warning(
+                                                        f"    FAILED: {ft_str}"
+                                                    )
+
+                                    if all_platforms_done:
+                                        break
+
+                                    # Check timeout
+                                    if benchmark_timeout > 0:
+                                        elapsed = (
+                                            datetime.datetime.utcnow()
+                                            - benchmark_start_datetime
+                                        ).total_seconds()
+                                        if elapsed > benchmark_timeout:
+                                            logging.warning(
+                                                f"  Benchmark wait timed out after {benchmark_timeout}s"
+                                            )
+                                            break
+
+                                    time.sleep(benchmark_sleep_secs)
+
                 else:
                     logging.info(
                         "DRY-RUN: build for commit: {}. Date: {} Full commited info: {}".format(
@@ -617,6 +770,49 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             commit_dict,
                         )
                     )
+                    # Show topology breakdown in dry-run
+                    try:
+                        import yaml
+                        import os
+                        from redis_benchmarks_specification.__common__.runner import (
+                            get_benchmark_specs,
+                        )
+
+                        testsuites_folder = os.path.abspath(args.test_suites_folder)
+                        spec_files = get_benchmark_specs(testsuites_folder)
+                        total_tests = 0
+                        total_topology_runs = 0
+                        deployment_name_regexp_filter = args.deployment_name_regexp
+                        tests_regexp_compiled = re.compile(args.tests_regexp)
+                        for spec_file in spec_files:
+                            if args.defaults_filename in spec_file:
+                                continue
+                            with open(spec_file, "r") as f:
+                                config = yaml.safe_load(f)
+                            if config is None or "name" not in config:
+                                continue
+                            test_name = config["name"]
+                            if not tests_regexp_compiled.match(test_name):
+                                continue
+                            topologies = config.get("redis-topologies", [])
+                            if deployment_name_regexp_filter != ".*":
+                                topologies = [
+                                    t
+                                    for t in topologies
+                                    if re.match(deployment_name_regexp_filter, t)
+                                ]
+                            if topologies:
+                                total_tests += 1
+                                total_topology_runs += len(topologies)
+                                if len(topologies) > 1:
+                                    logging.info(
+                                        f"  {test_name}: {len(topologies)} topologies -> {', '.join(topologies)}"
+                                    )
+                        logging.info(
+                            f"DRY-RUN SUMMARY: {total_tests} tests x topologies = {total_topology_runs} benchmark runs"
+                        )
+                    except Exception as e:
+                        logging.debug(f"Could not compute topology breakdown: {e}")
             else:
                 logging.error(error_msg)
     if cleanUp is True:

@@ -237,4 +237,18 @@ def create_compare_arguments(parser):
         action="store_true",
         help="Compare by environments for each test instead of comparing by tests for each environment (default behavior).",
     )
+    parser.add_argument(
+        "--list-deployments",
+        required=False,
+        default=False,
+        action="store_true",
+        help="List available deployment names that have data for the given filters (hash, branch, platform). Prints the list and exits.",
+    )
+    parser.add_argument(
+        "--deployment-name-regexp",
+        type=str,
+        default=".*",
+        required=False,
+        help="Filter deployment names using regex. Used with --compare-by-env to dynamically select topologies instead of hardcoded list. E.g. 'oss-standalone.*io-threads' for IO-thread variants.",
+    )
     return parser

@@ -22,6 +22,7 @@ START_TIME_LAST_YEAR_UTC = START_TIME_NOW_UTC - datetime.timedelta(days=90)
 CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
 CLI_TOOL_DOCKERHUB = "dockerhub"
+CLI_TOOL_ADMIN = "admin"
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
@@ -116,7 +117,9 @@ def spec_cli_args(parser):
         type=str,
         default=CLI_TOOL_TRIGGER,
         help="subtool to use. One of '{}' ".format(
-            ",".join([CLI_TOOL_STATS, CLI_TOOL_TRIGGER, CLI_TOOL_DOCKERHUB])
+            ",".join(
+                [CLI_TOOL_STATS, CLI_TOOL_TRIGGER, CLI_TOOL_DOCKERHUB, CLI_TOOL_ADMIN]
+            )
         ),
     )
     parser.add_argument("--gh_token", type=str, default=GH_TOKEN)
@@ -222,5 +225,36 @@ def spec_cli_args(parser):
         type=str,
         default=".*",
         help="Filter tests by command using regex. Only tests that include commands matching this regex will be processed.",
+    )
+    parser.add_argument(
+        "--deployment-name-regexp",
+        type=str,
+        default=".*",
+        help="Filter topologies/deployments by name using regex. Only topologies matching this pattern will be executed. E.g. '.*io-threads' to only run IO-thread variants.",
+    )
+    parser.add_argument(
+        "--wait-benchmark",
+        default=False,
+        action="store_true",
+        help="Wait for benchmark execution to complete (not just the build). Polls test queue status until all tests are done.",
+    )
+    parser.add_argument(
+        "--wait-benchmark-timeout",
+        type=int,
+        default=-1,
+        help="Wait x seconds for benchmark completion. If -1, waits forever.",
+    )
+    # Admin tool arguments
+    parser.add_argument(
+        "--admin-command",
+        type=str,
+        default="",
+        help="Admin subcommand: runners, builders, queues, status, cancel",
+    )
+    parser.add_argument(
+        "--stream-id",
+        type=str,
+        default="",
+        help="Benchmark stream ID for status/cancel commands.",
     )
     return parser

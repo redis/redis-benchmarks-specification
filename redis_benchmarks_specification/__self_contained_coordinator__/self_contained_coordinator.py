@@ -1162,6 +1162,13 @@ def process_self_contained_coordinator_stream(
                     f"detected a command regexp definition on the streamdata {command_regexp}"
                 )
 
+            deployment_name_regexp = ".*"
+            if b"deployment_name_regexp" in testDetails:
+                deployment_name_regexp = testDetails[b"deployment_name_regexp"].decode()
+                logging.info(
+                    f"detected a deployment_name_regexp definition on the streamdata {deployment_name_regexp}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -1213,6 +1220,11 @@ def process_self_contained_coordinator_stream(
                 stream_test_list_running = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_running"
                 stream_test_list_failed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_failed"
                 stream_test_list_completed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:tests_completed"
+                # Topology-level tracking keys (granular: test_name::topology)
+                stream_topology_list_pending = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:topologies_pending"
+                stream_topology_list_running = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:topologies_running"
+                stream_topology_list_completed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:topologies_completed"
+                stream_topology_list_failed = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:topologies_failed"
 
                 filtered_test_files = filter_test_files(
                     defaults_filename,
@@ -1231,6 +1243,7 @@ def process_self_contained_coordinator_stream(
                 # Use pipeline for efficient bulk operations
                 pipeline = github_event_conn.pipeline()
                 test_names_added = []
+                total_topology_runs = 0
 
                 for test_file in filtered_test_files:
                     with open(test_file, "r") as stream:
@@ -1241,13 +1254,30 @@ def process_self_contained_coordinator_stream(
                         ) = get_final_benchmark_config(None, None, stream, "")
                     pipeline.lpush(stream_test_list_pending, test_name)
                     test_names_added.append(test_name)
+                    # Add topology-level entries
+                    topologies = benchmark_config.get("redis-topologies", [])
+                    for topo in topologies:
+                        # Apply deployment_name_regexp filter
+                        if deployment_name_regexp != ".*":
+                            if not re.match(deployment_name_regexp, topo):
+                                continue
+                        # Apply CLI topology filter
+                        if args is not None and args.topology and topo != args.topology:
+                            continue
+                        topo_entry = f"{test_name}::{topo}"
+                        pipeline.lpush(stream_topology_list_pending, topo_entry)
+                        total_topology_runs += 1
                     logging.debug(
                         f"Queued test named {test_name} for addition to pending test list"
                     )
 
                 # Set expiration and execute pipeline
                 pipeline.expire(stream_test_list_pending, REDIS_BINS_EXPIRE_SECS)
+                pipeline.expire(stream_topology_list_pending, REDIS_BINS_EXPIRE_SECS)
                 pipeline.execute()
+                logging.info(
+                    f"Topology-level tracking: {total_topology_runs} test-topology combinations queued"
+                )
 
                 logging.info(
                     f"Successfully added {len(test_names_added)} tests to pending test list in key {stream_test_list_pending}"
@@ -1279,16 +1309,29 @@ def process_self_contained_coordinator_stream(
                             auto_approve_github, comment_body, github_pr, pr_link
                         )
 
+                # Redis key for CLI-driven reset signal
+                reset_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{stream_id}:{running_platform}:reset_requested"
+
                 for test_file in filtered_test_files:
-                    # Check if queue reset was requested
+                    # Check if queue reset was requested (via HTTP or CLI)
                     global _reset_queue_requested
-                    if _reset_queue_requested:
+                    reset_via_redis = False
+                    try:
+                        reset_via_redis = github_event_conn.exists(reset_key)
+                    except Exception:
+                        pass
+                    if _reset_queue_requested or reset_via_redis:
+                        source = "HTTP" if _reset_queue_requested else "CLI (Redis key)"
                         logging.info(
-                            "Queue reset requested. Skipping remaining tests and clearing queues."
+                            f"Queue reset requested via {source}. Skipping remaining tests and clearing queues."
                         )
                         # Clear all pending tests from the queue
                         github_event_conn.delete(stream_test_list_pending)
                         github_event_conn.delete(stream_test_list_running)
+                        github_event_conn.delete(stream_topology_list_pending)
+                        github_event_conn.delete(stream_topology_list_running)
+                        if reset_via_redis:
+                            github_event_conn.delete(reset_key)
                         logging.info("Cleared pending and running test queues")
                         _reset_queue_requested = False
                         break
@@ -1332,6 +1375,16 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                                # Clean up topology entries that were pre-populated for this test
+                                for topo in benchmark_config.get(
+                                    "redis-topologies", []
+                                ):
+                                    topo_entry = f"{test_name}::{topo}"
+                                    github_event_conn.lrem(
+                                        stream_topology_list_pending,
+                                        1,
+                                        topo_entry,
+                                    )
                                 continue
                             else:
                                 logging.info(
@@ -1339,11 +1392,14 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                        # Initialize test_result before topology loop.
+                        # If all topologies are filtered out, test is considered passed (nothing to run).
+                        test_result = True
                         for topology_spec_name in benchmark_config["redis-topologies"]:
                             setup_name = topology_spec_name
                             setup_type = "oss-standalone"
 
-                            # Filter by topology if specified
+                            # Filter by topology if specified via CLI arg (exact match)
                             if (
                                 args is not None
                                 and args.topology
@@ -1353,6 +1409,16 @@ def process_self_contained_coordinator_stream(
                                     f"Skipping topology {topology_spec_name} as it doesn't match the requested topology {args.topology}"
                                 )
                                 continue
+
+                            # Filter by deployment_name_regexp from stream (regex match)
+                            if deployment_name_regexp != ".*":
+                                if not re.match(
+                                    deployment_name_regexp, topology_spec_name
+                                ):
+                                    logging.info(
+                                        f"Skipping topology {topology_spec_name} as it doesn't match deployment_name_regexp '{deployment_name_regexp}'"
+                                    )
+                                    continue
 
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]
@@ -1375,6 +1441,18 @@ def process_self_contained_coordinator_stream(
                                     **test_labels,
                                 }
                                 update_parca_agent_labels(all_labels)
+
+                            # Track topology-level: move from pending to running
+                            topo_tracking_entry = f"{test_name}::{topology_spec_name}"
+                            github_event_conn.lrem(
+                                stream_topology_list_pending, 1, topo_tracking_entry
+                            )
+                            github_event_conn.lpush(
+                                stream_topology_list_running, topo_tracking_entry
+                            )
+                            github_event_conn.expire(
+                                stream_topology_list_running, REDIS_BINS_EXPIRE_SECS
+                            )
 
                             test_result = False
                             redis_container = None
@@ -2081,6 +2159,24 @@ def process_self_contained_coordinator_stream(
                                     print_directory_logs(temporary_dir_client, "Client")
 
                             overall_result &= test_result
+
+                            # Track topology-level: move from running to completed/failed
+                            github_event_conn.lrem(
+                                stream_topology_list_running, 1, topo_tracking_entry
+                            )
+                            github_event_conn.lpush(
+                                stream_topology_list_completed, topo_tracking_entry
+                            )
+                            github_event_conn.expire(
+                                stream_topology_list_completed, REDIS_BINS_EXPIRE_SECS
+                            )
+                            if test_result is False:
+                                github_event_conn.lpush(
+                                    stream_topology_list_failed, topo_tracking_entry
+                                )
+                                github_event_conn.expire(
+                                    stream_topology_list_failed, REDIS_BINS_EXPIRE_SECS
+                                )
 
                     # Clean up system processes after test completion if in exclusive hardware mode
                     cleanup_system_processes()

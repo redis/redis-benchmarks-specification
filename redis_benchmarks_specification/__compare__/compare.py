@@ -153,6 +153,107 @@ def get_project_compare_zsets(triggering_env, org, repo):
     )
 
 
+def list_available_deployments(rts, args):
+    """Query TimeSeries to discover which deployment names have data for the given filters."""
+    # Determine the right repo/org: prefer comparison-specific, fall back to general
+    github_repo = args.github_repo
+    if (
+        getattr(args, "comparison_github_repo", "")
+        and args.comparison_github_repo != "redis"
+    ):
+        github_repo = args.comparison_github_repo
+    elif (
+        getattr(args, "baseline_github_repo", "")
+        and args.baseline_github_repo != "redis"
+    ):
+        github_repo = args.baseline_github_repo
+
+    github_org = ""
+    if getattr(args, "comparison_github_org", ""):
+        github_org = args.comparison_github_org
+    elif getattr(args, "baseline_github_org", ""):
+        github_org = args.baseline_github_org
+    elif args.github_org:
+        github_org = args.github_org
+
+    filters = [
+        "github_repo={}".format(github_repo),
+        "triggering_env={}".format(args.triggering_env),
+    ]
+    metric_name = args.metric_name
+    if metric_name:
+        filters.append("metric={}".format(metric_name))
+    if args.comparison_hash:
+        filters.append("hash={}".format(args.comparison_hash))
+    elif args.baseline_hash:
+        filters.append("hash={}".format(args.baseline_hash))
+    if args.comparison_branch:
+        filters.append("branch={}".format(args.comparison_branch))
+    elif args.baseline_branch:
+        filters.append("branch={}".format(args.baseline_branch))
+    if args.running_platform:
+        filters.append("running_platform={}".format(args.running_platform))
+    if github_org:
+        filters.append("github_org={}".format(github_org))
+
+    logging.info("Querying TimeSeries with filters: {}".format(filters))
+    ts_keys = rts.ts().queryindex(filters)
+    logging.info(f"Found {len(ts_keys)} time-series keys")
+
+    # Extract unique deployment names from time-series key names
+    # Key format: ci.benchmarks.redis/by.{type}/ci/{org}/{repo}/{test}/{variant}/{platform}/{deployment_name}/{branch_or_hash}/{metric}
+    # Fast path: parse deployment_name from the key string
+    deployments = set()
+    deployment_test_count = {}
+    deployment_tests = {}
+
+    for key in ts_keys:
+        key_str = key.decode() if isinstance(key, bytes) else key
+        if "target" in key_str:
+            continue
+        parts = key_str.split("/")
+        # Key structure: ci.benchmarks.redis / by.branch / ci / org / repo / test_name / build_variant / platform / deployment_name / branch / metric
+        # Minimum expected parts for a valid key
+        if len(parts) >= 10:
+            dep_name = parts[8]
+            deployments.add(dep_name)
+            deployment_test_count[dep_name] = deployment_test_count.get(dep_name, 0) + 1
+            if dep_name not in deployment_tests:
+                deployment_tests[dep_name] = set()
+            deployment_tests[dep_name].add(parts[5])  # test_name
+        else:
+            # Fallback: get info from a sample key per unknown pattern
+            try:
+                info = rts.ts().info(key)
+                if hasattr(info, "labels") and "deployment_name" in info.labels:
+                    dep_name = info.labels["deployment_name"]
+                    deployments.add(dep_name)
+                    deployment_test_count[dep_name] = (
+                        deployment_test_count.get(dep_name, 0) + 1
+                    )
+            except Exception:
+                continue
+
+    # Apply deployment-name-regexp filter if specified
+    deployment_name_regexp = getattr(args, "deployment_name_regexp", ".*")
+    if deployment_name_regexp != ".*":
+        deployments = {d for d in deployments if re.match(deployment_name_regexp, d)}
+
+    if not deployments:
+        print("No deployments found matching the given filters.")
+        print("Filters used: {}".format(filters))
+        return
+
+    print("\nAvailable deployments ({} found):\n".format(len(deployments)))
+    print("{:<45} {:>10} {:>10}".format("DEPLOYMENT NAME", "TS KEYS", "TESTS"))
+    print("-" * 67)
+    for dep_name in sorted(deployments):
+        count = deployment_test_count.get(dep_name, 0)
+        test_count = len(deployment_tests.get(dep_name, set()))
+        print("{:<45} {:>10} {:>10}".format(dep_name, count, test_count))
+    print()
+
+
 def compare_command_logic(args, project_name, project_version):
 
     logger = logging.getLogger()
@@ -190,6 +291,12 @@ def compare_command_logic(args, project_name, project_version):
         username=args.redistimeseries_user,
     )
     rts.ping()
+
+    # Handle --list-deployments: discover available deployments and exit
+    if getattr(args, "list_deployments", False):
+        list_available_deployments(rts, args)
+        return
+
     default_baseline_branch, default_metrics_str = extract_default_branch_and_metric(
         args.defaults_filename
     )
@@ -368,17 +475,76 @@ def compare_command_logic(args, project_name, project_version):
     grafana_link_base = "https://benchmarksredisio.grafana.net/d/1fWbtb7nz/experimental-oss-spec-benchmarks"
 
     # Check if environment comparison mode is enabled
+    # Also auto-enable if deployment_name contains commas or deployment-name-regexp is set
     compare_by_env = getattr(args, "compare_by_env", False)
+    deployment_name_regexp = getattr(args, "deployment_name_regexp", ".*")
+
+    # Auto-enable compare-by-env when comma-separated deployment names are provided
+    if "," in args.deployment_name and not compare_by_env:
+        compare_by_env = True
+        logging.info(
+            "Auto-enabling environment comparison mode due to comma-separated deployment names"
+        )
 
     if compare_by_env:
         logging.info("Environment comparison mode enabled")
-        # Extract environment list from deployment names in the user's example
-        env_list = [
-            "oss-standalone",
-            "oss-standalone-02-io-threads",
-            "oss-standalone-04-io-threads",
-            "oss-standalone-08-io-threads",
-        ]
+
+        # Build env_list from: comma-separated --deployment_name, --deployment-name-regexp, or default
+        if "," in args.deployment_name:
+            # Explicit comma-separated list
+            env_list = [d.strip() for d in args.deployment_name.split(",")]
+            logging.info(f"Using explicit deployment list: {env_list}")
+        elif deployment_name_regexp != ".*":
+            # Discover deployments matching the regex from TimeSeries
+            logging.info(
+                f"Discovering deployments matching regexp: {deployment_name_regexp}"
+            )
+            discovery_filters = [
+                "github_repo={}".format(tf_github_repo),
+                "triggering_env={}".format(tf_triggering_env),
+                "metric={}".format(metric_name),
+            ]
+            if comparison_hash:
+                discovery_filters.append("hash={}".format(comparison_hash))
+            elif comparison_branch:
+                discovery_filters.append("branch={}".format(comparison_branch))
+            elif baseline_branch:
+                discovery_filters.append("branch={}".format(baseline_branch))
+            if running_platform_comparison:
+                discovery_filters.append(
+                    "running_platform={}".format(running_platform_comparison)
+                )
+            ts_keys = rts.ts().queryindex(discovery_filters)
+            logging.info(
+                f"Found {len(ts_keys)} time-series keys, parsing deployment names from key structure"
+            )
+            discovered_deployments = set()
+            for key in ts_keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if "target" in key_str:
+                    continue
+                # Parse deployment_name from key structure:
+                # ci.benchmarks.redis/by.X/ci/org/repo/test/variant/platform/deployment_name/...
+                parts = key_str.split("/")
+                if len(parts) >= 10:
+                    dep_name = parts[8]
+                    if re.match(deployment_name_regexp, dep_name):
+                        discovered_deployments.add(dep_name)
+            env_list = sorted(discovered_deployments)
+            if not env_list:
+                logging.error(
+                    f"No deployments found matching regexp '{deployment_name_regexp}' with filters {discovery_filters}"
+                )
+                return
+            logging.info(f"Discovered {len(env_list)} deployments: {env_list}")
+        else:
+            # Default fallback list
+            env_list = [
+                "oss-standalone",
+                "oss-standalone-02-io-threads",
+                "oss-standalone-04-io-threads",
+                "oss-standalone-08-io-threads",
+            ]
 
         (
             detected_regressions,
