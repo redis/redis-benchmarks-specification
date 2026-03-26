@@ -1375,6 +1375,16 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                                # Clean up topology entries that were pre-populated for this test
+                                for topo in benchmark_config.get(
+                                    "redis-topologies", []
+                                ):
+                                    topo_entry = f"{test_name}::{topo}"
+                                    github_event_conn.lrem(
+                                        stream_topology_list_pending,
+                                        1,
+                                        topo_entry,
+                                    )
                                 continue
                             else:
                                 logging.info(

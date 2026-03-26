@@ -943,6 +943,7 @@ def admin_work_command(conn, args):
         print("\n=== ACTIVE WORK ===\n")
 
     # 1. Collect all stream IDs from runner pending messages (= actively being processed)
+    #    AND undelivered messages (= lag, waiting to be picked up by a runner)
     runner_streams = {}  # stream_id -> {arch, platforms_processing}
     for arch in ["amd64", "arm64"]:
         stream = get_arch_specific_stream_name(arch)
@@ -956,16 +957,19 @@ def admin_work_command(conn, args):
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
             lag = group.get("lag", 0)
+            last_delivered = group.get("last-delivered-id", b"0-0")
+            if isinstance(last_delivered, bytes):
+                last_delivered = last_delivered.decode()
 
             grp_prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
             if grp_prefix not in group_name:
                 continue
             platform = group_name[len(grp_prefix) :]
 
-            if platform_filter and platform_filter not in platform:
+            if platform_filter and platform_filter != platform:
                 continue
 
-            # Get pending messages for this runner
+            # Get pending messages (delivered but not ACK'd = runner is working on them)
             pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 20)
             for msg in pending_msgs:
                 msg_id = msg.get("message_id", b"")
@@ -980,6 +984,33 @@ def admin_work_command(conn, args):
                     "idle": c_idle,
                 }
 
+            # Get lag messages (not yet delivered = waiting in queue for this runner)
+            if lag > 0 and last_delivered != "0-0":
+                # Read messages after the last delivered ID (these are the lag)
+                # Use exclusive range: (last_delivered to get messages AFTER it
+                lag_start = last_delivered
+                try:
+                    lag_entries = conn.xrange(
+                        stream, min=f"({lag_start}", count=min(lag, 20)
+                    )
+                    for entry_id, entry_fields in lag_entries:
+                        entry_id_str = (
+                            entry_id.decode()
+                            if isinstance(entry_id, bytes)
+                            else entry_id
+                        )
+                        if entry_id_str not in runner_streams:
+                            runner_streams[entry_id_str] = {
+                                "arch": arch,
+                                "platforms": {},
+                            }
+                        if platform not in runner_streams[entry_id_str]["platforms"]:
+                            runner_streams[entry_id_str]["platforms"][platform] = {
+                                "state": "pending_queue",
+                            }
+                except Exception:
+                    pass
+
     # 2. Also collect from active queues (streams that have test lists but may not be in pending)
     platform_keys = conn.keys("ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset")
     now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
@@ -990,7 +1021,7 @@ def admin_work_command(conn, args):
         parts = pk_str.split(":")
         platform_name = parts[-2]
 
-        if platform_filter and platform_filter not in platform_name:
+        if platform_filter and platform_filter != platform_name:
             continue
 
         stream_ids = conn.zrangebyscore(pk_str, day_ago_ms, "+inf")
@@ -1025,11 +1056,67 @@ def admin_work_command(conn, args):
             elif pend > 0:
                 runner_streams[sid]["platforms"][platform_name]["state"] = "pending"
 
+    # 2b. Collect pending builds (commits waiting to be built)
+    builder_stream = STREAM_KEYNAME_GH_EVENTS_COMMIT
+    try:
+        builder_groups = conn.xinfo_groups(builder_stream)
+        for group in builder_groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            # Skip dead groups
+            group_consumers = group.get("consumers", 0)
+            if group_consumers == 0:
+                continue
+            consumers = conn.xinfo_consumers(builder_stream, group_name)
+            is_dead = all(
+                c.get("idle", 0) > 30 * 24 * 60 * 60 * 1000 for c in consumers
+            )
+            if is_dead:
+                continue
+
+            # Determine which arch this builder handles
+            builder_arch = "amd64"
+            if "arm64" in group_name or "arm" in group_name:
+                builder_arch = "arm64"
+
+            pending_msgs = conn.xpending_range(builder_stream, group_name, "-", "+", 20)
+            for msg in pending_msgs:
+                msg_id = msg.get("message_id", b"")
+                if isinstance(msg_id, bytes):
+                    msg_id = msg_id.decode()
+                # Only show recent builds (last 7 days)
+                try:
+                    ts = int(msg_id.split("-")[0])
+                    if ts < now_ms - (7 * 24 * 60 * 60 * 1000):
+                        continue
+                except Exception:
+                    continue
+
+                if msg_id not in runner_streams:
+                    runner_streams[msg_id] = {"arch": builder_arch, "platforms": {}}
+                # Mark as building — use the builder group name as "platform"
+                short_builder = group_name.replace(":redis/redis/commits", "")
+                if short_builder not in runner_streams[msg_id]["platforms"]:
+                    runner_streams[msg_id]["platforms"][short_builder] = {
+                        "state": "building",
+                    }
+    except Exception:
+        pass
+
     # 3. Filter to only active work (not all done)
     active_streams = {}
     for sid, info in runner_streams.items():
         has_active = any(
-            p.get("state") in ("processing", "running", "pending", "queued")
+            p.get("state")
+            in (
+                "processing",
+                "running",
+                "pending",
+                "queued",
+                "pending_queue",
+                "building",
+            )
             for p in info["platforms"].values()
         )
         if has_active:
@@ -1044,9 +1131,9 @@ def admin_work_command(conn, args):
     for sid in sorted(active_streams.keys(), reverse=True):
         info = active_streams[sid]
 
-        # Resolve build info
+        # Resolve build info (try build stream first, then commit stream)
         build_info = _get_build_info(conn, sid)
-        commit_info = _get_commit_info(conn, sid) if not build_info else {}
+        commit_info = _get_commit_info(conn, sid)
         combined = {**commit_info, **build_info}
 
         org = combined.get("github_org", "?")
@@ -1057,11 +1144,14 @@ def admin_work_command(conn, args):
         triggered_by = combined.get("triggered_by", "")
 
         # Build compact source string: org/repo branch hash [PR#N]
-        if org == "redis" and repo == "redis":
+        if org == "?" and repo == "?":
+            source = ghash  # only hash available
+        elif org == "redis" and repo == "redis":
             source = branch
         else:
             source = f"{org}/{repo} {branch}"
-        source += f" {ghash}"
+        if ghash and ghash != "?" and ghash not in source:
+            source += f" {ghash}"
         if pr:
             source += f" PR#{pr}"
 
@@ -1094,8 +1184,10 @@ def admin_work_command(conn, args):
                 status = "RUNNING"
                 if total == 0:
                     status = "QUEUED"
-            elif state == "PENDING":
+            elif state in ("PENDING", "PENDING_QUEUE"):
                 status = "PENDING"
+            elif state == "BUILDING":
+                status = "BUILDING"
             else:
                 status = state
 
