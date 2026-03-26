@@ -1143,7 +1143,7 @@ def admin_work_command(conn, args):
         pr = combined.get("pull_request", "")
         triggered_by = combined.get("triggered_by", "")
 
-        # Build compact source string: org/repo branch hash [PR#N]
+        # Build compact source string: org/repo branch hash [PR#N] [by user (source)]
         if org == "?" and repo == "?":
             source = ghash  # only hash available
         elif org == "redis" and repo == "redis":
@@ -1155,10 +1155,9 @@ def admin_work_command(conn, args):
         if pr:
             source += f" PR#{pr}"
 
-        # Short triggered_by (just the user part)
-        by = triggered_by.split("@")[0] if triggered_by else ""
-        if "(gh-actions" in triggered_by:
-            by = triggered_by.split(" ")[0] + " (gh)"
+        # Append trigger origin to source
+        if triggered_by:
+            source += f" by {triggered_by}"
 
         age = _format_age(sid)
 
@@ -1231,7 +1230,6 @@ def admin_work_command(conn, args):
                 {
                     "age": age,
                     "source": source,
-                    "by": by,
                     "platform": short_plat,
                     "status": status,
                     "progress": progress,
@@ -1244,16 +1242,14 @@ def admin_work_command(conn, args):
     # 5. Print table
     # Header
     print(
-        f"  {'AGE':<8} {'STATUS':<8} {'PROGRESS':<12} {'FAIL':>4} {'ETA':<6} {'PLATFORM':<30} {'SOURCE':<40} {'BY':<15} {'RUNNING TEST'}"
+        f"  {'AGE':<8} {'STATUS':<9} {'PROGRESS':<12} {'FAIL':>4} {'ETA':<6} {'PLATFORM':<30} {'SOURCE':<55} {'RUNNING TEST'}"
     )
-    print(
-        f"  {'-'*8} {'-'*8} {'-'*12} {'-'*4} {'-'*6} {'-'*30} {'-'*40} {'-'*15} {'-'*30}"
-    )
+    print(f"  {'-'*8} {'-'*9} {'-'*12} {'-'*4} {'-'*6} {'-'*30} {'-'*55} {'-'*30}")
     for r in rows:
         if r["status"] == "DONE":
             continue  # skip completed work in work view
         print(
-            f"  {r['age']:<8} {r['status']:<8} {r['progress']:<12} {r['fail']:>4} {r['eta']:<6} {r['platform']:<30} {r['source']:<40} {r['by']:<15} {r['running']}"
+            f"  {r['age']:<8} {r['status']:<9} {r['progress']:<12} {r['fail']:>4} {r['eta']:<6} {r['platform']:<30} {r['source']:<55} {r['running']}"
         )
     print()
 
