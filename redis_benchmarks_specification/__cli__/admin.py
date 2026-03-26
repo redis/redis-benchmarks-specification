@@ -936,7 +936,11 @@ def admin_work_command(conn, args):
     For each benchmark stream, shows: who triggered it, fork/branch/hash,
     which platforms are running/pending/done, and progress per platform.
     """
-    print("\n=== ACTIVE WORK ===\n")
+    platform_filter = args.platform if args.platform else None
+    if platform_filter:
+        print(f"\n=== ACTIVE WORK (platform: {platform_filter}) ===\n")
+    else:
+        print("\n=== ACTIVE WORK ===\n")
 
     # 1. Collect all stream IDs from runner pending messages (= actively being processed)
     runner_streams = {}  # stream_id -> {arch, platforms_processing}
@@ -957,6 +961,9 @@ def admin_work_command(conn, args):
             if grp_prefix not in group_name:
                 continue
             platform = group_name[len(grp_prefix) :]
+
+            if platform_filter and platform_filter not in platform:
+                continue
 
             # Get pending messages for this runner
             pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 20)
@@ -982,6 +989,9 @@ def admin_work_command(conn, args):
         pk_str = pk.decode() if isinstance(pk, bytes) else pk
         parts = pk_str.split(":")
         platform_name = parts[-2]
+
+        if platform_filter and platform_filter not in platform_name:
+            continue
 
         stream_ids = conn.zrangebyscore(pk_str, day_ago_ms, "+inf")
         for sid_raw in stream_ids:
