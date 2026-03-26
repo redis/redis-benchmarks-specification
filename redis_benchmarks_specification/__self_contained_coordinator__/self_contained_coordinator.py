@@ -1369,6 +1369,9 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                        # Initialize test_result before topology loop.
+                        # If all topologies are filtered out, test is considered passed (nothing to run).
+                        test_result = True
                         for topology_spec_name in benchmark_config["redis-topologies"]:
                             setup_name = topology_spec_name
                             setup_type = "oss-standalone"
