@@ -1029,8 +1029,8 @@ def admin_work_command(conn, args):
         print("  No active work found.")
         return
 
-    # 4. Display each work item
-    # Sort by stream ID (newest first)
+    # 4. Build table rows (one row per stream x platform)
+    rows = []
     for sid in sorted(active_streams.keys(), reverse=True):
         info = active_streams[sid]
 
@@ -1045,80 +1045,115 @@ def admin_work_command(conn, args):
         ghash = _short_hash(combined.get("git_hash", "?"))
         pr = combined.get("pull_request", "")
         triggered_by = combined.get("triggered_by", "")
-        tests_regexp = combined.get("tests_regexp", ".*")
-        deployment_regexp = combined.get("deployment_name_regexp", ".*")
+
+        # Build compact source string: org/repo branch hash [PR#N]
+        if org == "redis" and repo == "redis":
+            source = branch
+        else:
+            source = f"{org}/{repo} {branch}"
+        source += f" {ghash}"
+        if pr:
+            source += f" PR#{pr}"
+
+        # Short triggered_by (just the user part)
+        by = triggered_by.split("@")[0] if triggered_by else ""
+        if "(gh-actions" in triggered_by:
+            by = triggered_by.split(" ")[0] + " (gh)"
 
         age = _format_age(sid)
 
-        # Header
-        print(f"  {sid}  ({age})")
-        if org == "redis" and repo == "redis":
-            print(f"    Repo:     redis/redis")
-        else:
-            print(f"    Repo:     {org}/{repo}")
-        print(f"    Branch:   {branch}  ({ghash})")
-        if pr:
-            print(f"    PR:       #{pr}")
-        if triggered_by:
-            print(f"    By:       {triggered_by}")
-        if tests_regexp != ".*":
-            print(f"    Filter:   {tests_regexp}")
-        if deployment_regexp != ".*":
-            print(f"    Topology: {deployment_regexp}")
-
-        # Platform breakdown
-        print(f"    Platforms:")
         for platform, pinfo in sorted(info["platforms"].items()):
-            state = pinfo.get("state", "?")
+            state = pinfo.get("state", "?").upper()
             total = pinfo.get("total", 0)
             done = pinfo.get("completed", 0)
             run = pinfo.get("running", 0)
             pend = pinfo.get("pending", 0)
             fail = pinfo.get("failed", 0)
 
-            if state == "done":
-                status_str = f"DONE  {done}/{total}"
-                if fail > 0:
-                    status_str += f" ({fail} failed)"
-            elif state in ("running", "processing"):
-                if total > 0:
-                    pct = int(done / total * 100) if total > 0 else 0
-                    status_str = f"RUNNING  {done}/{total} ({pct}%)"
-                    # ETA
-                    if done > 0 and (pend + run) > 0:
-                        try:
-                            ts = int(sid.split("-")[0])
-                            elapsed = (
-                                datetime.datetime.utcnow()
-                                - datetime.datetime.utcfromtimestamp(ts / 1000)
-                            ).total_seconds()
-                            avg = elapsed / done
-                            eta = avg * (pend + run)
-                            status_str += f"  ETA ~{int(eta / 60)}m"
-                        except Exception:
-                            pass
-                    if fail > 0:
-                        status_str += f"  ({fail} failed)"
-
-                    # Currently running test
-                    running_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{sid}:{platform}:tests_running"
-                    running_tests = conn.lrange(running_key, 0, 0)
-                    if running_tests:
-                        rn = running_tests[0]
-                        rn_str = rn.decode() if isinstance(rn, bytes) else rn
-                        status_str += f"\n                  Running: {rn_str}"
-                else:
-                    status_str = "PROCESSING (tests not queued yet)"
-            elif state == "pending":
-                status_str = f"PENDING  {pend}/{total} waiting"
-            elif state == "queued":
-                status_str = "QUEUED (not started)"
+            # Progress string
+            if total > 0:
+                pct = int(done / total * 100)
+                progress = f"{done}/{total} ({pct}%)"
             else:
-                status_str = state
+                progress = "-"
 
-            print(f"      {platform:<45} {status_str}")
+            # Status
+            if state == "DONE":
+                status = "DONE"
+            elif state in ("RUNNING", "PROCESSING"):
+                status = "RUNNING"
+                if total == 0:
+                    status = "QUEUED"
+            elif state == "PENDING":
+                status = "PENDING"
+            else:
+                status = state
 
-        print()
+            # ETA
+            eta = ""
+            if done > 0 and (pend + run) > 0:
+                try:
+                    ts = int(sid.split("-")[0])
+                    elapsed = (
+                        datetime.datetime.utcnow()
+                        - datetime.datetime.utcfromtimestamp(ts / 1000)
+                    ).total_seconds()
+                    avg = elapsed / done
+                    eta_secs = avg * (pend + run)
+                    eta = f"~{int(eta_secs / 60)}m"
+                except Exception:
+                    pass
+
+            # Fail marker
+            fail_str = str(fail) if fail > 0 else ""
+
+            # Currently running test (short name)
+            running_test = ""
+            if run > 0:
+                running_key = f"ci.benchmarks.redis/ci/redis/redis:benchmarks:{sid}:{platform}:tests_running"
+                running_tests = conn.lrange(running_key, 0, 0)
+                if running_tests:
+                    rn = running_tests[0]
+                    rn_str = rn.decode() if isinstance(rn, bytes) else rn
+                    # Shorten: remove common prefix
+                    running_test = rn_str.replace("memtier_benchmark-", "mt-")
+
+            # Short platform name
+            short_plat = platform
+            short_plat = short_plat.replace("-aws-", "-")
+            short_plat = short_plat.replace("-gcp-", "-")
+            short_plat = short_plat.replace("-azure-cobalt-", "-az-")
+            short_plat = short_plat.replace("Standard_", "")
+
+            rows.append(
+                {
+                    "age": age,
+                    "source": source,
+                    "by": by,
+                    "platform": short_plat,
+                    "status": status,
+                    "progress": progress,
+                    "fail": fail_str,
+                    "eta": eta,
+                    "running": running_test,
+                }
+            )
+
+    # 5. Print table
+    # Header
+    print(
+        f"  {'AGE':<8} {'STATUS':<8} {'PROGRESS':<12} {'FAIL':>4} {'ETA':<6} {'PLATFORM':<30} {'SOURCE':<40} {'BY':<15} {'RUNNING TEST'}"
+    )
+    print(
+        f"  {'-'*8} {'-'*8} {'-'*12} {'-'*4} {'-'*6} {'-'*30} {'-'*40} {'-'*15} {'-'*30}"
+    )
+    for r in rows:
+        if r["status"] == "DONE":
+            continue  # skip completed work in work view
+        print(
+            f"  {r['age']:<8} {r['status']:<8} {r['progress']:<12} {r['fail']:>4} {r['eta']:<6} {r['platform']:<30} {r['source']:<40} {r['by']:<15} {r['running']}"
+        )
+    print()
 
 
 def admin_command_logic(args, project_name, project_version):
