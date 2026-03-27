@@ -1254,6 +1254,131 @@ def admin_work_command(conn, args):
     print()
 
 
+def admin_health_command(conn, args):
+    """Show runner health table from heartbeat keys.
+
+    Each runner writes a heartbeat HASH every 30s with platform, arch, version,
+    status, filters, and current work. Missing heartbeat = runner is down.
+    """
+    print("\n=== RUNNER HEALTH ===\n")
+
+    heartbeat_prefix = "ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:*"
+    keys = conn.keys(heartbeat_prefix)
+
+    if not keys:
+        print(
+            "  No heartbeat data found. Runners may not be updated to the latest version yet."
+        )
+        return
+
+    rows = []
+    for key in sorted(keys):
+        key_str = key.decode() if isinstance(key, bytes) else key
+        data = conn.hgetall(key)
+        # Decode all fields
+        fields = {}
+        for k, v in data.items():
+            k_str = k.decode() if isinstance(k, bytes) else k
+            v_str = v.decode() if isinstance(v, bytes) else v
+            fields[k_str] = v_str
+
+        platform = fields.get("platform", "?")
+        arch = fields.get("arch", "?")
+        version = fields.get("version", "?")
+        status = fields.get("status", "?")
+        ts_str = fields.get("timestamp", "0")
+        current_stream = fields.get("current_stream", "")
+        current_test = fields.get("current_test", "")
+        topology_filter = fields.get("topology_filter", "")
+        tests_regexp = fields.get("tests_regexp", ".*")
+        priority_lower = fields.get("priority_lower", "0")
+        priority_upper = fields.get("priority_upper", "100000")
+        profilers = fields.get("profilers_enabled", "False")
+        exclusive_hw = fields.get("exclusive_hardware", "False")
+
+        started_at_str = fields.get("started_at", "0")
+
+        # Calculate age of heartbeat and uptime
+        now_epoch = int(datetime.datetime.utcnow().timestamp())
+        try:
+            ts = int(ts_str)
+            age_secs = now_epoch - ts
+            if age_secs < 60:
+                age = f"{age_secs}s"
+            elif age_secs < 3600:
+                age = f"{age_secs // 60}m"
+            else:
+                age = f"{age_secs // 3600}h"
+
+            # If heartbeat is older than 2 min, runner is probably down
+            if age_secs > 120:
+                status = "DOWN"
+        except Exception:
+            age = "?"
+            status = "DOWN"
+
+        # Calculate uptime
+        try:
+            started = int(started_at_str)
+            uptime_secs = now_epoch - started
+            if uptime_secs < 60:
+                uptime = f"{uptime_secs}s"
+            elif uptime_secs < 3600:
+                uptime = f"{uptime_secs // 60}m"
+            elif uptime_secs < 86400:
+                uptime = f"{uptime_secs // 3600}h{(uptime_secs % 3600) // 60}m"
+            else:
+                uptime = f"{uptime_secs // 86400}d{(uptime_secs % 86400) // 3600}h"
+        except Exception:
+            uptime = "?"
+
+        # Filters active
+        filters = []
+        if tests_regexp != ".*":
+            filters.append(f"tests={tests_regexp}")
+        if topology_filter:
+            filters.append(f"topo={topology_filter}")
+        if priority_lower != "0" or priority_upper != "100000":
+            filters.append(f"prio=[{priority_lower},{priority_upper}]")
+        if profilers == "True":
+            filters.append("profilers")
+        if exclusive_hw == "True":
+            filters.append("exclusive-hw")
+        filters_str = ", ".join(filters) if filters else "-"
+
+        # Current work
+        work = ""
+        if current_stream:
+            work = current_stream
+            if current_test:
+                short_test = current_test.replace("memtier_benchmark-", "mt-")
+                work += f" ({short_test})"
+
+        rows.append(
+            {
+                "platform": platform,
+                "arch": arch,
+                "version": version,
+                "status": status,
+                "heartbeat": age,
+                "uptime": uptime,
+                "filters": filters_str,
+                "work": work,
+            }
+        )
+
+    # Print table
+    print(
+        f"  {'PLATFORM':<45} {'ARCH':<6} {'VERSION':<10} {'STATUS':<9} {'BEAT':<6} {'UPTIME':<8} {'FILTERS':<25} {'CURRENT WORK'}"
+    )
+    print(f"  {'-'*45} {'-'*6} {'-'*10} {'-'*9} {'-'*6} {'-'*8} {'-'*25} {'-'*40}")
+    for r in rows:
+        print(
+            f"  {r['platform']:<45} {r['arch']:<6} {r['version']:<10} {r['status']:<9} {r['heartbeat']:<6} {r['uptime']:<8} {r['filters']:<25} {r['work']}"
+        )
+    print()
+
+
 def admin_command_logic(args, project_name, project_version):
     """Main admin command dispatcher."""
     logging.info(f"Using: {project_name} {project_version}")
@@ -1263,6 +1388,9 @@ def admin_command_logic(args, project_name, project_version):
         print("Error: --admin-command is required.")
         print()
         print("Commands:")
+        print(
+            "  health    Runner health table: version, arch, status, filters, heartbeat age"
+        )
         print("  summary   Fleet overview: all runners, builders, queue depth")
         print(
             "  work      All active/pending work: who triggered, fork/branch, platforms, progress"
@@ -1310,6 +1438,8 @@ def admin_command_logic(args, project_name, project_version):
         admin_summary_command(conn, args)
     elif admin_cmd == "work":
         admin_work_command(conn, args)
+    elif admin_cmd == "health":
+        admin_health_command(conn, args)
     elif admin_cmd == "skip":
         admin_skip_command(conn, args)
     elif admin_cmd == "reset":
@@ -1317,5 +1447,5 @@ def admin_command_logic(args, project_name, project_version):
     else:
         print(f"Unknown admin command: {admin_cmd}")
         print(
-            "Available: summary, runners, builders, queues, status, cancel, skip, reset"
+            "Available: health, summary, work, runners, builders, queues, status, cancel, skip, reset"
         )

@@ -136,6 +136,62 @@ _flush_timestamp = None
 _parca_agent_available = False
 _parca_startup_labels = {}
 
+# Global variables for heartbeat
+_heartbeat_status = "idle"  # idle, running, waiting
+_heartbeat_current_stream = ""
+_heartbeat_current_test = ""
+HEARTBEAT_KEY_PREFIX = "ci.benchmarks.redis/ci/redis/redis:runner:heartbeat"
+HEARTBEAT_INTERVAL_SECS = 30
+HEARTBEAT_EXPIRE_SECS = 120  # expire after 4 missed heartbeats
+
+
+def _start_heartbeat(conn, platform, arch, version, args):
+    """Start a background thread that writes runner state to Redis every HEARTBEAT_INTERVAL_SECS."""
+    import threading
+
+    start_ts = int(datetime.datetime.utcnow().timestamp())
+
+    def _heartbeat_loop():
+        key = f"{HEARTBEAT_KEY_PREFIX}:{platform}"
+        while True:
+            try:
+                now_ts = int(datetime.datetime.utcnow().timestamp())
+                fields = {
+                    "platform": platform,
+                    "arch": arch,
+                    "version": version,
+                    "status": _heartbeat_status,
+                    "current_stream": _heartbeat_current_stream,
+                    "current_test": _heartbeat_current_test,
+                    "timestamp": str(now_ts),
+                    "started_at": str(start_ts),
+                    "topology_filter": getattr(args, "topology", "") or "",
+                    "tests_regexp": getattr(args, "tests_regexp", ".*"),
+                    "priority_lower": str(
+                        getattr(args, "tests_priority_lower_limit", 0)
+                    ),
+                    "priority_upper": str(
+                        getattr(args, "tests_priority_upper_limit", 100000)
+                    ),
+                    "profilers_enabled": str(getattr(args, "enable_profilers", False)),
+                    "docker_air_gap": str(getattr(args, "docker_air_gap", False)),
+                    "exclusive_hardware": str(
+                        getattr(args, "exclusive_hardware", False)
+                    ),
+                }
+                conn.hset(key, mapping=fields)
+                conn.expire(key, HEARTBEAT_EXPIRE_SECS)
+            except Exception as e:
+                logging.debug(f"Heartbeat write failed: {e}")
+            time.sleep(HEARTBEAT_INTERVAL_SECS)
+
+    t = threading.Thread(target=_heartbeat_loop, daemon=True)
+    t.start()
+    logging.info(
+        f"Heartbeat started: {HEARTBEAT_KEY_PREFIX}:{platform} every {HEARTBEAT_INTERVAL_SECS}s"
+    )
+    return t
+
 
 class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for coordinator endpoints"""
@@ -764,6 +820,15 @@ def main():
         }
         logging.info(f"Parca-agent startup labels: {_parca_startup_labels}")
 
+    # Start heartbeat thread — writes runner state to Redis every 30s
+    heartbeat_thread = _start_heartbeat(
+        gh_event_conn,
+        running_platform,
+        arch,
+        project_version,
+        args,
+    )
+
     logging.info("Entering blocking read waiting for work.")
     if stream_id is None:
         stream_id = args.consumer_start_id
@@ -846,6 +911,13 @@ def self_contained_coordinator_blocking_read(
     logging.info(
         f"Reading work from architecture-specific stream: {arch_specific_stream}"
     )
+
+    # Update heartbeat: waiting for work
+    global _heartbeat_status, _heartbeat_current_stream, _heartbeat_current_test
+    _heartbeat_status = "waiting"
+    _heartbeat_current_stream = ""
+    _heartbeat_current_test = ""
+
     newTestInfo = github_event_conn.xreadgroup(
         get_runners_consumer_group_name(platform_name),
         consumer_name,
@@ -857,6 +929,16 @@ def self_contained_coordinator_blocking_read(
     if len(newTestInfo[0]) < 2 or len(newTestInfo[0][1]) < 1:
         stream_id = ">"
     else:
+        # Update heartbeat: running
+        _heartbeat_status = "running"
+        try:
+            sid_raw = newTestInfo[0][1][0][0]
+            _heartbeat_current_stream = (
+                sid_raw.decode() if isinstance(sid_raw, bytes) else str(sid_raw)
+            )
+        except Exception:
+            pass
+
         # Create args object with topology parameter
         class Args:
             def __init__(self):
@@ -988,6 +1070,7 @@ def process_self_contained_coordinator_stream(
     args=None,
     redis_password="redis_coordinator_password_2024",
 ):
+    global _heartbeat_current_test
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
@@ -1349,6 +1432,8 @@ def process_self_contained_coordinator_stream(
                         ) = get_final_benchmark_config(None, None, stream, "")
                         github_event_conn.lrem(stream_test_list_pending, 1, test_name)
                         github_event_conn.lpush(stream_test_list_running, test_name)
+                        # Update heartbeat with current test
+                        _heartbeat_current_test = test_name
                         github_event_conn.expire(
                             stream_test_list_running, REDIS_BINS_EXPIRE_SECS
                         )
