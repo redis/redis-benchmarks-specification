@@ -1070,6 +1070,7 @@ def process_self_contained_coordinator_stream(
     args=None,
     redis_password="redis_coordinator_password_2024",
 ):
+    global _heartbeat_current_test
     stream_id = "n/a"
     overall_result = False
     total_test_suite_runs = 0
