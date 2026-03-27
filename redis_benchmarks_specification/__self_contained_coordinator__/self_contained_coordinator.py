@@ -1794,8 +1794,6 @@ def process_self_contained_coordinator_stream(
                                 buffer_timeout = 60  # Default buffer
 
                                 # Try to extract test time from command and add buffer
-                                import re
-
                                 test_time_match = re.search(
                                     r"--?test-time[=\s]+(\d+)", benchmark_command_str
                                 )
