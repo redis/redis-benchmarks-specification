@@ -1296,10 +1296,13 @@ def admin_health_command(conn, args):
         profilers = fields.get("profilers_enabled", "False")
         exclusive_hw = fields.get("exclusive_hardware", "False")
 
-        # Calculate age of heartbeat
+        started_at_str = fields.get("started_at", "0")
+
+        # Calculate age of heartbeat and uptime
+        now_epoch = int(datetime.datetime.utcnow().timestamp())
         try:
             ts = int(ts_str)
-            age_secs = int(datetime.datetime.utcnow().timestamp()) - ts
+            age_secs = now_epoch - ts
             if age_secs < 60:
                 age = f"{age_secs}s"
             elif age_secs < 3600:
@@ -1313,6 +1316,21 @@ def admin_health_command(conn, args):
         except Exception:
             age = "?"
             status = "DOWN"
+
+        # Calculate uptime
+        try:
+            started = int(started_at_str)
+            uptime_secs = now_epoch - started
+            if uptime_secs < 60:
+                uptime = f"{uptime_secs}s"
+            elif uptime_secs < 3600:
+                uptime = f"{uptime_secs // 60}m"
+            elif uptime_secs < 86400:
+                uptime = f"{uptime_secs // 3600}h{(uptime_secs % 3600) // 60}m"
+            else:
+                uptime = f"{uptime_secs // 86400}d{(uptime_secs % 86400) // 3600}h"
+        except Exception:
+            uptime = "?"
 
         # Filters active
         filters = []
@@ -1343,6 +1361,7 @@ def admin_health_command(conn, args):
                 "version": version,
                 "status": status,
                 "heartbeat": age,
+                "uptime": uptime,
                 "filters": filters_str,
                 "work": work,
             }
@@ -1350,12 +1369,12 @@ def admin_health_command(conn, args):
 
     # Print table
     print(
-        f"  {'PLATFORM':<45} {'ARCH':<6} {'VERSION':<10} {'STATUS':<9} {'BEAT':<6} {'FILTERS':<30} {'CURRENT WORK'}"
+        f"  {'PLATFORM':<45} {'ARCH':<6} {'VERSION':<10} {'STATUS':<9} {'BEAT':<6} {'UPTIME':<8} {'FILTERS':<25} {'CURRENT WORK'}"
     )
-    print(f"  {'-'*45} {'-'*6} {'-'*10} {'-'*9} {'-'*6} {'-'*30} {'-'*40}")
+    print(f"  {'-'*45} {'-'*6} {'-'*10} {'-'*9} {'-'*6} {'-'*8} {'-'*25} {'-'*40}")
     for r in rows:
         print(
-            f"  {r['platform']:<45} {r['arch']:<6} {r['version']:<10} {r['status']:<9} {r['heartbeat']:<6} {r['filters']:<30} {r['work']}"
+            f"  {r['platform']:<45} {r['arch']:<6} {r['version']:<10} {r['status']:<9} {r['heartbeat']:<6} {r['uptime']:<8} {r['filters']:<25} {r['work']}"
         )
     print()
 
