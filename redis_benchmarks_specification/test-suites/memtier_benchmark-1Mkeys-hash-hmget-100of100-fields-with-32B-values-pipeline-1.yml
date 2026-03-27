@@ -1,0 +1,88 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-hash-hmget-100of100-fields-with-32B-values-pipeline-1
+description: >
+  Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading
+  listpack-encoded HASHes with 100 fields and 32 Byte values. After
+  pre-loading, issues HMGET requesting all 100 fields. Tests HMGET
+  performance on listpack-encoded hashes where N == L.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      "--data-size" "32"
+      --command "HSET __key__
+      field1 __data__ field2 __data__ field3 __data__ field4 __data__
+      field5 __data__ field6 __data__ field7 __data__ field8 __data__
+      field9 __data__ field10 __data__ field11 __data__ field12 __data__
+      field13 __data__ field14 __data__ field15 __data__ field16 __data__
+      field17 __data__ field18 __data__ field19 __data__ field20 __data__
+      field21 __data__ field22 __data__ field23 __data__ field24 __data__
+      field25 __data__ field26 __data__ field27 __data__ field28 __data__
+      field29 __data__ field30 __data__ field31 __data__ field32 __data__
+      field33 __data__ field34 __data__ field35 __data__ field36 __data__
+      field37 __data__ field38 __data__ field39 __data__ field40 __data__
+      field41 __data__ field42 __data__ field43 __data__ field44 __data__
+      field45 __data__ field46 __data__ field47 __data__ field48 __data__
+      field49 __data__ field50 __data__ field51 __data__ field52 __data__
+      field53 __data__ field54 __data__ field55 __data__ field56 __data__
+      field57 __data__ field58 __data__ field59 __data__ field60 __data__
+      field61 __data__ field62 __data__ field63 __data__ field64 __data__
+      field65 __data__ field66 __data__ field67 __data__ field68 __data__
+      field69 __data__ field70 __data__ field71 __data__ field72 __data__
+      field73 __data__ field74 __data__ field75 __data__ field76 __data__
+      field77 __data__ field78 __data__ field79 __data__ field80 __data__
+      field81 __data__ field82 __data__ field83 __data__ field84 __data__
+      field85 __data__ field86 __data__ field87 __data__ field88 __data__
+      field89 __data__ field90 __data__ field91 __data__ field92 __data__
+      field93 __data__ field94 __data__ field95 __data__ field96 __data__
+      field97 __data__ field98 __data__ field99 __data__ field100 __data__"
+      --command-key-pattern="P" --key-minimum=1 --key-maximum 10000000
+      -n 5000 -c 50 -t 4 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1Mkeys-hash-100-fields-32B-size
+  dataset_description: >
+    This dataset contains 1 million hash keys, each with 100 fields
+    and each field has a data size of 32 bytes (listpack encoded).
+tested-groups:
+- hash
+tested-commands:
+- hmget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --pipeline 1
+    --command "HMGET __key__
+    field1 field2 field3 field4 field5 field6 field7 field8 field9
+    field10 field11 field12 field13 field14 field15 field16 field17
+    field18 field19 field20 field21 field22 field23 field24 field25
+    field26 field27 field28 field29 field30 field31 field32 field33
+    field34 field35 field36 field37 field38 field39 field40 field41
+    field42 field43 field44 field45 field46 field47 field48 field49
+    field50 field51 field52 field53 field54 field55 field56 field57
+    field58 field59 field60 field61 field62 field63 field64 field65
+    field66 field67 field68 field69 field70 field71 field72 field73
+    field74 field75 field76 field77 field78 field79 field80 field81
+    field82 field83 field84 field85 field86 field87 field88 field89
+    field90 field91 field92 field93 field94 field95 field96 field97
+    field98 field99 field100"
+    --command-key-pattern="R" --key-minimum=1 --key-maximum 1000000
+    --test-time 180 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 96
