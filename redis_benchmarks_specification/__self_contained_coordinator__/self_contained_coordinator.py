@@ -1551,9 +1551,13 @@ def process_self_contained_coordinator_stream(
                                 replica_count = extract_replica_count(
                                     topologies_map, topology_spec_name
                                 )
-                                primary_cpu_limit = max(
-                                    1, ceil_db_cpu_limit - replica_count
-                                )
+                                if replica_count > 0:
+                                    primary_cpu_limit = max(
+                                        1,
+                                        ceil_db_cpu_limit // (1 + replica_count),
+                                    )
+                                else:
+                                    primary_cpu_limit = ceil_db_cpu_limit
                                 redis_arguments = (
                                     extract_redis_configuration_from_topology(
                                         topologies_map, topology_spec_name
@@ -1678,6 +1682,7 @@ def process_self_contained_coordinator_stream(
                                         run_image,
                                         temporary_dir,
                                         mnt_point,
+                                        primary_cpu_limit,
                                         redis_configuration_parameters,
                                         redis_arguments,
                                         redis_password,

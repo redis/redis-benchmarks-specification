@@ -373,6 +373,7 @@ def test_spin_up_redis_replicas():
             run_image,
             temporary_dir,
             mnt_point,
+            1,
             redis_configuration_parameters,
             redis_arguments,
             redis_password,

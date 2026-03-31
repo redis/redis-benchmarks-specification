@@ -125,7 +125,7 @@ spec:
     redis_arguments: --io-threads 8 --io-threads-do-reads yes
     resources:
       requests:
-        cpus: "9"
+        cpus: "18"
         memory: "20g"
 
   - name: oss-cluster-3-primaries

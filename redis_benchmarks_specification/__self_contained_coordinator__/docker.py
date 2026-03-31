@@ -119,6 +119,7 @@ def spin_up_redis_replicas(
     run_image,
     temporary_dir,
     mnt_point,
+    replica_cpu_limit,
     redis_configuration_parameters,
     redis_arguments,
     password,
@@ -148,7 +149,9 @@ def spin_up_redis_replicas(
             password,
         )
         command_str = " ".join(command)
-        db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(1, current_cpu_pos)
+        db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
+            replica_cpu_limit, current_cpu_pos
+        )
         logging.info(
             "Starting replica {}/{} on port {} (cpuset={})".format(
                 i, replica_count, replica_port, db_cpuset_cpus
