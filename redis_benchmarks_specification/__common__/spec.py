@@ -53,6 +53,12 @@ def extract_redis_configuration_from_topology(topologies_map, topology_spec_name
     return redis_arguments
 
 
+def extract_replica_count(topologies_map, topology_spec_name):
+    topology_spec = topologies_map[topology_spec_name]
+    redis_topology = topology_spec.get("redis_topology", {})
+    return redis_topology.get("replicas", 0)
+
+
 def extract_client_cpu_limit(benchmark_config):
     # Handle both clientconfig (single) and clientconfigs (multiple) formats
     if "clientconfigs" in benchmark_config:

@@ -112,6 +112,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
     extract_redis_dbconfig_parameters,
     extract_redis_configuration_from_topology,
+    extract_replica_count,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
     restore_build_artifacts_from_test_details,
@@ -600,6 +601,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    spin_up_redis_replicas,
 )
 
 
@@ -1546,6 +1548,12 @@ def process_self_contained_coordinator_stream(
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
                                 )
+                                replica_count = extract_replica_count(
+                                    topologies_map, topology_spec_name
+                                )
+                                primary_cpu_limit = max(
+                                    1, ceil_db_cpu_limit - replica_count
+                                )
                                 redis_arguments = (
                                     extract_redis_configuration_from_topology(
                                         topologies_map, topology_spec_name
@@ -1605,7 +1613,7 @@ def process_self_contained_coordinator_stream(
                                 )
                                 command_str = " ".join(command)
                                 db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                                    ceil_db_cpu_limit, current_cpu_pos
+                                    primary_cpu_limit, current_cpu_pos
                                 )
                                 redis_container = start_redis_container(
                                     command_str,
@@ -1651,6 +1659,32 @@ def process_self_contained_coordinator_stream(
                                         f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
                                     )
                                 redis_pids.append(first_redis_pid)
+                                if replica_count > 0:
+                                    logging.info(
+                                        "Starting {} replica(s) for topology {}".format(
+                                            replica_count, topology_spec_name
+                                        )
+                                    )
+                                    (
+                                        replica_conns,
+                                        replica_pids,
+                                        current_cpu_pos,
+                                    ) = spin_up_redis_replicas(
+                                        replica_count,
+                                        redis_proc_start_port,
+                                        current_cpu_pos,
+                                        docker_client,
+                                        redis_containers,
+                                        run_image,
+                                        temporary_dir,
+                                        mnt_point,
+                                        redis_configuration_parameters,
+                                        redis_arguments,
+                                        redis_password,
+                                        start_redis_container,
+                                    )
+                                    redis_conns.extend(replica_conns)
+                                    reset_commandstats(replica_conns)
                                 ceil_client_cpu_limit = extract_client_cpu_limit(
                                     benchmark_config
                                 )
@@ -2124,6 +2158,12 @@ def process_self_contained_coordinator_stream(
                                         default_metrics,
                                         git_hash,
                                     )
+                                    # Shut down replicas before primary
+                                    for replica_conn in redis_conns[1:]:
+                                        try:
+                                            replica_conn.shutdown(nosave=True)
+                                        except redis.exceptions.ConnectionError:
+                                            pass
                                     r.shutdown(save=False)
 
                                 except redis.exceptions.ConnectionError as e:
