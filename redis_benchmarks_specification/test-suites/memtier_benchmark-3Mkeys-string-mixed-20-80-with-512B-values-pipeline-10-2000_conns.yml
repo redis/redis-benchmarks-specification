@@ -27,6 +27,8 @@ redis-topologies:
 - oss-standalone-04-io-threads
 - oss-standalone-08-io-threads
 - oss-standalone-16-io-threads
+- oss-standalone-01-replicas
+- oss-standalone-01-replicas-08-io-threads
 build-variants:
 - gcc:15.2.0-amd64-debian-bookworm-default
 - gcc:15.2.0-arm64-debian-bookworm-default
