@@ -134,12 +134,17 @@ def spin_up_redis_replicas(
     replica_pids = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
+        # Append --replicaof to redis_arguments so it appears in the process
+        # cmdline (parca-agent uses this to label the process as a replica)
+        replica_redis_arguments = "{} --replicaof localhost {}".format(
+            redis_arguments, primary_port
+        ).strip()
         command = generate_standalone_redis_server_args(
             "{}redis-server".format(mnt_point),
             replica_port,
             mnt_point,
             redis_configuration_parameters,
-            redis_arguments,
+            replica_redis_arguments,
             password,
         )
         command_str = " ".join(command)
@@ -160,8 +165,9 @@ def spin_up_redis_replicas(
         )
         replica_r = redis.StrictRedis(port=replica_port, password=password)
         replica_r.ping()
-        replica_r.replicaof("localhost", primary_port)
-        logging.info("Replica {} issued REPLICAOF localhost {}".format(i, primary_port))
+        logging.info(
+            "Replica {} started with --replicaof localhost {}".format(i, primary_port)
+        )
         # Wait for replication link to come up
         elapsed = 0
         poll_interval = 1
