@@ -35,6 +35,7 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    spin_up_redis_replicas,
 )
 
 
@@ -320,3 +321,90 @@ def test_start_redis_container():
         logging.error(logs)
         raise
     redis_container.remove()
+
+
+def test_spin_up_redis_replicas():
+    """Test replica deployment using the official redis:8.6 Docker image."""
+    run_image = "redis:8.6"
+    mnt_point = ""
+    executable = "redis-server"
+    primary_port = 6399
+    current_cpu_pos = 0
+    redis_configuration_parameters = None
+    redis_arguments = ""
+    docker_client = docker.from_env()
+    redis_containers = []
+    redis_password = "test_password_123"
+    temporary_dir = ""
+
+    # Start primary
+    command = generate_standalone_redis_server_args(
+        executable,
+        primary_port,
+        mnt_point,
+        redis_configuration_parameters,
+        redis_arguments,
+        redis_password,
+    )
+    command_str = " ".join(command)
+    db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(1, current_cpu_pos)
+    primary_container = start_redis_container(
+        command_str,
+        db_cpuset_cpus,
+        docker_client,
+        mnt_point,
+        redis_containers,
+        run_image,
+        temporary_dir,
+    )
+    try:
+        r = redis.StrictRedis(port=primary_port, password=redis_password)
+        r.ping()
+
+        # Start 1 replica
+        replica_conns, replica_pids, current_cpu_pos = spin_up_redis_replicas(
+            1,
+            primary_port,
+            current_cpu_pos,
+            docker_client,
+            redis_containers,
+            run_image,
+            temporary_dir,
+            mnt_point,
+            1,
+            redis_configuration_parameters,
+            redis_arguments,
+            redis_password,
+            start_redis_container,
+        )
+        assert len(replica_conns) == 1
+        replica_info = replica_conns[0].info("replication")
+        assert replica_info["role"] == "slave"
+        assert replica_info["master_link_status"] == "up"
+
+        primary_info = r.info("replication")
+        assert primary_info["connected_slaves"] == 1
+
+        # Shutdown replicas then primary
+        for rc in replica_conns:
+            try:
+                rc.shutdown(nosave=True)
+            except redis.exceptions.ConnectionError:
+                pass
+        r.shutdown(nosave=True)
+    except Exception:
+        # Print logs on failure
+        for c in redis_containers:
+            try:
+                logs = c.logs().decode("utf-8")
+                logging.error(f"Container logs: {logs}")
+            except Exception:
+                pass
+        raise
+    finally:
+        for c in redis_containers:
+            try:
+                c.stop()
+                c.remove()
+            except Exception:
+                pass
