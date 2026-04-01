@@ -324,12 +324,10 @@ def test_start_redis_container():
 
 
 def test_spin_up_redis_replicas():
-    temporary_dir = os.getenv("TST_BINARY_REDIS_DIR", "")
-    if temporary_dir == "":
-        return
-
-    mnt_point = "/mnt/redis/"
-    executable = f"{mnt_point}redis-server"
+    """Test replica deployment using the official redis:8.6 Docker image."""
+    run_image = "redis:8.6"
+    mnt_point = ""
+    executable = "redis-server"
     primary_port = 6399
     current_cpu_pos = 0
     redis_configuration_parameters = None
@@ -337,6 +335,7 @@ def test_spin_up_redis_replicas():
     docker_client = docker.from_env()
     redis_containers = []
     redis_password = "test_password_123"
+    temporary_dir = ""
 
     # Start primary
     command = generate_standalone_redis_server_args(
@@ -349,7 +348,6 @@ def test_spin_up_redis_replicas():
     )
     command_str = " ".join(command)
     db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(1, current_cpu_pos)
-    run_image = "gcc:8.5"
     primary_container = start_redis_container(
         command_str,
         db_cpuset_cpus,
