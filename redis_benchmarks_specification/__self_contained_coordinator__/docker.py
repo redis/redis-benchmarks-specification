@@ -135,11 +135,13 @@ def spin_up_redis_replicas(
     replica_pids = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
-        # Append --replicaof to redis_arguments so it appears in the process
-        # cmdline (parca-agent uses this to label the process as a replica)
+        # Append --replicaof and --masterauth to redis_arguments so the replica
+        # can authenticate to the primary and parca-agent can label it as a replica
         replica_redis_arguments = "{} --replicaof localhost {}".format(
             redis_arguments, primary_port
         ).strip()
+        if password is not None and password != "":
+            replica_redis_arguments += " --masterauth {}".format(password)
         command = generate_standalone_redis_server_args(
             "{}redis-server".format(mnt_point),
             replica_port,
