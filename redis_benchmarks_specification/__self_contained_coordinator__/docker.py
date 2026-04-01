@@ -136,12 +136,18 @@ def spin_up_redis_replicas(
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
         # Append --replicaof and --masterauth to redis_arguments so the replica
-        # can authenticate to the primary and parca-agent can label it as a replica
+        # can authenticate to the primary and parca-agent can label it as a replica.
+        # Use per-replica filenames to avoid conflicts with the primary.
         replica_redis_arguments = "{} --replicaof localhost {}".format(
             redis_arguments, primary_port
         ).strip()
         if password is not None and password != "":
             replica_redis_arguments += " --masterauth {}".format(password)
+        replica_redis_arguments += (
+            " --dbfilename replica-port-{}-dump.rdb"
+            " --appendfilename replica-port-{}-appendonly.aof"
+            " --logfile replica-port-{}-redis.log"
+        ).format(replica_port, replica_port, replica_port)
         command = generate_standalone_redis_server_args(
             "{}redis-server".format(mnt_point),
             replica_port,
