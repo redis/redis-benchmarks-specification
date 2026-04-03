@@ -1,0 +1,40 @@
+version: 0.4
+name: memtier_benchmark-10Kkeys-hash-hgetall-100-fields-100B-values
+description: Runs memtier_benchmark for 10K hash keys with 100 fields of 100B
+  each (hashtable encoding). Issues HGETALL command.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "HSET __key__ field:1 __data__ field:2 __data__ field:3 __data__ field:4 __data__ field:5 __data__ field:6 __data__ field:7 __data__ field:8 __data__ field:9 __data__ field:10 __data__ field:11 __data__ field:12 __data__ field:13 __data__ field:14 __data__ field:15 __data__ field:16 __data__ field:17 __data__ field:18 __data__ field:19 __data__ field:20 __data__ field:21 __data__ field:22 __data__ field:23 __data__ field:24 __data__ field:25 __data__ field:26 __data__ field:27 __data__ field:28 __data__ field:29 __data__ field:30 __data__ field:31 __data__ field:32 __data__ field:33 __data__ field:34 __data__ field:35 __data__ field:36 __data__ field:37 __data__ field:38 __data__ field:39 __data__ field:40 __data__ field:41 __data__ field:42 __data__ field:43 __data__ field:44 __data__ field:45 __data__ field:46 __data__ field:47 __data__ field:48 __data__ field:49 __data__ field:50 __data__ field:51 __data__ field:52 __data__ field:53 __data__ field:54 __data__ field:55 __data__ field:56 __data__ field:57 __data__ field:58 __data__ field:59 __data__ field:60 __data__ field:61 __data__ field:62 __data__ field:63 __data__ field:64 __data__ field:65 __data__ field:66 __data__ field:67 __data__ field:68 __data__ field:69 __data__ field:70 __data__ field:71 __data__ field:72 __data__ field:73 __data__ field:74 __data__ field:75 __data__ field:76 __data__ field:77 __data__ field:78 __data__ field:79 __data__ field:80 __data__ field:81 __data__ field:82 __data__ field:83 __data__ field:84 __data__ field:85 __data__ field:86 __data__ field:87 __data__ field:88 __data__ field:89 __data__ field:90 __data__ field:91 __data__ field:92 __data__ field:93 __data__ field:94 __data__ field:95 __data__ field:96 __data__ field:97 __data__ field:98 __data__ field:99 __data__ field:100 __data__" --command-key-pattern="P"
+      --key-minimum=1 --key-maximum 10000 -n 500 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 10Kkeys-hash-100-fields-100B-size
+  dataset_description: This dataset contains 10,000 hash keys, each with 100
+    fields and each field has a data size of 100 bytes.
+tested-groups:
+- hash
+tested-commands:
+- hgetall
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--distinct-client-seed --command "HGETALL __key__" --command-key-pattern="R"
+    --key-minimum=1 --key-maximum 10000 --test-time 120 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 96
