@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-2keys-bitmap-100M-bits-bitop-and
+description: >
+  Runs memtier_benchmark, testing BITOP AND performance on two 100M-bit bitmaps.
+  Two source bitmaps (src1, src2) are pre-loaded with ~2M random bits each (~2% density).
+  The benchmark repeatedly performs BITOP AND dest src1 src2, writing the result to dest.
+  This exercises the SIMD-optimized BITOP path (AVX512 on supported CPUs).
+  Each bitmap is ~12.5MB, totaling ~37.5MB with the destination key.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --hide-histogram
+      --command "SETBIT src1 __key__ 1" --command-key-pattern R --key-maximum 100000000 --key-minimum 1 --key-prefix ""
+      --command "SETBIT src2 __key__ 1" --command-key-pattern R --key-maximum 100000000 --key-minimum 1 --key-prefix ""
+      -n 50000 -c 50 -t 2 --pipeline 50 --distinct-client-seed
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 2keys-bitmap-100M-bits-2pct-density
+  dataset_description: Two bitmap keys (src1, src2), each with 100M bits and ~2% density (~2M bits set). Each bitmap is ~12.5MB.
+tested-commands:
+- bitop
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "BITOP AND dest src1 src2"
+    --command-key-pattern R
+    --key-prefix ""
+    --hide-histogram
+    --test-time 120
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

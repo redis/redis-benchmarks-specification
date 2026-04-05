@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-100Kstreams-xreadgroup-count-100
+description: >
+  Multi-stream XREADGROUP benchmark with 100K streams. Pre-loads 100000 streams with
+  ~100 entries each (10M seed), creates a consumer group on each. Benchmark runs
+  70% XADD (producing) + 30% XREADGROUP COUNT 100 (consuming) to random streams,
+  ensuring entries are always available. Tests radix-tree and keyspace lookup at
+  extreme stream-count scale where cache pressure and dict/hashtable overhead dominate.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      "--data-size" "100"
+      --command "XADD stream:__key__ * field __data__" --command-key-pattern P
+      --key-minimum 1 --key-maximum 100000 --key-prefix ""
+      -n 50000 -c 50 -t 4 --hide-histogram
+  init_commands:
+    - EVAL "for i=1,100000 do redis.call('XGROUP','CREATE','stream:'..i,'test-group','0','MKSTREAM') end return 'OK'" 0
+  resources:
+    requests:
+      memory: 8g
+  dataset_name: 100Kstreams-100-entries-each-with-consumer-group
+  dataset_description: 100000 stream keys with ~100 entries each (10M seed), each with a consumer group named 'test-group'.
+tested-commands:
+- xadd
+- xreadgroup
+tested-groups:
+- stream
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command "XADD stream:__key__ * field __data__" --command-key-pattern R --key-minimum 1 --key-maximum 100000 --key-prefix "" --command-ratio 70
+    --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:__key__ >" --command-key-pattern R --key-minimum 1 --key-maximum 100000 --key-prefix "" --command-ratio 30
+    --hide-histogram
+    --test-time 120 -c 25 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 94
