@@ -46,7 +46,7 @@ clientconfig:
   arguments: >
     --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:1 stream:2 stream:3 stream:4 > > > >"
     --hide-histogram
-    -n 1000 -c 25 -t 4
+    --test-time 120 -c 25 -t 4
   resources:
     requests:
       cpus: '4'
