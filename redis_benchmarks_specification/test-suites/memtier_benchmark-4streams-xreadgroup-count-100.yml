@@ -1,10 +1,11 @@
 version: 0.4
 name: memtier_benchmark-4streams-xreadgroup-count-100
 description: >
-  Multi-stream XREADGROUP benchmark. Pre-loads 4 independent streams with 2.5M entries
-  each (10M total), creates a consumer group on each stream, then benchmarks XREADGROUP
-  reading COUNT 100 from all 4 streams in a single command. This tests the multi-stream
-  read path with radix-tree lookups across multiple keys.
+  Multi-stream XREADGROUP benchmark with 4 streams. Pre-loads 4 streams with 500K
+  entries each (2M seed), creates a consumer group on each. Benchmark runs 70% XADD
+  (producing) + 30% XREADGROUP COUNT 100 (consuming) concurrently, ensuring entries
+  are always available for reading. Tests the multi-key stream read path with
+  radix-tree lookups across multiple keys in a single XREADGROUP command.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -19,7 +20,7 @@ dbconfig:
       --command "XADD stream:2 * field __data__" --command-key-pattern P --command-ratio 25
       --command "XADD stream:3 * field __data__" --command-key-pattern P --command-ratio 25
       --command "XADD stream:4 * field __data__" --command-key-pattern P --command-ratio 25
-      -n 12500 -c 50 -t 4 --hide-histogram
+      -n 2500 -c 50 -t 4 --hide-histogram
   init_commands:
     - XGROUP CREATE stream:1 test-group 0 MKSTREAM
     - XGROUP CREATE stream:2 test-group 0 MKSTREAM
@@ -28,9 +29,10 @@ dbconfig:
   resources:
     requests:
       memory: 4g
-  dataset_name: 4streams-2.5M-entries-each-with-consumer-group
-  dataset_description: 4 stream keys with ~2.5M entries each (10M total), each with a consumer group named 'test-group'.
+  dataset_name: 4streams-500K-entries-each-with-consumer-group
+  dataset_description: 4 stream keys with ~500K entries each (2M seed), each with a consumer group named 'test-group'.
 tested-commands:
+- xadd
 - xreadgroup
 tested-groups:
 - stream
@@ -44,7 +46,12 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:1 stream:2 stream:3 stream:4 > > > >"
+    --data-size 100
+    --command "XADD stream:1 * field __data__" --command-key-pattern P --command-ratio 17
+    --command "XADD stream:2 * field __data__" --command-key-pattern P --command-ratio 18
+    --command "XADD stream:3 * field __data__" --command-key-pattern P --command-ratio 17
+    --command "XADD stream:4 * field __data__" --command-key-pattern P --command-ratio 18
+    --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:1 stream:2 stream:3 stream:4 > > > >" --command-key-pattern P --command-ratio 30
     --hide-histogram
     --test-time 120 -c 25 -t 4
   resources:

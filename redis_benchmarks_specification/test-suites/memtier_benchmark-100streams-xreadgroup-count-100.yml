@@ -2,9 +2,10 @@ version: 0.4
 name: memtier_benchmark-100streams-xreadgroup-count-100
 description: >
   Multi-stream XREADGROUP benchmark with 100 streams. Pre-loads 100 streams with
-  100K entries each (10M total), creates a consumer group on each stream. The benchmark
-  randomly selects streams to read from, testing XREADGROUP COUNT 100 performance
-  at moderate stream-count scale. Tests radix-tree lookup across many stream keys.
+  ~100K entries each (10M seed), creates a consumer group on each. Benchmark runs
+  70% XADD (producing) + 30% XREADGROUP COUNT 100 (consuming) to random streams,
+  ensuring entries are always available. Tests radix-tree and keyspace lookup at
+  moderate stream-count scale.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -24,8 +25,9 @@ dbconfig:
     requests:
       memory: 4g
   dataset_name: 100streams-100K-entries-each-with-consumer-group
-  dataset_description: 100 stream keys with ~100K entries each (10M total), each with a consumer group named 'test-group'.
+  dataset_description: 100 stream keys with ~100K entries each (10M seed), each with a consumer group named 'test-group'.
 tested-commands:
+- xadd
 - xreadgroup
 tested-groups:
 - stream
@@ -39,8 +41,9 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:__key__ >"
-    --command-key-pattern R --key-minimum 1 --key-maximum 100 --key-prefix ""
+    --data-size 100
+    --command "XADD stream:__key__ * field __data__" --command-key-pattern R --key-minimum 1 --key-maximum 100 --key-prefix "" --command-ratio 70
+    --command "XREADGROUP GROUP test-group consumer1 COUNT 100 STREAMS stream:__key__ >" --command-key-pattern R --key-minimum 1 --key-maximum 100 --key-prefix "" --command-ratio 30
     --hide-histogram
     --test-time 120 -c 25 -t 4
   resources:
