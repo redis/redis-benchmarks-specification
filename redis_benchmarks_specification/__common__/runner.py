@@ -32,17 +32,9 @@ def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
             if type(cmd) == list:
                 is_array = True
             if '"' in cmd:
-                cols = []
-                for lines in csv.reader(
-                    cmd,
-                    quotechar='"',
-                    delimiter=" ",
-                    quoting=csv.QUOTE_ALL,
-                    skipinitialspace=True,
-                ):
-                    if len(lines) > 0 and lines[0] != " " and len(lines[0]) > 0:
-                        cols.append(lines[0])
-                cmd = cols
+                import shlex
+
+                cmd = shlex.split(cmd)
                 is_array = True
             try:
                 logging.info("Sending init command: {}".format(cmd))
