@@ -1352,7 +1352,7 @@ def test_self_contained_coordinator_duplicated_ts():
                     use_git_timestamp=True,
                     existing_artifact_keys=None,
                     git_version=redis_version,
-                    override_topology="",
+                    override_deployment_regexp="",
                 )
                 build_stream_fields["mnt_point"] = ""
                 if result is True:
