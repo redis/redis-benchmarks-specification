@@ -295,20 +295,25 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
     when override_deployment_regexp='oss-standalone-.*' and deployment_name_regexp='.*replicas'.
     """
 
-    # Test config with multiple topologies
-    config = {
-        "name": "test",
-        "redis-topologies": [
-            "oss-standalone-01-replicas",
-            "oss-standalone-04-io-threads",
-            "oss-cluster-01-replicas",
-        ],
-    }
-
+    # Test config with single topology to prove override works from ALL available
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
-        yaml.dump(config, f)
+        yaml.dump(
+            {
+                "name": "test",
+                "redis-topologies": ["oss-standalone-with-redisearch"],
+            },
+            f,
+        )
         test_file = f.name
 
+    # Create realistic topologies_map with all topologies
+    topologies_map = {
+        "oss-standalone-01-replicas": {"type": "oss-standalone"},
+        "oss-standalone-04-io-threads": {"type": "oss-standalone"},
+        "oss-cluster-01-replicas": {"type": "oss-cluster"},
+        "oss-cluster-3-primaries": {"type": "oss-cluster"},
+    }
+        
     try:
         # Test stream with both filters
         test_details = {
@@ -333,6 +338,7 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
             mock_conn = Mock()
             mock_conn.pipeline.return_value = mock_pipeline
 
+
             process_self_contained_coordinator_stream(
                 github_event_conn=mock_conn,
                 datasink_push_results_redistimeseries=False,
@@ -341,7 +347,7 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
                 newTestInfo=[["stream", [[b"123", test_details]]]],
                 datasink_conn=Mock(),
                 testsuite_spec_files=[test_file],
-                topologies_map={},
+                topologies_map=topologies_map,
                 running_platform="test",
             )
 
@@ -352,7 +358,8 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
                 if len(call[0]) == 2 and "::" in str(call[0][1])
             ]
 
-            # Should only get standalone replicas (not io-threads, not cluster)
+            # Should get all standalone topologies that match ".*replicas" filter
+            # With override, we select from ALL available topologies, not just config topologies
             assert queued == ["oss-standalone-01-replicas"]
 
     finally:

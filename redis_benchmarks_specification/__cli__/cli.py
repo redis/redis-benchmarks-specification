@@ -782,9 +782,15 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                         from redis_benchmarks_specification.__common__.runner import (
                             get_benchmark_specs,
                         )
+                        from redis_benchmarks_specification.__setups__.topologies import get_topologies
+                        from redis_benchmarks_specification.__common__.env import SPECS_PATH_SETUPS
 
                         testsuites_folder = os.path.abspath(args.test_suites_folder)
                         spec_files = get_benchmark_specs(testsuites_folder)
+
+                        # Load all available topologies for override functionality
+                        topologies_file = os.path.join(SPECS_PATH_SETUPS, "topologies", "topologies.yml")
+                        topologies_map = get_topologies(topologies_file)
                         total_tests = 0
                         total_topology_runs = 0
                         deployment_name_regexp_filter = args.deployment_name_regexp
@@ -800,13 +806,15 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             if not tests_regexp_compiled.match(test_name):
                                 continue
                             
-                            # Start with base topologies
-                            topologies = config.get("redis-topologies", [])
-
-                            # Apply override filter if specified
+                            # Start with appropriate topology base
                             if args.override_deployment_regexp:
-                                topologies = [t for t in topologies if re.match(args.override_deployment_regexp, t)]
-                                logging.info(f"  {test_name}: Override deployment regexp '{args.override_deployment_regexp}' -> {len(topologies)} matches: {topologies}")
+                                # Start with all available topologies when overriding
+                                all_available_topologies = list(topologies_map.keys())
+                                topologies = [t for t in all_available_topologies if re.match(args.override_deployment_regexp, t)]
+                                logging.info(f"  {test_name}: Override deployment regexp '{args.override_deployment_regexp}' -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}")
+                            else:
+                                # Start with base topologies from config
+                                topologies = config.get("redis-topologies", [])
 
                             # Apply deployment filter if specified
                             if deployment_name_regexp_filter != ".*":
