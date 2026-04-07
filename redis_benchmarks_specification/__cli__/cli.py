@@ -791,6 +791,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                         # Load all available topologies for override functionality
                         topologies_file = os.path.join(SPECS_PATH_SETUPS, "topologies", "topologies.yml")
                         topologies_map = get_topologies(topologies_file)
+                        all_available_topologies = list(topologies_map.keys())
                         total_tests = 0
                         total_topology_runs = 0
                         deployment_name_regexp_filter = args.deployment_name_regexp
@@ -806,20 +807,21 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             if not tests_regexp_compiled.match(test_name):
                                 continue
                             
-                            # Start with appropriate topology base
+                            topologies = config.get("redis-topologies", [])
+
+                            # Override topology if specified
                             if args.override_deployment_regexp:
                                 # Start with all available topologies when overriding
-                                all_available_topologies = list(topologies_map.keys())
                                 topologies = [t for t in all_available_topologies if re.match(args.override_deployment_regexp, t)]
-                                logging.info(f"  {test_name}: Override deployment regexp '{args.override_deployment_regexp}' -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}")
-                            else:
-                                # Start with base topologies from config
-                                topologies = config.get("redis-topologies", [])
 
                             # Apply deployment filter if specified
                             if deployment_name_regexp_filter != ".*":
-                                topologies = [t for t in topologies if re.match(deployment_name_regexp_filter, t)]
-                                logging.info(f"  {test_name}: Deployment name regexp '{deployment_name_regexp_filter}' -> {len(topologies)} matches: {topologies}")
+                                topologies = [
+                                    t
+                                    for t in topologies
+                                    if re.match(deployment_name_regexp_filter, t)
+                                ]
+
                             if topologies:
                                 total_tests += 1
                                 total_topology_runs += len(topologies)
@@ -827,10 +829,9 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                                     logging.info(
                                         f"  {test_name}: {len(topologies)} topologies -> {', '.join(topologies)}"
                                     )
-                        summary_msg = f"DRY-RUN SUMMARY: {total_tests} tests x topologies = {total_topology_runs} benchmark runs"
-                        if args.override_deployment_regexp:
-                            summary_msg += f" (using override deployment regexp: {args.override_deployment_regexp})"
-                        logging.info(summary_msg)
+                        logging.info(
+                            f"DRY-RUN SUMMARY: {total_tests} tests x topologies = {total_topology_runs} benchmark runs"
+                        )
                     except Exception as e:
                         logging.debug(f"Could not compute topology breakdown: {e}")
             else:

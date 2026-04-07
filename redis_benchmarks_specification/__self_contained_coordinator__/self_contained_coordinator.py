@@ -1333,11 +1333,14 @@ def process_self_contained_coordinator_stream(
                 logging.info(
                     f"Adding {len(filtered_test_files)} tests to pending test list"
                 )
+            
+                all_available_topologies = list(topologies_map.keys())
 
                 # Use pipeline for efficient bulk operations
                 pipeline = github_event_conn.pipeline()
                 test_names_added = []
                 total_topology_runs = 0
+            
 
                 for test_file in filtered_test_files:
                     with open(test_file, "r") as stream:
@@ -1349,9 +1352,11 @@ def process_self_contained_coordinator_stream(
                     pipeline.lpush(stream_test_list_pending, test_name)
                     test_names_added.append(test_name)
                     # Add topology-level entries
+                    topologies = benchmark_config.get("redis-topologies", [])
+
+                    # Override topology if specified
                     if override_deployment_regexp:
                         # Start with all available topologies when overriding
-                        all_available_topologies = list(topologies_map.keys())
                         topologies = [
                             t
                             for t in all_available_topologies
@@ -1360,11 +1365,8 @@ def process_self_contained_coordinator_stream(
                         logging.info(
                             f"Override deployment regexp '{override_deployment_regexp}' for test {test_name} -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}"
                         )
-                    else:
-                        # Start with base topologies from config
-                        topologies = benchmark_config.get("redis-topologies", [])
 
-                    # Apply deployment name filter if specified
+                    # Apply topology filter if specified
                     if deployment_name_regexp != ".*":
                         topologies = [
                             t for t in topologies if re.match(deployment_name_regexp, t)
@@ -1372,6 +1374,7 @@ def process_self_contained_coordinator_stream(
                         logging.info(
                             f"Deployment name regexp '{deployment_name_regexp}' for test {test_name} -> {len(topologies)} matches: {topologies}"
                         )
+
                     for topo in topologies:
                         # Apply CLI topology filter
                         if args is not None and args.topology and topo != args.topology:
@@ -1511,9 +1514,11 @@ def process_self_contained_coordinator_stream(
                         test_result = True
 
                         # Start with appropriate topology base
+                        topologies_to_run = benchmark_config["redis-topologies"]
+                        
+                        # Override topology if specified
                         if override_deployment_regexp:
                             # Start with all available topologies when overriding
-                            all_available_topologies = list(topologies_map.keys())
                             topologies_to_run = [
                                 t
                                 for t in all_available_topologies
@@ -1522,9 +1527,6 @@ def process_self_contained_coordinator_stream(
                             logging.info(
                                 f"Override deployment regexp '{override_deployment_regexp}' for test {test_name}: {len(topologies_to_run)} matches from {len(all_available_topologies)} available: {topologies_to_run}"
                             )
-                        else:
-                            # Start with base topologies from config
-                            topologies_to_run = benchmark_config["redis-topologies"]
 
                         # Apply deployment filter if specified
                         if deployment_name_regexp != ".*":
