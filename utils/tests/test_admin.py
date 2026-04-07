@@ -313,7 +313,7 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
         "oss-cluster-01-replicas": {"type": "oss-cluster"},
         "oss-cluster-3-primaries": {"type": "oss-cluster"},
     }
-        
+
     try:
         # Test stream with both filters
         test_details = {
@@ -337,7 +337,6 @@ def test_override_deployment_regexp_with_deployment_name_regexp():
             mock_pipeline = Mock()
             mock_conn = Mock()
             mock_conn.pipeline.return_value = mock_pipeline
-
 
             process_self_contained_coordinator_stream(
                 github_event_conn=mock_conn,

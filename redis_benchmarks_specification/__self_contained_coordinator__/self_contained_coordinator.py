@@ -1333,7 +1333,7 @@ def process_self_contained_coordinator_stream(
                 logging.info(
                     f"Adding {len(filtered_test_files)} tests to pending test list"
                 )
-            
+
                 all_available_topologies = list(topologies_map.keys())
 
                 # Use pipeline for efficient bulk operations
@@ -1514,7 +1514,7 @@ def process_self_contained_coordinator_stream(
 
                         # Start with appropriate topology base
                         topologies_to_run = benchmark_config["redis-topologies"]
-                        
+
                         # Override topology if specified
                         if override_deployment_regexp:
                             # Start with all available topologies when overriding
