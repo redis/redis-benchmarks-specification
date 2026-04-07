@@ -233,6 +233,12 @@ def spec_cli_args(parser):
         help="Filter topologies/deployments by name using regex. Only topologies matching this pattern will be executed. E.g. '.*io-threads' to only run IO-thread variants.",
     )
     parser.add_argument(
+        "--override-topology",
+        type=str,
+        default="",
+        help="Override the redis-topologies from all benchmark configs and use only the specified topology name instead. E.g. 'oss-standalone-01-replicas'. Takes precedence over --deployment-name-regexp.",
+    )
+    parser.add_argument(
         "--wait-benchmark",
         default=False,
         action="store_true",

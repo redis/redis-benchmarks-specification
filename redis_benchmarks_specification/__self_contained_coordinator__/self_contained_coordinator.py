@@ -1254,6 +1254,13 @@ def process_self_contained_coordinator_stream(
                     f"detected a deployment_name_regexp definition on the streamdata {deployment_name_regexp}"
                 )
 
+            override_topology = ""
+            if b"override_topology" in testDetails:
+                override_topology = testDetails[b"override_topology"].decode()
+                logging.info(
+                    f"detected an override_topology definition on the streamdata {override_topology}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -1340,7 +1347,12 @@ def process_self_contained_coordinator_stream(
                     pipeline.lpush(stream_test_list_pending, test_name)
                     test_names_added.append(test_name)
                     # Add topology-level entries
-                    topologies = benchmark_config.get("redis-topologies", [])
+                    if override_topology:
+                        # Override with single topology from CLI
+                        topologies = [override_topology]
+                        logging.info(f"Overriding topologies for test {test_name} with: {override_topology}")
+                    else:
+                        topologies = benchmark_config.get("redis-topologies", [])
                     for topo in topologies:
                         # Apply deployment_name_regexp filter
                         if deployment_name_regexp != ".*":
@@ -1482,7 +1494,15 @@ def process_self_contained_coordinator_stream(
                         # Initialize test_result before topology loop.
                         # If all topologies are filtered out, test is considered passed (nothing to run).
                         test_result = True
-                        for topology_spec_name in benchmark_config["redis-topologies"]:
+
+                        # Use override topology if specified, otherwise use config topologies
+                        if override_topology:
+                            topologies_to_run = [override_topology]
+                            logging.info(f"Using override topology for test {test_name}: {override_topology}")
+                        else:
+                            topologies_to_run = benchmark_config["redis-topologies"]
+
+                        for topology_spec_name in topologies_to_run:
                             setup_name = topology_spec_name
                             setup_type = "oss-standalone"
 

@@ -136,6 +136,11 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
             if hasattr(args, "deployment_name_regexp")
             else ".*"
         ),
+        (
+            args.override_topology
+            if hasattr(args, "override_topology")
+            else ""
+        ),
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org
@@ -794,23 +799,28 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             test_name = config["name"]
                             if not tests_regexp_compiled.match(test_name):
                                 continue
-                            topologies = config.get("redis-topologies", [])
-                            if deployment_name_regexp_filter != ".*":
-                                topologies = [
-                                    t
-                                    for t in topologies
-                                    if re.match(deployment_name_regexp_filter, t)
-                                ]
+                            if args.override_topology:
+                                topologies = [args.override_topology]
+                                logging.info(f"  {test_name}: Using override topology -> {args.override_topology}")
+                            else:
+                                topologies = config.get("redis-topologies", [])
+                                if deployment_name_regexp_filter != ".*":
+                                    topologies = [
+                                        t
+                                        for t in topologies
+                                        if re.match(deployment_name_regexp_filter, t)
+                                    ]
                             if topologies:
                                 total_tests += 1
                                 total_topology_runs += len(topologies)
-                                if len(topologies) > 1:
+                                if not args.override_topology and len(topologies) > 1:
                                     logging.info(
                                         f"  {test_name}: {len(topologies)} topologies -> {', '.join(topologies)}"
                                     )
-                        logging.info(
-                            f"DRY-RUN SUMMARY: {total_tests} tests x topologies = {total_topology_runs} benchmark runs"
-                        )
+                        summary_msg = f"DRY-RUN SUMMARY: {total_tests} tests x topologies = {total_topology_runs} benchmark runs"
+                        if args.override_topology:
+                            summary_msg += f" (using override topology: {args.override_topology})"
+                        logging.info(summary_msg)
                     except Exception as e:
                         logging.debug(f"Could not compute topology breakdown: {e}")
             else:

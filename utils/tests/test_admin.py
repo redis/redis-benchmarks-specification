@@ -224,6 +224,7 @@ def test_generate_benchmark_stream_request_deployment_regexp():
             {},
             "linux",
             deployment_name_regexp=".*",
+            override_topology="",
         )
         assert "deployment_name_regexp" not in fields
 
@@ -236,8 +237,22 @@ def test_generate_benchmark_stream_request_deployment_regexp():
             {},
             "linux",
             deployment_name_regexp="oss-standalone-0[48]-io-threads",
+            override_topology="",
         )
         assert fields["deployment_name_regexp"] == "oss-standalone-0[48]-io-threads"
+
+        # With override_topology - should include field
+        fields, result = generate_benchmark_stream_request(
+            "test-id",
+            conn,
+            "redis",
+            "amd64",
+            {},
+            "linux",
+            deployment_name_regexp=".*",
+            override_topology="oss-standalone-01-replicas",
+        )
+        assert fields["override_topology"] == "oss-standalone-01-replicas"
 
     except redis.exceptions.ConnectionError:
         pass
