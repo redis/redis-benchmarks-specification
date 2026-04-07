@@ -1340,7 +1340,6 @@ def process_self_contained_coordinator_stream(
                 pipeline = github_event_conn.pipeline()
                 test_names_added = []
                 total_topology_runs = 0
-            
 
                 for test_file in filtered_test_files:
                     with open(test_file, "r") as stream:

@@ -3,7 +3,6 @@ import datetime
 import io
 import json
 import logging
-import re
 import tempfile
 import shutil
 import docker
@@ -15,7 +14,6 @@ from redis_benchmarks_specification.__builder__.schema import (
     get_build_config,
     get_build_config_metadata,
 )
-from redis_benchmarks_specification.__setups__.topologies import get_topologies
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_branch_version_from_test_details,
 )
