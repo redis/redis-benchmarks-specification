@@ -1256,7 +1256,9 @@ def process_self_contained_coordinator_stream(
 
             override_deployment_regexp = ""
             if b"override_deployment_regexp" in testDetails:
-                override_deployment_regexp = testDetails[b"override_deployment_regexp"].decode()
+                override_deployment_regexp = testDetails[
+                    b"override_deployment_regexp"
+                ].decode()
                 logging.info(
                     f"detected an override_deployment_regexp definition on the streamdata {override_deployment_regexp}"
                 )
@@ -1350,16 +1352,26 @@ def process_self_contained_coordinator_stream(
                     if override_deployment_regexp:
                         # Start with all available topologies when overriding
                         all_available_topologies = list(topologies_map.keys())
-                        topologies = [t for t in all_available_topologies if re.match(override_deployment_regexp, t)]
-                        logging.info(f"Override deployment regexp '{override_deployment_regexp}' for test {test_name} -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}")
+                        topologies = [
+                            t
+                            for t in all_available_topologies
+                            if re.match(override_deployment_regexp, t)
+                        ]
+                        logging.info(
+                            f"Override deployment regexp '{override_deployment_regexp}' for test {test_name} -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}"
+                        )
                     else:
                         # Start with base topologies from config
                         topologies = benchmark_config.get("redis-topologies", [])
 
                     # Apply deployment name filter if specified
                     if deployment_name_regexp != ".*":
-                        topologies = [t for t in topologies if re.match(deployment_name_regexp, t)]
-                        logging.info(f"Deployment name regexp '{deployment_name_regexp}' for test {test_name} -> {len(topologies)} matches: {topologies}")
+                        topologies = [
+                            t for t in topologies if re.match(deployment_name_regexp, t)
+                        ]
+                        logging.info(
+                            f"Deployment name regexp '{deployment_name_regexp}' for test {test_name} -> {len(topologies)} matches: {topologies}"
+                        )
                     for topo in topologies:
                         # Apply CLI topology filter
                         if args is not None and args.topology and topo != args.topology:
@@ -1502,16 +1514,28 @@ def process_self_contained_coordinator_stream(
                         if override_deployment_regexp:
                             # Start with all available topologies when overriding
                             all_available_topologies = list(topologies_map.keys())
-                            topologies_to_run = [t for t in all_available_topologies if re.match(override_deployment_regexp, t)]
-                            logging.info(f"Override deployment regexp '{override_deployment_regexp}' for test {test_name}: {len(topologies_to_run)} matches from {len(all_available_topologies)} available: {topologies_to_run}")
+                            topologies_to_run = [
+                                t
+                                for t in all_available_topologies
+                                if re.match(override_deployment_regexp, t)
+                            ]
+                            logging.info(
+                                f"Override deployment regexp '{override_deployment_regexp}' for test {test_name}: {len(topologies_to_run)} matches from {len(all_available_topologies)} available: {topologies_to_run}"
+                            )
                         else:
                             # Start with base topologies from config
                             topologies_to_run = benchmark_config["redis-topologies"]
 
                         # Apply deployment filter if specified
                         if deployment_name_regexp != ".*":
-                            topologies_to_run = [t for t in topologies_to_run if re.match(deployment_name_regexp, t)]
-                            logging.info(f"Deployment name regexp '{deployment_name_regexp}' for test {test_name}: {len(topologies_to_run)} matches: {topologies_to_run}")
+                            topologies_to_run = [
+                                t
+                                for t in topologies_to_run
+                                if re.match(deployment_name_regexp, t)
+                            ]
+                            logging.info(
+                                f"Deployment name regexp '{deployment_name_regexp}' for test {test_name}: {len(topologies_to_run)} matches: {topologies_to_run}"
+                            )
 
                         for topology_spec_name in topologies_to_run:
                             setup_name = topology_spec_name
@@ -1527,8 +1551,6 @@ def process_self_contained_coordinator_stream(
                                     f"Skipping topology {topology_spec_name} as it doesn't match the requested topology {args.topology}"
                                 )
                                 continue
-
-
 
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]
