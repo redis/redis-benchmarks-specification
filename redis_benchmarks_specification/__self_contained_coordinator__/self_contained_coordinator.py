@@ -1857,17 +1857,18 @@ def process_self_contained_coordinator_stream(
                                     profiler_call_graph_mode,
                                 )
 
+                                # Extract test time from benchmark command (used for
+                                # both topdown duration and container timeout)
+                                test_time_match = re.search(
+                                    r"--?test-time[=\s]+(\d+)", benchmark_command_str
+                                )
+
                                 # Start topdown-profiler collection alongside benchmark
                                 if _topdown_available and topdown_labels:
-                                    # Extract expected benchmark duration for topdown collection
                                     topdown_duration = 30  # default
-                                    td_match = re.search(
-                                        r"--?test-time[=\s]+(\d+)",
-                                        benchmark_command_str,
-                                    )
-                                    if td_match:
+                                    if test_time_match:
                                         topdown_duration = min(
-                                            int(td_match.group(1)), 30
+                                            int(test_time_match.group(1)), 30
                                         )
                                     topdown_collector = TopdownCollector(
                                         process_name=executable.split("/")[-1],
@@ -1891,10 +1892,6 @@ def process_self_contained_coordinator_stream(
                                 container_timeout = 300  # 5 minutes default
                                 buffer_timeout = 60  # Default buffer
 
-                                # Try to extract test time from command and add buffer
-                                test_time_match = re.search(
-                                    r"--?test-time[=\s]+(\d+)", benchmark_command_str
-                                )
                                 if test_time_match:
                                     test_time = int(test_time_match.group(1))
                                     container_timeout = test_time + buffer_timeout
@@ -2310,6 +2307,14 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 test_result = False
+                            # Clean up topdown collector if still running
+                            if topdown_collector is not None:
+                                try:
+                                    topdown_collector.wait_for_completion(timeout=5)
+                                except Exception:
+                                    pass
+                                topdown_collector = None
+
                             # tear-down
                             logging.info("Tearing down setup")
                             if docker_keep_env is False:
