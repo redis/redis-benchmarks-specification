@@ -970,6 +970,8 @@ def generate_benchmark_stream_request(
     result = True
     if b"platform" in testDetails:
         build_stream_fields["platform"] = testDetails[b"platform"]
+    if b"target_platform" in testDetails:
+        build_stream_fields["target_platform"] = testDetails[b"target_platform"]
     return build_stream_fields, result
 
 
