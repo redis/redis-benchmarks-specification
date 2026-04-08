@@ -2011,8 +2011,10 @@ def process_self_contained_coordinator_stream(
 
                                 # Wait for topdown-profiler if it was started
                                 if topdown_collector is not None:
-                                    topdown_run_id = topdown_collector.wait_for_completion(
-                                        timeout=60
+                                    topdown_run_id = (
+                                        topdown_collector.wait_for_completion(
+                                            timeout=60
+                                        )
                                     )
                                     if topdown_run_id:
                                         logging.info(

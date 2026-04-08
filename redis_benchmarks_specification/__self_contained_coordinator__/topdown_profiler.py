@@ -163,7 +163,9 @@ def collect_topdown(
         )
 
         if result.returncode != 0:
-            logging.warning(f"topdown collect failed (rc={result.returncode}): {result.stderr}")
+            logging.warning(
+                f"topdown collect failed (rc={result.returncode}): {result.stderr}"
+            )
             return None
 
         # Extract run ID from output (format: "Done. Run ID: <uuid>")
