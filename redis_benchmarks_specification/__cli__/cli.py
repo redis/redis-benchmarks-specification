@@ -145,6 +145,9 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         server_name = args.server_name
     build_stream_fields["server_name"] = server_name
     build_stream_fields["mnt_point"] = args.mnt_point
+    if args.target_platform is not None:
+        build_stream_fields["target_platform"] = args.target_platform
+        logging.info(f"Targeting specific runner: {args.target_platform}")
     if args.docker_dont_air_gap is False:
         docker_client = docker.from_env()
         store_airgap_image_redis(conn, docker_client, args.run_image)

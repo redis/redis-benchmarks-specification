@@ -1294,6 +1294,21 @@ def process_self_contained_coordinator_stream(
                         )
                     )
 
+            if b"target_platform" in testDetails:
+                target_platform = testDetails[b"target_platform"]
+                target_platform_str = (
+                    target_platform.decode()
+                    if isinstance(target_platform, bytes)
+                    else target_platform
+                )
+                if running_platform != target_platform_str:
+                    skip_test = True
+                    logging.info(
+                        "skipping stream_id {} given target_platform {}!={}".format(
+                            stream_id, running_platform, target_platform_str
+                        )
+                    )
+
             if run_arch != arch:
                 skip_test = True
                 logging.info(
