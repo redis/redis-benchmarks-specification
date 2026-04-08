@@ -142,6 +142,13 @@ def spec_cli_args(parser):
     parser.add_argument("--server_name", type=str, default=None)
     parser.add_argument("--run_image", type=str, default="redis")
     parser.add_argument("--arch", type=str, default="amd64")
+    parser.add_argument(
+        "--target-platform",
+        type=str,
+        default=None,
+        help="Target a specific runner by platform name (e.g. x86-aws-m7i.metal-24xl-profiler). "
+        "If not set, all runners for the given arch will pick up the work.",
+    )
     parser.add_argument("--id", type=str, default="dockerhub")
     parser.add_argument("--mnt_point", type=str, default="")
     parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
