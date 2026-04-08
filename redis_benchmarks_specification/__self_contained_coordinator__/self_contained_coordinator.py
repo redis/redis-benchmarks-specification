@@ -125,6 +125,12 @@ from redis_benchmarks_specification.__self_contained_coordinator__.parca_agent i
     update_parca_agent_labels,
     extract_test_labels_from_benchmark_config,
 )
+from redis_benchmarks_specification.__self_contained_coordinator__.topdown_profiler import (
+    check_topdown_available,
+    check_perf_event_paranoid,
+    TopdownCollector,
+    extract_topdown_labels_from_benchmark,
+)
 
 # Global variables for HTTP server control
 _reset_queue_requested = False
@@ -136,6 +142,10 @@ _flush_timestamp = None
 # Global variables for parca-agent integration
 _parca_agent_available = False
 _parca_startup_labels = {}
+
+# Global variables for topdown-profiler integration
+_topdown_available = False
+_topdown_startup_labels = {}
 
 # Global variables for heartbeat
 _heartbeat_status = "idle"  # idle, running, waiting
@@ -821,6 +831,21 @@ def main():
             "coordinator_version": project_version,
         }
         logging.info(f"Parca-agent startup labels: {_parca_startup_labels}")
+
+    # Check topdown-profiler availability and set startup labels
+    global _topdown_available, _topdown_startup_labels
+    _topdown_available = check_topdown_available()
+    if _topdown_available:
+        if not check_perf_event_paranoid():
+            logging.warning(
+                "topdown-profiler: perf_event_paranoid too restrictive - collection may fail"
+            )
+        _topdown_startup_labels = {
+            "platform": running_platform,
+            "arch": arch,
+            "coordinator_version": project_version,
+        }
+        logging.info(f"topdown-profiler startup labels: {_topdown_startup_labels}")
 
     # Start heartbeat thread — writes runner state to Redis every 30s
     heartbeat_thread = _start_heartbeat(
@@ -1516,18 +1541,32 @@ def process_self_contained_coordinator_stream(
 
                             # Update parca-agent labels if available
                             global _parca_agent_available, _parca_startup_labels
+                            test_labels = extract_test_labels_from_benchmark_config(
+                                benchmark_config
+                            )
+                            # Override topology with current iteration's topology
+                            test_labels["topology"] = topology_spec_name
+
                             if _parca_agent_available:
-                                test_labels = extract_test_labels_from_benchmark_config(
-                                    benchmark_config
-                                )
-                                # Override topology with current iteration's topology
-                                test_labels["topology"] = topology_spec_name
                                 all_labels = {
                                     **_parca_startup_labels,
                                     **parca_build_labels,
                                     **test_labels,
                                 }
                                 update_parca_agent_labels(all_labels)
+
+                            # Prepare topdown-profiler collector if available
+                            global _topdown_available, _topdown_startup_labels
+                            topdown_collector = None
+                            if _topdown_available:
+                                topdown_labels = extract_topdown_labels_from_benchmark(
+                                    _topdown_startup_labels,
+                                    parca_build_labels,
+                                    test_labels,
+                                )
+                                logging.info(
+                                    f"topdown-profiler: prepared labels for {test_name}/{topology_spec_name}"
+                                )
 
                             # Track topology-level: move from pending to running
                             topo_tracking_entry = f"{test_name}::{topology_spec_name}"
@@ -1818,6 +1857,26 @@ def process_self_contained_coordinator_stream(
                                     profiler_call_graph_mode,
                                 )
 
+                                # Start topdown-profiler collection alongside benchmark
+                                if _topdown_available and topdown_labels:
+                                    # Extract expected benchmark duration for topdown collection
+                                    topdown_duration = 30  # default
+                                    td_match = re.search(
+                                        r"--?test-time[=\s]+(\d+)",
+                                        benchmark_command_str,
+                                    )
+                                    if td_match:
+                                        topdown_duration = min(
+                                            int(td_match.group(1)), 30
+                                        )
+                                    topdown_collector = TopdownCollector(
+                                        process_name=executable.split("/")[-1],
+                                        duration_seconds=topdown_duration,
+                                        level=2,
+                                        labels=topdown_labels,
+                                    )
+                                    topdown_collector.start()
+
                                 logging.info(
                                     "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
                                         client_container_image,
@@ -1952,6 +2011,22 @@ def process_self_contained_coordinator_stream(
                                 logging.info(
                                     "output {}".format(client_container_stdout)
                                 )
+
+                                # Wait for topdown-profiler if it was started
+                                if topdown_collector is not None:
+                                    topdown_run_id = topdown_collector.wait_for_completion(
+                                        timeout=60
+                                    )
+                                    if topdown_run_id:
+                                        logging.info(
+                                            f"topdown-profiler: collection complete, "
+                                            f"run_id={topdown_run_id}"
+                                        )
+                                    else:
+                                        logging.warning(
+                                            "topdown-profiler: collection failed or timed out"
+                                        )
+                                    topdown_collector = None
 
                                 (
                                     _,
