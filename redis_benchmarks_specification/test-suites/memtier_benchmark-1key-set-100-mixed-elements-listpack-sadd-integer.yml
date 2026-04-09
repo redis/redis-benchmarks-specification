@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-1key-set-100-mixed-elements-listpack-sadd-integer
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
+  contains 100 mixed elements (50 integers + 50 strings) in listpack encoding, and
+  we issue SADD with integer values that are already members (constant set size).
+  This exercises the lpFind integer comparison path during SADD duplicate check.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"SADD" "set:mixed100" "1001" "1002" "1003" "1004" "1005" "1006" "1007" "1008"
+    "1009" "1010" "1011" "1012" "1013" "1014" "1015" "1016" "1017" "1018" "1019"
+    "1020" "1021" "1022" "1023" "1024" "1025" "1026" "1027" "1028" "1029" "1030"
+    "1031" "1032" "1033" "1034" "1035" "1036" "1037" "1038" "1039" "1040" "1041"
+    "1042" "1043" "1044" "1045" "1046" "1047" "1048" "1049" "1050"
+    "abcdefghij" "bcdefghijk" "cdefghijkl" "defghijklm" "efghijklmn"
+    "fghijklmno" "ghijklmnop" "hijklmnopq" "ijklmnopqr" "jklmnopqrs"
+    "klmnopqrst" "lmnopqrstu" "mnopqrstuv" "nopqrstuvw" "opqrstuvwx"
+    "pqrstuvwxy" "qrstuvwxyz" "rstuvwxyza" "stuvwxyzab" "tuvwxyzabc"
+    "uvwxyzabcd" "vwxyzabcde" "wxyzabcdef" "xyzabcdefg" "yzabcdefgh"
+    "zabcdefghi" "aabbccddee" "bbccddeeff" "ccddeeffgg" "ddeeffgghh"
+    "eeffgghhii" "ffgghhiijj" "gghhiijjkk" "hhiijjkkll" "iijjkkllmm"
+    "jjkkllmmnn" "kkllmmnnoo" "llmmnnoopq" "mmnnooppqr" "nnooppqqrs"
+    "ooppqqrrss" "ppqqrrsstt" "qqrrssttuv" "rrssttuuvw" "ssttuuvvwx"
+    "ttuuvvwwxy" "uuvvwwxxyz" "vvwwxxyyzz" "wwxxyyzzzz" "xxyyzzzaaa"'
+  dataset_name: 1key-set-100-mixed-elements-listpack
+  dataset_description: This dataset contains 1 set key with 100 mixed elements (50
+    integers + 50 strings) in listpack encoding. The mix of types forces listpack
+    encoding (not intset).
+tested-groups:
+- set
+tested-commands:
+- sadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SADD set:mixed100 __key__" --key-minimum 1001 --key-maximum
+    1050 --key-prefix "" --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 30
