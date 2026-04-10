@@ -1,0 +1,56 @@
+version: 0.4
+name: memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-04-16cpu
+description: |
+  Replication full-sync benchmark with parallel-fullsync-streams=4 on a
+  topology that gives the master 34 CPUs (oss-standalone-01-replicas-16-io-threads).
+  PoC variant for the multi-threaded full sync work — see
+  approaches/multi-threaded-full-sync.md in the agent workspace.
+
+  Why this variant: the canonical oss-standalone-01-replicas topology
+  only requests 2 CPUs for the master, which oversubscribes the 4
+  encoder pthreads spawned by parallel-fullsync-streams=4 (4 threads
+  on 2 cores -> context-switch overhead -> slower than legacy). To
+  measure the real upside of the multi-threaded encoder we need a
+  topology that gives the master enough cores. The 16-io-threads
+  topology requests 34 CPUs, plenty for 4 encoder threads + the
+  fork-child main thread + the parent process.
+dbconfig:
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    parallel-fullsync-streams: '4'
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      20000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 25g
+  dataset_name: 20Mkeys-string-1KiB-size
+  dataset_description: |
+    20 million string keys, each with a 1024-byte value (~20 GB dataset).
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas-16-io-threads
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" --pipeline 10 --distinct-client-seed --ratio 0:1
+    --key-pattern R:R --key-minimum=1 --key-maximum 20000000 --test-time 30 -c 50
+    -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+tested-groups:
+- string
+priority: 17
