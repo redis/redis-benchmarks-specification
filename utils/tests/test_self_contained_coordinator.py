@@ -153,9 +153,13 @@ def test_preload_before_replica_default_off():
             dbconfig = merged
         if dbconfig.get("preload_before_replica") is True:
             enabled_specs.append(os.path.basename(path))
-    assert enabled_specs == [
-        "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml"
-    ], f"Unexpected specs with preload_before_replica enabled: {enabled_specs}"
+    expected = {
+        "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml",
+        "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-no-rdbcomp.yml",
+    }
+    assert (
+        set(enabled_specs) == expected
+    ), f"Unexpected specs with preload_before_replica enabled: {enabled_specs}"
 
 
 def test_extract_client_cpu_limit():

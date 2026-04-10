@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-no-rdbcomp
+description: |
+  Replication full-sync benchmark with rdbcompression DISABLED.
+
+  Identical to memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only
+  except `rdbcompression no`. Used to validate the perf-based hypothesis that
+  ~50% of master fork-child cycles during full sync are spent in lzf_compress.
+  If the hypothesis holds, the sync time on this variant should drop from
+  ~70 s to ~35-40 s on a 24xl-class x86 box.
+
+  Phase 0 Quick Win A — see approaches/multi-threaded-full-sync.md.
+dbconfig:
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    rdbcompression: 'no'
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      20000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 25g
+  dataset_name: 20Mkeys-string-1KiB-size
+  dataset_description: |
+    20 million string keys, each with a 1024-byte value (~20 GB dataset).
+    Sized to make replication full-sync take long enough (>30s) to measure
+    multi-threaded sync improvements meaningfully.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" --pipeline 10 --distinct-client-seed --ratio 0:1
+    --key-pattern R:R --key-minimum=1 --key-maximum 20000000 --test-time 30 -c 50
+    -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+tested-groups:
+- string
+priority: 17
