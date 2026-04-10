@@ -1752,12 +1752,13 @@ def process_self_contained_coordinator_stream(
                                 # Capture initial sync_full count from master so we can
                                 # compute the delta after the benchmark runs. Write-heavy
                                 # benchmarks with a small replication backlog will trigger
-                                # additional full syncs at runtime.
+                                # additional full syncs at runtime. Note: sync_full lives
+                                # in the "stats" section, not "replication".
                                 sync_full_initial = 0
                                 try:
-                                    repl_info = r.info("replication")
+                                    stats_info = r.info("stats")
                                     sync_full_initial = int(
-                                        repl_info.get("sync_full", 0)
+                                        stats_info.get("sync_full", 0)
                                     )
                                 except Exception:
                                     pass
@@ -2246,12 +2247,13 @@ def process_self_contained_coordinator_stream(
                                 dataset_load_duration_seconds = 0
                                 # Capture sync_full delta during the benchmark window.
                                 # Write-heavy benchmarks with small replication backlogs
-                                # may trigger multiple full syncs at runtime.
+                                # may trigger multiple full syncs at runtime. Note:
+                                # sync_full is in the "stats" section, not "replication".
                                 sync_full_during_benchmark = 0
                                 try:
-                                    repl_info_after = r.info("replication")
+                                    stats_info_after = r.info("stats")
                                     sync_full_after = int(
-                                        repl_info_after.get("sync_full", 0)
+                                        stats_info_after.get("sync_full", 0)
                                     )
                                     sync_full_during_benchmark = (
                                         sync_full_after - sync_full_initial

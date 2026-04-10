@@ -459,13 +459,14 @@ def test_spin_up_redis_replicas():
 
         # Validate that the master exposes sync_full counter
         # (used by the coordinator's ReplicationFullSyncCountDuringBench metric).
-        # Note: must query the replication section explicitly.
-        primary_repl_info = r.info("replication")
+        # Note: sync_full is in the "stats" section (server.stat_sync_full),
+        # not the replication section.
+        primary_stats = r.info("stats")
         assert (
-            "sync_full" in primary_repl_info
-        ), "Master replication info should expose sync_full counter"
+            "sync_full" in primary_stats
+        ), "Master stats info should expose sync_full counter"
         assert (
-            int(primary_repl_info["sync_full"]) >= 1
+            int(primary_stats["sync_full"]) >= 1
         ), "Master should report at least 1 full sync after replica connect"
 
         # Shutdown replicas then primary
