@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-08-16cpu
+description: |
+  Replication full-sync benchmark with parallel-fullsync-streams=8 on a
+  topology that gives the master 34 CPUs (oss-standalone-01-replicas-16-io-threads).
+  Phase 0+1 PoC variant — see approaches/multi-threaded-full-sync.md.
+
+  On the local 14-core dev box, 8 streams was the sweet spot
+  (3.4x speedup vs legacy on 1M x 1KiB). On the bare-metal 96-core
+  box this should scale further.
+dbconfig:
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    parallel-fullsync-streams: '8'
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      20000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 25g
+  dataset_name: 20Mkeys-string-1KiB-size
+  dataset_description: |
+    20 million string keys, each with a 1024-byte value (~20 GB dataset).
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas-16-io-threads
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" --pipeline 10 --distinct-client-seed --ratio 0:1
+    --key-pattern R:R --key-minimum=1 --key-maximum 20000000 --test-time 30 -c 50
+    -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+tested-groups:
+- string
+priority: 17
