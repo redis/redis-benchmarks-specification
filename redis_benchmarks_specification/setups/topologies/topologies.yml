@@ -117,6 +117,26 @@ spec:
       requests:
         cpus: "3"
         memory: "30g"
+  - name: oss-standalone-01-replicas-02-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+    redis_arguments: --io-threads 2 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "6"
+        memory: "20g"
+  - name: oss-standalone-01-replicas-04-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+    redis_arguments: --io-threads 4 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "10"
+        memory: "20g"
   - name: oss-standalone-01-replicas-08-io-threads
     type: oss-standalone
     redis_topology:
@@ -126,6 +146,16 @@ spec:
     resources:
       requests:
         cpus: "18"
+        memory: "20g"
+  - name: oss-standalone-01-replicas-16-io-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+    redis_arguments: --io-threads 16 --io-threads-do-reads yes
+    resources:
+      requests:
+        cpus: "34"
         memory: "20g"
 
   - name: oss-cluster-3-primaries
