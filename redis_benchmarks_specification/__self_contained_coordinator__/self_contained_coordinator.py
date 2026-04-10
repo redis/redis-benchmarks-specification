@@ -1727,6 +1727,7 @@ def process_self_contained_coordinator_stream(
                                         replica_conns,
                                         replica_pids,
                                         current_cpu_pos,
+                                        replica_sync_times_seconds,
                                     ) = spin_up_redis_replicas(
                                         replica_count,
                                         redis_proc_start_port,
@@ -1745,6 +1746,8 @@ def process_self_contained_coordinator_stream(
                                     )
                                     redis_conns.extend(replica_conns)
                                     reset_commandstats(replica_conns)
+                                else:
+                                    replica_sync_times_seconds = []
                                 ceil_client_cpu_limit = extract_client_cpu_limit(
                                     benchmark_config
                                 )
@@ -2228,6 +2231,29 @@ def process_self_contained_coordinator_stream(
                                         )
 
                                 dataset_load_duration_seconds = 0
+                                # Inject replication full-sync time as a benchmark metric.
+                                # If the topology has replicas, sync time was measured by
+                                # spin_up_redis_replicas() in seconds. Reported as the max
+                                # across all replicas (slowest replica gates the topology).
+                                if replica_sync_times_seconds and isinstance(results_dict, dict):
+                                    max_sync = max(replica_sync_times_seconds)
+                                    try:
+                                        if "ALL STATS" not in results_dict:
+                                            results_dict["ALL STATS"] = {}
+                                        if "Totals" not in results_dict["ALL STATS"]:
+                                            results_dict["ALL STATS"]["Totals"] = {}
+                                        results_dict["ALL STATS"]["Totals"][
+                                            "ReplicationFullSyncSeconds"
+                                        ] = max_sync
+                                        logging.info(
+                                            "Injected ReplicationFullSyncSeconds={:.3f}s into results_dict (max across {} replica(s))".format(
+                                                max_sync, len(replica_sync_times_seconds)
+                                            )
+                                        )
+                                    except Exception as e:
+                                        logging.warning(
+                                            "Failed to inject sync time metric: {}".format(e)
+                                        )
                                 try:
                                     exporter_datasink_common(
                                         benchmark_config,

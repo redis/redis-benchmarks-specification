@@ -1,0 +1,58 @@
+version: 0.4
+name: memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only
+description: |
+  Replication full-sync benchmark. Preloads 20M keys with 1KiB values
+  (~20 GB dataset), then exercises a replica setup that triggers a full
+  sync from primary to replica. The metric of interest is the time the
+  coordinator records for "replication link is up" — this is the
+  end-to-end full sync time.
+
+  Used to benchmark the multi-threaded full sync (parallel replication)
+  Phase 0 PoC. Runs ONLY on replica topologies — no standalone variant.
+
+  Steady-state benchmark is intentionally short (30s) — the point of this
+  test is the SYNC time during topology setup, not the steady-state ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      20000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 25g
+  dataset_name: 20Mkeys-string-1KiB-size
+  dataset_description: |
+    20 million string keys, each with a 1024-byte value (~20 GB dataset).
+    Sized to make replication full-sync take long enough (>30s) to measure
+    multi-threaded sync improvements meaningfully.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas
+- oss-standalone-01-replicas-02-io-threads
+- oss-standalone-01-replicas-04-io-threads
+- oss-standalone-01-replicas-08-io-threads
+- oss-standalone-01-replicas-16-io-threads
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" --pipeline 10 --distinct-client-seed --ratio 0:1
+    --key-pattern R:R --key-minimum=1 --key-maximum 20000000 --test-time 30 -c 50
+    -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+tested-groups:
+- string
+priority: 17

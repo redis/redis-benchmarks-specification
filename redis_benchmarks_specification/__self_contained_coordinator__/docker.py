@@ -124,16 +124,21 @@ def spin_up_redis_replicas(
     redis_arguments,
     password,
     start_redis_container_fn,
-    replication_sync_timeout=60,
+    replication_sync_timeout=600,
     server_name="redis",
 ):
     """Start replica Redis containers and configure replication to the primary.
 
     Returns:
-        tuple: (replica_conns, replica_pids, current_cpu_pos)
+        tuple: (replica_conns, replica_pids, current_cpu_pos, sync_times_seconds)
+
+    sync_times_seconds is a list of float seconds, one per replica, measuring
+    the wall-clock time from container start to master_link_status=up.
+    Use this as a benchmark metric for full-sync performance testing.
     """
     replica_conns = []
     replica_pids = []
+    sync_times_seconds = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
         # Append --replicaof and --masterauth to redis_arguments so the replica
@@ -180,27 +185,36 @@ def spin_up_redis_replicas(
         logging.info(
             "Replica {} started with --replicaof localhost {}".format(i, primary_port)
         )
-        # Wait for replication link to come up
-        elapsed = 0
-        poll_interval = 1
-        while elapsed < replication_sync_timeout:
+        # Wait for replication link to come up. Use monotonic clock for
+        # high-resolution measurement of full-sync time.
+        sync_start = time.monotonic()
+        poll_interval = 0.1  # 100ms — fast enough to be accurate, slow enough not to thrash
+        sync_seconds = None
+        while True:
+            elapsed = time.monotonic() - sync_start
+            if elapsed >= replication_sync_timeout:
+                break
             repl_info = replica_r.info("replication")
             if repl_info.get("master_link_status") == "up":
+                sync_seconds = elapsed
                 logging.info(
-                    "Replica {} replication link is up (took {}s)".format(i, elapsed)
+                    "Replica {} replication link is up (full sync took {:.3f}s)".format(
+                        i, sync_seconds
+                    )
                 )
                 break
             time.sleep(poll_interval)
-            elapsed += poll_interval
-        else:
+        if sync_seconds is None:
             logging.warning(
                 "Replica {} replication link did not come up within {}s".format(
                     i, replication_sync_timeout
                 )
             )
+            sync_seconds = float(replication_sync_timeout)
+        sync_times_seconds.append(sync_seconds)
         replica_info = replica_r.info()
         replica_pid = replica_info.get("process_id")
         if replica_pid is not None:
             replica_pids.append(replica_pid)
         replica_conns.append(replica_r)
-    return replica_conns, replica_pids, current_cpu_pos
+    return replica_conns, replica_pids, current_cpu_pos, sync_times_seconds
