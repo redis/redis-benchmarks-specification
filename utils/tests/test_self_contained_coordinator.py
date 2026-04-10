@@ -96,6 +96,68 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
+def test_preload_before_replica_flag_in_20m_spec():
+    """The 20M-keys replica-only test spec must set preload_before_replica=true.
+
+    Without this flag the coordinator spins up replicas BEFORE preload, which
+    means the full sync transfers an empty primary (sync time ~0s) and the
+    20 GB dataset propagates via the replication stream instead. The whole
+    point of this benchmark is to measure full-sync time on the loaded
+    dataset, so the flag must be present.
+    """
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+    assert (
+        benchmark_config["dbconfig"].get("preload_before_replica") is True
+    ), "20M replica-only spec must set preload_before_replica: true"
+    # Sanity-check that the spec has a preload_tool — the flag is meaningless
+    # without one.
+    assert "preload_tool" in benchmark_config["dbconfig"]
+    # And that it ONLY targets replica topologies
+    for topology in benchmark_config["redis-topologies"]:
+        assert (
+            "replicas" in topology
+        ), f"20M replica-only spec must use only replica topologies, got {topology}"
+
+
+def test_preload_before_replica_default_off():
+    """Existing replica test specs must not have preload_before_replica set.
+
+    This guards against accidentally enabling the new ordering for tests
+    that were tuned for the historical "preload after replica" behavior.
+    """
+    import glob
+
+    spec_files = glob.glob("./redis_benchmarks_specification/test-suites/*.yml")
+    # The only spec that should have the flag is the 20M one we just added.
+    enabled_specs = []
+    for path in spec_files:
+        with open(path, "r") as yml_file:
+            try:
+                cfg = yaml.safe_load(yml_file)
+            except yaml.YAMLError:
+                continue
+        if not isinstance(cfg, dict):
+            continue
+        dbconfig = cfg.get("dbconfig") or {}
+        if isinstance(dbconfig, list):
+            # Some legacy specs use a list-of-dicts format for dbconfig
+            merged = {}
+            for entry in dbconfig:
+                if isinstance(entry, dict):
+                    merged.update(entry)
+            dbconfig = merged
+        if dbconfig.get("preload_before_replica") is True:
+            enabled_specs.append(os.path.basename(path))
+    assert enabled_specs == [
+        "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml"
+    ], f"Unexpected specs with preload_before_replica enabled: {enabled_specs}"
+
+
 def test_extract_client_cpu_limit():
     with open(
         "./utils/tests/test_data/test-suites/redis-benchmark-full-suite-1Mkeys-100B.yml",

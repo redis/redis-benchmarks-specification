@@ -1718,6 +1718,58 @@ def process_self_contained_coordinator_stream(
                                         f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
                                     )
                                 redis_pids.append(first_redis_pid)
+
+                                # Allocate the client cpuset up front so that
+                                # preload can optionally run BEFORE the replica
+                                # spin-up (see preload_before_replica below).
+                                ceil_client_cpu_limit = extract_client_cpu_limit(
+                                    benchmark_config
+                                )
+                                (
+                                    client_cpuset_cpus,
+                                    current_cpu_pos,
+                                ) = generate_cpuset_cpus(
+                                    ceil_client_cpu_limit, current_cpu_pos
+                                )
+                                client_mnt_point = "/mnt/client/"
+                                benchmark_tool_workdir = client_mnt_point
+
+                                # When preload_before_replica is set, run the
+                                # preload BEFORE spinning up replicas so that
+                                # the full sync from master to replica transfers
+                                # the loaded dataset (rather than syncing an
+                                # empty primary and propagating writes via the
+                                # replication stream). Required for benchmarks
+                                # that measure full-sync performance.
+                                preload_before_replica = bool(
+                                    benchmark_config["dbconfig"].get(
+                                        "preload_before_replica", False
+                                    )
+                                )
+                                preload_already_done = False
+                                if (
+                                    preload_before_replica
+                                    and replica_count > 0
+                                    and "preload_tool" in benchmark_config["dbconfig"]
+                                ):
+                                    logging.info(
+                                        "preload_before_replica=True: preloading "
+                                        "dataset before spinning up replicas so the "
+                                        "full sync transfers the loaded data"
+                                    )
+                                    data_prepopulation_step(
+                                        benchmark_config,
+                                        benchmark_tool_workdir,
+                                        client_cpuset_cpus,
+                                        docker_client,
+                                        git_hash,
+                                        redis_proc_start_port,
+                                        temporary_dir,
+                                        test_name,
+                                        redis_password,
+                                    )
+                                    preload_already_done = True
+
                                 if replica_count > 0:
                                     logging.info(
                                         "Starting {} replica(s) for topology {}".format(
@@ -1762,19 +1814,11 @@ def process_self_contained_coordinator_stream(
                                     )
                                 except Exception:
                                     pass
-                                ceil_client_cpu_limit = extract_client_cpu_limit(
-                                    benchmark_config
-                                )
-                                (
-                                    client_cpuset_cpus,
-                                    current_cpu_pos,
-                                ) = generate_cpuset_cpus(
-                                    ceil_client_cpu_limit, current_cpu_pos
-                                )
-                                client_mnt_point = "/mnt/client/"
-                                benchmark_tool_workdir = client_mnt_point
 
-                                if "preload_tool" in benchmark_config["dbconfig"]:
+                                if (
+                                    not preload_already_done
+                                    and "preload_tool" in benchmark_config["dbconfig"]
+                                ):
                                     data_prepopulation_step(
                                         benchmark_config,
                                         benchmark_tool_workdir,

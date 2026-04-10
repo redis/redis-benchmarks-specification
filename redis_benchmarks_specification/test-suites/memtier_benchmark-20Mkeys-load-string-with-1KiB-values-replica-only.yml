@@ -13,6 +13,12 @@ description: |
   Steady-state benchmark is intentionally short (30s) — the point of this
   test is the SYNC time during topology setup, not the steady-state ops/sec.
 dbconfig:
+  # Run preload BEFORE replicas spin up so the master->replica full sync
+  # transfers the 20 GB dataset (rather than syncing an empty primary
+  # and propagating writes via the replication stream). This is what
+  # makes ReplicationFullSyncSeconds a meaningful baseline metric for
+  # the multi-threaded full sync PoC.
+  preload_before_replica: true
   configuration-parameters:
     save: '""'
     maxmemory-policy: noeviction
