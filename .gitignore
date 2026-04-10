@@ -233,3 +233,6 @@ fabric.properties
 
 # perf related
 *.out
+
+# claude code worktree (transient)
+.claude/worktrees/
