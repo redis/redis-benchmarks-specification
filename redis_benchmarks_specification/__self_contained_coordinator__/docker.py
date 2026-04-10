@@ -9,6 +9,38 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 )
 
 
+def inject_replication_sync_metrics(
+    results_dict, replica_sync_times_seconds, sync_full_during_benchmark
+):
+    """Inject replication full-sync metrics into a memtier-style results_dict.
+
+    Adds two metrics under results_dict["ALL STATS"]["Totals"]:
+    - ReplicationFullSyncSeconds: max sync time across replicas (initial topology setup)
+    - ReplicationFullSyncCountDuringBench: count of full syncs during benchmark window
+
+    Returns True on success, False on failure. Safe to call with None or
+    non-dict results_dict (returns False).
+    """
+    if not isinstance(results_dict, dict):
+        return False
+    try:
+        if "ALL STATS" not in results_dict:
+            results_dict["ALL STATS"] = {}
+        if "Totals" not in results_dict["ALL STATS"]:
+            results_dict["ALL STATS"]["Totals"] = {}
+        if replica_sync_times_seconds:
+            results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] = max(
+                replica_sync_times_seconds
+            )
+        results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] = (
+            int(sync_full_during_benchmark)
+        )
+        return True
+    except Exception as e:
+        logging.warning("Failed to inject sync metrics: {}".format(e))
+        return False
+
+
 def generate_standalone_redis_server_args(
     binary,
     port,
@@ -188,7 +220,9 @@ def spin_up_redis_replicas(
         # Wait for replication link to come up. Use monotonic clock for
         # high-resolution measurement of full-sync time.
         sync_start = time.monotonic()
-        poll_interval = 0.1  # 100ms — fast enough to be accurate, slow enough not to thrash
+        poll_interval = (
+            0.1  # 100ms — fast enough to be accurate, slow enough not to thrash
+        )
         sync_seconds = None
         while True:
             elapsed = time.monotonic() - sync_start

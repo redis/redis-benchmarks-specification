@@ -611,6 +611,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    inject_replication_sync_metrics,
     spin_up_redis_replicas,
 )
 
@@ -2260,38 +2261,23 @@ def process_self_contained_coordinator_stream(
 
                                 # Inject replication full-sync metrics into results_dict
                                 # so they get pushed to TimeSeries alongside ops/sec.
-                                if isinstance(results_dict, dict):
-                                    try:
-                                        if "ALL STATS" not in results_dict:
-                                            results_dict["ALL STATS"] = {}
-                                        if "Totals" not in results_dict["ALL STATS"]:
-                                            results_dict["ALL STATS"]["Totals"] = {}
-                                        # Sync time from initial topology setup (slowest replica)
-                                        if replica_sync_times_seconds:
-                                            max_sync = max(replica_sync_times_seconds)
-                                            results_dict["ALL STATS"]["Totals"][
-                                                "ReplicationFullSyncSeconds"
-                                            ] = max_sync
-                                            logging.info(
-                                                "Injected ReplicationFullSyncSeconds={:.3f}s ({} replica(s))".format(
-                                                    max_sync, len(replica_sync_times_seconds)
-                                                )
+                                if inject_replication_sync_metrics(
+                                    results_dict,
+                                    replica_sync_times_seconds,
+                                    sync_full_during_benchmark,
+                                ):
+                                    if replica_sync_times_seconds:
+                                        logging.info(
+                                            "Injected ReplicationFullSyncSeconds={:.3f}s ({} replica(s))".format(
+                                                max(replica_sync_times_seconds),
+                                                len(replica_sync_times_seconds),
                                             )
-                                        # Number of full syncs that happened during the
-                                        # benchmark itself (incidental syncs from backlog
-                                        # overflow on write-heavy workloads).
-                                        results_dict["ALL STATS"]["Totals"][
-                                            "ReplicationFullSyncCountDuringBench"
-                                        ] = sync_full_during_benchmark
-                                        if sync_full_during_benchmark > 0:
-                                            logging.info(
-                                                "Injected ReplicationFullSyncCountDuringBench={} (backlog overflow during write workload)".format(
-                                                    sync_full_during_benchmark
-                                                )
+                                        )
+                                    if sync_full_during_benchmark > 0:
+                                        logging.info(
+                                            "Injected ReplicationFullSyncCountDuringBench={} (backlog overflow during write workload)".format(
+                                                sync_full_during_benchmark
                                             )
-                                    except Exception as e:
-                                        logging.warning(
-                                            "Failed to inject sync metrics: {}".format(e)
                                         )
                                 try:
                                     exporter_datasink_common(

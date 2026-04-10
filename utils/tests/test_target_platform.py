@@ -28,9 +28,7 @@ def test_cli_args_target_platform_set():
 
     parser = argparse.ArgumentParser()
     spec_cli_args(parser)
-    args = parser.parse_args(
-        ["--target-platform", "x86-aws-m7i.metal-24xl-profiler"]
-    )
+    args = parser.parse_args(["--target-platform", "x86-aws-m7i.metal-24xl-profiler"])
     assert args.target_platform == "x86-aws-m7i.metal-24xl-profiler"
 
 

@@ -35,8 +35,65 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    inject_replication_sync_metrics,
     spin_up_redis_replicas,
 )
+
+
+def test_inject_replication_sync_metrics_with_replicas():
+    """Both ReplicationFullSyncSeconds and ReplicationFullSyncCountDuringBench
+    should be injected when replicas exist and sync times are non-empty."""
+    results = {"ALL STATS": {"Totals": {"Ops/sec": 100000.0}}}
+    ok = inject_replication_sync_metrics(results, [3.5, 4.2, 2.1], 2)
+    assert ok is True
+    totals = results["ALL STATS"]["Totals"]
+    # Max sync time across replicas (slowest replica gates the topology)
+    assert totals["ReplicationFullSyncSeconds"] == 4.2
+    assert totals["ReplicationFullSyncCountDuringBench"] == 2
+    # Existing metrics not clobbered
+    assert totals["Ops/sec"] == 100000.0
+
+
+def test_inject_replication_sync_metrics_no_replicas():
+    """When no replicas were spun up, ReplicationFullSyncSeconds is omitted
+    but ReplicationFullSyncCountDuringBench is still set to 0."""
+    results = {"ALL STATS": {"Totals": {"Ops/sec": 50000.0}}}
+    ok = inject_replication_sync_metrics(results, [], 0)
+    assert ok is True
+    totals = results["ALL STATS"]["Totals"]
+    assert "ReplicationFullSyncSeconds" not in totals
+    assert totals["ReplicationFullSyncCountDuringBench"] == 0
+    assert totals["Ops/sec"] == 50000.0
+
+
+def test_inject_replication_sync_metrics_creates_missing_keys():
+    """The function should create ALL STATS / Totals if they don't exist."""
+    results = {}
+    ok = inject_replication_sync_metrics(results, [1.5], 1)
+    assert ok is True
+    assert "ALL STATS" in results
+    assert "Totals" in results["ALL STATS"]
+    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] == 1.5
+    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] == 1
+
+
+def test_inject_replication_sync_metrics_invalid_input():
+    """Non-dict results should be rejected gracefully (return False)."""
+    assert inject_replication_sync_metrics(None, [1.0], 0) is False
+    assert inject_replication_sync_metrics("not a dict", [1.0], 0) is False
+    assert inject_replication_sync_metrics([], [1.0], 0) is False
+
+
+def test_inject_replication_sync_metrics_count_only_during_bench():
+    """A backlog overflow during a write-heavy benchmark on an existing
+    replica should bump ReplicationFullSyncCountDuringBench even when the
+    initial sync time was already captured."""
+    results = {"ALL STATS": {"Totals": {}}}
+    ok = inject_replication_sync_metrics(results, [2.0], 5)
+    assert ok is True
+    totals = results["ALL STATS"]["Totals"]
+    assert totals["ReplicationFullSyncSeconds"] == 2.0
+    assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
 def test_extract_client_cpu_limit():
@@ -362,7 +419,12 @@ def test_spin_up_redis_replicas():
         r.ping()
 
         # Start 1 replica
-        replica_conns, replica_pids, current_cpu_pos = spin_up_redis_replicas(
+        (
+            replica_conns,
+            replica_pids,
+            current_cpu_pos,
+            sync_times_seconds,
+        ) = spin_up_redis_replicas(
             1,
             primary_port,
             current_cpu_pos,
@@ -384,6 +446,23 @@ def test_spin_up_redis_replicas():
 
         primary_info = r.info("replication")
         assert primary_info["connected_slaves"] == 1
+
+        # Validate the sync_times_seconds return value
+        assert isinstance(sync_times_seconds, list)
+        assert len(sync_times_seconds) == 1
+        assert isinstance(sync_times_seconds[0], float)
+        # Empty primary, sync should complete in well under 30 seconds
+        assert 0.0 <= sync_times_seconds[0] < 30.0
+        logging.info(
+            "Replica sync time captured: {:.3f}s".format(sync_times_seconds[0])
+        )
+
+        # Validate that the master exposes sync_full counter
+        # (used by the coordinator's ReplicationFullSyncCountDuringBench metric)
+        assert "sync_full" in primary_info
+        assert (
+            int(primary_info["sync_full"]) >= 1
+        ), "Master should report at least 1 full sync after replica connect"
 
         # Shutdown replicas then primary
         for rc in replica_conns:
