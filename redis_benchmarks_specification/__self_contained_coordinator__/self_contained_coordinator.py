@@ -1741,6 +1741,7 @@ def process_self_contained_coordinator_stream(
                                         redis_arguments,
                                         redis_password,
                                         start_redis_container,
+                                        server_name=server_name,
                                     )
                                     redis_conns.extend(replica_conns)
                                     reset_commandstats(replica_conns)

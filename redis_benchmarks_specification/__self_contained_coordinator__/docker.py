@@ -125,6 +125,7 @@ def spin_up_redis_replicas(
     password,
     start_redis_container_fn,
     replication_sync_timeout=60,
+    server_name="redis",
 ):
     """Start replica Redis containers and configure replication to the primary.
 
@@ -149,7 +150,7 @@ def spin_up_redis_replicas(
             " --logfile replica-port-{}-redis.log"
         ).format(replica_port, replica_port, replica_port)
         command = generate_standalone_redis_server_args(
-            "{}redis-server".format(mnt_point),
+            "{}{}-server".format(mnt_point, server_name),
             replica_port,
             mnt_point,
             redis_configuration_parameters,
