@@ -940,7 +940,11 @@ def admin_skip_builders_command(conn, args):
     NOT on the build events stream used by runners.
     """
     # Use --builder-group if provided, otherwise default to the standard CG
-    builder_group = args.builder_group if hasattr(args, "builder_group") and args.builder_group else None
+    builder_group = (
+        args.builder_group
+        if hasattr(args, "builder_group") and args.builder_group
+        else None
+    )
     if not builder_group:
         # If no --builder-group, try --platform as a group name hint,
         # or fall back to listing all builder groups
@@ -969,10 +973,14 @@ def admin_skip_builders_command(conn, args):
             pending = group.get("pending", 0)
             lag = group.get("lag", 0)
             consumers = group.get("consumers", 0)
-            print(f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})")
+            print(
+                f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
+            )
         print()
         print("Example:")
-        print("  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64")
+        print(
+            "  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64"
+        )
         return
 
     matched = False
@@ -1047,7 +1055,11 @@ def admin_reset_builders_command(conn, args):
     Use when a builder pool is completely stuck and skip-builders isn't enough.
     This is equivalent to restarting the builder process from scratch.
     """
-    builder_group = args.builder_group if hasattr(args, "builder_group") and args.builder_group else None
+    builder_group = (
+        args.builder_group
+        if hasattr(args, "builder_group") and args.builder_group
+        else None
+    )
     if not builder_group:
         builder_group = args.platform if args.platform else None
 
@@ -1074,10 +1086,14 @@ def admin_reset_builders_command(conn, args):
             pending = group.get("pending", 0)
             lag = group.get("lag", 0)
             consumers = group.get("consumers", 0)
-            print(f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})")
+            print(
+                f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
+            )
         print()
         print("Example:")
-        print("  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64")
+        print(
+            "  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64"
+        )
         return
 
     matched = False
@@ -1098,7 +1114,9 @@ def admin_reset_builders_command(conn, args):
         print(f"\nResetting consumer group for builder: {group_name}")
         print(f"  Requested by: {caller}")
         print(f"  Stream: {stream}")
-        print(f"  Current state: {consumers_count} consumers, {pending_count} pending, {lag} lag")
+        print(
+            f"  Current state: {consumers_count} consumers, {pending_count} pending, {lag} lag"
+        )
 
         # Destroy and recreate
         try:
@@ -1598,8 +1616,12 @@ def admin_command_logic(args, project_name, project_version):
         print("  cancel    Flush pending tests for a specific benchmark run")
         print("  skip      Skip all queued work for a runner (ACK + reset to latest)")
         print("  reset     Nuclear reset: destroy + recreate runner consumer group")
-        print("  skip-builders  Skip all queued commits for a builder pool (ACK + reset to latest)")
-        print("  reset-builders Nuclear reset: destroy + recreate builder consumer group")
+        print(
+            "  skip-builders  Skip all queued commits for a builder pool (ACK + reset to latest)"
+        )
+        print(
+            "  reset-builders Nuclear reset: destroy + recreate builder consumer group"
+        )
         print()
         print("Examples:")
         print("  --tool admin --admin-command summary")
@@ -1611,8 +1633,12 @@ def admin_command_logic(args, project_name, project_version):
         )
         print("  --tool admin --admin-command skip --platform arm-aws-m8g.metal-24xl")
         print("  --tool admin --admin-command reset --platform arm-aws-m8g.metal-24xl")
-        print("  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64")
-        print("  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64")
+        print(
+            "  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64"
+        )
+        print(
+            "  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64"
+        )
         return
 
     conn = redis.StrictRedis(

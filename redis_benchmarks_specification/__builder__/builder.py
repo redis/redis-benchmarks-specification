@@ -736,9 +736,7 @@ def builder_process_stream(
                         except Exception:
                             pass
                 except Exception as e:
-                    logging.error(
-                        f"Build failed for {git_hash}: {e}"
-                    )
+                    logging.error(f"Build failed for {git_hash}: {e}")
                     # ACK the failed message to prevent stuck-pending loop
                     try:
                         conn.xack(

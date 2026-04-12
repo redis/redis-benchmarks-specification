@@ -136,9 +136,7 @@ def create_app(conn, user, test_config=None):
                 before_sha = request_data["before"]
 
                 allowed_orgs = [
-                    o.strip()
-                    for o in BENCHMARK_TRIGGER_ORGS.split(",")
-                    if o.strip()
+                    o.strip() for o in BENCHMARK_TRIGGER_ORGS.split(",") if o.strip()
                 ]
                 allowed_branches = [
                     b.strip()
@@ -161,9 +159,7 @@ def create_app(conn, user, test_config=None):
                         skip_reasons.append(
                             f"branch '{ref}' not in allowed branches {allowed_branches}"
                         )
-                    event_type = (
-                        f"Push event skipped: {'; '.join(skip_reasons)}"
-                    )
+                    event_type = f"Push event skipped: {'; '.join(skip_reasons)}"
 
             if use_event is True:
                 if before_sha is not None:

@@ -1,10 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-config-set-get
-description: Measures throughput of CONFIG GET and CONFIG SET commands in alternation.
-  CONFIG GET reads a configuration parameter and CONFIG SET writes one, exercising
-  the config parsing and lookup hot paths. Validates optimizations in the config
-  subsystem such as sdssplitlen improvements. Preloads 1M keys to simulate a
-  realistic server state during config operations.
+description: Measures throughput of CONFIG GET and CONFIG SET commands in alternation. CONFIG GET reads a configuration parameter and CONFIG SET writes one, exercising the config parsing and lookup hot paths. Validates optimizations in the config subsystem such as sdssplitlen improvements. Preloads 1M keys to simulate a realistic server state during config operations.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -13,19 +9,16 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50"
-      "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n"
-      "allkeys" --pipeline 50'
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
   resources:
     requests:
       memory: 1g
   dataset_name: 1Mkeys-string-10B-size
-  dataset_description: This dataset contains 1 million string keys, each with a data
-    size of 10 bytes.
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
 tested-commands:
 - config
 tested-groups:
-- generic
+- server
 redis-topologies:
 - oss-standalone
 build-variants:
@@ -35,8 +28,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '--command "CONFIG GET maxmemory" --command "CONFIG SET hz 10" -c 10
-    -t 4 --hide-histogram --test-time 120'
+  arguments: --command "CONFIG GET maxmemory" --command "CONFIG SET hz 10" -c 10 -t 4 --hide-histogram --test-time 120
   resources:
     requests:
       cpus: '4'
