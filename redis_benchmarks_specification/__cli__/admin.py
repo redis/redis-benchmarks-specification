@@ -930,6 +930,202 @@ def admin_reset_command(conn, args):
     print(f"No runner found for platform: {platform_filter}")
 
 
+def admin_skip_builders_command(conn, args):
+    """Skip all pending work for a builder pool (ACK pending messages + reset to latest).
+
+    This makes the builder skip its current backlog and only pick up NEW commits.
+    The builder process itself keeps running — it just won't process old queued commits.
+
+    The builder consumer group lives on the commit stream (STREAM_KEYNAME_GH_EVENTS_COMMIT),
+    NOT on the build events stream used by runners.
+    """
+    # Use --builder-group if provided, otherwise default to the standard CG
+    builder_group = args.builder_group if hasattr(args, "builder_group") and args.builder_group else None
+    if not builder_group:
+        # If no --builder-group, try --platform as a group name hint,
+        # or fall back to listing all builder groups
+        builder_group = args.platform if args.platform else None
+
+    stream = STREAM_KEYNAME_GH_EVENTS_COMMIT
+    try:
+        groups = conn.xinfo_groups(stream)
+    except redis.exceptions.ResponseError as e:
+        print(f"  Cannot read stream {stream}: {e}")
+        return
+
+    if not groups:
+        print("  No consumer groups found on commit stream")
+        return
+
+    if not builder_group:
+        print("Error: specify which builder group to skip.")
+        print("  Use --builder-group <name> or --platform <name>")
+        print()
+        print("Available builder groups on commit stream:")
+        for group in groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            pending = group.get("pending", 0)
+            lag = group.get("lag", 0)
+            consumers = group.get("consumers", 0)
+            print(f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})")
+        print()
+        print("Example:")
+        print("  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64")
+        return
+
+    matched = False
+    for group in groups:
+        group_name = group.get("name", "")
+        if isinstance(group_name, bytes):
+            group_name = group_name.decode()
+
+        if group_name != builder_group and builder_group not in group_name:
+            continue
+
+        matched = True
+        caller = _get_caller_identity()
+        group_pending = group.get("pending", 0)
+        lag = group.get("lag", 0)
+
+        print(f"\nSkipping all work for builder group: {group_name}")
+        print(f"  Requested by: {caller}")
+        print(f"  Stream: {stream}")
+        print(f"  Current state: {group_pending} pending, {lag} lag")
+
+        # 1. Get and ACK all pending messages
+        pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 1000)
+        if pending_msgs:
+            msg_ids = []
+            for msg in pending_msgs:
+                msg_id = msg.get("message_id", b"")
+                if isinstance(msg_id, bytes):
+                    msg_id = msg_id.decode()
+                msg_ids.append(msg_id)
+
+            # ACK all pending messages
+            ack_count = conn.xack(
+                stream,
+                group_name,
+                *[m.encode() if isinstance(m, str) else m for m in msg_ids],
+            )
+            print(f"  ACK'd {ack_count} pending stream messages")
+
+            # Show what was skipped
+            for msg_id in msg_ids:
+                commit_info = _get_commit_info(conn, msg_id)
+                info_str = _short_info(commit_info)
+                print(f"    Skipped: {msg_id}  {info_str}")
+        else:
+            print(f"  No pending messages to skip")
+
+        # 2. Reset consumer group to latest
+        try:
+            conn.xgroup_setid(stream, group_name, id="$")
+            print(f"  Reset consumer group to latest (will only process new commits)")
+        except Exception as e:
+            print(f"  Error resetting group position: {e}")
+
+        print(f"  Done. Builder will pick up only NEW commits.")
+
+    if not matched:
+        print(f"No builder group matching '{builder_group}' found on stream {stream}")
+        print()
+        print("Available builder groups:")
+        for group in groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            print(f"  {group_name}")
+
+
+def admin_reset_builders_command(conn, args):
+    """Reset a builder's consumer group — nuclear option.
+
+    Deletes and recreates the builder consumer group on the commit stream.
+    Use when a builder pool is completely stuck and skip-builders isn't enough.
+    This is equivalent to restarting the builder process from scratch.
+    """
+    builder_group = args.builder_group if hasattr(args, "builder_group") and args.builder_group else None
+    if not builder_group:
+        builder_group = args.platform if args.platform else None
+
+    stream = STREAM_KEYNAME_GH_EVENTS_COMMIT
+    try:
+        groups = conn.xinfo_groups(stream)
+    except redis.exceptions.ResponseError as e:
+        print(f"  Cannot read stream {stream}: {e}")
+        return
+
+    if not groups:
+        print("  No consumer groups found on commit stream")
+        return
+
+    if not builder_group:
+        print("Error: specify which builder group to reset.")
+        print("  Use --builder-group <name> or --platform <name>")
+        print()
+        print("Available builder groups on commit stream:")
+        for group in groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            pending = group.get("pending", 0)
+            lag = group.get("lag", 0)
+            consumers = group.get("consumers", 0)
+            print(f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})")
+        print()
+        print("Example:")
+        print("  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64")
+        return
+
+    matched = False
+    for group in groups:
+        group_name = group.get("name", "")
+        if isinstance(group_name, bytes):
+            group_name = group_name.decode()
+
+        if group_name != builder_group and builder_group not in group_name:
+            continue
+
+        matched = True
+        caller = _get_caller_identity()
+        pending_count = group.get("pending", 0)
+        consumers_count = group.get("consumers", 0)
+        lag = group.get("lag", 0)
+
+        print(f"\nResetting consumer group for builder: {group_name}")
+        print(f"  Requested by: {caller}")
+        print(f"  Stream: {stream}")
+        print(f"  Current state: {consumers_count} consumers, {pending_count} pending, {lag} lag")
+
+        # Destroy and recreate
+        try:
+            conn.xgroup_destroy(stream, group_name)
+            print(f"  Destroyed consumer group: {group_name}")
+        except Exception as e:
+            print(f"  Error destroying group: {e}")
+
+        try:
+            conn.xgroup_create(stream, group_name, id="$", mkstream=True)
+            print(f"  Recreated consumer group at latest position")
+        except Exception as e:
+            print(f"  Error recreating group: {e}")
+
+        print(f"  Done. Builder will rejoin with a clean slate on next iteration.")
+
+    if not matched:
+        print(f"No builder group matching '{builder_group}' found on stream {stream}")
+        print()
+        print("Available builder groups:")
+        for group in groups:
+            group_name = group.get("name", "")
+            if isinstance(group_name, bytes):
+                group_name = group_name.decode()
+            print(f"  {group_name}")
+
+
 def admin_work_command(conn, args):
     """Show all active/pending work across the fleet — work-centric view.
 
@@ -1402,6 +1598,8 @@ def admin_command_logic(args, project_name, project_version):
         print("  cancel    Flush pending tests for a specific benchmark run")
         print("  skip      Skip all queued work for a runner (ACK + reset to latest)")
         print("  reset     Nuclear reset: destroy + recreate runner consumer group")
+        print("  skip-builders  Skip all queued commits for a builder pool (ACK + reset to latest)")
+        print("  reset-builders Nuclear reset: destroy + recreate builder consumer group")
         print()
         print("Examples:")
         print("  --tool admin --admin-command summary")
@@ -1413,6 +1611,8 @@ def admin_command_logic(args, project_name, project_version):
         )
         print("  --tool admin --admin-command skip --platform arm-aws-m8g.metal-24xl")
         print("  --tool admin --admin-command reset --platform arm-aws-m8g.metal-24xl")
+        print("  --tool admin --admin-command skip-builders --builder-group builders-cg-amd64")
+        print("  --tool admin --admin-command reset-builders --builder-group builders-cg-amd64")
         return
 
     conn = redis.StrictRedis(
@@ -1444,8 +1644,12 @@ def admin_command_logic(args, project_name, project_version):
         admin_skip_command(conn, args)
     elif admin_cmd == "reset":
         admin_reset_command(conn, args)
+    elif admin_cmd == "skip-builders":
+        admin_skip_builders_command(conn, args)
+    elif admin_cmd == "reset-builders":
+        admin_reset_builders_command(conn, args)
     else:
         print(f"Unknown admin command: {admin_cmd}")
         print(
-            "Available: health, summary, work, runners, builders, queues, status, cancel, skip, reset"
+            "Available: health, summary, work, runners, builders, queues, status, cancel, skip, reset, skip-builders, reset-builders"
         )

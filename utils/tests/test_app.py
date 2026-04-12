@@ -93,7 +93,7 @@ def test_create_app():
                 assert response.json["ref"] == "unstable.55555"
                 assert conn.exists(STREAM_KEYNAME_GH_EVENTS_COMMIT)
 
-        # Authorized and git pushes to repo
+        # Authorized push from fork org/non-default branch — should be SKIPPED
         with open(
             "./utils/tests/test_data/event_webhook_pushed_repo.json"
         ) as json_file:
@@ -115,12 +115,41 @@ def test_create_app():
                     },
                 )
                 assert response.status_code == 200
+                # Push from filipecosta90 org on branch unstable.55555
+                # should be filtered out by default allowlists
+                assert "Push event skipped" in response.json["message"]
+
+        # Authorized push from allowed org+branch — should TRIGGER benchmarks
+        with open(
+            "./utils/tests/test_data/event_webhook_pushed_repo.json"
+        ) as json_file:
+            push_json = json.load(json_file)
+            # Patch to look like a push from redis org on unstable branch
+            push_json["repository"]["html_url"] = "https://github.com/redis/redis"
+            push_json["ref"] = "refs/heads/unstable"
+            json_str = json.dumps(push_json)
+            req_data = json_str.encode()
+            expected_sign = HMAC(
+                key=auth_token.encode(), msg=req_data, digestmod=sha1
+            ).hexdigest()
+
+            with flask_app.test_client() as test_client:
+                response = test_client.post(
+                    "/api/gh/redis/redis/commits",
+                    content_type="application/json",
+                    data=req_data,
+                    headers={
+                        "Content-type": "application/json",
+                        SIG_HEADER: "sha1={}".format(expected_sign),
+                    },
+                )
+                assert response.status_code == 200
                 assert (
                     response.json["git_hash"]
                     == "921489d5392a13e10493c6578a27b4bd5324a929"
                 )
-                assert response.json["ref_label"] == "refs/heads/unstable.55555"
-                assert response.json["ref"] == "unstable.55555"
+                assert response.json["ref_label"] == "refs/heads/unstable"
+                assert response.json["ref"] == "unstable"
                 assert conn.exists(STREAM_KEYNAME_GH_EVENTS_COMMIT)
 
     except redis.exceptions.ConnectionError:

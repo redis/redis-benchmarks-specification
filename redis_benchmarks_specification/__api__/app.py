@@ -9,7 +9,11 @@ from hashlib import sha1
 from redis_benchmarks_specification.__common__.builder_schema import (
     commit_schema_to_stream,
 )
-from redis_benchmarks_specification.__common__.env import PULL_REQUEST_TRIGGER_LABEL
+from redis_benchmarks_specification.__common__.env import (
+    BENCHMARK_TRIGGER_BRANCHES,
+    BENCHMARK_TRIGGER_ORGS,
+    PULL_REQUEST_TRIGGER_LABEL,
+)
 
 SIG_HEADER = "X-Hub-Signature"
 
@@ -130,8 +134,36 @@ def create_app(conn, user, test_config=None):
                 ref_label = request_data["ref"]
                 sha = request_data["after"]
                 before_sha = request_data["before"]
-                use_event = True
-                event_type = "Git pushes to repo"
+
+                allowed_orgs = [
+                    o.strip()
+                    for o in BENCHMARK_TRIGGER_ORGS.split(",")
+                    if o.strip()
+                ]
+                allowed_branches = [
+                    b.strip()
+                    for b in BENCHMARK_TRIGGER_BRANCHES.split(",")
+                    if b.strip()
+                ]
+                org_ok = gh_org in allowed_orgs
+                branch_ok = ref in allowed_branches
+                if org_ok and branch_ok:
+                    use_event = True
+                    event_type = "Git pushes to repo"
+                else:
+                    use_event = False
+                    skip_reasons = []
+                    if not org_ok:
+                        skip_reasons.append(
+                            f"org '{gh_org}' not in allowed orgs {allowed_orgs}"
+                        )
+                    if not branch_ok:
+                        skip_reasons.append(
+                            f"branch '{ref}' not in allowed branches {allowed_branches}"
+                        )
+                    event_type = (
+                        f"Push event skipped: {'; '.join(skip_reasons)}"
+                    )
 
             if use_event is True:
                 if before_sha is not None:

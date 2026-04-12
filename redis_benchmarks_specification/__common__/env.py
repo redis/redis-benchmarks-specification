@@ -115,3 +115,7 @@ if VERBOSE:
 
 MACHINE_CPU_COUNT = psutil.cpu_count()
 MACHINE_NAME = os.uname()[1]
+
+# Webhook push filtering — comma-separated allowlists
+BENCHMARK_TRIGGER_BRANCHES = os.getenv("BENCHMARK_TRIGGER_BRANCHES", "unstable")
+BENCHMARK_TRIGGER_ORGS = os.getenv("BENCHMARK_TRIGGER_ORGS", "redis")

@@ -256,12 +256,18 @@ def spec_cli_args(parser):
         "--admin-command",
         type=str,
         default="",
-        help="Admin subcommand: runners, builders, queues, status, cancel",
+        help="Admin subcommand: runners, builders, queues, status, cancel, skip, reset, skip-builders, reset-builders",
     )
     parser.add_argument(
         "--stream-id",
         type=str,
         default="",
         help="Benchmark stream ID for status/cancel commands.",
+    )
+    parser.add_argument(
+        "--builder-group",
+        type=str,
+        default="",
+        help="Builder consumer group name for skip-builders/reset-builders commands (e.g. builders-cg-amd64).",
     )
     return parser
