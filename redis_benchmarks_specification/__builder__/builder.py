@@ -4,6 +4,8 @@ import io
 import json
 import logging
 import tempfile
+import time
+import traceback
 import shutil
 import docker
 import redis
@@ -256,17 +258,23 @@ def main():
         logging.info("detected a github token. will update as much as possible!!! =)")
     previous_id = args.consumer_start_id
     while True:
-        previous_id, new_builds_count, _ = builder_process_stream(
-            builders_folder,
-            conn,
-            different_build_specs,
-            previous_id,
-            args.docker_air_gap,
-            arch,
-            args.github_token,
-            builder_group,
-            builder_id,
-        )
+        try:
+            previous_id, new_builds_count, _ = builder_process_stream(
+                builders_folder,
+                conn,
+                different_build_specs,
+                previous_id,
+                args.docker_air_gap,
+                arch,
+                args.github_token,
+                builder_group,
+                builder_id,
+            )
+        except Exception as e:
+            logging.error(f"Builder stream processing error: {e}")
+            traceback.print_exc()
+            # Sleep before retrying to avoid tight error loop
+            time.sleep(10)
 
 
 def builder_consumer_group_create(
@@ -686,16 +694,62 @@ def builder_process_stream(
                             pr_link,
                         )
 
-                docker_client.containers.run(
-                    image=build_image,
-                    volumes={
-                        redis_temporary_dir: {"bind": "/mnt/redis/", "mode": "rw"},
-                    },
-                    auto_remove=True,
-                    privileged=True,
-                    working_dir="/mnt/redis/",
-                    command=build_command,
-                )
+                try:
+                    container = docker_client.containers.run(
+                        image=build_image,
+                        volumes={
+                            redis_temporary_dir: {
+                                "bind": "/mnt/redis/",
+                                "mode": "rw",
+                            },
+                        },
+                        auto_remove=False,
+                        privileged=True,
+                        working_dir="/mnt/redis/",
+                        command=build_command,
+                        detach=True,
+                    )
+                    try:
+                        result = container.wait(timeout=600)  # 10 min max
+                        exit_code = result.get("StatusCode", -1)
+                        if exit_code != 0:
+                            logs = container.logs(tail=50).decode(
+                                "utf-8", errors="replace"
+                            )
+                            logging.error(
+                                f"Docker build failed (exit {exit_code}): {logs}"
+                            )
+                            # ACK the message to prevent stuck-pending loop
+                            try:
+                                conn.xack(
+                                    STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                                    STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                                    streamId,
+                                )
+                            except Exception:
+                                pass
+                            shutil.rmtree(temporary_dir, ignore_errors=True)
+                            continue
+                    finally:
+                        try:
+                            container.remove(force=True)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logging.error(
+                        f"Build failed for {git_hash}: {e}"
+                    )
+                    # ACK the failed message to prevent stuck-pending loop
+                    try:
+                        conn.xack(
+                            STREAM_KEYNAME_GH_EVENTS_COMMIT,
+                            STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                            streamId,
+                        )
+                    except Exception:
+                        pass
+                    shutil.rmtree(temporary_dir, ignore_errors=True)
+                    continue
                 build_end_datetime = datetime.datetime.utcnow()
                 build_duration = build_end_datetime - build_start_datetime
                 build_duration_secs = build_duration.total_seconds()
