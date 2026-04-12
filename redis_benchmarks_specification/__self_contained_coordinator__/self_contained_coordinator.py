@@ -2752,7 +2752,16 @@ def filter_test_files(
             )
             tags_regex_string = re.compile(tests_regexp)
 
-            match_obj = re.search(tags_regex_string, test_file)
+            # Match against the test name (filename stem without extension),
+            # not the full file path. Regexes like "test-name$" use end-of-string
+            # anchors that would fail against paths ending in ".yml".
+            test_file_basename = os.path.basename(test_file)
+            test_file_stem = (
+                test_file_basename[: -len(".yml")]
+                if test_file_basename.endswith(".yml")
+                else test_file_basename
+            )
+            match_obj = re.search(tags_regex_string, test_file_stem)
             if match_obj is None:
                 logging.debug(
                     "Skipping {} given it does not match regex {}".format(
