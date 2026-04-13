@@ -1950,7 +1950,7 @@ def process_self_contained_coordinator_stream(
                                     topdown_collector = TopdownCollector(
                                         process_name=executable.split("/")[-1],
                                         duration_seconds=topdown_duration,
-                                        level=2,
+                                        level=4,
                                         labels=topdown_labels,
                                     )
                                     topdown_collector.start()
