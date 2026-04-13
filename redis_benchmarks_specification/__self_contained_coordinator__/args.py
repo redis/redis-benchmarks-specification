@@ -207,4 +207,13 @@ def create_self_contained_coordinator_args(project_name):
         action="store_true",
         help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
     )
+    parser.add_argument(
+        "--explicit-only",
+        default=False,
+        action="store_true",
+        help="Explicit-only mode: only process stream entries that have a "
+        "target_platform field matching this runner's platform name. "
+        "Untargeted entries (no target_platform field) are skipped. "
+        "Useful for dedicated runners that should only run on-demand work.",
+    )
     return parser

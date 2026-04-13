@@ -189,6 +189,7 @@ def _start_heartbeat(conn, platform, arch, version, args):
                     "exclusive_hardware": str(
                         getattr(args, "exclusive_hardware", False)
                     ),
+                    "explicit_only": str(getattr(args, "explicit_only", False)),
                 }
                 conn.hset(key, mapping=fields)
                 conn.expire(key, HEARTBEAT_EXPIRE_SECS)
@@ -857,6 +858,14 @@ def main():
         args,
     )
 
+    explicit_only = args.explicit_only
+    if explicit_only:
+        logging.info(
+            "Explicit-only mode enabled: only processing streams with target_platform={}".format(
+                running_platform
+            )
+        )
+
     logging.info("Entering blocking read waiting for work.")
     if stream_id is None:
         stream_id = args.consumer_start_id
@@ -886,6 +895,7 @@ def main():
             priority_upper_limit,
             default_baseline_branch,
             default_metrics_str,
+            explicit_only=explicit_only,
         )
 
 
@@ -922,6 +932,7 @@ def self_contained_coordinator_blocking_read(
     default_metrics_str="ALL_STATS.Totals.Ops/sec",
     docker_keep_env=False,
     restore_build_artifacts_default=True,
+    explicit_only=False,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -1006,6 +1017,7 @@ def self_contained_coordinator_blocking_read(
             docker_keep_env,
             restore_build_artifacts_default,
             args,
+            explicit_only=explicit_only,
         )
         num_process_streams = num_process_streams + 1
         num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -1097,6 +1109,7 @@ def process_self_contained_coordinator_stream(
     restore_build_artifacts_default=True,
     args=None,
     redis_password="redis_coordinator_password_2024",
+    explicit_only=False,
 ):
     global _heartbeat_current_test
     stream_id = "n/a"
@@ -1295,7 +1308,14 @@ def process_self_contained_coordinator_stream(
                         )
                     )
 
-            if b"target_platform" in testDetails:
+            has_explicit_target = b"target_platform" in testDetails
+            if explicit_only and not has_explicit_target:
+                skip_test = True
+                logging.info(
+                    "explicit-only mode: skipping stream_id {} "
+                    "because it has no target_platform field".format(stream_id)
+                )
+            elif has_explicit_target:
                 target_platform = testDetails[b"target_platform"]
                 target_platform_str = (
                     target_platform.decode()
@@ -1309,6 +1329,17 @@ def process_self_contained_coordinator_stream(
                             stream_id, running_platform, target_platform_str
                         )
                     )
+
+            if b"replayed_from" in testDetails:
+                replayed_from = testDetails[b"replayed_from"]
+                replayed_from_str = (
+                    replayed_from.decode()
+                    if isinstance(replayed_from, bytes)
+                    else replayed_from
+                )
+                logging.info(
+                    "This is a replay of stream entry {}".format(replayed_from_str)
+                )
 
             if run_arch != arch:
                 skip_test = True

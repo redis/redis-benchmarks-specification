@@ -23,6 +23,7 @@ CLI_TOOL_STATS = "stats"
 CLI_TOOL_TRIGGER = "trigger"
 CLI_TOOL_DOCKERHUB = "dockerhub"
 CLI_TOOL_ADMIN = "admin"
+CLI_TOOL_REPLAY = "replay"
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 
@@ -118,7 +119,13 @@ def spec_cli_args(parser):
         default=CLI_TOOL_TRIGGER,
         help="subtool to use. One of '{}' ".format(
             ",".join(
-                [CLI_TOOL_STATS, CLI_TOOL_TRIGGER, CLI_TOOL_DOCKERHUB, CLI_TOOL_ADMIN]
+                [
+                    CLI_TOOL_STATS,
+                    CLI_TOOL_TRIGGER,
+                    CLI_TOOL_DOCKERHUB,
+                    CLI_TOOL_ADMIN,
+                    CLI_TOOL_REPLAY,
+                ]
             )
         ),
     )
@@ -269,5 +276,14 @@ def spec_cli_args(parser):
         type=str,
         default="",
         help="Builder consumer group name for skip-builders/reset-builders commands (e.g. builders-cg-amd64).",
+    )
+    # Replay tool arguments
+    parser.add_argument(
+        "--replay-stream-id",
+        type=str,
+        default=None,
+        help="Benchmark stream ID to replay (e.g. '1737123456789-0'). "
+        "The runner will re-run the already-built artifact from this "
+        "stream entry without triggering a new build. Use with --tool replay.",
     )
     return parser
