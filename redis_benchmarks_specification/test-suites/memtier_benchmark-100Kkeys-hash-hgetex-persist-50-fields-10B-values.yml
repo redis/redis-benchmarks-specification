@@ -1,8 +1,9 @@
 version: 0.4
 name: memtier_benchmark-100Kkeys-hash-hgetex-persist-50-fields-10B-values
-description: Runs memtier_benchmark, for a keyspace length of 100K keys pre-loading
-  HASHes in which the value has a data size of 10 Bytes. After pre-loading the data
-  it issues HGETEX command.
+description: 'Runs memtier_benchmark, for a keyspace length of 100K keys pre-loading HASHes in which
+  the value has a data size of 10 Bytes. After pre-loading the data it issues HGETEX command.
+  Encoding: listpack (50 fields x 10B values, below hash-max-listpack-entries 128 and
+  hash-max-listpack-value 64).'
 dbconfig:
   dataset_name: 1Mkeys-hash-50-fields-10B-size
   configuration-parameters:

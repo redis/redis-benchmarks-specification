@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-set-200K-elements-sadd-constant
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 200K
-  elements. The SADD is being issued on a SET with constant size (we are just updating
-  its members but not increasing). '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 200K elements. The
+  SADD is being issued on a SET with constant size (we are just updating its members but not
+  increasing). Encoding: hashtable (200,000 elements, exceeds set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

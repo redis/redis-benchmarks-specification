@@ -1,10 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10K-elements-linsert-lrem-string
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
-  contains 10000 string elements in it and we query it using LINSERT / LREM in the
-  middle of the list. Given we add and delete right after the performance and list
-  lenght over the test should be constant (meaning running for 60secs or 600secs wont
-  change the list size) '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10000
+  string elements in it and we query it using LINSERT / LREM in the middle of the list. Given we add
+  and delete right after the performance and list lenght over the test should be constant (meaning
+  running for 60secs or 600secs wont change the list size) Encoding: quicklist (10,000 elements,
+  spans multiple listpack nodes under list-max-listpack-size -2).'
 dbconfig:
   configuration-parameters:
     save: '""'

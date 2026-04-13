@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-2keys-zset-300-elements-skiplist-encoded-zunionstore
-description: 'Runs memtier_benchmark, for a keyspace length of 2 ZSET keys. We query
-  their union using ZUNIONSTORE that returns 600 elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 2 ZSET keys. We query their union
+  using ZUNIONSTORE that returns 600 elements. Encoding: skiplist+hashtable (300 elements, exceeds
+  zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

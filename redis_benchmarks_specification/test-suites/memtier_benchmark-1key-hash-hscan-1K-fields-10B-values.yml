@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-hash-hscan-1K-fields-10B-values
-description: Runs memtier_benchmark, for a keyspace length of 1 keys pre-loading HASHes
-  in which the value has a data size of 10 Bytes. The key is expected to be hashtable
-  encoded due to the field count and field size. After pre-loading the data it issues
-  HSCAN command.
+description: 'Runs memtier_benchmark, for a keyspace length of 1 keys pre-loading HASHes in which
+  the value has a data size of 10 Bytes. The key is expected to be hashtable encoded due to the
+  field count and field size. After pre-loading the data it issues HSCAN command. Encoding:
+  hashtable (1,000 fields, exceeds hash-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

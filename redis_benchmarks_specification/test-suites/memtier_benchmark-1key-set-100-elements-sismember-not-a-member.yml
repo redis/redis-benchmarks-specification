@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-set-100-elements-sismember-not-a-member
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
-  contains 100 elements in it and we query it using SISMEMBER in which the value is
-  not a member. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 100
+  elements in it and we query it using SISMEMBER in which the value is not a member. Encoding:
+  listpack (100 string elements, below set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

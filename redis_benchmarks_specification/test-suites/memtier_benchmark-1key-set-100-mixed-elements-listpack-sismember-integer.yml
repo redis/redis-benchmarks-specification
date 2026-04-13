@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-set-100-mixed-elements-listpack-sismember-integer
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
-  contains 100 mixed elements (50 integers + 50 strings) in listpack encoding, and
-  we query it using SISMEMBER looking up an integer member. This exercises the
-  lpFind integer comparison path in listpack-encoded sets.'
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 100 mixed
+  elements (50 integers + 50 strings) in listpack encoding, and we query it using SISMEMBER looking
+  up an integer member. This exercises the lpFind integer comparison path in listpack-encoded sets.
+  Encoding: listpack (100 mixed elements, below set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

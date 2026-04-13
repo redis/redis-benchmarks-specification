@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-zrank-100K-elements-pipeline-1
-description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
-  SORTED SET contains 100K elements and we query it using ZRANK.
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 100K elements and we query it using ZRANK. Encoding: skiplist+hashtable (100,000
+  elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

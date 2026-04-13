@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-load-zset-with-5-elements-parsing-hexa-score
-description: Runs memtier_benchmark, for a keyspace length of 1 key loading the sorted
-  set with 5 elements with different valid hexadecimal floating-point numbers, gradually
-  increasing in length of the string to parse.
+description: 'Runs memtier_benchmark, for a keyspace length of 1 key loading the sorted set with 5
+  elements with different valid hexadecimal floating-point numbers, gradually increasing in length
+  of the string to parse. Encoding: listpack (5 elements, below zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-100Kkeys-hash-hgetall-50-fields-100B-values
-description: Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading
-  HASHes in which the value has a data size of 10 Bytes. After pre-loading the data
-  it issues HGETALL command.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading HASHes in which
+  the value has a data size of 10 Bytes. After pre-loading the data it issues HGETALL command.
+  Encoding: hashtable (50 fields x 100B values, exceeds hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
     save: '""'

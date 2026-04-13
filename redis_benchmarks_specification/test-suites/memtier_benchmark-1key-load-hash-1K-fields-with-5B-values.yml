@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-load-hash-1K-fields-with-5B-values
-description: ''
+description: 'Encoding: hashtable (1,000 fields, exceeds hash-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

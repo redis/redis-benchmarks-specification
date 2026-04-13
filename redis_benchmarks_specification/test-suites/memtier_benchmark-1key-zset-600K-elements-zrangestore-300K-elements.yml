@@ -1,9 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-600K-elements-zrangestore-300K-elements
-description: Runs memtier_benchmark, for a keyspace length of 1 key loading the sorted
-  set with 5 elements with different floating-point numbers, gradually increasing
-  in the size of the float to parse. This is a control benchmark for the one named
-  memtier_benchmark-1key-load-zset-with-5-elements-hexa-score
+description: 'Runs memtier_benchmark, for a keyspace length of 1 key loading the sorted set with 5
+  elements with different floating-point numbers, gradually increasing in the size of the float to
+  parse. This is a control benchmark for the one named
+  memtier_benchmark-1key-load-zset-with-5-elements-hexa-score Encoding: skiplist+hashtable (600,000
+  elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-set-10M-elements-srem-50pct-chance
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 10M
-  elements. We query it using SISMEMBER in which the value has 50% change of being
-  member. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key with 10M elements. We query
+  it using SISMEMBER in which the value has 50% change of being member. Encoding: hashtable
+  (10,000,000 elements, exceeds set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -1,31 +1,21 @@
 version: 0.4
 name: memtier_benchmark-session-caching-hash-100k-sessions
-description: |
-  Runs memtier_benchmark to simulate a session caching workload for a SaaS application.
-  This benchmark focuses exclusively on hash-based session storage, where each session
-  is stored in a Redis hash (`session:<id>`) with fields like user ID, timestamps, device info,
-  and metadata (total ~400–600B).
-
-  The benchmark models a typical read-heavy cache usage pattern, with an approximate
-  **read:write ratio of 90:10**, reflecting session retrievals and infrequent updates.
-
-  Command groups:
-    - Session cache reads (`HGETALL`): ~90%
-    - Session cache writes (`HSET`): ~10%
-
-  To better approximate real-world access patterns, the benchmark uses a **Zipfian key distribution**
-  (`--command-key-pattern=Z`). This simulates **skewed access** where a small subset of sessions (hot keys)
-  receives a majority of reads — a common pattern in production workloads.
-
-  While Zipfian is technically a power-law distribution, it effectively mimics **Poisson-like behavior**
-  in large-scale systems, where access frequency is uneven but statistically predictable.
-  This access skew mirrors real-life scenarios such as:
-    - Frequently accessed or "sticky" user sessions
-    - Popular user accounts or active devices
-    - Hot caches for trending or recently used resources
-
-  Using Zipfian distribution allows this benchmark to capture **contention**, **cache pressure**, and
-  **read amplification** effects that occur in real SaaS applications under load.
+description: 'Runs memtier_benchmark to simulate a session caching workload for a SaaS application.
+  This benchmark focuses exclusively on hash-based session storage, where each session is stored in
+  a Redis hash (`session:<id>`) with fields like user ID, timestamps, device info, and metadata
+  (total ~400–600B). The benchmark models a typical read-heavy cache usage pattern, with an
+  approximate **read:write ratio of 90:10**, reflecting session retrievals and infrequent updates.
+  Command groups: - Session cache reads (`HGETALL`): ~90% - Session cache writes (`HSET`): ~10% To
+  better approximate real-world access patterns, the benchmark uses a **Zipfian key distribution**
+  (`--command-key-pattern=Z`). This simulates **skewed access** where a small subset of sessions
+  (hot keys) receives a majority of reads — a common pattern in production workloads. While Zipfian
+  is technically a power-law distribution, it effectively mimics **Poisson-like behavior** in
+  large-scale systems, where access frequency is uneven but statistically predictable. This access
+  skew mirrors real-life scenarios such as: - Frequently accessed or "sticky" user sessions -
+  Popular user accounts or active devices - Hot caches for trending or recently used resources Using
+  Zipfian distribution allows this benchmark to capture **contention**, **cache pressure**, and
+  **read amplification** effects that occur in real SaaS applications under load. Encoding:
+  hashtable (10 fields, metadata field ~200-300B exceeds hash-max-listpack-value 64).'
 
 
 dbconfig:

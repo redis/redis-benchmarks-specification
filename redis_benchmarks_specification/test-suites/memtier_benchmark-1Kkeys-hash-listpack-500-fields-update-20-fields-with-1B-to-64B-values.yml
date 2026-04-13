@@ -1,17 +1,14 @@
 version: 0.4
 name: memtier_benchmark-1Kkeys-hash-listpack-500-fields-update-20-fields-with-1B-to-64B-values
-description: |
-  Runs memtier_benchmark to measure update performance on large Redis hashes stored as
-  listpacks. The dataset is preloaded with 1,000 keys (`test_hash:<id>`), each containing
-  500 field–value pairs, where values are small strings ranging from 1 to 64 bytes.
-
-  The benchmark focuses on multi-field `HSET` updates, where each operation updates 20
-  fields in the same hash. This workload stresses Redis's listpack encoding for hashes,
-  particularly when performing batched updates inside already large hashes.
-
-  Since each key already contains 500 fields, the test highlights the cost of inserting
-  into dense listpacks, memory reallocation behavior, and the effectiveness of Redis's
-  multi-element insertion optimizations
+description: 'Runs memtier_benchmark to measure update performance on large Redis hashes stored as
+  listpacks. The dataset is preloaded with 1,000 keys (`test_hash:<id>`), each containing 500
+  field–value pairs, where values are small strings ranging from 1 to 64 bytes. The benchmark
+  focuses on multi-field `HSET` updates, where each operation updates 20 fields in the same hash.
+  This workload stresses Redis''s listpack encoding for hashes, particularly when performing batched
+  updates inside already large hashes. Since each key already contains 500 fields, the test
+  highlights the cost of inserting into dense listpacks, memory reallocation behavior, and the
+  effectiveness of Redis''s multi-element insertion optimizations Encoding: hashtable (500 fields,
+  exceeds hash-max-listpack-entries 128 despite name suggesting listpack).'
 
 dbconfig:
   configuration-parameters:

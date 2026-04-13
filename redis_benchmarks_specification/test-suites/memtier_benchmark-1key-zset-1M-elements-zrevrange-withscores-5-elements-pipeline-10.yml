@@ -1,8 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zrevrange-withscores-5-elements-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
-  SORTED SET contains 1M elements in it and we query it using ZREVRANGE with a range
-  of 5 elements. This benchmarks helps assessing: https://github.com/redis/redis/issues/10310'
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 1M elements in it and we query it using ZREVRANGE with a range of 5 elements. This
+  benchmarks helps assessing: https://github.com/redis/redis/issues/10310 Encoding:
+  skiplist+hashtable (1,000,000 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

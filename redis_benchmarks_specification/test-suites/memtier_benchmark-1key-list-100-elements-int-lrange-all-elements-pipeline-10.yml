@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-list-100-elements-int-lrange-all-elements-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
-  contains 100 integer elements (across all 6 encoding types, meaning 7BIT_UINT 13BIT_INT
-  16BIT_INT 24BIT_INT 32BIT_INT 64BIT_INT) in it and we query it using LRANGE with
-  a range of all elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 100
+  integer elements (across all 6 encoding types, meaning 7BIT_UINT 13BIT_INT 16BIT_INT 24BIT_INT
+  32BIT_INT 64BIT_INT) in it and we query it using LRANGE with a range of all elements. Encoding:
+  listpack (100 elements, fits in single listpack node under list-max-listpack-size -2).'
 dbconfig:
   configuration-parameters:
     save: '""'

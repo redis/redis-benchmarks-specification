@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-2keys-set-10-100-elements-sinter
-description: 'Runs memtier_benchmark, for a keyspace length of 2 SET key. The first
-  SET contains 10 elements ( set:10 ) The second SET contains 100 elements ( set:100
-  ) The SET with set:10 is a subset of the set:100 We query their intersection using
-  SINTER that returns 10 elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 2 SET key. The first SET contains 10
+  elements ( set:10 ) The second SET contains 100 elements ( set:100 ) The SET with set:10 is a
+  subset of the set:100 We query their intersection using SINTER that returns 10 elements. Encoding:
+  listpack (100 string elements, below set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

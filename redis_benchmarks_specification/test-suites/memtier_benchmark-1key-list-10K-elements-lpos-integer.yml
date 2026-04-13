@@ -1,8 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10K-elements-lpos-integer
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
-  contains 10000 integer elements in it and we query it using LPOS of a element that
-  we know it is in the middle of the list. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10000
+  integer elements in it and we query it using LPOS of a element that we know it is in the middle of
+  the list. Encoding: quicklist (10,000 elements, spans multiple listpack nodes under
+  list-max-listpack-size -2).'
 dbconfig:
   configuration-parameters:
     save: '""'

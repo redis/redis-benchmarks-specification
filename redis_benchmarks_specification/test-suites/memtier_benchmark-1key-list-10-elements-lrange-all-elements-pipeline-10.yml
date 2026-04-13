@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10-elements-lrange-all-elements-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
-  contains 10 elements in it and we query it using LRANGE with a range of all elements. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10
+  elements in it and we query it using LRANGE with a range of all elements. Encoding: listpack (10
+  elements, fits in single listpack node under list-max-listpack-size -2).'
 dbconfig:
   configuration-parameters:
     save: '""'

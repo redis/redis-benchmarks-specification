@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-hash-transactions-multi-exec-pipeline-20
-description: Runs memtier_benchmark for MULTI EXEC scenario - executing commands as
-  a transaction. The transaction sets fields in a hash, checks if they exist, retrieves
-  them and finally deletes them. At the end of execution there are no keys in the
-  database.
+description: 'Runs memtier_benchmark for MULTI EXEC scenario - executing commands as a transaction.
+  The transaction sets fields in a hash, checks if they exist, retrieves them and finally deletes
+  them. At the end of execution there are no keys in the database. Encoding: hashtable (1 field x
+  100B values, exceeds hash-max-listpack-value 64).'
 tested-groups:
 - transactions
 - hash

@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-zset-with-10-elements-double-score
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading ZSETs
-  with 10 elements.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys loading ZSETs with 10
+  elements. Encoding: listpack (10 elements, below zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

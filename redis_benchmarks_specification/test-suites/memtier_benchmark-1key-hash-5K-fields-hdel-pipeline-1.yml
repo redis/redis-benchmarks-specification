@@ -1,11 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1key-hash-5K-fields-hdel-pipeline-1
-description: >
-  Runs memtier_benchmark, testing HDEL performance on a hash with 5K fields.
-  Pre-loads a single hash key with 5000 fields (field:1 through field:5000),
-  each with a 10-byte value. The benchmark randomly deletes fields using HDEL.
-  This tests the dict auto-resize pause optimization during bulk deletion.
-  Uses --randomize to ensure continuous field removal throughout the test.
+description: 'Runs memtier_benchmark, testing HDEL performance on a hash with 5K fields. Pre-loads a
+  single hash key with 5000 fields (field:1 through field:5000), each with a 10-byte value. The
+  benchmark randomly deletes fields using HDEL. This tests the dict auto-resize pause optimization
+  during bulk deletion. Uses --randomize to ensure continuous field removal throughout the test.
+  Encoding: hashtable (5,000 fields, exceeds hash-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

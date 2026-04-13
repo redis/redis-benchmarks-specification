@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-10Kkeys-load-hash-50-fields-with-10000B-values
-description: Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES
-  with 50 fields each. Each field value has a data size of 1000 Bytes.
+description: 'Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES with 50
+  fields each. Each field value has a data size of 1000 Bytes. Encoding: hashtable (50 fields x
+  10000B values, exceeds hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
     save: '""'

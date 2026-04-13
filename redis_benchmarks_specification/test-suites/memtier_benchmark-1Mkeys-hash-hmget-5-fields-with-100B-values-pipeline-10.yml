@@ -1,8 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-hash-hmget-5-fields-with-100B-values-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading
-  HASHes in which the value has a data size of 100 Bytes. After pre-loading the data
-  it issues HMGET command retrieving all fields of the hash.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading HASHes in which
+  the value has a data size of 100 Bytes. After pre-loading the data it issues HMGET command
+  retrieving all fields of the hash. Encoding: hashtable (5 fields x 100B values, exceeds
+  hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
     save: '""'

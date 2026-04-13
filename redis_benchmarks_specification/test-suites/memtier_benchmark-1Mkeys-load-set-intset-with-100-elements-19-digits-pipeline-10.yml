@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-set-intset-with-100-elements-19-digits-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading SETs
-  with 100 integer elements with 19 digits each.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys loading SETs with 100 integer
+  elements with 19 digits each. Encoding: intset (100 integer elements, below set-max-intset-entries
+  128).'
 dbconfig:
   configuration-parameters:
     save: '""'

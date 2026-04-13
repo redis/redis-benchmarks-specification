@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-list-100-elements-llen-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST
-  contains 100 elements in it and we query its size using LLEN. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 100
+  elements in it and we query its size using LLEN. Encoding: listpack (100 elements, fits in single
+  listpack node under list-max-listpack-size -2).'
 dbconfig:
   configuration-parameters:
     save: '""'

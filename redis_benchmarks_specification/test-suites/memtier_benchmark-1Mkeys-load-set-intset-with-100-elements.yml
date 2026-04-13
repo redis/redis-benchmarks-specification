@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-load-set-intset-with-100-elements
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading SETs
-  with 100 integer elements.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys loading SETs with 100 integer
+  elements. Encoding: intset (100 integer elements, below set-max-intset-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

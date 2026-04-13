@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-10Kkeys-hash-hgetall-200-fields-100B-values
-description: Runs memtier_benchmark for 10K hash keys with 200 fields of 100B
-  each (hashtable encoding). Issues HGETALL command.
+description: 'Runs memtier_benchmark for 10K hash keys with 200 fields of 100B each (hashtable
+  encoding). Issues HGETALL command. Encoding: hashtable (200 fields x 100B values, exceeds both
+  hash-max-listpack-entries 128 and hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
     save: '""'

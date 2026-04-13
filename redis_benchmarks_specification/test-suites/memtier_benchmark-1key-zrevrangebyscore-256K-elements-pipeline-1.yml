@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-zrevrangebyscore-256K-elements-pipeline-1
-description: Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
-  SORTED SET contains 256K elements of 1KB each and we query it using ZREVRANGEBYSCORE.
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 256K elements of 1KB each and we query it using ZREVRANGEBYSCORE. Encoding:
+  skiplist+hashtable (256,000 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

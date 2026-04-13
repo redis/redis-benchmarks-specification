@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-10Kkeys-load-list-with-10B-values-pipeline-50
-description: Runs memtier_benchmark, for a keyspace length of 1M keys loading LISTs
-  in which the value has a data size of 10 Bytes.
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys loading LISTs in which the
+  value has a data size of 10 Bytes. Encoding: listpack (1 element x 10B per key, single-node
+  listpack).'
 dbconfig:
   configuration-parameters:
     save: '""'

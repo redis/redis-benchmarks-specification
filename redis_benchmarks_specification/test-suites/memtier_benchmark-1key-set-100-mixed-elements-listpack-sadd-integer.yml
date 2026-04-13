@@ -1,9 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1key-set-100-mixed-elements-listpack-sadd-integer
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET
-  contains 100 mixed elements (50 integers + 50 strings) in listpack encoding, and
-  we issue SADD with integer values that are already members (constant set size).
-  This exercises the lpFind integer comparison path during SADD duplicate check.'
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SET key. The SET contains 100 mixed
+  elements (50 integers + 50 strings) in listpack encoding, and we issue SADD with integer values
+  that are already members (constant set size). This exercises the lpFind integer comparison path
+  during SADD duplicate check. Encoding: listpack (100 mixed elements, below
+  set-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -1,14 +1,14 @@
 version: 0.4
 name: memtier_benchmark-1key-zrem-5M-elements-pipeline-1
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The
-  SORTED SET contains 5M elements and we remove members using ZREM. Throughout the
-  course of the benchmark,the sorted set contains fewer members as we continuously
-  remove them. The chance that we ask for a member to be removed, which was already
-  removed, also increases. Starting with a large number of members helps us to have
-  suffienct number of members for the duration of the benchmark, however the preload
-  stage takes longer to complete. NOTE: using the --randomize flag ensures that we
-  continue to remove elements the longer we run the test. Without the flag, we stop
-  removing elements after some time, possibly we keep generating the same random numbers. '
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 5M elements and we remove members using ZREM. Throughout the course of the benchmark,the
+  sorted set contains fewer members as we continuously remove them. The chance that we ask for a
+  member to be removed, which was already removed, also increases. Starting with a large number of
+  members helps us to have suffienct number of members for the duration of the benchmark, however
+  the preload stage takes longer to complete. NOTE: using the --randomize flag ensures that we
+  continue to remove elements the longer we run the test. Without the flag, we stop removing
+  elements after some time, possibly we keep generating the same random numbers. Encoding:
+  skiplist+hashtable (5,000,000 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

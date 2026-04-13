@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-100Kkeys-load-hash-50-fields-with-1000B-values-expiration
-description: Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES
-  with 50 fields each. Each field value has a data size of 1000 Bytes and has expiration,
-  and the encoding is hashtable.
+description: 'Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES with 50
+  fields each. Each field value has a data size of 1000 Bytes and has expiration, and the encoding
+  is hashtable. Encoding: hashtable (50 fields x 1000B values, exceeds hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
     save: '""'
