@@ -63,6 +63,130 @@ logging.basicConfig(
 )
 
 
+def replay_stream_cli_command_logic(args, project_name, project_version):
+    """Read an existing benchmark stream entry and re-add it to the stream,
+    optionally overriding target_platform, tests_regexp, etc.
+    This allows re-running a benchmark without rebuilding from source."""
+    logging.info(
+        "Using: {project_name} {project_version}".format(
+            project_name=project_name, project_version=project_version
+        )
+    )
+    stream_id = args.replay_stream_id
+    if stream_id is None:
+        logging.error("--replay-stream-id is required for the replay tool")
+        sys.exit(1)
+
+    arch = args.arch
+    logging.info(
+        "Checking connection to redis with user: {}, host: {}, port: {}".format(
+            args.redis_user,
+            args.redis_host,
+            args.redis_port,
+        )
+    )
+    conn = redis.StrictRedis(
+        host=args.redis_host,
+        port=args.redis_port,
+        password=args.redis_pass,
+        username=args.redis_user,
+        decode_responses=False,
+    )
+    conn.ping()
+
+    # Determine which stream to read from
+    arch_specific_stream = get_arch_specific_stream_name(arch)
+    logging.info(
+        "Reading stream entry {} from {}".format(stream_id, arch_specific_stream)
+    )
+
+    # Read the existing entry
+    entries = conn.xrange(arch_specific_stream, min=stream_id, max=stream_id)
+    if not entries:
+        logging.error(
+            "Stream ID {} not found in {}. "
+            "Check the arch (--arch) or the stream ID.".format(
+                stream_id, arch_specific_stream
+            )
+        )
+        sys.exit(1)
+
+    _, orig_fields = entries[0]
+    logging.info("Found stream entry with {} fields".format(len(orig_fields)))
+
+    # Validate the entry has required fields
+    if b"run_image" not in orig_fields:
+        logging.error(
+            "Stream entry {} is missing run_image field. "
+            "It may not be a valid benchmark stream entry.".format(stream_id)
+        )
+        sys.exit(1)
+
+    # Check artifact keys still exist
+    build_artifacts_str = orig_fields.get(b"build_artifacts", b"redis-server").decode()
+    build_artifacts = build_artifacts_str.split(",")
+    for artifact in build_artifacts:
+        artifact_key = orig_fields.get(artifact.encode())
+        if artifact_key is not None:
+            if not conn.exists(artifact_key):
+                logging.error(
+                    "Artifact key {} for '{}' has expired or does not exist. "
+                    "You may need to re-build from source (artifacts expire after 7 days).".format(
+                        artifact_key.decode(), artifact
+                    )
+                )
+                sys.exit(1)
+            else:
+                logging.info(
+                    "Artifact key {} for '{}' exists".format(
+                        artifact_key.decode(), artifact
+                    )
+                )
+
+    # Build the new stream fields dict from original fields
+    new_fields = {}
+    for k, v in orig_fields.items():
+        k_str = k.decode() if isinstance(k, bytes) else k
+        v_str = v.decode() if isinstance(v, bytes) else v
+        new_fields[k_str] = v_str
+
+    # Apply metadata
+    new_fields["replayed_from"] = stream_id
+    new_fields["triggered_by"] = _get_caller_identity()
+
+    # Apply overrides
+    if args.target_platform is not None:
+        new_fields["target_platform"] = args.target_platform
+        logging.info("Overriding target_platform to: {}".format(args.target_platform))
+
+    if args.tests_regexp != ".*":
+        new_fields["tests_regexp"] = args.tests_regexp
+        logging.info("Overriding tests_regexp to: {}".format(args.tests_regexp))
+
+    if hasattr(args, "deployment_name_regexp") and args.deployment_name_regexp != ".*":
+        new_fields["deployment_name_regexp"] = args.deployment_name_regexp
+        logging.info(
+            "Overriding deployment_name_regexp to: {}".format(
+                args.deployment_name_regexp
+            )
+        )
+
+    if hasattr(args, "command_regex") and args.command_regex != ".*":
+        new_fields["command_regexp"] = args.command_regex
+        logging.info("Overriding command_regexp to: {}".format(args.command_regex))
+
+    # Write the new entry to the benchmark stream
+    new_stream_id = conn.xadd(arch_specific_stream, new_fields)
+    new_stream_id_str = (
+        new_stream_id.decode() if isinstance(new_stream_id, bytes) else new_stream_id
+    )
+    logging.info(
+        "Successfully replayed stream {} as new entry {}. "
+        "Arch stream: {}".format(stream_id, new_stream_id_str, arch_specific_stream)
+    )
+    print("Replayed. New stream ID: {}".format(new_stream_id_str))
+
+
 def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_version):
     logging.info(
         "Using: {project_name} {project_version}".format(
@@ -183,6 +307,8 @@ def main():
         trigger_tests_dockerhub_cli_command_logic(args, project_name, project_version)
     if args.tool == "admin":
         admin_command_logic(args, project_name, project_version)
+    if args.tool == "replay":
+        replay_stream_cli_command_logic(args, project_name, project_version)
 
 
 def get_commits_by_branch(args, repo):
