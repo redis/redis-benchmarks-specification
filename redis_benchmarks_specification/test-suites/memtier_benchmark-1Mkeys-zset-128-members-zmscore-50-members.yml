@@ -53,7 +53,7 @@ dbconfig:
     This dataset contains 1 million sorted set keys, each with 128 members
     (listpack encoded, at the zset-max-listpack-entries=128 threshold).
 tested-groups:
-- zset
+- sorted-set
 tested-commands:
 - zadd
 - zmscore
