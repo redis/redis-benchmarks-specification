@@ -1,0 +1,103 @@
+version: 0.4
+name: memtier_benchmark-session-caching-hash-100k-sessions-with-hfe-expired-fields
+description: |
+  Runs memtier_benchmark to stress `HGETALL` on hashes that contain a large fraction
+  of **expired hash fields** (hash-field expiration / HFE).
+
+  Motivation:
+    - Redis `HGETALL/HKEYS/HVALS` currently compute an up-front "visible" length by
+      calling `hashTypeLength(... subtractExpiredFields=1)` before iterating and
+      emitting fields.
+    - Under HFE, this can require an extra "dry-run" pass to account for expired
+      fields, and then a second full pass to actually iterate and emit the reply.
+    - A deferred-length reply avoids that pre-pass and should reduce CPU work.
+
+  Workload shape:
+    - Preload 100,000 session hashes (`session:<id>`) with 50 small fields each.
+    - Apply HFE (HPEXPIRE) with a very short TTL (1s) to 45/50 fields per hash.
+      The remaining 5 fields have no TTL and should remain visible.
+    - Benchmark issues `HGETALL` reads on random keys.
+
+  Why random key selection:
+    - Hot-key (Zipfian) access can quickly "clean" expired fields on a few keys.
+      Random selection spreads reads across the keyspace, increasing the chance
+      that each read pays the expired-field accounting cost.
+
+  Notes:
+    - This benchmark is intentionally designed as a detector for the deferred-length
+      `genericHgetallCommand` optimization.
+    - It is not intended as a realistic session caching TTL model (real systems often
+      expire the entire session key rather than individual fields).
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_lua: |
+    local seed = 12345
+    math.randomseed(seed)
+
+    local total_keys = 100000
+    local total_fields = 50
+    local expire_fields = 45
+    local ttl_ms = 1000
+
+    for i = 1, total_keys do
+      local key = 'session:' .. i
+
+      -- Create a compact hash (values are small on purpose).
+      local hset_args = {key}
+      for f = 1, total_fields do
+        hset_args[#hset_args+1] = 'field:' .. f
+        hset_args[#hset_args+1] = 'v' .. f
+      end
+      redis.call('HSET', unpack(hset_args))
+
+      -- Enable HFE and expire most fields quickly.
+      local hexp_args = {key, ttl_ms, 'FIELDS', expire_fields}
+      for f = 1, expire_fields do
+        hexp_args[#hexp_args+1] = 'field:' .. f
+      end
+      redis.call('HPEXPIRE', unpack(hexp_args))
+    end
+
+    return 'OK'
+
+tested-groups:
+- hash
+
+tested-commands:
+- hgetall
+- hpexpire
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix "session:"
+    --key-minimum 1
+    --key-maximum 100000
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="HGETALL __key__"
+    --command-key-pattern=R
+    --hide-histogram
+    -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
