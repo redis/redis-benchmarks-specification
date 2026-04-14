@@ -1,0 +1,100 @@
+version: 0.4
+name: memtier_benchmark-stream-50-cgroups-xadd-xdel-gc-lua
+description: >
+  Tests stream GC cleanup with XDEL across 50 consumer groups using a Lua script.
+  Pre-loads 100K stream entries, creates 50 consumer groups, and reads entries into
+  each group's PEL. The Lua script adds a new entry and deletes the oldest entry,
+  triggering streamCleanupEntryCGroupRefs() which must scan all 50 groups to remove
+  PEL references. This directly stresses the O(C) scan path introduced by removing
+  cgroups_ref, where C is the number of consumer groups.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 500 -c 50 -t 4 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key cg-01 0 MKSTREAM
+    - XGROUP CREATE stream-key cg-02 0
+    - XGROUP CREATE stream-key cg-03 0
+    - XGROUP CREATE stream-key cg-04 0
+    - XGROUP CREATE stream-key cg-05 0
+    - XGROUP CREATE stream-key cg-06 0
+    - XGROUP CREATE stream-key cg-07 0
+    - XGROUP CREATE stream-key cg-08 0
+    - XGROUP CREATE stream-key cg-09 0
+    - XGROUP CREATE stream-key cg-10 0
+    - XGROUP CREATE stream-key cg-11 0
+    - XGROUP CREATE stream-key cg-12 0
+    - XGROUP CREATE stream-key cg-13 0
+    - XGROUP CREATE stream-key cg-14 0
+    - XGROUP CREATE stream-key cg-15 0
+    - XGROUP CREATE stream-key cg-16 0
+    - XGROUP CREATE stream-key cg-17 0
+    - XGROUP CREATE stream-key cg-18 0
+    - XGROUP CREATE stream-key cg-19 0
+    - XGROUP CREATE stream-key cg-20 0
+    - XGROUP CREATE stream-key cg-21 0
+    - XGROUP CREATE stream-key cg-22 0
+    - XGROUP CREATE stream-key cg-23 0
+    - XGROUP CREATE stream-key cg-24 0
+    - XGROUP CREATE stream-key cg-25 0
+    - XGROUP CREATE stream-key cg-26 0
+    - XGROUP CREATE stream-key cg-27 0
+    - XGROUP CREATE stream-key cg-28 0
+    - XGROUP CREATE stream-key cg-29 0
+    - XGROUP CREATE stream-key cg-30 0
+    - XGROUP CREATE stream-key cg-31 0
+    - XGROUP CREATE stream-key cg-32 0
+    - XGROUP CREATE stream-key cg-33 0
+    - XGROUP CREATE stream-key cg-34 0
+    - XGROUP CREATE stream-key cg-35 0
+    - XGROUP CREATE stream-key cg-36 0
+    - XGROUP CREATE stream-key cg-37 0
+    - XGROUP CREATE stream-key cg-38 0
+    - XGROUP CREATE stream-key cg-39 0
+    - XGROUP CREATE stream-key cg-40 0
+    - XGROUP CREATE stream-key cg-41 0
+    - XGROUP CREATE stream-key cg-42 0
+    - XGROUP CREATE stream-key cg-43 0
+    - XGROUP CREATE stream-key cg-44 0
+    - XGROUP CREATE stream-key cg-45 0
+    - XGROUP CREATE stream-key cg-46 0
+    - XGROUP CREATE stream-key cg-47 0
+    - XGROUP CREATE stream-key cg-48 0
+    - XGROUP CREATE stream-key cg-49 0
+    - XGROUP CREATE stream-key cg-50 0
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-entries-50-cgroups-for-xdel-gc
+  dataset_description: A stream with 100K entries and 50 consumer groups, designed to stress XDEL GC cleanup path with many groups.
+tested-commands:
+  - eval
+  - xadd
+  - xdel
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command="eval \"local id = redis.call('XADD','stream-key','*','field','value'); local info = redis.call('XINFO','STREAM','stream-key'); local first = info[4]; if first then redis.call('XDEL','stream-key',first) end; return id\" 0"
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95

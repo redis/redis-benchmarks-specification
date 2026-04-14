@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-stream-xreadgroup-xautoclaim-cycle
+description: >
+  Tests the cost of lazy pel_by_time rebuilds under rapid XREADGROUP + XAUTOCLAIM cycles.
+  Pre-loads 500K stream entries and creates a consumer group. The benchmark runs
+  70% XREADGROUP (which invalidates pel_by_time in the fix) and 30% XAUTOCLAIM
+  (which triggers a full pel_by_time rebuild if invalidated).
+  This stresses the lazy rebuild path: each XREADGROUP batch sets pel_by_time_valid=0,
+  and the next XAUTOCLAIM must do an O(N log N) rebuild of the PEL-by-time rax tree.
+  With large PELs, this can cause latency spikes.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 2500 -c 50 -t 4 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key autoclaim-group 0 MKSTREAM
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-500k-entries-for-autoclaim
+  dataset_description: A stream with 500K entries and one consumer group, designed to test XREADGROUP + XAUTOCLAIM interaction and lazy pel_by_time rebuild costs.
+tested-commands:
+  - xreadgroup
+  - xautoclaim
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XREADGROUP GROUP autoclaim-group consumer1 COUNT 100 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=70
+    --command="XAUTOCLAIM stream-key autoclaim-group consumer2 0 0-0 COUNT 100" --command-key-pattern="P" --command-ratio=30
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95
