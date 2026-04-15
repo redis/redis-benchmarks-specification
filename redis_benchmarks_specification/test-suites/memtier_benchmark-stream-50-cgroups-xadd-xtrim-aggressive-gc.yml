@@ -1,12 +1,12 @@
 version: 0.4
-name: memtier_benchmark-stream-50-cgroups-xadd-xdel-gc-lua
+name: memtier_benchmark-stream-50-cgroups-xadd-xtrim-aggressive-gc
 description: >
-  Tests stream GC cleanup with XDEL across 50 consumer groups using a Lua script.
-  Pre-loads 100K stream entries, creates 50 consumer groups, and reads entries into
-  each group's PEL. The Lua script adds a new entry and deletes the oldest entry,
-  triggering streamCleanupEntryCGroupRefs() which must scan all 50 groups to remove
-  PEL references. This directly stresses the O(C) scan path introduced by removing
-  cgroups_ref, where C is the number of consumer groups.
+  Tests stream GC cleanup under aggressive trimming with 50 consumer groups and populated PELs.
+  Pre-loads 100K stream entries, creates 50 consumer groups, and reads 2000 entries into
+  each group's PEL. The benchmark runs 70% XADD and 30% XTRIM MAXLEN ~ 1000 to force
+  frequent GC compaction over entries that are still referenced in PELs.
+  This stresses streamEntryIsReferenced() and streamCleanupEntryCGroupRefs() which must
+  scan all 50 groups' PELs per entry — the key trade-off of removing the cgroups_ref index.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -120,15 +120,13 @@ dbconfig:
   resources:
     requests:
       memory: 4g
-  dataset_name: stream-100k-entries-50-cgroups-for-xdel-gc
-  dataset_description: A stream with 100K entries and 50 consumer groups, designed to stress XDEL GC cleanup path with many groups.
+  dataset_name: stream-100k-entries-50-cgroups-aggressive-gc
+  dataset_description: A stream with 100K entries and 50 consumer groups with populated PELs, designed to stress GC compaction over PEL-referenced entries.
 tested-commands:
-  - eval
   - xadd
-  - xdel
+  - xtrim
 tested-groups:
   - stream
-  - scripting
 redis-topologies:
   - oss-standalone
 build-variants:
@@ -139,7 +137,9 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --command="eval \"local id = redis.call('XADD','stream-key','*','field','value'); local entries = redis.call('XRANGE','stream-key','-','+','COUNT',1); if entries and #entries > 0 then redis.call('XDEL','stream-key',entries[1][1]) end; return id\" 0"
+    --data-size 100
+    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
+    --command="XTRIM stream-key MAXLEN ~ 1000" --command-key-pattern="P" --command-ratio=30
     --hide-histogram
     --test-time 120
     -c 50
