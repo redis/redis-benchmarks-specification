@@ -78,6 +78,7 @@ tested-commands:
   - xdel
 tested-groups:
   - stream
+  - scripting
 redis-topologies:
   - oss-standalone
 build-variants:
