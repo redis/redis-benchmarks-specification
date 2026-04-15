@@ -1722,6 +1722,7 @@ def process_self_contained_coordinator_stream(
                                         mnt_point=mnt_point,
                                         redis_arguments=redis_arguments,
                                         password=redis_password,
+                                        server_name=server_name,
                                     )
                                     r = cluster_conns[0]
                                     redis_conns = cluster_conns

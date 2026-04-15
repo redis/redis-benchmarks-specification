@@ -211,6 +211,7 @@ def spin_docker_cluster_redis(
     mnt_point="/mnt/redis/",
     redis_arguments="",
     password=None,
+    server_name="redis",
 ):
     """Start N Redis instances in cluster mode and form a cluster.
 
@@ -219,6 +220,7 @@ def spin_docker_cluster_redis(
     """
     if start_redis_container_fn is None:
         start_redis_container_fn = _default_start_redis_container
+    executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
     cluster_pids = []
@@ -239,7 +241,7 @@ def spin_docker_cluster_redis(
                 .strip()
             )
         command = generate_cluster_redis_server_args(
-            "{}redis-server".format(mnt_point) if mnt_point else "redis-server",
+            executable,
             node_port,
             mnt_point if mnt_point else "",
             redis_configuration_parameters,
