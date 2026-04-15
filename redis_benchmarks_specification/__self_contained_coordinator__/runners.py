@@ -388,6 +388,7 @@ def process_self_contained_coordinator_stream(
                                     password=redis_password,
                                 )
                                 r = cluster_conns[0]
+                                redis_conns = cluster_conns
                                 redis_pids = cluster_pids
                             else:
                                 current_cpu_pos = spin_docker_standalone_redis(
@@ -406,6 +407,7 @@ def process_self_contained_coordinator_stream(
                                     password=redis_password,
                                 )
                                 r.ping()
+                                redis_conns = [r]
                                 redis_pids = []
                                 redis_info = r.info()
                                 first_redis_pid = redis_info.get("process_id")
@@ -446,7 +448,7 @@ def process_self_contained_coordinator_stream(
                             )
                             dbconfig_keyspacelen_check(
                                 benchmark_config,
-                                [r],
+                                redis_conns,
                             )
 
                             benchmark_tool = extract_client_tool(benchmark_config)
