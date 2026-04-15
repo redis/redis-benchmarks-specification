@@ -2034,7 +2034,12 @@ def process_self_contained_coordinator_stream(
                                     # ARM perf stat --topdown only supports L1;
                                     # Intel supports up to L6. Auto-select.
                                     import platform
-                                    topdown_level = 1 if platform.machine() in ("aarch64", "arm64") else 4
+
+                                    topdown_level = (
+                                        1
+                                        if platform.machine() in ("aarch64", "arm64")
+                                        else 4
+                                    )
                                     topdown_collector = TopdownCollector(
                                         process_name=executable.split("/")[-1],
                                         duration_seconds=topdown_duration,
