@@ -74,8 +74,8 @@ def test_cluster_topologies_have_type_oss_cluster():
     )
     for name, spec in topologies_map.items():
         if name.startswith("oss-cluster-"):
-            assert spec["type"] == "oss-cluster", (
-                f"Topology {name} should have type 'oss-cluster', got '{spec['type']}'"
-            )
+            assert (
+                spec["type"] == "oss-cluster"
+            ), f"Topology {name} should have type 'oss-cluster', got '{spec['type']}'"
             assert extract_primary_count(topologies_map, name) >= 3
             assert extract_replica_count(topologies_map, name) == 0

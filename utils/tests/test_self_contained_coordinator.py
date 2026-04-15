@@ -705,9 +705,9 @@ def test_spin_docker_cluster_redis():
             cluster_info = conn.execute_command("CLUSTER", "INFO")
             if isinstance(cluster_info, bytes):
                 cluster_info = cluster_info.decode()
-            assert "cluster_state:ok" in cluster_info, (
-                f"Node {i} (port {primary_port + i}) not in cluster_state:ok"
-            )
+            assert (
+                "cluster_state:ok" in cluster_info
+            ), f"Node {i} (port {primary_port + i}) not in cluster_state:ok"
 
         # Verify all 16384 slots are covered
         cluster_info = cluster_conns[0].execute_command("CLUSTER", "INFO")
@@ -720,9 +720,9 @@ def test_spin_docker_cluster_redis():
         if isinstance(nodes_raw, bytes):
             nodes_raw = nodes_raw.decode()
         node_lines = [l for l in nodes_raw.strip().split("\n") if l.strip()]
-        assert len(node_lines) == 3, (
-            f"Expected 3 nodes in CLUSTER NODES, got {len(node_lines)}"
-        )
+        assert (
+            len(node_lines) == 3
+        ), f"Expected 3 nodes in CLUSTER NODES, got {len(node_lines)}"
 
         # Verify we can write a key (it should route to the right shard)
         cluster_conns[0].set("test_cluster_key", "value")

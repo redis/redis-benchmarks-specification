@@ -1453,7 +1453,6 @@ def test_self_contained_coordinator_duplicated_ts():
         pass
 
 
-
 def test_self_contained_coordinator_dockerhub_cluster():
     """End-to-end test: spin up a 3-primary Redis cluster via the coordinator
     and run a memtier_benchmark SET workload with --cluster-mode."""
@@ -1562,16 +1561,12 @@ def test_self_contained_coordinator_dockerhub_cluster():
 
             # Verify cluster-specific deployment name in TimeSeries keys
             all_keys = datasink_conn.keys("*")
-            cluster_keys = [
-                k.decode() for k in all_keys if b"oss-cluster" in k
-            ]
+            cluster_keys = [k.decode() for k in all_keys if b"oss-cluster" in k]
             assert len(cluster_keys) > 0, (
                 "Expected TimeSeries keys with 'oss-cluster' deployment, "
                 f"but found none. All keys: {[k.decode() for k in all_keys]}"
             )
-            logging.info(
-                "Found {} cluster TimeSeries keys".format(len(cluster_keys))
-            )
+            logging.info("Found {} cluster TimeSeries keys".format(len(cluster_keys)))
 
     except redis.exceptions.ConnectionError:
         pass

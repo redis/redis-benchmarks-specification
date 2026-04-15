@@ -168,8 +168,13 @@ def generate_cluster_redis_server_args(
 
 
 def _default_start_redis_container(
-    command_str, db_cpuset_cpus, docker_client, mnt_point, redis_containers,
-    run_image, temporary_dir,
+    command_str,
+    db_cpuset_cpus,
+    docker_client,
+    mnt_point,
+    redis_containers,
+    run_image,
+    temporary_dir,
 ):
     """Default container start function used when no custom one is provided."""
     volumes = {}
@@ -225,10 +230,14 @@ def spin_docker_cluster_redis(
         # Per-node filenames to avoid conflicts
         if i > 0:
             node_redis_arguments = (
-                "{} --dbfilename cluster-node-{}-dump.rdb"
-                " --appendfilename cluster-node-{}-appendonly.aof"
-                " --logfile cluster-node-{}-redis.log"
-            ).format(redis_arguments, node_port, node_port, node_port).strip()
+                (
+                    "{} --dbfilename cluster-node-{}-dump.rdb"
+                    " --appendfilename cluster-node-{}-appendonly.aof"
+                    " --logfile cluster-node-{}-redis.log"
+                )
+                .format(redis_arguments, node_port, node_port, node_port)
+                .strip()
+            )
         command = generate_cluster_redis_server_args(
             "{}redis-server".format(mnt_point) if mnt_point else "redis-server",
             node_port,
