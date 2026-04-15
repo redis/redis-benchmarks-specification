@@ -510,7 +510,6 @@ def test_spin_up_redis_replicas():
             redis_configuration_parameters,
             redis_arguments,
             redis_password,
-            start_redis_container,
         )
         assert len(replica_conns) == 1
         replica_info = replica_conns[0].info("replication")
@@ -775,7 +774,6 @@ def test_spin_docker_cluster_redis():
             primary_port,
             run_image,
             temporary_dir,
-            start_redis_container,
             mnt_point=mnt_point,
             redis_arguments="",
             password=redis_password,

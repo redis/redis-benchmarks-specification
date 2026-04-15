@@ -1722,7 +1722,6 @@ def process_self_contained_coordinator_stream(
                                         redis_proc_start_port,
                                         run_image,
                                         temporary_dir,
-                                        start_redis_container,
                                         mnt_point=mnt_point,
                                         redis_arguments=redis_arguments,
                                         password=redis_password,
@@ -1838,7 +1837,6 @@ def process_self_contained_coordinator_stream(
                                         redis_configuration_parameters,
                                         redis_arguments,
                                         redis_password,
-                                        start_redis_container,
                                         server_name=server_name,
                                     )
                                     replica_conns.extend(new_replica_conns)

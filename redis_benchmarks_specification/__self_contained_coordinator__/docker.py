@@ -220,7 +220,6 @@ def spin_docker_cluster_redis(
     redis_proc_start_port,
     run_image,
     temporary_dir,
-    start_redis_container_fn=None,
     mnt_point="/mnt/redis/",
     redis_arguments="",
     password=None,
@@ -231,8 +230,6 @@ def spin_docker_cluster_redis(
     Returns:
         tuple: (cluster_conns, current_cpu_pos)
     """
-    if start_redis_container_fn is None:
-        start_redis_container_fn = start_redis_container
     executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
@@ -269,7 +266,7 @@ def spin_docker_cluster_redis(
                 i + 1, primary_count, node_port, db_cpuset_cpus
             )
         )
-        start_redis_container_fn(
+        start_redis_container(
             command_str,
             db_cpuset_cpus,
             docker_client,
@@ -344,7 +341,6 @@ def spin_up_redis_replicas(
     redis_configuration_parameters,
     redis_arguments,
     password,
-    start_redis_container_fn,
     replication_sync_timeout=600,
     server_name="redis",
 ):
@@ -391,7 +387,7 @@ def spin_up_redis_replicas(
                 i, replica_count, replica_port, db_cpuset_cpus
             )
         )
-        start_redis_container_fn(
+        start_redis_container(
             command_str,
             db_cpuset_cpus,
             docker_client,
