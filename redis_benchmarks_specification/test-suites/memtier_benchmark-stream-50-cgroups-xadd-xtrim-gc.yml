@@ -2,10 +2,11 @@ version: 0.4
 name: memtier_benchmark-stream-50-cgroups-xadd-xtrim-gc
 description: >
   Tests stream GC/compaction overhead with 50 consumer groups.
-  Pre-loads 100K stream entries and creates 50 consumer groups, each reading a portion of entries into their PEL.
-  The benchmark then runs 70% XADD (producing new entries) and 30% XTRIM MAXLEN ~ 50000 (triggering GC).
-  This stresses the streamEntryIsReferenced() path which must scan all 50 consumer groups' PELs
-  during compaction — the key trade-off of removing the cgroups_ref index.
+  Pre-loads 100K stream entries and creates 50 consumer groups, each reading all entries into their PEL.
+  The benchmark runs 50% XADD, 20% XREADGROUP (advancing min_cgroup_last_id), and 30% XTRIM MAXLEN ~ 50000.
+  XREADGROUP is critical — without it min_cgroup_last_id never advances and streamEntryIsReferenced()
+  short-circuits before reaching the PEL scan. With active consumption, trimmed entries fall through
+  to the O(C) PEL scan across all 50 consumer groups.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -66,63 +67,64 @@ dbconfig:
     - XGROUP CREATE stream-key cg-48 0
     - XGROUP CREATE stream-key cg-49 0
     - XGROUP CREATE stream-key cg-50 0
-    - XREADGROUP GROUP cg-01 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-02 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-03 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-04 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-05 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-06 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-07 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-08 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-09 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-10 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-11 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-12 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-13 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-14 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-15 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-16 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-17 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-18 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-19 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-20 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-21 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-22 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-23 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-24 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-25 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-26 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-27 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-28 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-29 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-30 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-31 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-32 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-33 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-34 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-35 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-36 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-37 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-38 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-39 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-40 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-41 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-42 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-43 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-44 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-45 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-46 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-47 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-48 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-49 consumer1 COUNT 2000 STREAMS stream-key >
-    - XREADGROUP GROUP cg-50 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-01 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-02 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-03 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-04 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-05 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-06 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-07 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-08 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-09 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-10 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-11 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-12 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-13 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-14 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-15 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-16 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-17 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-18 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-19 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-20 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-21 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-22 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-23 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-24 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-25 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-26 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-27 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-28 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-29 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-30 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-31 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-32 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-33 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-34 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-35 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-36 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-37 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-38 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-39 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-40 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-41 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-42 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-43 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-44 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-45 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-46 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-47 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-48 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-49 consumer1 COUNT 100000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-50 consumer1 COUNT 100000 STREAMS stream-key >
   resources:
     requests:
       memory: 4g
-  dataset_name: stream-100k-entries-50-consumer-groups
-  dataset_description: A stream with 100K entries and 50 consumer groups, designed to stress GC compaction with many groups.
+  dataset_name: stream-100k-entries-50-consumer-groups-full-pel
+  dataset_description: A stream with 100K entries and 50 consumer groups, each with all 100K entries in their PEL (unacked). Stresses GC compaction PEL scan with many groups.
 tested-commands:
   - xadd
+  - xreadgroup
   - xtrim
 tested-groups:
   - stream
@@ -137,7 +139,8 @@ clientconfig:
   tool: memtier_benchmark
   arguments: >
     --data-size 100
-    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
+    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=50
+    --command="XREADGROUP GROUP cg-01 consumer1 COUNT 10 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=20
     --command="XTRIM stream-key MAXLEN ~ 50000" --command-key-pattern="P" --command-ratio=30
     --hide-histogram
     --test-time 120
