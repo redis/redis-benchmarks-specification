@@ -1761,28 +1761,6 @@ def process_self_contained_coordinator_stream(
                                     conn.ping()
                                     primary_conns.append(conn)
 
-                                redis_info = primary_conns[0].info()
-
-                                if git_hash is None and "redis_git_sha1" in redis_info:
-                                    git_hash = redis_info["redis_git_sha1"]
-                                    if (
-                                        git_hash == "" or git_hash == 0
-                                    ) and "redis_build_id" in redis_info:
-                                        git_hash = redis_info["redis_build_id"]
-                                    logging.info(
-                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
-                                    )
-
-                                server_version_keyname = f"{server_name}_version"
-                                if (
-                                    git_version is None
-                                    and server_version_keyname in redis_info
-                                ):
-                                    git_version = redis_info[server_version_keyname]
-                                    logging.info(
-                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
-                                    )
-
                                 # Allocate the client cpuset up front so that
                                 # preload can optionally run BEFORE the replica
                                 # spin-up (see preload_before_replica below).
@@ -1868,11 +1846,13 @@ def process_self_contained_coordinator_stream(
 
                                 redis_conns = primary_conns + replica_conns
                                 redis_pids = []
+                                redis_info = {}
                                 for conn in redis_conns:
                                     try:
-                                        redis_pids.append(
-                                            conn.info().get("process_id", "unknown")
-                                        )
+                                        info = conn.info()
+                                        if not redis_info:
+                                            redis_info = info
+                                        redis_pids.append(info["process_id"])
                                     except Exception as e:
                                         logging.warning(
                                             "An error occurred while trying to fetch redis process id: {}. Skipping it.".format(
@@ -1880,6 +1860,26 @@ def process_self_contained_coordinator_stream(
                                             )
                                         )
                                 reset_commandstats(redis_conns)
+
+                                if git_hash is None and "redis_git_sha1" in redis_info:
+                                    git_hash = redis_info["redis_git_sha1"]
+                                    if (
+                                        git_hash == "" or git_hash == 0
+                                    ) and "redis_build_id" in redis_info:
+                                        git_hash = redis_info["redis_build_id"]
+                                    logging.info(
+                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
+                                    )
+
+                                server_version_keyname = f"{server_name}_version"
+                                if (
+                                    git_version is None
+                                    and server_version_keyname in redis_info
+                                ):
+                                    git_version = redis_info[server_version_keyname]
+                                    logging.info(
+                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
+                                    )
                                 # Capture initial sync_full count from master so we can
                                 # compute the delta after the benchmark runs. Write-heavy
                                 # benchmarks with a small replication backlog will trigger
