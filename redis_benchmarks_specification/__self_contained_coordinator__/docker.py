@@ -167,7 +167,7 @@ def generate_cluster_redis_server_args(
     return command
 
 
-def _default_start_redis_container(
+def start_redis_container(
     command_str,
     db_cpuset_cpus,
     docker_client,
@@ -175,22 +175,35 @@ def _default_start_redis_container(
     redis_containers,
     run_image,
     temporary_dir,
+    auto_remove=False,
 ):
-    """Default container start function used when no custom one is provided."""
+    """Start a Redis container with the given configuration.
+
+    Used for standalone, cluster, and replica container startup.
+    """
+    logging.info(
+        "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
+            run_image, db_cpuset_cpus, command_str
+        )
+    )
     volumes = {}
+    working_dir = "/"
     if mnt_point:
         volumes = {temporary_dir: {"bind": mnt_point, "mode": "rw"}}
+        logging.info(f"setting volume as follow: {volumes}. working_dir={mnt_point}")
+        working_dir = mnt_point
     container = docker_client.containers.run(
         image=run_image,
         volumes=volumes,
-        auto_remove=True,
+        auto_remove=auto_remove,
         privileged=True,
-        working_dir=mnt_point if mnt_point else "/",
+        working_dir=working_dir,
         command=command_str,
         network_mode="host",
         detach=True,
         cpuset_cpus=db_cpuset_cpus,
         pid_mode="host",
+        publish_all_ports=True,
     )
     time.sleep(5)
     redis_containers.append(container)
@@ -219,7 +232,7 @@ def spin_docker_cluster_redis(
         tuple: (cluster_conns, current_cpu_pos)
     """
     if start_redis_container_fn is None:
-        start_redis_container_fn = _default_start_redis_container
+        start_redis_container_fn = start_redis_container
     executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []

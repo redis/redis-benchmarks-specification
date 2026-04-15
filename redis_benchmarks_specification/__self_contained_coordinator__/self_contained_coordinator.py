@@ -616,6 +616,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
+    start_redis_container,
 )
 
 
@@ -2772,50 +2773,6 @@ def process_self_contained_coordinator_stream(
         print("-" * 60)
         overall_result = False
     return stream_id, overall_result, total_test_suite_runs
-
-
-def start_redis_container(
-    command_str,
-    db_cpuset_cpus,
-    docker_client,
-    mnt_point,
-    redis_containers,
-    run_image,
-    temporary_dir,
-    auto_remove=False,
-):
-    logging.info(
-        "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
-            run_image, db_cpuset_cpus, command_str
-        )
-    )
-    volumes = {}
-    working_dir = "/"
-    if mnt_point != "":
-        volumes = {
-            temporary_dir: {
-                "bind": mnt_point,
-                "mode": "rw",
-            },
-        }
-        logging.info(f"setting volume as follow: {volumes}. working_dir={mnt_point}")
-        working_dir = mnt_point
-    redis_container = docker_client.containers.run(
-        image=run_image,
-        volumes=volumes,
-        auto_remove=auto_remove,
-        privileged=True,
-        working_dir=mnt_point,
-        command=command_str,
-        network_mode="host",
-        detach=True,
-        cpuset_cpus=db_cpuset_cpus,
-        pid_mode="host",
-        publish_all_ports=True,
-    )
-    time.sleep(5)
-    redis_containers.append(redis_container)
-    return redis_container
 
 
 def filter_test_files(

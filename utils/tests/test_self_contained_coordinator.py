@@ -19,6 +19,8 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     start_redis_container,
 )
 
