@@ -67,6 +67,56 @@ dbconfig:
     - XGROUP CREATE stream-key cg-48 0
     - XGROUP CREATE stream-key cg-49 0
     - XGROUP CREATE stream-key cg-50 0
+    - XREADGROUP GROUP cg-01 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-02 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-03 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-04 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-05 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-06 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-07 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-08 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-09 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-10 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-11 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-12 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-13 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-14 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-15 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-16 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-17 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-18 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-19 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-20 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-21 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-22 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-23 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-24 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-25 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-26 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-27 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-28 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-29 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-30 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-31 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-32 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-33 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-34 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-35 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-36 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-37 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-38 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-39 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-40 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-41 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-42 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-43 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-44 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-45 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-46 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-47 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-48 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-49 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-50 consumer1 COUNT 2000 STREAMS stream-key >
   resources:
     requests:
       memory: 4g
@@ -89,7 +139,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --command="eval \"local id = redis.call('XADD','stream-key','*','field','value'); local info = redis.call('XINFO','STREAM','stream-key'); local first = info[4]; if first then redis.call('XDEL','stream-key',first) end; return id\" 0"
+    --command="eval \"local id = redis.call('XADD','stream-key','*','field','value'); local entries = redis.call('XRANGE','stream-key','-','+','COUNT',1); if entries and #entries > 0 then redis.call('XDEL','stream-key',entries[1][1]) end; return id\" 0"
     --hide-histogram
     --test-time 120
     -c 50
