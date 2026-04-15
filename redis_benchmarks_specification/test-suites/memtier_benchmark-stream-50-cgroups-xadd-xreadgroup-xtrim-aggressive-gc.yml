@@ -1,12 +1,12 @@
 version: 0.4
-name: memtier_benchmark-stream-50-cgroups-xadd-xtrim-gc
+name: memtier_benchmark-stream-50-cgroups-xadd-xreadgroup-xtrim-aggressive-gc
 description: >
-  Tests stream GC/compaction overhead with 50 consumer groups.
-  Pre-loads 100K stream entries and creates 50 consumer groups, each reading all entries into their PEL.
-  The benchmark runs 50% XADD, 20% XREADGROUP (advancing min_cgroup_last_id), and 30% XTRIM MAXLEN ~ 50000.
-  XREADGROUP is critical — without it min_cgroup_last_id never advances and streamEntryIsReferenced()
-  short-circuits before reaching the PEL scan. With active consumption, trimmed entries fall through
-  to the O(C) PEL scan across all 50 consumer groups.
+  Tests stream GC cleanup under aggressive trimming with 50 consumer groups and populated PELs.
+  Pre-loads 100K stream entries, creates 50 consumer groups, and reads all entries into
+  each group's PEL. The benchmark runs 50% XADD, 20% XREADGROUP (advancing min_cgroup_last_id),
+  and 30% XTRIM MAXLEN ~ 1000 to force frequent GC compaction.
+  XREADGROUP advances min_cgroup_last_id so trimmed entries fall through to the O(C) PEL scan
+  across all 50 groups — stressing streamEntryIsReferenced() and streamCleanupEntryCGroupRefs().
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -121,7 +121,7 @@ dbconfig:
     requests:
       memory: 4g
   dataset_name: stream-100k-entries-50-consumer-groups-full-pel
-  dataset_description: A stream with 100K entries and 50 consumer groups, each with all 100K entries in their PEL (unacked). Stresses GC compaction PEL scan with many groups.
+  dataset_description: A stream with 100K entries and 50 consumer groups with fully populated PELs (all 100K entries each), designed to stress GC compaction PEL scan with many groups.
 tested-commands:
   - xadd
   - xreadgroup
@@ -141,7 +141,7 @@ clientconfig:
     --data-size 100
     --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=50
     --command="XREADGROUP GROUP cg-01 consumer1 COUNT 10 STREAMS stream-key >" --command-key-pattern="P" --command-ratio=20
-    --command="XTRIM stream-key MAXLEN ~ 50000" --command-key-pattern="P" --command-ratio=30
+    --command="XTRIM stream-key MAXLEN ~ 1000" --command-key-pattern="P" --command-ratio=30
     --hide-histogram
     --test-time 120
     -c 50
