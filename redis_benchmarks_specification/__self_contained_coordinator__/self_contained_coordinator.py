@@ -1293,6 +1293,15 @@ def process_self_contained_coordinator_stream(
                     f"detected a deployment_name_regexp definition on the streamdata {deployment_name_regexp}"
                 )
 
+            override_deployment_regexp = ""
+            if b"override_deployment_regexp" in testDetails:
+                override_deployment_regexp = testDetails[
+                    b"override_deployment_regexp"
+                ].decode()
+                logging.info(
+                    f"detected an override_deployment_regexp definition on the streamdata {override_deployment_regexp}"
+                )
+
             skip_test = False
             if b"platform" in testDetails:
                 platform = testDetails[b"platform"]
@@ -1397,6 +1406,8 @@ def process_self_contained_coordinator_stream(
                     f"Adding {len(filtered_test_files)} tests to pending test list"
                 )
 
+                all_available_topologies = list(topologies_map.keys())
+
                 # Use pipeline for efficient bulk operations
                 pipeline = github_event_conn.pipeline()
                 test_names_added = []
@@ -1413,11 +1424,29 @@ def process_self_contained_coordinator_stream(
                     test_names_added.append(test_name)
                     # Add topology-level entries
                     topologies = benchmark_config.get("redis-topologies", [])
+
+                    # Override topology if specified
+                    if override_deployment_regexp:
+                        # Start with all available topologies when overriding
+                        topologies = [
+                            t
+                            for t in all_available_topologies
+                            if re.match(override_deployment_regexp, t)
+                        ]
+                        logging.info(
+                            f"Override deployment regexp '{override_deployment_regexp}' for test {test_name} -> {len(topologies)} matches from {len(all_available_topologies)} available: {topologies}"
+                        )
+
+                    # Apply topology filter if specified
+                    if deployment_name_regexp != ".*":
+                        topologies = [
+                            t for t in topologies if re.match(deployment_name_regexp, t)
+                        ]
+                        logging.info(
+                            f"Deployment name regexp '{deployment_name_regexp}' for test {test_name} -> {len(topologies)} matches: {topologies}"
+                        )
+
                     for topo in topologies:
-                        # Apply deployment_name_regexp filter
-                        if deployment_name_regexp != ".*":
-                            if not re.match(deployment_name_regexp, topo):
-                                continue
                         # Apply CLI topology filter
                         if args is not None and args.topology and topo != args.topology:
                             continue
@@ -1554,7 +1583,34 @@ def process_self_contained_coordinator_stream(
                         # Initialize test_result before topology loop.
                         # If all topologies are filtered out, test is considered passed (nothing to run).
                         test_result = True
-                        for topology_spec_name in benchmark_config["redis-topologies"]:
+
+                        # Start with appropriate topology base
+                        topologies_to_run = benchmark_config["redis-topologies"]
+
+                        # Override topology if specified
+                        if override_deployment_regexp:
+                            # Start with all available topologies when overriding
+                            topologies_to_run = [
+                                t
+                                for t in all_available_topologies
+                                if re.match(override_deployment_regexp, t)
+                            ]
+                            logging.info(
+                                f"Override deployment regexp '{override_deployment_regexp}' for test {test_name}: {len(topologies_to_run)} matches from {len(all_available_topologies)} available: {topologies_to_run}"
+                            )
+
+                        # Apply deployment filter if specified
+                        if deployment_name_regexp != ".*":
+                            topologies_to_run = [
+                                t
+                                for t in topologies_to_run
+                                if re.match(deployment_name_regexp, t)
+                            ]
+                            logging.info(
+                                f"Deployment name regexp '{deployment_name_regexp}' for test {test_name}: {len(topologies_to_run)} matches: {topologies_to_run}"
+                            )
+
+                        for topology_spec_name in topologies_to_run:
                             setup_name = topology_spec_name
                             setup_type = "oss-standalone"
 
@@ -1568,16 +1624,6 @@ def process_self_contained_coordinator_stream(
                                     f"Skipping topology {topology_spec_name} as it doesn't match the requested topology {args.topology}"
                                 )
                                 continue
-
-                            # Filter by deployment_name_regexp from stream (regex match)
-                            if deployment_name_regexp != ".*":
-                                if not re.match(
-                                    deployment_name_regexp, topology_spec_name
-                                ):
-                                    logging.info(
-                                        f"Skipping topology {topology_spec_name} as it doesn't match deployment_name_regexp '{deployment_name_regexp}'"
-                                    )
-                                    continue
 
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]

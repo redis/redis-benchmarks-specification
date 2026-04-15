@@ -260,6 +260,11 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
             if hasattr(args, "deployment_name_regexp")
             else ".*"
         ),
+        (
+            args.override_deployment_regexp
+            if hasattr(args, "override_deployment_regexp")
+            else ""
+        ),
     )
     build_stream_fields["github_repo"] = args.gh_repo
     build_stream_fields["github_org"] = args.gh_org
@@ -909,9 +914,22 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                         from redis_benchmarks_specification.__common__.runner import (
                             get_benchmark_specs,
                         )
+                        from redis_benchmarks_specification.__setups__.topologies import (
+                            get_topologies,
+                        )
+                        from redis_benchmarks_specification.__common__.env import (
+                            SPECS_PATH_SETUPS,
+                        )
 
                         testsuites_folder = os.path.abspath(args.test_suites_folder)
                         spec_files = get_benchmark_specs(testsuites_folder)
+
+                        # Load all available topologies for override functionality
+                        topologies_file = os.path.join(
+                            SPECS_PATH_SETUPS, "topologies", "topologies.yml"
+                        )
+                        topologies_map = get_topologies(topologies_file)
+                        all_available_topologies = list(topologies_map.keys())
                         total_tests = 0
                         total_topology_runs = 0
                         deployment_name_regexp_filter = args.deployment_name_regexp
@@ -926,17 +944,33 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                             test_name = config["name"]
                             if not tests_regexp_compiled.match(test_name):
                                 continue
+
                             topologies = config.get("redis-topologies", [])
+
+                            # Override topology if specified
+                            if args.override_deployment_regexp:
+                                # Start with all available topologies when overriding
+                                topologies = [
+                                    t
+                                    for t in all_available_topologies
+                                    if re.match(args.override_deployment_regexp, t)
+                                ]
+
+                            # Apply deployment filter if specified
                             if deployment_name_regexp_filter != ".*":
                                 topologies = [
                                     t
                                     for t in topologies
                                     if re.match(deployment_name_regexp_filter, t)
                                 ]
+
                             if topologies:
                                 total_tests += 1
                                 total_topology_runs += len(topologies)
-                                if len(topologies) > 1:
+                                if (
+                                    not args.override_deployment_regexp
+                                    and len(topologies) > 1
+                                ):
                                     logging.info(
                                         f"  {test_name}: {len(topologies)} topologies -> {', '.join(topologies)}"
                                     )
