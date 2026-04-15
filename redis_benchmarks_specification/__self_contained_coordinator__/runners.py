@@ -387,7 +387,6 @@ def process_self_contained_coordinator_stream(
                                     mnt_point="/mnt/redis/",
                                     password=redis_password,
                                 )
-                                r = cluster_conns[0]
                                 redis_conns = cluster_conns
                                 redis_pids = cluster_pids
                             else:
@@ -402,14 +401,14 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     redis_password,
                                 )
-                                r = redis.StrictRedis(
+                                conn = redis.StrictRedis(
                                     port=redis_proc_start_port,
                                     password=redis_password,
                                 )
-                                r.ping()
-                                redis_conns = [r]
+                                conn.ping()
+                                redis_conns = [conn]
                                 redis_pids = []
-                                redis_info = r.info()
+                                redis_info = conn.info()
                                 first_redis_pid = redis_info.get("process_id")
                                 if first_redis_pid is not None:
                                     redis_pids.append(first_redis_pid)
@@ -577,7 +576,11 @@ def process_self_contained_coordinator_stream(
                                 logging.info(
                                     "output {}".format(client_container_stdout)
                                 )
-                            r.shutdown(save=False)
+                            for conn in redis_conns:
+                                try:
+                                    conn.shutdown(save=False)
+                                except redis.exceptions.ConnectionError:
+                                    pass
 
                             (
                                 _,
