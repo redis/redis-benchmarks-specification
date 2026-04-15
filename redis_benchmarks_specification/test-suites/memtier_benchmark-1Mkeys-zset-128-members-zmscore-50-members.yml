@@ -1,0 +1,83 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-zset-128-members-zmscore-50-members
+description: >
+  Runs memtier_benchmark, for a keyspace length of 1M ZSET keys each
+  containing 128 members (listpack encoded, at the max listpack threshold).
+  After pre-loading, issues ZMSCORE with 50 members: 25 that exist in the
+  zset (hits) and 25 that do not (misses). Designed to stress the ZMSCORE
+  listpack single-pass optimization where many members are queried per
+  command and listpack traversal dominates.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "ZADD __key__
+      1 mem001 2 mem002 3 mem003 4 mem004 5 mem005
+      6 mem006 7 mem007 8 mem008 9 mem009 10 mem010
+      11 mem011 12 mem012 13 mem013 14 mem014 15 mem015
+      16 mem016 17 mem017 18 mem018 19 mem019 20 mem020
+      21 mem021 22 mem022 23 mem023 24 mem024 25 mem025
+      26 mem026 27 mem027 28 mem028 29 mem029 30 mem030
+      31 mem031 32 mem032 33 mem033 34 mem034 35 mem035
+      36 mem036 37 mem037 38 mem038 39 mem039 40 mem040
+      41 mem041 42 mem042 43 mem043 44 mem044 45 mem045
+      46 mem046 47 mem047 48 mem048 49 mem049 50 mem050
+      51 mem051 52 mem052 53 mem053 54 mem054 55 mem055
+      56 mem056 57 mem057 58 mem058 59 mem059 60 mem060
+      61 mem061 62 mem062 63 mem063 64 mem064 65 mem065
+      66 mem066 67 mem067 68 mem068 69 mem069 70 mem070
+      71 mem071 72 mem072 73 mem073 74 mem074 75 mem075
+      76 mem076 77 mem077 78 mem078 79 mem079 80 mem080
+      81 mem081 82 mem082 83 mem083 84 mem084 85 mem085
+      86 mem086 87 mem087 88 mem088 89 mem089 90 mem090
+      91 mem091 92 mem092 93 mem093 94 mem094 95 mem095
+      96 mem096 97 mem097 98 mem098 99 mem099 100 mem100
+      101 mem101 102 mem102 103 mem103 104 mem104 105 mem105
+      106 mem106 107 mem107 108 mem108 109 mem109 110 mem110
+      111 mem111 112 mem112 113 mem113 114 mem114 115 mem115
+      116 mem116 117 mem117 118 mem118 119 mem119 120 mem120
+      121 mem121 122 mem122 123 mem123 124 mem124 125 mem125
+      126 mem126 127 mem127 128 mem128"
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=1000000
+      -n 5000 -c 50 -t 4 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1Mkeys-zset-128-members
+  dataset_description: >
+    This dataset contains 1 million sorted set keys, each with 128 members
+    (listpack encoded, at the zset-max-listpack-entries=128 threshold).
+tested-groups:
+- sorted-set
+tested-commands:
+- zadd
+- zmscore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "ZMSCORE __key__
+    mem001 mem002 mem003 mem004 mem005 mem006 mem007 mem008 mem009 mem010
+    mem011 mem012 mem013 mem014 mem015 mem016 mem017 mem018 mem019 mem020
+    mem021 mem022 mem023 mem024 mem025
+    miss001 miss002 miss003 miss004 miss005 miss006 miss007 miss008 miss009 miss010
+    miss011 miss012 miss013 miss014 miss015 miss016 miss017 miss018 miss019 miss020
+    miss021 miss022 miss023 miss024 miss025"
+    --command-key-pattern="R" --key-minimum=1 --key-maximum=1000000
+    --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 107
