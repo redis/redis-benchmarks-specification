@@ -187,17 +187,15 @@ def start_redis_container(
         )
     )
     volumes = {}
-    working_dir = "/"
-    if mnt_point:
+    if mnt_point != "":
         volumes = {temporary_dir: {"bind": mnt_point, "mode": "rw"}}
         logging.info(f"setting volume as follow: {volumes}. working_dir={mnt_point}")
-        working_dir = mnt_point
     container = docker_client.containers.run(
         image=run_image,
         volumes=volumes,
         auto_remove=auto_remove,
         privileged=True,
-        working_dir=working_dir,
+        working_dir=mnt_point,
         command=command_str,
         network_mode="host",
         detach=True,
