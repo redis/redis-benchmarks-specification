@@ -489,7 +489,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
-                                    benchmark_tool_workdir,
+                                    setup_type == "oss-cluster",
                                     redis_password,
                                 )
                             elif "vector_db_benchmark" in benchmark_tool:

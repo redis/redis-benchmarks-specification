@@ -637,8 +637,11 @@ def test_cluster_yaml_spec_get():
     assert "oss-cluster-3-primaries" in benchmark_config["redis-topologies"]
     assert "get" in benchmark_config["tested-commands"]
     assert benchmark_config["clientconfig"]["tool"] == "memtier_benchmark"
-    # Preload tool should use cluster mode
-    assert "--cluster-mode" in benchmark_config["dbconfig"]["preload_tool"]["arguments"]
+    # --cluster-mode is injected programmatically, not in the YAML arguments
+    assert (
+        "--cluster-mode"
+        not in benchmark_config["dbconfig"]["preload_tool"]["arguments"]
+    )
 
 
 def test_cluster_yaml_spec_set():
@@ -655,6 +658,91 @@ def test_cluster_yaml_spec_set():
     assert benchmark_config["clientconfig"]["tool"] == "memtier_benchmark"
     # SET workload doesn't need preload
     assert "preload_tool" not in benchmark_config.get("dbconfig", {})
+
+
+def test_cluster_mode_injected_programmatically():
+    """--cluster-mode must NOT be in cluster YAML arguments but MUST be
+    injected by prepare_memtier_benchmark_parameters when
+    oss_cluster_api_enabled is True."""
+    from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+        prepare_memtier_benchmark_parameters,
+    )
+
+    cluster_specs = [
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-string-get-10B-cluster.yml",
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-10Mkeys-string-get-set-1-10-512B-cluster.yml",
+    ]
+    for spec_path in cluster_specs:
+        with open(spec_path, "r") as yml_file:
+            benchmark_config = yaml.safe_load(yml_file)
+
+        # YAML must not contain --cluster-mode (neither client nor preload)
+        client_args = benchmark_config["clientconfig"].get("arguments", "")
+        assert (
+            "--cluster-mode" not in client_args
+        ), f"--cluster-mode should not be in clientconfig.arguments of {spec_path}"
+        preload_args = (
+            benchmark_config.get("dbconfig", {})
+            .get("preload_tool", {})
+            .get("arguments", "")
+        )
+        assert (
+            "--cluster-mode" not in preload_args
+        ), f"--cluster-mode should not be in preload_tool.arguments of {spec_path}"
+
+        # When oss_cluster_api_enabled=True, --cluster-mode IS added
+        _, cmd_str = prepare_memtier_benchmark_parameters(
+            benchmark_config["clientconfig"],
+            "memtier_benchmark",
+            6379,
+            "localhost",
+            "out.json",
+            True,
+        )
+        assert "--cluster-mode" in cmd_str, (
+            f"--cluster-mode must be injected when oss_cluster_api_enabled=True "
+            f"for {spec_path}"
+        )
+
+        # When oss_cluster_api_enabled=False, --cluster-mode is NOT added
+        _, cmd_str = prepare_memtier_benchmark_parameters(
+            benchmark_config["clientconfig"],
+            "memtier_benchmark",
+            6379,
+            "localhost",
+            "out.json",
+            False,
+        )
+        assert "--cluster-mode" not in cmd_str, (
+            f"--cluster-mode must NOT be injected when oss_cluster_api_enabled=False "
+            f"for {spec_path}"
+        )
+
+
+def test_standalone_mode_no_cluster_flag():
+    """Standalone test suites must never get --cluster-mode injected."""
+    from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+        prepare_memtier_benchmark_parameters,
+    )
+
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-100B-expire-use-case.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+
+    _, cmd_str = prepare_memtier_benchmark_parameters(
+        benchmark_config["clientconfig"],
+        "memtier_benchmark",
+        6379,
+        "localhost",
+        "out.json",
+        False,
+    )
+    assert "--cluster-mode" not in cmd_str
 
 
 def test_spin_docker_cluster_redis():

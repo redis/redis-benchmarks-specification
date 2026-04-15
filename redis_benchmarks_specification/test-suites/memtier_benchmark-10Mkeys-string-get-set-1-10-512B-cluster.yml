@@ -10,7 +10,7 @@ dbconfig:
     tool: memtier_benchmark
     arguments: '"--data-size" "512" "--key-pattern" "P:P" "--key-minimum" "1" "--key-maximum"
       "10000000" "--ratio" "1:0" "--pipeline" "30" "--clients" "50" "--threads" "30"
-      "-n" "allkeys" "--hide-histogram" "--cluster-mode"'
+      "-n" "allkeys" "--hide-histogram"'
   resources:
     requests:
       memory: 12g
@@ -30,8 +30,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: '"--data-size" "512" "--ratio" "1:10" "--key-pattern" "R:R" "--key-minimum"
-    "1" "--key-maximum" "10000000" "--test-time" "180" "-c" "50" "-t" "4" "--hide-histogram"
-    "--cluster-mode"'
+    "1" "--key-maximum" "10000000" "--test-time" "180" "-c" "50" "-t" "4" "--hide-histogram"'
   resources:
     requests:
       cpus: '4'
