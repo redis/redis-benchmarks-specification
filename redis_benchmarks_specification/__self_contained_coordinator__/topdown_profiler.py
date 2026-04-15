@@ -21,22 +21,12 @@ def check_topdown_available() -> bool:
       2. `topdown version` runs successfully
       3. System is x86_64 (Intel TMA requires Intel CPU)
     """
-    import platform
-
-    # Step 1: Check architecture — TMA only works on x86_64 Intel
-    machine = platform.machine()
-    if machine not in ("x86_64", "AMD64"):
-        logging.info(
-            f"topdown-profiler: architecture {machine} not supported (requires x86_64) - disabled"
-        )
-        return False
-
-    # Step 2: Check if topdown command exists
+    # Step 1: Check if topdown command exists
     if shutil.which("topdown") is None:
         logging.info("topdown command not found in PATH - topdown integration disabled")
         return False
 
-    # Step 3: Verify it runs
+    # Step 2: Verify it runs
     try:
         result = subprocess.run(
             ["topdown", "version"],
