@@ -274,6 +274,7 @@ def spin_docker_cluster_redis(
             redis_containers,
             run_image,
             temporary_dir,
+            auto_remove=True,
         )
         r = redis.StrictRedis(port=node_port, password=password)
         r.ping()
@@ -395,6 +396,7 @@ def spin_up_redis_replicas(
             redis_containers,
             run_image,
             temporary_dir,
+            auto_remove=True,
         )
         replica_r = redis.StrictRedis(port=replica_port, password=password)
         replica_r.ping()
