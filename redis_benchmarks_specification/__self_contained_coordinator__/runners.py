@@ -401,19 +401,19 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     redis_password,
                                 )
-                                conn = redis.StrictRedis(
+                                redis_conn = redis.StrictRedis(
                                     port=redis_proc_start_port,
                                     password=redis_password,
                                 )
-                                conn.ping()
-                                primary_conns.append(conn)
+                                redis_conn.ping()
+                                primary_conns.append(redis_conn)
 
                             redis_conns = primary_conns
                             redis_pids = []
-                            for conn in redis_conns:
+                            for redis_conn in redis_conns:
                                 try:
                                     redis_pids.append(
-                                        conn.info().get("process_id", "unknown")
+                                        redis_conn.info().get("process_id", "unknown")
                                     )
                                 except Exception as e:
                                     logging.warning(
@@ -582,9 +582,9 @@ def process_self_contained_coordinator_stream(
                                 logging.info(
                                     "output {}".format(client_container_stdout)
                                 )
-                            for conn in redis_conns:
+                            for redis_conn in redis_conns:
                                 try:
-                                    conn.shutdown(save=False)
+                                    redis_conn.shutdown(save=False)
                                 except redis.exceptions.ConnectionError:
                                     pass
 

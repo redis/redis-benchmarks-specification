@@ -1754,12 +1754,12 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir,
                                     )
 
-                                    conn = redis.StrictRedis(
+                                    redis_conn = redis.StrictRedis(
                                         port=redis_proc_start_port,
                                         password=redis_password,
                                     )
-                                    conn.ping()
-                                    primary_conns.append(conn)
+                                    redis_conn.ping()
+                                    primary_conns.append(redis_conn)
 
                                 # Allocate the client cpuset up front so that
                                 # preload can optionally run BEFORE the replica
@@ -1847,9 +1847,9 @@ def process_self_contained_coordinator_stream(
                                 redis_conns = primary_conns + replica_conns
                                 redis_pids = []
                                 redis_info = {}
-                                for conn in redis_conns:
+                                for redis_conn in redis_conns:
                                     try:
-                                        info = conn.info()
+                                        info = redis_conn.info()
                                         if not redis_info:
                                             redis_info = info
                                         redis_pids.append(info["process_id"])
@@ -1886,9 +1886,9 @@ def process_self_contained_coordinator_stream(
                                 # additional full syncs at runtime. Note: sync_full lives
                                 # in the "stats" section, not "replication".
                                 sync_full_initial = 0
-                                for conn in primary_conns:
+                                for redis_conn in primary_conns:
                                     try:
-                                        stats_info = conn.info("stats")
+                                        stats_info = redis_conn.info("stats")
                                         sync_full_initial += int(
                                             stats_info.get("sync_full", 0)
                                         )
@@ -1913,10 +1913,10 @@ def process_self_contained_coordinator_stream(
                                         == "oss-cluster",
                                     )
 
-                                for conn in primary_conns:
+                                for redis_conn in primary_conns:
                                     execute_init_commands(
                                         benchmark_config,
-                                        conn,
+                                        redis_conn,
                                         dbconfig_keyname="dbconfig",
                                     )
 
@@ -2379,9 +2379,9 @@ def process_self_contained_coordinator_stream(
                                 # may trigger multiple full syncs at runtime. Note:
                                 # sync_full is in the "stats" section, not "replication".
                                 sync_full_after = 0
-                                for conn in primary_conns:
+                                for redis_conn in primary_conns:
                                     try:
-                                        stats_info_after = conn.info("stats")
+                                        stats_info_after = redis_conn.info("stats")
                                         sync_full_after += int(
                                             stats_info_after.get("sync_full", 0)
                                         )
@@ -2438,9 +2438,9 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                     # Shut down all nodes in reverse order: replicas, then primary (idx 0)
-                                    for conn in reversed(redis_conns):
+                                    for redis_conn in reversed(redis_conns):
                                         try:
-                                            conn.shutdown(save=False)
+                                            redis_conn.shutdown(save=False)
                                         except redis.exceptions.ConnectionError:
                                             pass
 
