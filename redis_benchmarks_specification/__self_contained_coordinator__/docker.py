@@ -216,14 +216,13 @@ def spin_docker_cluster_redis(
     """Start N Redis instances in cluster mode and form a cluster.
 
     Returns:
-        tuple: (cluster_conns, cluster_pids, current_cpu_pos)
+        tuple: (cluster_conns, current_cpu_pos)
     """
     if start_redis_container_fn is None:
         start_redis_container_fn = _default_start_redis_container
     executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
-    cluster_pids = []
 
     # Start each cluster node
     for i in range(primary_count):
@@ -269,10 +268,6 @@ def spin_docker_cluster_redis(
         r = redis.StrictRedis(port=node_port, password=password)
         r.ping()
         cluster_conns.append(r)
-        node_info = r.info()
-        node_pid = node_info.get("process_id")
-        if node_pid is not None:
-            cluster_pids.append(node_pid)
 
     # CLUSTER MEET: make all nodes aware of each other via node 0
     first = cluster_conns[0]
@@ -320,7 +315,7 @@ def spin_docker_cluster_redis(
             break
         time.sleep(poll_interval)
 
-    return cluster_conns, cluster_pids, current_cpu_pos
+    return cluster_conns, current_cpu_pos
 
 
 def spin_up_redis_replicas(
@@ -343,14 +338,13 @@ def spin_up_redis_replicas(
     """Start replica Redis containers and configure replication to the primary.
 
     Returns:
-        tuple: (replica_conns, replica_pids, current_cpu_pos, sync_times_seconds)
+        tuple: (replica_conns, current_cpu_pos, sync_times_seconds)
 
     sync_times_seconds is a list of float seconds, one per replica, measuring
     the wall-clock time from container start to master_link_status=up.
     Use this as a benchmark metric for full-sync performance testing.
     """
     replica_conns = []
-    replica_pids = []
     sync_times_seconds = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
@@ -427,9 +421,5 @@ def spin_up_redis_replicas(
             )
             sync_seconds = float(replication_sync_timeout)
         sync_times_seconds.append(sync_seconds)
-        replica_info = replica_r.info()
-        replica_pid = replica_info.get("process_id")
-        if replica_pid is not None:
-            replica_pids.append(replica_pid)
         replica_conns.append(replica_r)
-    return replica_conns, replica_pids, current_cpu_pos, sync_times_seconds
+    return replica_conns, current_cpu_pos, sync_times_seconds

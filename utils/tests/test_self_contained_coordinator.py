@@ -493,7 +493,6 @@ def test_spin_up_redis_replicas():
         # Start 1 replica
         (
             replica_conns,
-            replica_pids,
             current_cpu_pos,
             sync_times_seconds,
         ) = spin_up_redis_replicas(
@@ -763,7 +762,6 @@ def test_spin_docker_cluster_redis():
     try:
         (
             cluster_conns,
-            cluster_pids,
             current_cpu_pos,
         ) = spin_docker_cluster_redis(
             primary_count,

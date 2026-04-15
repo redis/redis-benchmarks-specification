@@ -360,6 +360,8 @@ def process_self_contained_coordinator_stream(
                                         collection_summary_str
                                     )
                                 )
+                            primary_conns = []
+
                             if setup_type == "oss-cluster":
                                 primary_count = extract_primary_count(
                                     topologies_map, topology_spec_name
@@ -371,7 +373,6 @@ def process_self_contained_coordinator_stream(
                                 )
                                 (
                                     cluster_conns,
-                                    cluster_pids,
                                     current_cpu_pos,
                                 ) = spin_docker_cluster_redis(
                                     primary_count,
@@ -387,8 +388,7 @@ def process_self_contained_coordinator_stream(
                                     mnt_point="/mnt/redis/",
                                     password=redis_password,
                                 )
-                                redis_conns = cluster_conns
-                                redis_pids = cluster_pids
+                                primary_conns.extend(cluster_conns)
                             else:
                                 current_cpu_pos = spin_docker_standalone_redis(
                                     ceil_db_cpu_limit,
@@ -406,16 +406,22 @@ def process_self_contained_coordinator_stream(
                                     password=redis_password,
                                 )
                                 conn.ping()
-                                redis_conns = [conn]
-                                redis_pids = []
-                                redis_info = conn.info()
-                                first_redis_pid = redis_info.get("process_id")
-                                if first_redis_pid is not None:
-                                    redis_pids.append(first_redis_pid)
-                                else:
-                                    logging.warning(
-                                        "Redis process_id not found in INFO command"
+                                primary_conns.append(conn)
+
+                            redis_conns = primary_conns
+                            redis_pids = []
+                            for conn in redis_conns:
+                                try:
+                                    redis_pids.append(
+                                        conn.info().get("process_id", "unknown")
                                     )
+                                except Exception as e:
+                                    logging.warning(
+                                        "An error occurred while trying to fetch redis process id: {}. Skipping it.".format(
+                                            e
+                                        )
+                                    )
+
                             ceil_client_cpu_limit = extract_client_cpu_limit(
                                 benchmark_config
                             )
