@@ -72,6 +72,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     spin_docker_standalone_redis,
     spin_docker_cluster_redis,
+    _default_start_redis_container,
     teardown_containers,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation import (
@@ -382,7 +383,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     run_image,
                                     temporary_dir,
-                                    spin_docker_standalone_redis,
+                                    _default_start_redis_container,
                                     mnt_point="/mnt/redis/",
                                     password=redis_password,
                                 )
@@ -437,6 +438,7 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     test_name,
                                     redis_password,
+                                    oss_cluster_api_enabled=setup_type == "oss-cluster",
                                 )
 
                             logging.info(

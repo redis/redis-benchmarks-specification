@@ -1791,7 +1791,8 @@ def process_self_contained_coordinator_stream(
                                     logging.info(
                                         f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
                                     )
-                                redis_pids.append(first_redis_pid)
+                                if setup_type != "oss-cluster":
+                                    redis_pids.append(first_redis_pid)
 
                                 # Allocate the client cpuset up front so that
                                 # preload can optionally run BEFORE the replica
