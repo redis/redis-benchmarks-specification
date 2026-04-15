@@ -724,8 +724,13 @@ def test_spin_docker_cluster_redis():
             len(node_lines) == 3
         ), f"Expected 3 nodes in CLUSTER NODES, got {len(node_lines)}"
 
-        # Verify we can write a key (it should route to the right shard)
-        cluster_conns[0].set("test_cluster_key", "value")
+        # Verify we can write a key using a cluster-aware client
+        rc = redis.RedisCluster(
+            host="localhost", port=primary_port, password=redis_password
+        )
+        rc.set("test_cluster_key", "value")
+        assert rc.get("test_cluster_key") == b"value"
+        rc.close()
 
         # Shutdown all nodes
         for conn in cluster_conns:
