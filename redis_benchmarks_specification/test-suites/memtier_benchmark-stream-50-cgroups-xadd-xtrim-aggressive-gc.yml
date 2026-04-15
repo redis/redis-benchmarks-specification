@@ -120,8 +120,8 @@ dbconfig:
   resources:
     requests:
       memory: 4g
-  dataset_name: stream-100k-entries-50-cgroups-aggressive-gc
-  dataset_description: A stream with 100K entries and 50 consumer groups with populated PELs, designed to stress GC compaction over PEL-referenced entries.
+  dataset_name: stream-100k-entries-50-consumer-groups
+  dataset_description: A stream with 100K entries and 50 consumer groups with populated PELs (2000 entries each), designed to stress GC compaction with many groups.
 tested-commands:
   - xadd
   - xtrim
