@@ -203,7 +203,6 @@ def start_redis_container(
         detach=True,
         cpuset_cpus=db_cpuset_cpus,
         pid_mode="host",
-        publish_all_ports=True,
     )
     time.sleep(5)
     redis_containers.append(container)
