@@ -1,15 +1,22 @@
 version: 0.4
 name: memtier_benchmark-array-arget-1K-random
 description: 'Random ARGET on a 1000-element array. Tests amortized O(1) random
-  access claim. Pre-populated via init_commands.'
+  access claim. Pre-populated with memtier ARSET.'
 dbconfig:
   configuration-parameters:
     save: '""'
   resources:
     requests:
       memory: 1g
-  init_commands:
-  - 'eval "for i=0,999 do redis.call(''ARSET'', KEYS[1], i, string.rep(''x'', 100)) end" 1 ar'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --data-size 100 --random-data
+      --command="ARSET ar __key__ __data__"
+      --command-key-pattern="P"
+      --key-minimum=0 --key-maximum=999 --key-prefix ""
+      -n 1000 -c 1 -t 1 --hide-histogram
   dataset_name: array-arget-1K
   dataset_description: One 1000-element array with 100B values.
 tested-groups:
@@ -24,8 +31,11 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="ARGET ar __key__" --key-minimum=0 --key-maximum=999
-    --command-key-pattern="R" --hide-histogram --test-time 60 -c 50 -t 4
+  arguments: >
+    --pipeline 10 --command="ARGET ar __key__"
+    --key-minimum=0 --key-maximum=999 --key-prefix ""
+    --command-key-pattern="R" --random-data
+    --hide-histogram --test-time 60 -c 50 -t 4
   resources:
     requests:
       cpus: '4'

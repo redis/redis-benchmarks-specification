@@ -24,9 +24,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="RPUSH list __data__" --command="LTRIM list -1000 -1"
-    --command-ratio=1:1 --command-key-pattern="PP" --data-size 100 --hide-histogram
-    --test-time 60 -c 50 -t 4
+  arguments: >
+    --pipeline 10 --command="RPUSH list __data__" --command="LTRIM list -1000 -1"
+    --command-ratio=1:1 --command-key-pattern="PP" --data-size 100 --random-data
+    --hide-histogram --test-time 60 -c 50 -t 4
   resources:
     requests:
       cpus: '4'
