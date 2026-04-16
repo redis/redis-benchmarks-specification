@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-array-list-lindex-10K-random
-description: 'Random LINDEX on a 10000-element LIST (quicklist encoding) for direct
-  comparison vs ARGET. LINDEX traverses quicklist nodes — cost grows with list size.'
+description: 'Random LINDEX on a 10000-element LIST (quicklist encoding, indexes 0..9999)
+  for direct comparison vs ARGET. LINDEX traverses quicklist nodes.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -12,9 +12,8 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: >
-      --data-size 100 --random-data
-      --command="RPUSH li __data__"
-      --command-key-pattern="P"
+      --command="RPUSH li __data__" --command-key-pattern=P --command-ratio=1
+      --data-size 100 --random-data --randomize --distinct-client-seed
       -n 10000 -c 1 -t 1 --hide-histogram
   dataset_name: array-list-lindex-10K
   dataset_description: One 10000-element LIST with 100B values, quicklist encoding.
@@ -31,9 +30,10 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --pipeline 10 --command="LINDEX li __key__"
-    --key-minimum=0 --key-maximum=9999 --key-prefix ""
-    --command-key-pattern="R" --random-data
+    --pipeline 10
+    --command="LINDEX li __key__" --command-key-pattern=R --command-ratio=1
+    --key-minimum=1 --key-maximum=10000 --key-prefix ""
+    --random-data --randomize --distinct-client-seed
     --hide-histogram --test-time 60 -c 50 -t 4
   resources:
     requests:

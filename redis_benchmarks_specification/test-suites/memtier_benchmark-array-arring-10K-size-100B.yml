@@ -23,8 +23,9 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --pipeline 10 --command="ARRING ring 10000 __data__"
-    --command-key-pattern="P" --data-size 100 --random-data
+    --pipeline 10
+    --command="ARRING ring 10000 __data__" --command-key-pattern=P --command-ratio=1
+    --data-size 100 --random-data --randomize --distinct-client-seed
     --hide-histogram --test-time 60 -c 50 -t 4
   resources:
     requests:

@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-array-list-rpush-ltrim-10K-size-100B
-description: 'Ring buffer push using LIST with RPUSH+LTRIM idiom (2 commands per push)
-  to maintain a 10000-element ring. Direct comparison vs ARRING. Encoding: quicklist.'
+description: 'Ring buffer push using LIST with RPUSH+LTRIM idiom (2 commands per push,
+  ratio 1:1) to maintain a 10000-element ring. Direct comparison vs ARRING. Encoding:
+  quicklist.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -25,8 +26,10 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
-    --pipeline 10 --command="RPUSH list __data__" --command="LTRIM list -10000 -1"
-    --command-ratio=1:1 --command-key-pattern="PP" --data-size 100 --random-data
+    --pipeline 10
+    --command="RPUSH list __data__" --command-key-pattern=P --command-ratio=1
+    --command="LTRIM list -10000 -1" --command-key-pattern=P --command-ratio=1
+    --data-size 100 --random-data --randomize --distinct-client-seed
     --hide-histogram --test-time 60 -c 50 -t 4
   resources:
     requests:
