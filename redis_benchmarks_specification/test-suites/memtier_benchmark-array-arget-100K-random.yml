@@ -1,0 +1,34 @@
+version: 0.4
+name: memtier_benchmark-array-arget-100K-random
+description: 'Random ARGET on a 100000-element array. Tests amortized O(1) random
+  access claim at large scale where LINDEX cost is significant. Pre-populated via
+  init_commands.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 4g
+  init_commands:
+  - 'eval "for i=0,99999 do redis.call(''ARSET'', KEYS[1], i, string.rep(''x'', 100)) end" 1 ar'
+  dataset_name: array-arget-100K
+  dataset_description: One 100000-element array with 100B values.
+tested-groups:
+- array
+tested-commands:
+- arget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="ARGET ar __key__" --key-minimum=0 --key-maximum=99999
+    --command-key-pattern="R" --hide-histogram --test-time 60 -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 90
