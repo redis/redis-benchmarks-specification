@@ -1,0 +1,33 @@
+version: 0.4
+name: memtier_benchmark-array-list-lindex-1K-random
+description: 'Random LINDEX on a 1000-element LIST (quicklist encoding) for direct
+  comparison vs ARGET. LINDEX is O(N/sqrt(L)) on quicklist where L is fill ratio.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - 'eval "for i=1,1000 do redis.call(''RPUSH'', KEYS[1], string.rep(''x'', 100)) end" 1 li'
+  dataset_name: array-list-lindex-1K
+  dataset_description: One 1000-element LIST with 100B values, quicklist encoding.
+tested-groups:
+- list
+tested-commands:
+- lindex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="LINDEX li __key__" --key-minimum=0 --key-maximum=999
+    --command-key-pattern="R" --hide-histogram --test-time 60 -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 90
