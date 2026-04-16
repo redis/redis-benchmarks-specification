@@ -1451,3 +1451,122 @@ def test_self_contained_coordinator_duplicated_ts():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_self_contained_coordinator_dockerhub_cluster():
+    """End-to-end test: spin up a 3-primary Redis cluster via the coordinator
+    and run a memtier_benchmark SET workload with --cluster-mode."""
+    try:
+        if run_coordinator_tests_dockerhub():
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "8.0.0"
+            run_image = f"redis:{redis_version}"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+            build_stream_fields, result = generate_benchmark_stream_request(
+                id,
+                conn,
+                run_image,
+                build_arch,
+                testDetails,
+                build_os,
+                git_version=redis_version,
+            )
+            build_stream_fields["mnt_point"] = ""
+            if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
+                benchmark_stream_id = conn.xadd(
+                    arch_specific_stream, build_stream_fields
+                )
+                logging.info(
+                    "Successfully requested a new cluster run {}. Stream id: {}".format(
+                        build_stream_fields, benchmark_stream_id
+                    )
+                )
+
+            build_variant_name = "gcc:15.2.0-amd64-debian-bookworm-default"
+            expected_datapoint_ts = None
+
+            arch_specific_stream = get_arch_specific_stream_name(build_arch)
+            assert conn.exists(arch_specific_stream)
+            assert conn.xlen(arch_specific_stream) > 0
+            running_platform = "fco-ThinkPad-T490"
+
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            stream_id = ">"
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/test-memtier-dockerhub-cluster.yml"
+            ]
+            defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+            (
+                _,
+                _,
+                default_metrics,
+                _,
+                _,
+                _,
+            ) = get_defaults(defaults_filename)
+
+            (
+                result,
+                stream_id,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                stream_id,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                7379,  # Use port 7379 to avoid conflicts with datasink
+                1,
+                False,
+                5,
+                default_metrics,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+                False,
+            )
+
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 1
+
+            # Verify cluster-specific deployment name in TimeSeries keys
+            all_keys = datasink_conn.keys("*")
+            cluster_keys = [k.decode() for k in all_keys if b"oss-cluster" in k]
+            assert len(cluster_keys) > 0, (
+                "Expected TimeSeries keys with 'oss-cluster' deployment, "
+                f"but found none. All keys: {[k.decode() for k in all_keys]}"
+            )
+            logging.info("Found {} cluster TimeSeries keys".format(len(cluster_keys)))
+
+    except redis.exceptions.ConnectionError:
+        pass

@@ -19,6 +19,8 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     start_redis_container,
 )
 
@@ -35,8 +37,10 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    generate_cluster_redis_server_args,
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
+    spin_docker_cluster_redis,
 )
 
 
@@ -491,7 +495,6 @@ def test_spin_up_redis_replicas():
         # Start 1 replica
         (
             replica_conns,
-            replica_pids,
             current_cpu_pos,
             sync_times_seconds,
         ) = spin_up_redis_replicas(
@@ -507,7 +510,6 @@ def test_spin_up_redis_replicas():
             redis_configuration_parameters,
             redis_arguments,
             redis_password,
-            start_redis_container,
         )
         assert len(replica_conns) == 1
         replica_info = replica_conns[0].info("replication")
@@ -548,6 +550,281 @@ def test_spin_up_redis_replicas():
         r.shutdown(nosave=True)
     except Exception:
         # Print logs on failure
+        for c in redis_containers:
+            try:
+                logs = c.logs().decode("utf-8")
+                logging.error(f"Container logs: {logs}")
+            except Exception:
+                pass
+        raise
+    finally:
+        for c in redis_containers:
+            try:
+                c.stop()
+                c.remove()
+            except Exception:
+                pass
+
+
+def test_generate_cluster_redis_server_args():
+    """Cluster server args must include --cluster-enabled yes and a unique
+    nodes config file per port."""
+    command = generate_cluster_redis_server_args(
+        "/mnt/redis/redis-server",
+        6379,
+        "/mnt/redis/",
+        None,
+        "",
+        None,
+    )
+    assert "/mnt/redis/redis-server" in command
+    assert "--cluster-enabled" in command
+    idx = command.index("--cluster-enabled")
+    assert command[idx + 1] == "yes"
+    assert "--cluster-config-file" in command
+    idx2 = command.index("--cluster-config-file")
+    assert command[idx2 + 1] == "nodes-6379.conf"
+    assert "--cluster-node-timeout" in command
+    idx3 = command.index("--cluster-node-timeout")
+    assert command[idx3 + 1] == "5000"
+    # Must also contain the standalone args (port, dir)
+    assert "--port" in command
+    port_idx = command.index("--port")
+    assert command[port_idx + 1] == "6379"
+
+
+def test_generate_cluster_redis_server_args_with_password():
+    """Cluster args with a password must include --requirepass."""
+    command = generate_cluster_redis_server_args(
+        "redis-server",
+        6380,
+        "",
+        None,
+        "",
+        "secret123",
+    )
+    assert "--cluster-enabled" in command
+    assert "--requirepass" in command
+    pw_idx = command.index("--requirepass")
+    assert command[pw_idx + 1] == "secret123"
+    cfg_idx = command.index("--cluster-config-file")
+    assert command[cfg_idx + 1] == "nodes-6380.conf"
+
+
+def test_generate_cluster_redis_server_args_unique_per_port():
+    """Each port must get a unique cluster config filename."""
+    ports = [6379, 6380, 6381]
+    config_files = []
+    for port in ports:
+        cmd = generate_cluster_redis_server_args(
+            "redis-server", port, "", None, "", None
+        )
+        idx = cmd.index("--cluster-config-file")
+        config_files.append(cmd[idx + 1])
+    # All config files must be unique
+    assert len(set(config_files)) == len(ports)
+    assert config_files == ["nodes-6379.conf", "nodes-6380.conf", "nodes-6381.conf"]
+
+
+def test_cluster_yaml_spec_get():
+    """The cluster GET test suite YAML must reference the correct topology."""
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-string-get-10B-cluster.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+    assert "oss-cluster-3-primaries" in benchmark_config["redis-topologies"]
+    assert "get" in benchmark_config["tested-commands"]
+    assert benchmark_config["clientconfig"]["tool"] == "memtier_benchmark"
+    # --cluster-mode is injected programmatically, not in the YAML arguments
+    assert (
+        "--cluster-mode"
+        not in benchmark_config["dbconfig"]["preload_tool"]["arguments"]
+    )
+
+
+def test_cluster_yaml_spec_set():
+    """The cluster SET test suite YAML must reference the correct topology
+    and should NOT have a preload tool (it IS the preload)."""
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-load-string-with-10B-values-cluster.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+    assert "oss-cluster-3-primaries" in benchmark_config["redis-topologies"]
+    assert "set" in benchmark_config["tested-commands"]
+    assert benchmark_config["clientconfig"]["tool"] == "memtier_benchmark"
+    # SET workload doesn't need preload
+    assert "preload_tool" not in benchmark_config.get("dbconfig", {})
+
+
+def test_cluster_mode_injected_programmatically():
+    """--cluster-mode must NOT be in cluster YAML arguments but MUST be
+    injected by prepare_memtier_benchmark_parameters when
+    oss_cluster_api_enabled is True."""
+    from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+        prepare_memtier_benchmark_parameters,
+    )
+
+    cluster_specs = [
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-string-get-10B-cluster.yml",
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-10Mkeys-string-get-set-1-10-512B-cluster.yml",
+    ]
+    for spec_path in cluster_specs:
+        with open(spec_path, "r") as yml_file:
+            benchmark_config = yaml.safe_load(yml_file)
+
+        # YAML must not contain --cluster-mode (neither client nor preload)
+        client_args = benchmark_config["clientconfig"].get("arguments", "")
+        assert (
+            "--cluster-mode" not in client_args
+        ), f"--cluster-mode should not be in clientconfig.arguments of {spec_path}"
+        preload_args = (
+            benchmark_config.get("dbconfig", {})
+            .get("preload_tool", {})
+            .get("arguments", "")
+        )
+        assert (
+            "--cluster-mode" not in preload_args
+        ), f"--cluster-mode should not be in preload_tool.arguments of {spec_path}"
+
+        # When oss_cluster_api_enabled=True, --cluster-mode IS added
+        _, cmd_str = prepare_memtier_benchmark_parameters(
+            benchmark_config["clientconfig"],
+            "memtier_benchmark",
+            6379,
+            "localhost",
+            "out.json",
+            True,
+        )
+        assert "--cluster-mode" in cmd_str, (
+            f"--cluster-mode must be injected when oss_cluster_api_enabled=True "
+            f"for {spec_path}"
+        )
+
+        # When oss_cluster_api_enabled=False, --cluster-mode is NOT added
+        _, cmd_str = prepare_memtier_benchmark_parameters(
+            benchmark_config["clientconfig"],
+            "memtier_benchmark",
+            6379,
+            "localhost",
+            "out.json",
+            False,
+        )
+        assert "--cluster-mode" not in cmd_str, (
+            f"--cluster-mode must NOT be injected when oss_cluster_api_enabled=False "
+            f"for {spec_path}"
+        )
+
+
+def test_standalone_mode_no_cluster_flag():
+    """Standalone test suites must never get --cluster-mode injected."""
+    from redis_benchmarks_specification.__self_contained_coordinator__.clients import (
+        prepare_memtier_benchmark_parameters,
+    )
+
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-1Mkeys-100B-expire-use-case.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+
+    _, cmd_str = prepare_memtier_benchmark_parameters(
+        benchmark_config["clientconfig"],
+        "memtier_benchmark",
+        6379,
+        "localhost",
+        "out.json",
+        False,
+    )
+    assert "--cluster-mode" not in cmd_str
+
+
+def test_spin_docker_cluster_redis():
+    """Integration test: spin up a 3-primary Redis cluster using Docker,
+    verify cluster_state:ok, slot coverage, and CLUSTER MEET."""
+    run_image = "redis:8.0"
+    mnt_point = ""
+    primary_port = 7379
+    current_cpu_pos = 0
+    ceil_db_cpu_limit = 3
+    redis_configuration_parameters = None
+    redis_containers = []
+    redis_password = None
+    temporary_dir = ""
+    primary_count = 3
+    docker_client = docker.from_env()
+
+    try:
+        (
+            cluster_conns,
+            current_cpu_pos,
+        ) = spin_docker_cluster_redis(
+            primary_count,
+            ceil_db_cpu_limit,
+            current_cpu_pos,
+            docker_client,
+            redis_configuration_parameters,
+            redis_containers,
+            primary_port,
+            run_image,
+            temporary_dir,
+            mnt_point=mnt_point,
+            redis_arguments="",
+            password=redis_password,
+        )
+
+        # Should have 3 connections
+        assert len(cluster_conns) == 3
+
+        # All nodes should be reachable
+        for conn in cluster_conns:
+            conn.ping()
+
+        # Check cluster_state:ok on all nodes
+        for i, conn in enumerate(cluster_conns):
+            cluster_info = conn.execute_command("CLUSTER", "INFO")
+            if isinstance(cluster_info, bytes):
+                cluster_info = cluster_info.decode()
+            assert (
+                "cluster_state:ok" in cluster_info
+            ), f"Node {i} (port {primary_port + i}) not in cluster_state:ok"
+
+        # Verify all 16384 slots are covered
+        cluster_info = cluster_conns[0].execute_command("CLUSTER", "INFO")
+        if isinstance(cluster_info, bytes):
+            cluster_info = cluster_info.decode()
+        assert "cluster_slots_ok:16384" in cluster_info
+
+        # Verify each node knows about all 3 nodes
+        nodes_raw = cluster_conns[0].execute_command("CLUSTER", "NODES")
+        if isinstance(nodes_raw, bytes):
+            nodes_raw = nodes_raw.decode()
+        node_lines = [l for l in nodes_raw.strip().split("\n") if l.strip()]
+        assert (
+            len(node_lines) == 3
+        ), f"Expected 3 nodes in CLUSTER NODES, got {len(node_lines)}"
+
+        # Verify we can write a key using a cluster-aware client
+        rc = redis.RedisCluster(
+            host="localhost", port=primary_port, password=redis_password
+        )
+        rc.set("test_cluster_key", "value")
+        assert rc.get("test_cluster_key") == b"value"
+        rc.close()
+
+        # Shutdown all nodes
+        for conn in cluster_conns:
+            try:
+                conn.shutdown(nosave=True)
+            except redis.exceptions.ConnectionError:
+                pass
+    except Exception:
         for c in redis_containers:
             try:
                 logs = c.logs().decode("utf-8")

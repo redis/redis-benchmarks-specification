@@ -142,6 +142,190 @@ def spin_docker_standalone_redis(
     return current_cpu_pos
 
 
+def generate_cluster_redis_server_args(
+    binary,
+    port,
+    dbdir,
+    configuration_parameters=None,
+    redis_arguments="",
+    password=None,
+):
+    """Generate redis-server args with cluster mode enabled."""
+    command = generate_standalone_redis_server_args(
+        binary, port, dbdir, configuration_parameters, redis_arguments, password
+    )
+    command.extend(
+        [
+            "--cluster-enabled",
+            "yes",
+            "--cluster-config-file",
+            "nodes-{}.conf".format(port),
+            "--cluster-node-timeout",
+            "5000",
+        ]
+    )
+    return command
+
+
+def start_redis_container(
+    command_str,
+    db_cpuset_cpus,
+    docker_client,
+    mnt_point,
+    redis_containers,
+    run_image,
+    temporary_dir,
+    auto_remove=False,
+):
+    """Start a Redis container with the given configuration.
+
+    Used for standalone, cluster, and replica container startup.
+    """
+    logging.info(
+        "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
+            run_image, db_cpuset_cpus, command_str
+        )
+    )
+    volumes = {}
+    if mnt_point != "":
+        volumes = {temporary_dir: {"bind": mnt_point, "mode": "rw"}}
+        logging.info(f"setting volume as follow: {volumes}. working_dir={mnt_point}")
+    container = docker_client.containers.run(
+        image=run_image,
+        volumes=volumes,
+        auto_remove=auto_remove,
+        privileged=True,
+        working_dir=mnt_point,
+        command=command_str,
+        network_mode="host",
+        detach=True,
+        cpuset_cpus=db_cpuset_cpus,
+        pid_mode="host",
+    )
+    time.sleep(5)
+    redis_containers.append(container)
+    return container
+
+
+def spin_docker_cluster_redis(
+    primary_count,
+    ceil_db_cpu_limit,
+    current_cpu_pos,
+    docker_client,
+    redis_configuration_parameters,
+    redis_containers,
+    redis_proc_start_port,
+    run_image,
+    temporary_dir,
+    mnt_point="/mnt/redis/",
+    redis_arguments="",
+    password=None,
+    server_name="redis",
+):
+    """Start N Redis instances in cluster mode and form a cluster.
+
+    Returns:
+        tuple: (cluster_conns, current_cpu_pos)
+    """
+    executable = "{}{}-server".format(mnt_point, server_name)
+    per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
+    cluster_conns = []
+
+    # Start each cluster node
+    for i in range(primary_count):
+        node_port = redis_proc_start_port + i
+        node_redis_arguments = redis_arguments
+        # Per-node filenames to avoid conflicts
+        if i > 0:
+            node_redis_arguments = (
+                (
+                    "{} --dbfilename cluster-node-{}-dump.rdb"
+                    " --appendfilename cluster-node-{}-appendonly.aof"
+                    " --logfile cluster-node-{}-redis.log"
+                )
+                .format(redis_arguments, node_port, node_port, node_port)
+                .strip()
+            )
+        command = generate_cluster_redis_server_args(
+            executable,
+            node_port,
+            mnt_point if mnt_point else "",
+            redis_configuration_parameters,
+            node_redis_arguments,
+            password,
+        )
+        command_str = " ".join(command)
+        db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
+            per_node_cpu, current_cpu_pos
+        )
+        logging.info(
+            "Starting cluster node {}/{} on port {} (cpuset={})".format(
+                i + 1, primary_count, node_port, db_cpuset_cpus
+            )
+        )
+        start_redis_container(
+            command_str,
+            db_cpuset_cpus,
+            docker_client,
+            mnt_point,
+            redis_containers,
+            run_image,
+            temporary_dir,
+            auto_remove=True,
+        )
+        r = redis.StrictRedis(port=node_port, password=password)
+        r.ping()
+        cluster_conns.append(r)
+
+    # CLUSTER MEET: make all nodes aware of each other via node 0
+    first = cluster_conns[0]
+    for i in range(1, primary_count):
+        node_port = redis_proc_start_port + i
+        first.execute_command("CLUSTER", "MEET", "127.0.0.1", str(node_port))
+        logging.info("CLUSTER MEET 127.0.0.1 {}".format(node_port))
+
+    # Distribute 16384 slots evenly across primaries
+    slots_per_node = 16384 // primary_count
+    for i, conn in enumerate(cluster_conns):
+        start_slot = i * slots_per_node
+        end_slot = ((i + 1) * slots_per_node - 1) if i < primary_count - 1 else 16383
+        # Batch ADDSLOTS in groups of 500 to avoid arg-length limits
+        batch_size = 500
+        slot = start_slot
+        while slot <= end_slot:
+            batch_end = min(slot + batch_size - 1, end_slot)
+            slot_args = [str(s) for s in range(slot, batch_end + 1)]
+            conn.execute_command("CLUSTER", "ADDSLOTS", *slot_args)
+            slot = batch_end + 1
+        logging.info(
+            "Assigned slots [{}-{}] to node {} (port {})".format(
+                start_slot, end_slot, i, redis_proc_start_port + i
+            )
+        )
+
+    # Wait for cluster_state:ok
+    timeout = 60
+    poll_interval = 0.5
+    start = time.monotonic()
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= timeout:
+            raise RuntimeError(
+                "Cluster did not reach 'ok' state within {}s".format(timeout)
+            )
+        cluster_info = first.execute_command("CLUSTER", "INFO")
+        if isinstance(cluster_info, bytes):
+            cluster_info = cluster_info.decode()
+        if "cluster_state:ok" in cluster_info:
+            logging.info(
+                "Cluster is ready (cluster_state:ok) after {:.1f}s".format(elapsed)
+            )
+            break
+        time.sleep(poll_interval)
+
+    return cluster_conns, current_cpu_pos
+
+
 def spin_up_redis_replicas(
     replica_count,
     primary_port,
@@ -155,21 +339,19 @@ def spin_up_redis_replicas(
     redis_configuration_parameters,
     redis_arguments,
     password,
-    start_redis_container_fn,
     replication_sync_timeout=600,
     server_name="redis",
 ):
     """Start replica Redis containers and configure replication to the primary.
 
     Returns:
-        tuple: (replica_conns, replica_pids, current_cpu_pos, sync_times_seconds)
+        tuple: (replica_conns, current_cpu_pos, sync_times_seconds)
 
     sync_times_seconds is a list of float seconds, one per replica, measuring
     the wall-clock time from container start to master_link_status=up.
     Use this as a benchmark metric for full-sync performance testing.
     """
     replica_conns = []
-    replica_pids = []
     sync_times_seconds = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
@@ -203,7 +385,7 @@ def spin_up_redis_replicas(
                 i, replica_count, replica_port, db_cpuset_cpus
             )
         )
-        start_redis_container_fn(
+        start_redis_container(
             command_str,
             db_cpuset_cpus,
             docker_client,
@@ -211,6 +393,7 @@ def spin_up_redis_replicas(
             redis_containers,
             run_image,
             temporary_dir,
+            auto_remove=True,
         )
         replica_r = redis.StrictRedis(port=replica_port, password=password)
         replica_r.ping()
@@ -246,9 +429,5 @@ def spin_up_redis_replicas(
             )
             sync_seconds = float(replication_sync_timeout)
         sync_times_seconds.append(sync_seconds)
-        replica_info = replica_r.info()
-        replica_pid = replica_info.get("process_id")
-        if replica_pid is not None:
-            replica_pids.append(replica_pid)
         replica_conns.append(replica_r)
-    return replica_conns, replica_pids, current_cpu_pos, sync_times_seconds
+    return replica_conns, current_cpu_pos, sync_times_seconds

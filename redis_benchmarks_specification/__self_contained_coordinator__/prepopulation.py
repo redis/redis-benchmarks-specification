@@ -24,6 +24,7 @@ def data_prepopulation_step(
     temporary_dir,
     test_name,
     redis_password,
+    oss_cluster_api_enabled=False,
 ):
     # setup the benchmark
     (
@@ -53,7 +54,7 @@ def data_prepopulation_step(
             port,
             "localhost",
             local_benchmark_output_filename,
-            False,
+            oss_cluster_api_enabled,
             redis_password,
         )
 

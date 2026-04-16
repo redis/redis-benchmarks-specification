@@ -7,7 +7,6 @@ import tempfile
 import traceback
 
 import redis
-from redisbench_admin.environments.oss_cluster import generate_cluster_redis_server_args
 
 from redisbench_admin.utils.local import check_dataset_local_requirements
 
@@ -53,6 +52,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_tool,
     extract_client_container_image,
+    extract_primary_count,
     extract_redis_dbconfig_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
@@ -71,6 +71,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     spin_docker_standalone_redis,
+    spin_docker_cluster_redis,
     teardown_containers,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.prepopulation import (
@@ -302,6 +303,11 @@ def process_self_contained_coordinator_stream(
                             tf_github_org = "redis"
                             tf_github_repo = "redis"
                             setup_name = topology_spec_name
+                            setup_type = "oss-standalone"
+                            if topology_spec_name in topologies_map:
+                                setup_type = topologies_map[topology_spec_name].get(
+                                    "type", "oss-standalone"
+                                )
                             tf_triggering_env = "ci"
                             github_actor = "{}-{}".format(
                                 tf_triggering_env, running_platform
@@ -353,7 +359,35 @@ def process_self_contained_coordinator_stream(
                                         collection_summary_str
                                     )
                                 )
-                            if setup_name == "oss-standalone":
+                            primary_conns = []
+
+                            if setup_type == "oss-cluster":
+                                primary_count = extract_primary_count(
+                                    topologies_map, topology_spec_name
+                                )
+                                logging.info(
+                                    "Starting cluster with {} primaries for topology {}".format(
+                                        primary_count, topology_spec_name
+                                    )
+                                )
+                                (
+                                    cluster_conns,
+                                    current_cpu_pos,
+                                ) = spin_docker_cluster_redis(
+                                    primary_count,
+                                    ceil_db_cpu_limit,
+                                    current_cpu_pos,
+                                    docker_client,
+                                    redis_configuration_parameters,
+                                    redis_containers,
+                                    redis_proc_start_port,
+                                    run_image,
+                                    temporary_dir,
+                                    mnt_point="/mnt/redis/",
+                                    password=redis_password,
+                                )
+                                primary_conns.extend(cluster_conns)
+                            else:
                                 current_cpu_pos = spin_docker_standalone_redis(
                                     ceil_db_cpu_limit,
                                     current_cpu_pos,
@@ -365,49 +399,27 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     redis_password,
                                 )
-                            else:
-                                shard_count = 1
-                                start_port = redis_proc_start_port
-                                dbdir_folder = None
-                                server_private_ip = "127.0.0.1"
-                                for master_shard_id in range(1, shard_count + 1):
-                                    shard_port = master_shard_id + start_port - 1
+                                redis_conn = redis.StrictRedis(
+                                    port=redis_proc_start_port,
+                                    password=redis_password,
+                                )
+                                redis_conn.ping()
+                                primary_conns.append(redis_conn)
 
-                                    (
-                                        command,
-                                        logfile,
-                                    ) = generate_cluster_redis_server_args(
-                                        "redis-server",
-                                        dbdir_folder,
-                                        None,
-                                        server_private_ip,
-                                        shard_port,
-                                        redis_configuration_parameters,
-                                        "yes",
-                                        None,
-                                        "",
-                                        "yes",
-                                        False,
+                            redis_conns = primary_conns
+                            redis_pids = []
+                            for redis_conn in redis_conns:
+                                try:
+                                    redis_pids.append(
+                                        redis_conn.info().get("process_id", "unknown")
                                     )
-                                    logging.error(
-                                        "Remote primary shard {} command: {}".format(
-                                            master_shard_id, " ".join(command)
+                                except Exception as e:
+                                    logging.warning(
+                                        "An error occurred while trying to fetch redis process id: {}. Skipping it.".format(
+                                            e
                                         )
                                     )
 
-                            r = redis.StrictRedis(
-                                port=redis_proc_start_port, password=redis_password
-                            )
-                            r.ping()
-                            redis_pids = []
-                            redis_info = r.info()
-                            first_redis_pid = redis_info.get("process_id")
-                            if first_redis_pid is not None:
-                                redis_pids.append(first_redis_pid)
-                            else:
-                                logging.warning(
-                                    "Redis process_id not found in INFO command"
-                                )
                             ceil_client_cpu_limit = extract_client_cpu_limit(
                                 benchmark_config
                             )
@@ -431,6 +443,7 @@ def process_self_contained_coordinator_stream(
                                     temporary_dir,
                                     test_name,
                                     redis_password,
+                                    oss_cluster_api_enabled=setup_type == "oss-cluster",
                                 )
 
                             logging.info(
@@ -438,7 +451,7 @@ def process_self_contained_coordinator_stream(
                             )
                             dbconfig_keyspacelen_check(
                                 benchmark_config,
-                                [r],
+                                redis_conns,
                             )
 
                             benchmark_tool = extract_client_tool(benchmark_config)
@@ -481,7 +494,7 @@ def process_self_contained_coordinator_stream(
                                     redis_proc_start_port,
                                     "localhost",
                                     local_benchmark_output_filename,
-                                    benchmark_tool_workdir,
+                                    setup_type == "oss-cluster",
                                     redis_password,
                                 )
                             elif "vector_db_benchmark" in benchmark_tool:
@@ -567,7 +580,11 @@ def process_self_contained_coordinator_stream(
                                 logging.info(
                                     "output {}".format(client_container_stdout)
                                 )
-                            r.shutdown(save=False)
+                            for redis_conn in redis_conns:
+                                try:
+                                    redis_conn.shutdown(save=False)
+                                except redis.exceptions.ConnectionError:
+                                    pass
 
                             (
                                 _,

@@ -113,6 +113,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_redis_dbconfig_parameters,
     extract_redis_configuration_from_topology,
     extract_replica_count,
+    extract_primary_count,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.artifacts import (
     restore_build_artifacts_from_test_details,
@@ -614,6 +615,8 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     generate_standalone_redis_server_args,
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
+    spin_docker_cluster_redis,
+    start_redis_container,
 )
 
 
@@ -1693,62 +1696,70 @@ def process_self_contained_coordinator_stream(
                                         testDetails,
                                     )
 
-                                command = generate_standalone_redis_server_args(
-                                    executable,
-                                    redis_proc_start_port,
-                                    mnt_point,
-                                    redis_configuration_parameters,
-                                    redis_arguments,
-                                    redis_password,
-                                )
-                                command_str = " ".join(command)
-                                db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
-                                    primary_cpu_limit, current_cpu_pos
-                                )
-                                redis_container = start_redis_container(
-                                    command_str,
-                                    db_cpuset_cpus,
-                                    docker_client,
-                                    mnt_point,
-                                    redis_containers,
-                                    run_image,
-                                    temporary_dir,
-                                )
+                                primary_conns = []
+                                replica_conns = []
 
-                                r = redis.StrictRedis(
-                                    port=redis_proc_start_port, password=redis_password
-                                )
-                                r.ping()
-                                redis_conns = [r]
-                                reset_commandstats(redis_conns)
-                                redis_pids = []
-                                redis_info = r.info()
-                                first_redis_pid = redis_info.get("process_id")
-                                if first_redis_pid is None:
-                                    logging.warning(
-                                        "Redis process_id not found in INFO command"
+                                if setup_type == "oss-cluster":
+                                    # Cluster mode
+                                    primary_count = extract_primary_count(
+                                        topologies_map, topology_spec_name
                                     )
-                                    first_redis_pid = "unknown"
-                                if git_hash is None and "redis_git_sha1" in redis_info:
-                                    git_hash = redis_info["redis_git_sha1"]
-                                    if (
-                                        git_hash == "" or git_hash == 0
-                                    ) and "redis_build_id" in redis_info:
-                                        git_hash = redis_info["redis_build_id"]
                                     logging.info(
-                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
+                                        "Starting cluster with {} primaries for topology {}".format(
+                                            primary_count, topology_spec_name
+                                        )
+                                    )
+                                    (
+                                        cluster_conns,
+                                        current_cpu_pos,
+                                    ) = spin_docker_cluster_redis(
+                                        primary_count,
+                                        ceil_db_cpu_limit,
+                                        current_cpu_pos,
+                                        docker_client,
+                                        redis_configuration_parameters,
+                                        redis_containers,
+                                        redis_proc_start_port,
+                                        run_image,
+                                        temporary_dir,
+                                        mnt_point=mnt_point,
+                                        redis_arguments=redis_arguments,
+                                        password=redis_password,
+                                        server_name=server_name,
+                                    )
+                                    primary_conns.extend(cluster_conns)
+                                else:
+                                    # Standalone mode
+                                    command = generate_standalone_redis_server_args(
+                                        executable,
+                                        redis_proc_start_port,
+                                        mnt_point,
+                                        redis_configuration_parameters,
+                                        redis_arguments,
+                                        redis_password,
+                                    )
+                                    command_str = " ".join(command)
+                                    db_cpuset_cpus, current_cpu_pos = (
+                                        generate_cpuset_cpus(
+                                            primary_cpu_limit, current_cpu_pos
+                                        )
+                                    )
+                                    redis_container = start_redis_container(
+                                        command_str,
+                                        db_cpuset_cpus,
+                                        docker_client,
+                                        mnt_point,
+                                        redis_containers,
+                                        run_image,
+                                        temporary_dir,
                                     )
 
-                                server_version_keyname = f"{server_name}_version"
-                                if (
-                                    git_version is None
-                                    and server_version_keyname in redis_info
-                                ):
-                                    git_version = redis_info[server_version_keyname]
-                                    logging.info(
-                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
+                                    redis_conn = redis.StrictRedis(
+                                        port=redis_proc_start_port,
+                                        password=redis_password,
                                     )
-                                redis_pids.append(first_redis_pid)
+                                    redis_conn.ping()
+                                    primary_conns.append(redis_conn)
 
                                 # Allocate the client cpuset up front so that
                                 # preload can optionally run BEFORE the replica
@@ -1798,6 +1809,8 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir,
                                         test_name,
                                         redis_password,
+                                        oss_cluster_api_enabled=setup_type
+                                        == "oss-cluster",
                                     )
                                     preload_already_done = True
 
@@ -1808,8 +1821,7 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                     (
-                                        replica_conns,
-                                        replica_pids,
+                                        new_replica_conns,
                                         current_cpu_pos,
                                         replica_sync_times_seconds,
                                     ) = spin_up_redis_replicas(
@@ -1825,26 +1837,62 @@ def process_self_contained_coordinator_stream(
                                         redis_configuration_parameters,
                                         redis_arguments,
                                         redis_password,
-                                        start_redis_container,
                                         server_name=server_name,
                                     )
-                                    redis_conns.extend(replica_conns)
-                                    reset_commandstats(replica_conns)
+                                    replica_conns.extend(new_replica_conns)
                                 else:
                                     replica_sync_times_seconds = []
+
+                                redis_conns = primary_conns + replica_conns
+                                redis_pids = []
+                                redis_info = {}
+                                for redis_conn in redis_conns:
+                                    try:
+                                        info = redis_conn.info()
+                                        if not redis_info:
+                                            redis_info = info
+                                        redis_pids.append(info["process_id"])
+                                    except Exception as e:
+                                        logging.warning(
+                                            "An error occurred while trying to fetch redis process id: {}. Skipping it.".format(
+                                                e
+                                            )
+                                        )
+                                reset_commandstats(redis_conns)
+
+                                if git_hash is None and "redis_git_sha1" in redis_info:
+                                    git_hash = redis_info["redis_git_sha1"]
+                                    if (
+                                        git_hash == "" or git_hash == 0
+                                    ) and "redis_build_id" in redis_info:
+                                        git_hash = redis_info["redis_build_id"]
+                                    logging.info(
+                                        f"Given git_hash was None, we've collected that info from the server reply. git_hash={git_hash}"
+                                    )
+
+                                server_version_keyname = f"{server_name}_version"
+                                if (
+                                    git_version is None
+                                    and server_version_keyname in redis_info
+                                ):
+                                    git_version = redis_info[server_version_keyname]
+                                    logging.info(
+                                        f"Given git_version was None, we've collected that info from the server reply key named {server_version_keyname}. git_version={git_version}"
+                                    )
                                 # Capture initial sync_full count from master so we can
                                 # compute the delta after the benchmark runs. Write-heavy
                                 # benchmarks with a small replication backlog will trigger
                                 # additional full syncs at runtime. Note: sync_full lives
                                 # in the "stats" section, not "replication".
                                 sync_full_initial = 0
-                                try:
-                                    stats_info = r.info("stats")
-                                    sync_full_initial = int(
-                                        stats_info.get("sync_full", 0)
-                                    )
-                                except Exception:
-                                    pass
+                                for redis_conn in primary_conns:
+                                    try:
+                                        stats_info = redis_conn.info("stats")
+                                        sync_full_initial += int(
+                                            stats_info.get("sync_full", 0)
+                                        )
+                                    except Exception:
+                                        pass
 
                                 if (
                                     not preload_already_done
@@ -1860,11 +1908,16 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir,
                                         test_name,
                                         redis_password,
+                                        oss_cluster_api_enabled=setup_type
+                                        == "oss-cluster",
                                     )
 
-                                execute_init_commands(
-                                    benchmark_config, r, dbconfig_keyname="dbconfig"
-                                )
+                                for redis_conn in primary_conns:
+                                    execute_init_commands(
+                                        benchmark_config,
+                                        redis_conn,
+                                        dbconfig_keyname="dbconfig",
+                                    )
 
                                 benchmark_tool = extract_client_tool(benchmark_config)
                                 # backwards compatible
@@ -1909,7 +1962,7 @@ def process_self_contained_coordinator_stream(
                                         "localhost",
                                         redis_password,
                                         local_benchmark_output_filename,
-                                        False,
+                                        setup_type == "oss-cluster",
                                         False,
                                         False,
                                         None,
@@ -1981,7 +2034,12 @@ def process_self_contained_coordinator_stream(
                                     # ARM perf stat --topdown only supports L1;
                                     # Intel supports up to L6. Auto-select.
                                     import platform
-                                    topdown_level = 1 if platform.machine() in ("aarch64", "arm64") else 4
+
+                                    topdown_level = (
+                                        1
+                                        if platform.machine() in ("aarch64", "arm64")
+                                        else 4
+                                    )
                                     topdown_collector = TopdownCollector(
                                         process_name=executable.split("/")[-1],
                                         duration_seconds=topdown_duration,
@@ -2328,17 +2386,18 @@ def process_self_contained_coordinator_stream(
                                 # Write-heavy benchmarks with small replication backlogs
                                 # may trigger multiple full syncs at runtime. Note:
                                 # sync_full is in the "stats" section, not "replication".
-                                sync_full_during_benchmark = 0
-                                try:
-                                    stats_info_after = r.info("stats")
-                                    sync_full_after = int(
-                                        stats_info_after.get("sync_full", 0)
-                                    )
-                                    sync_full_during_benchmark = (
-                                        sync_full_after - sync_full_initial
-                                    )
-                                except Exception:
-                                    pass
+                                sync_full_after = 0
+                                for redis_conn in primary_conns:
+                                    try:
+                                        stats_info_after = redis_conn.info("stats")
+                                        sync_full_after += int(
+                                            stats_info_after.get("sync_full", 0)
+                                        )
+                                    except Exception:
+                                        pass
+                                sync_full_during_benchmark = (
+                                    sync_full_after - sync_full_initial
+                                )
 
                                 # Inject replication full-sync metrics into results_dict
                                 # so they get pushed to TimeSeries alongside ops/sec.
@@ -2385,13 +2444,13 @@ def process_self_contained_coordinator_stream(
                                         default_metrics,
                                         git_hash,
                                     )
-                                    # Shut down replicas before primary
-                                    for replica_conn in redis_conns[1:]:
+
+                                    # Shut down all nodes in reverse order: replicas, then primary (idx 0)
+                                    for redis_conn in reversed(redis_conns):
                                         try:
-                                            replica_conn.shutdown(nosave=True)
+                                            redis_conn.shutdown(save=False)
                                         except redis.exceptions.ConnectionError:
                                             pass
-                                    r.shutdown(save=False)
 
                                 except redis.exceptions.ConnectionError as e:
                                     logging.critical(
@@ -2723,50 +2782,6 @@ def process_self_contained_coordinator_stream(
     return stream_id, overall_result, total_test_suite_runs
 
 
-def start_redis_container(
-    command_str,
-    db_cpuset_cpus,
-    docker_client,
-    mnt_point,
-    redis_containers,
-    run_image,
-    temporary_dir,
-    auto_remove=False,
-):
-    logging.info(
-        "Running redis-server on docker image {} (cpuset={}) with the following args: {}".format(
-            run_image, db_cpuset_cpus, command_str
-        )
-    )
-    volumes = {}
-    working_dir = "/"
-    if mnt_point != "":
-        volumes = {
-            temporary_dir: {
-                "bind": mnt_point,
-                "mode": "rw",
-            },
-        }
-        logging.info(f"setting volume as follow: {volumes}. working_dir={mnt_point}")
-        working_dir = mnt_point
-    redis_container = docker_client.containers.run(
-        image=run_image,
-        volumes=volumes,
-        auto_remove=auto_remove,
-        privileged=True,
-        working_dir=mnt_point,
-        command=command_str,
-        network_mode="host",
-        detach=True,
-        cpuset_cpus=db_cpuset_cpus,
-        pid_mode="host",
-        publish_all_ports=True,
-    )
-    time.sleep(5)
-    redis_containers.append(redis_container)
-    return redis_container
-
-
 def filter_test_files(
     defaults_filename,
     priority_lower_limit,
@@ -2912,6 +2927,7 @@ def data_prepopulation_step(
     temporary_dir,
     test_name,
     redis_password,
+    oss_cluster_api_enabled=False,
 ):
     # setup the benchmark
     (
@@ -2943,7 +2959,7 @@ def data_prepopulation_step(
             "localhost",
             redis_password,
             local_benchmark_output_filename,
-            False,
+            oss_cluster_api_enabled,
         )
 
         logging.info(
