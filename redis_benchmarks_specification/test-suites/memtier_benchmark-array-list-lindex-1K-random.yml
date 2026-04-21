@@ -1,0 +1,42 @@
+version: 0.4
+name: memtier_benchmark-array-list-lindex-1K-random
+description: 'Random LINDEX on a 1000-element LIST (quicklist encoding, indexes 0..999)
+  for direct comparison vs ARGET. LINDEX traverses quicklist nodes.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command="RPUSH li __data__" --command-key-pattern=P --command-ratio=1
+      --data-size 100 --random-data --randomize --distinct-client-seed
+      -n 1000 -c 1 -t 1 --hide-histogram
+  dataset_name: array-list-lindex-1K
+  dataset_description: One 1000-element LIST with 100B values, quicklist encoding.
+tested-groups:
+- list
+tested-commands:
+- lindex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --pipeline 10
+    --command="LINDEX li __key__" --command-key-pattern=R --command-ratio=1
+    --key-minimum=1 --key-maximum=1000 --key-prefix ""
+    --random-data --randomize --distinct-client-seed
+    --hide-histogram --test-time 60 -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 90
