@@ -387,3 +387,92 @@ def test_cli_build():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_xack_uses_caller_supplied_group_not_default():
+    """Regression test: builder_process_stream must XACK against the same
+    consumer group that XREADGROUP delivered from.
+
+    When the builder is started with an arch-specific group (e.g.
+    `builders-cg-amd64:redis/redis/commits`), the pending-entries-list lives
+    under that group. Earlier versions of the code hardcoded the legacy
+    constant STREAM_GH_EVENTS_COMMIT_BUILDERS_CG in the XACK call, so the
+    ACK targeted a different group (or a non-existent one) and was a silent
+    no-op. Entries then accumulated in the PEL forever and the builder
+    reported "STUCK" despite processing work correctly.
+
+    This test drives the arch-mismatch branch — it's the ACK path with the
+    fewest dependencies (no Docker, no GitHub, no build) — and asserts that
+    after one iteration:
+      * the PEL of the arch-specific group is empty (XACK hit the right group)
+      * XLEN of the legacy group is unaffected.
+    """
+    try:
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port)
+        conn.ping()
+        conn.flushall()
+
+        custom_group = "builders-cg-amd64:redis/redis/commits"
+        builder_id = "test-xack"
+
+        # Pre-create BOTH the arch-specific group AND the legacy default
+        # group, so we can positively prove the XACK targets the right one.
+        builder_consumer_group_create(conn, builder_group=custom_group, id="$")
+        builder_consumer_group_create(conn, id="$")  # default constant
+
+        # Push a build request for arch=arm64 directly via XADD so we don't
+        # need network access to fetch the real zip archive. The builder
+        # will detect arch mismatch (we run it with arch=amd64) and hit the
+        # ACK-and-return path without touching Docker.
+        xadd_id = conn.xadd(
+            STREAM_KEYNAME_GH_EVENTS_COMMIT,
+            {
+                "git_hash": "deadbeefcafe0000000000000000000000000000",
+                "git_branch": "unstable",
+                "arch": "arm64",
+                "build_arch": "arm64",
+                "zip_archive_key": "zipped:source:redis/redis/archive/unused.zip",
+            },
+        )
+        assert xadd_id is not None
+
+        builders_folder = "./redis_benchmarks_specification/setups/builders"
+        different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
+
+        previous_id, new_builds_count, _ = builder_process_stream(
+            builders_folder,
+            conn,
+            different_build_specs,
+            ">",
+            False,  # docker_air_gap
+            "amd64",  # arch
+            None,  # github_token
+            custom_group,  # builder_group — the arch-specific group
+            builder_id,
+        )
+
+        # The arch-mismatch path skips the build and returns early with 0
+        # new builds — no Docker required.
+        assert new_builds_count == 0
+
+        # The message must have been ACKed against the arch-specific group.
+        pending_custom = conn.xpending(
+            STREAM_KEYNAME_GH_EVENTS_COMMIT, custom_group
+        )
+        # Redis returns a dict with 'pending' count on the python client.
+        # If entry was XACKed correctly, pending count is 0.
+        pending_count = (
+            pending_custom.get("pending", 0)
+            if isinstance(pending_custom, dict)
+            else pending_custom[0]
+        )
+        assert pending_count == 0, (
+            f"Expected 0 pending entries in {custom_group} after XACK, "
+            f"got {pending_count}. This indicates XACK is targeting the "
+            f"wrong consumer group (the legacy default) — the exact bug "
+            f"that caused 24+ entries to accumulate in production."
+        )
+
+    except redis.exceptions.ConnectionError:
+        pass

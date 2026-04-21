@@ -359,10 +359,13 @@ def builder_process_stream(
                     build_request_arch, arch
                 )
             )
-            # Acknowledge the message even though we're skipping it
+            # Acknowledge the message even though we're skipping it.
+            # Must ACK against the same group that XREADGROUP delivered from,
+            # otherwise XACK is a silent no-op (returns 0) and the entry stays
+            # in the PEL forever.
             ack_reply = conn.xack(
                 STREAM_KEYNAME_GH_EVENTS_COMMIT,
-                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                builder_group,
                 streamId,
             )
             if type(ack_reply) == bytes:
@@ -723,7 +726,7 @@ def builder_process_stream(
                             try:
                                 conn.xack(
                                     STREAM_KEYNAME_GH_EVENTS_COMMIT,
-                                    STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                                    builder_group,
                                     streamId,
                                 )
                             except Exception:
@@ -741,7 +744,7 @@ def builder_process_stream(
                     try:
                         conn.xack(
                             STREAM_KEYNAME_GH_EVENTS_COMMIT,
-                            STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                            builder_group,
                             streamId,
                         )
                     except Exception:
@@ -846,7 +849,7 @@ def builder_process_stream(
                 build_stream_fields_arr.append(build_stream_fields)
             ack_reply = conn.xack(
                 STREAM_KEYNAME_GH_EVENTS_COMMIT,
-                STREAM_GH_EVENTS_COMMIT_BUILDERS_CG,
+                builder_group,
                 streamId,
             )
             if type(ack_reply) == bytes:
