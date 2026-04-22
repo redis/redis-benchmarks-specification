@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-stream-10M-entries-xread-count-100
-description: 'Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, then testing XREAD performance with COUNT 100.'
+description: 'Runs memtier_benchmark, pre-loading Redis with 10M stream entries using XADD, then testing XREAD performance with COUNT 100 for 60 seconds. XREAD with starting ID 0 is stateless (re-reads the first 100 entries every call), so the stream never drains.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -26,7 +26,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="XREAD COUNT 100 STREAMS stream-key 0" --hide-histogram -n 1000 -c 25 -t 4
+  arguments: --command="XREAD COUNT 100 STREAMS stream-key 0" --hide-histogram --test-time 60 -c 25 -t 4
   resources:
     requests:
       cpus: '4'
