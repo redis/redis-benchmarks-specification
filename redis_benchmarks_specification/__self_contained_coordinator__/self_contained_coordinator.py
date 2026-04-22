@@ -2732,44 +2732,77 @@ def process_self_contained_coordinator_stream(
                         to_ts_ms = None
                         from_ts_ms = None
 
-                        (
-                            detected_regressions,
-                            table_output,
-                            improvement_list,
-                            regressions_list,
-                            total_stable,
-                            total_unstable,
-                            total_comparison_points,
-                        ) = compute_regression_table(
-                            datasink_conn,
-                            tf_github_org,
-                            tf_github_repo,
-                            tf_triggering_env,
-                            metric_name,
-                            comparison_branch,
-                            baseline_branch,
-                            None,  # we only compare by branch on CI automation
-                            None,  # we only compare by branch on CI automation
-                            baseline_deployment_name,
-                            comparison_deployment_name,
-                            print_improvements_only,
-                            print_regressions_only,
-                            skip_unstable,
-                            regressions_percent_lower_limit,
-                            simplify_table,
-                            test,
-                            testname_regex,
-                            verbose,
-                            last_n_baseline,
-                            last_n_comparison,
-                            metric_mode,
-                            from_date,
-                            from_ts_ms,
-                            to_date,
-                            to_ts_ms,
-                            use_metric_context_path,
-                            running_platform,
-                        )
+                        # Use keyword arguments — the function signature has
+                        # `tf_triggering_env_baseline` and `tf_triggering_env_comparison`
+                        # as two separate required positional args (no defaults),
+                        # and a long list of mostly-default args after. Passing
+                        # by position is error-prone: a prior version of this
+                        # call was off-by-one from position 5 onwards, which
+                        # routed `to_date` (a datetime) into the `from_ts_ms`
+                        # slot and triggered a TypeError in compare.py:1300
+                        # ("unsupported operand type(s) for /: 'datetime.datetime'
+                        # and 'int'") that aborted the per-test for-loop,
+                        # leaving subsequent tests stuck in `tests_pending`.
+                        #
+                        # Also wrapped in try/except so any future data-shape
+                        # issue in compute_regression_table does not abort the
+                        # outer per-test for-loop — the benchmark results are
+                        # already in RedisTimeSeries at this point, the
+                        # regression comment is best-effort observability.
+                        detected_regressions = []
+                        table_output = ""
+                        improvement_list = []
+                        regressions_list = []
+                        total_stable = 0
+                        total_unstable = 0
+                        total_comparison_points = 0
+                        try:
+                            (
+                                detected_regressions,
+                                table_output,
+                                improvement_list,
+                                regressions_list,
+                                total_stable,
+                                total_unstable,
+                                total_comparison_points,
+                            ) = compute_regression_table(
+                                rts=datasink_conn,
+                                tf_github_org=tf_github_org,
+                                tf_github_repo=tf_github_repo,
+                                tf_triggering_env_baseline=tf_triggering_env,
+                                tf_triggering_env_comparison=tf_triggering_env,
+                                metric_name=metric_name,
+                                comparison_branch=comparison_branch,
+                                baseline_branch=baseline_branch,
+                                baseline_tag=None,  # CI automation compares by branch
+                                comparison_tag=None,  # CI automation compares by branch
+                                baseline_deployment_name=baseline_deployment_name,
+                                comparison_deployment_name=comparison_deployment_name,
+                                print_improvements_only=print_improvements_only,
+                                print_regressions_only=print_regressions_only,
+                                skip_unstable=skip_unstable,
+                                regressions_percent_lower_limit=regressions_percent_lower_limit,
+                                simplify_table=simplify_table,
+                                test=test,
+                                testname_regex=testname_regex,
+                                verbose=verbose,
+                                last_n_baseline=last_n_baseline,
+                                last_n_comparison=last_n_comparison,
+                                metric_mode=metric_mode,
+                                from_date=from_date,
+                                from_ts_ms=from_ts_ms,
+                                to_date=to_date,
+                                to_ts_ms=to_ts_ms,
+                                use_metric_context_path=use_metric_context_path,
+                                running_platform_baseline=running_platform,
+                                running_platform_comparison=running_platform,
+                            )
+                        except Exception as e:
+                            logging.warning(
+                                "compute_regression_table failed for stream {} test {}: {}. Skipping regression comment, continuing with remaining tests.".format(
+                                    stream_id, test_name, e
+                                )
+                            )
                         total_regressions = len(regressions_list)
                         total_improvements = len(improvement_list)
                         auto_approve = True
