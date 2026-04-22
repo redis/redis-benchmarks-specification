@@ -19,6 +19,7 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
+    stop_and_remove_container_safe,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     start_redis_container,
@@ -839,3 +840,103 @@ def test_spin_docker_cluster_redis():
                 c.remove()
             except Exception:
                 pass
+
+
+def test_stop_and_remove_container_safe_not_found():
+    """NotFound (container already gone) is treated as success."""
+
+    class FakeContainer:
+        id = "fake-id"
+        image = "fake-image"
+
+        def stop(self):
+            raise docker.errors.NotFound("container gone")
+
+        def remove(self):
+            raise AssertionError("remove() should not be called after NotFound")
+
+    # Must not raise.
+    stop_and_remove_container_safe(FakeContainer(), "Test")
+
+
+def test_stop_and_remove_container_safe_409_already_in_progress():
+    """Regression test for v0.3.0 oss-cluster-3-primaries teardown race.
+
+    When a container is started with ``auto_remove=True`` (which the
+    cluster spin-up helpers do for primaries and replicas), Docker begins
+    removing the container automatically when it stops. The explicit
+    ``.remove()`` call that this coordinator makes a moment later hits a
+    409 Conflict with body "removal of container X is already in
+    progress". docker-py raises ``docker.errors.APIError`` rather than
+    ``NotFound``, and previously this aborted the entire stream
+    processing — the coordinator logged the traceback and silently
+    ACK'd the stream as "filtered/skipped", so 0/N benchmark runs
+    actually produced data.
+
+    The helper must swallow that specific 409 path and let teardown
+    complete.
+    """
+
+    class FakeAPIError(docker.errors.APIError):
+        def __init__(self):
+            super().__init__(
+                "409 Client Error: Conflict",
+                response=None,
+                explanation=(
+                    "removal of container abc123 is already in progress"
+                ),
+            )
+
+        def __str__(self):
+            return (
+                "409 Client Error for http+docker://localhost/v1.47/"
+                "containers/abc123?v=False&link=False&force=False: "
+                'Conflict ("removal of container abc123 is already in '
+                'progress")'
+            )
+
+    calls = {"stop": 0, "remove": 0}
+
+    class FakeContainer:
+        id = "abc123"
+        image = "fake-image"
+
+        def stop(self):
+            calls["stop"] += 1
+
+        def remove(self):
+            calls["remove"] += 1
+            raise FakeAPIError()
+
+    # Must not raise.
+    stop_and_remove_container_safe(FakeContainer(), "DB")
+    assert calls["stop"] == 1
+    assert calls["remove"] == 1
+
+
+def test_stop_and_remove_container_safe_other_api_error_is_swallowed():
+    """Unexpected APIError is logged but not raised — teardown is best-effort."""
+
+    class FakeAPIError(docker.errors.APIError):
+        def __init__(self):
+            super().__init__(
+                "500 Internal Server Error",
+                response=None,
+                explanation="boom",
+            )
+
+        def __str__(self):
+            return "500 Internal Server Error: boom"
+
+    class FakeContainer:
+        id = "zzz"
+        image = "fake-image"
+
+        def stop(self):
+            pass
+
+        def remove(self):
+            raise FakeAPIError()
+
+    # Must not raise — teardown must never abort the stream.
+    stop_and_remove_container_safe(FakeContainer(), "Client")

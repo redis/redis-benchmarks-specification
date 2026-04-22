@@ -620,6 +620,52 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
 )
 
 
+def stop_and_remove_container_safe(container, label):
+    """Stop and remove a Docker container, tolerating concurrent removal.
+
+    Cluster primaries and replicas (and a few other spin-up helpers) start
+    their containers with ``auto_remove=True`` so Docker cleans them up
+    automatically when they stop. That creates a race with the explicit
+    ``.remove()`` call this teardown makes: if Docker's auto-removal has
+    already begun, the API returns ``409 Conflict`` ("removal of container
+    X is already in progress") and the docker-py client raises
+    ``docker.errors.APIError``. Treat that as a success — the container is
+    being removed anyway.
+
+    ``docker.errors.NotFound`` (404) likewise means the container was
+    already removed (either by auto-remove completing, or by a previous
+    teardown pass) and is also a benign outcome.
+    """
+    try:
+        container.stop()
+        container.remove()
+    except docker.errors.NotFound:
+        logging.info(
+            "When trying to stop {} container with id {} and image {} it was already stopped".format(
+                label, container.id, container.image
+            )
+        )
+    except docker.errors.APIError as e:
+        # Docker returns 409 on a concurrent remove; explicit string match
+        # because docker-py doesn't expose a dedicated subclass for this.
+        msg = str(e)
+        if "already in progress" in msg or "removal of container" in msg:
+            logging.info(
+                "{} container {} (image {}) is already being removed by Docker "
+                "(auto_remove=True). Skipping explicit remove.".format(
+                    label, container.id, container.image
+                )
+            )
+            return
+        # Any other API error: log but don't propagate — teardown must not
+        # abort the stream (we've already ACK'd it).
+        logging.warning(
+            "Unexpected Docker APIError while removing {} container {}: {}".format(
+                label, container.id, e
+            )
+        )
+
+
 def main():
     global _exclusive_hardware, _http_auth_username, _http_auth_password
 
@@ -2490,8 +2536,6 @@ def process_self_contained_coordinator_stream(
                                                 stdout=True, stderr=True
                                             )
                                         )
-                                        redis_container.stop()
-                                        redis_container.remove()
                                     except docker.errors.NotFound:
                                         logging.info(
                                             "When trying to fetch logs from DB container with id {} and image {} it was already stopped".format(
@@ -2499,7 +2543,12 @@ def process_self_contained_coordinator_stream(
                                                 redis_container.image,
                                             )
                                         )
-                                    pass
+                                    # Use the safe helper so Docker's own
+                                    # auto_remove race (409 Conflict) doesn't
+                                    # abort the log-collection path.
+                                    stop_and_remove_container_safe(
+                                        redis_container, "DB"
+                                    )
 
                                     print("-" * 60)
 
@@ -2528,31 +2577,15 @@ def process_self_contained_coordinator_stream(
                             logging.info("Tearing down setup")
                             if docker_keep_env is False:
                                 for redis_container in redis_containers:
-                                    try:
-                                        redis_container.stop()
-                                        redis_container.remove()
-                                    except docker.errors.NotFound:
-                                        logging.info(
-                                            "When trying to stop DB container with id {} and image {} it was already stopped".format(
-                                                redis_container.id,
-                                                redis_container.image,
-                                            )
-                                        )
-                                        pass
+                                    stop_and_remove_container_safe(
+                                        redis_container, "DB"
+                                    )
 
                                 for redis_container in client_containers:
                                     if type(redis_container) == Container:
-                                        try:
-                                            redis_container.stop()
-                                            redis_container.remove()
-                                        except docker.errors.NotFound:
-                                            logging.info(
-                                                "When trying to stop Client container with id {} and image {} it was already stopped".format(
-                                                    redis_container.id,
-                                                    redis_container.image,
-                                                )
-                                            )
-                                            pass
+                                        stop_and_remove_container_safe(
+                                            redis_container, "Client"
+                                        )
 
                                 # Only remove temporary directories if test passed
                                 if test_result:
