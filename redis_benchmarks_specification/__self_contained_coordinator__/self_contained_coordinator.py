@@ -2652,26 +2652,42 @@ def process_self_contained_coordinator_stream(
                         benchmark_suite_duration.total_seconds()
                     )
 
-                    # update on github if needed
+                    # update on github if needed.
+                    # Wrap the whole block in try/except so a transient GitHub
+                    # API failure (rate limit, network, token expiry) does not
+                    # abort the per-test for-loop — a prior version propagated
+                    # the exception all the way up to the outer stream handler
+                    # at line ~2802, which treated the entire stream as failed
+                    # and left all remaining tests stuck in the "pending" list
+                    # forever. PR-comment updates are best-effort observability;
+                    # the benchmark results themselves are already pushed to
+                    # RedisTimeSeries at this point.
                     if is_actionable_pr:
-                        comment_body = generate_benchmark_started_pr_comment(
-                            stream_id,
-                            pending_tests,
-                            len(filtered_test_files),
-                            failed_tests,
-                            benchmark_suite_start_datetime,
-                            benchmark_suite_duration_secs,
-                        )
-                        update_comment_if_needed(
-                            auto_approve_github,
-                            comment_body,
-                            old_benchmark_run_comment_body,
-                            benchmark_run_comment,
-                            verbose,
-                        )
-                        logging.info(
-                            f"Updated github comment with latest test info {benchmark_run_comment.html_url}"
-                        )
+                        try:
+                            comment_body = generate_benchmark_started_pr_comment(
+                                stream_id,
+                                pending_tests,
+                                len(filtered_test_files),
+                                failed_tests,
+                                benchmark_suite_start_datetime,
+                                benchmark_suite_duration_secs,
+                            )
+                            update_comment_if_needed(
+                                auto_approve_github,
+                                comment_body,
+                                old_benchmark_run_comment_body,
+                                benchmark_run_comment,
+                                verbose,
+                            )
+                            logging.info(
+                                f"Updated github comment with latest test info {benchmark_run_comment.html_url}"
+                            )
+                        except Exception as e:
+                            logging.warning(
+                                "Failed to update per-test PR comment for stream {} test {}: {}. Continuing with remaining tests.".format(
+                                    stream_id, test_name, e
+                                )
+                            )
 
                         ###########################
                         # regression part
