@@ -23,6 +23,8 @@ dbconfig:
       memory: 1g
 tested-commands:
 - append
+test-groups:
+- string
 redis-topologies:
 - oss-standalone
 build-variants:
