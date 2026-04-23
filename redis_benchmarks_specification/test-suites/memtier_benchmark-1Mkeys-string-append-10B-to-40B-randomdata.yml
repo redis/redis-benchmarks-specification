@@ -21,10 +21,10 @@ dbconfig:
   resources:
     requests:
       memory: 1g
+tested-groups:
+- string
 tested-commands:
 - append
-test-groups:
-- string
 redis-topologies:
 - oss-standalone
 build-variants:
