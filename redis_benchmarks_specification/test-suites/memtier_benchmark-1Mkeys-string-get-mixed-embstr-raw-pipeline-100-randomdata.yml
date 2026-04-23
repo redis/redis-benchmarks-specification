@@ -1,0 +1,39 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-get-mixed-embstr-raw-pipeline-100-randomdata
+description: "High-pipeline GET benchmark against a DB with mixed EMBSTR/RAW
+  encodings. Preload uses --data-size-range 10-200 with --data-size-pattern R
+  so value sizes are uniformly random, producing ~17% EMBSTR (values <=44B)
+  and ~83% RAW. Exercises the common-case read path across both encodings so
+  that any EMBSTR-layout change (e.g. Valkey-style robj ptr reuse) can be
+  checked for regressions on the dominant RAW path and on the hot GET dispatch
+  branch. --random-data is used so allocator behaviour reflects realistic byte
+  patterns rather than all-zero pages."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size-range 10-200 --data-size-pattern R --random-data --ratio
+      1:0 --key-pattern P:P --key-minimum=1 --key-maximum 1000000 --test-time 90
+      -c 4 -t 1 --hide-histogram
+    timeout: 600
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- get
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --ratio 0:1 --key-pattern R:R --key-minimum=1 --key-maximum 1000000
+    --test-time 180 -c 50 -t 4 --pipeline 100 --random-data --hide-histogram
+priority: 50
