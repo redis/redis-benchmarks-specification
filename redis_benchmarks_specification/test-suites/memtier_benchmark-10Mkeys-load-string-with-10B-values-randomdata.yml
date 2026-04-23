@@ -34,4 +34,8 @@ clientconfig:
   tool: memtier_benchmark
   arguments: --data-size 10 --random-data --ratio 1:0 --key-pattern P:P --key-minimum=1
     --key-maximum 10000000 --test-time 300 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
 priority: 50
