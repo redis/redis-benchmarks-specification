@@ -1,0 +1,37 @@
+version: 0.4
+name: memtier_benchmark-10Mkeys-load-string-with-10B-values-randomdata
+description: "Loads 10M string keys with 10B random-data values, all EMBSTR
+  encoding. Sister spec to the 1M variant for validating robj-layout changes
+  (e.g. Valkey-#2516-style ptr reuse): at 10M keys the total dataset + robj
+  overhead is ~600MB, so the keyspace no longer fits in any CPU's L3 cache
+  and every dict lookup pays DRAM latency. This is where the throughput
+  impact of pointer chasing in robj actually surfaces - the 1M variant is
+  L3-resident on large servers (m7i/m8i >= 60MB L3, m8g >= 36MB SLC) and
+  therefore underestimates the cache-miss cost. Memory reduction ratios
+  from the layout change are the same as the 1M variant, but the absolute
+  delta scales 10x. --random-data so allocator behaviour reflects realistic
+  byte patterns rather than all-zero pages."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- string
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --data-size 10 --random-data --ratio 1:0 --key-pattern P:P --key-minimum=1
+    --key-maximum 10000000 --test-time 300 -c 50 -t 4 --hide-histogram
+priority: 50
