@@ -1,0 +1,1052 @@
+version: 0.4
+name: memtier_benchmark-stream-500-cgroups-xadd-xtrim-aggressive-gc
+description: >
+  Tests stream GC cleanup under aggressive trimming with 500 consumer groups and populated PELs.
+  Pre-loads 100K stream entries, creates 500 consumer groups, and reads 2000 entries into
+  each group's PEL. The benchmark runs 70% XADD and 30% XTRIM MAXLEN ~ 1000 to force
+  frequent GC compaction over entries that are still referenced in PELs.
+  This stresses streamEntryIsReferenced() and streamCleanupEntryCGroupRefs() which must
+  scan all 500 groups' PELs per entry — validates the O(C)-scan cost of removing the
+  cgroups_ref index at scale (C=500).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key * field __data__" --command-key-pattern="P" -n 500 -c 50 -t 4 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key cg-0001 0 MKSTREAM
+    - XGROUP CREATE stream-key cg-0002 0
+    - XGROUP CREATE stream-key cg-0003 0
+    - XGROUP CREATE stream-key cg-0004 0
+    - XGROUP CREATE stream-key cg-0005 0
+    - XGROUP CREATE stream-key cg-0006 0
+    - XGROUP CREATE stream-key cg-0007 0
+    - XGROUP CREATE stream-key cg-0008 0
+    - XGROUP CREATE stream-key cg-0009 0
+    - XGROUP CREATE stream-key cg-0010 0
+    - XGROUP CREATE stream-key cg-0011 0
+    - XGROUP CREATE stream-key cg-0012 0
+    - XGROUP CREATE stream-key cg-0013 0
+    - XGROUP CREATE stream-key cg-0014 0
+    - XGROUP CREATE stream-key cg-0015 0
+    - XGROUP CREATE stream-key cg-0016 0
+    - XGROUP CREATE stream-key cg-0017 0
+    - XGROUP CREATE stream-key cg-0018 0
+    - XGROUP CREATE stream-key cg-0019 0
+    - XGROUP CREATE stream-key cg-0020 0
+    - XGROUP CREATE stream-key cg-0021 0
+    - XGROUP CREATE stream-key cg-0022 0
+    - XGROUP CREATE stream-key cg-0023 0
+    - XGROUP CREATE stream-key cg-0024 0
+    - XGROUP CREATE stream-key cg-0025 0
+    - XGROUP CREATE stream-key cg-0026 0
+    - XGROUP CREATE stream-key cg-0027 0
+    - XGROUP CREATE stream-key cg-0028 0
+    - XGROUP CREATE stream-key cg-0029 0
+    - XGROUP CREATE stream-key cg-0030 0
+    - XGROUP CREATE stream-key cg-0031 0
+    - XGROUP CREATE stream-key cg-0032 0
+    - XGROUP CREATE stream-key cg-0033 0
+    - XGROUP CREATE stream-key cg-0034 0
+    - XGROUP CREATE stream-key cg-0035 0
+    - XGROUP CREATE stream-key cg-0036 0
+    - XGROUP CREATE stream-key cg-0037 0
+    - XGROUP CREATE stream-key cg-0038 0
+    - XGROUP CREATE stream-key cg-0039 0
+    - XGROUP CREATE stream-key cg-0040 0
+    - XGROUP CREATE stream-key cg-0041 0
+    - XGROUP CREATE stream-key cg-0042 0
+    - XGROUP CREATE stream-key cg-0043 0
+    - XGROUP CREATE stream-key cg-0044 0
+    - XGROUP CREATE stream-key cg-0045 0
+    - XGROUP CREATE stream-key cg-0046 0
+    - XGROUP CREATE stream-key cg-0047 0
+    - XGROUP CREATE stream-key cg-0048 0
+    - XGROUP CREATE stream-key cg-0049 0
+    - XGROUP CREATE stream-key cg-0050 0
+    - XGROUP CREATE stream-key cg-0051 0
+    - XGROUP CREATE stream-key cg-0052 0
+    - XGROUP CREATE stream-key cg-0053 0
+    - XGROUP CREATE stream-key cg-0054 0
+    - XGROUP CREATE stream-key cg-0055 0
+    - XGROUP CREATE stream-key cg-0056 0
+    - XGROUP CREATE stream-key cg-0057 0
+    - XGROUP CREATE stream-key cg-0058 0
+    - XGROUP CREATE stream-key cg-0059 0
+    - XGROUP CREATE stream-key cg-0060 0
+    - XGROUP CREATE stream-key cg-0061 0
+    - XGROUP CREATE stream-key cg-0062 0
+    - XGROUP CREATE stream-key cg-0063 0
+    - XGROUP CREATE stream-key cg-0064 0
+    - XGROUP CREATE stream-key cg-0065 0
+    - XGROUP CREATE stream-key cg-0066 0
+    - XGROUP CREATE stream-key cg-0067 0
+    - XGROUP CREATE stream-key cg-0068 0
+    - XGROUP CREATE stream-key cg-0069 0
+    - XGROUP CREATE stream-key cg-0070 0
+    - XGROUP CREATE stream-key cg-0071 0
+    - XGROUP CREATE stream-key cg-0072 0
+    - XGROUP CREATE stream-key cg-0073 0
+    - XGROUP CREATE stream-key cg-0074 0
+    - XGROUP CREATE stream-key cg-0075 0
+    - XGROUP CREATE stream-key cg-0076 0
+    - XGROUP CREATE stream-key cg-0077 0
+    - XGROUP CREATE stream-key cg-0078 0
+    - XGROUP CREATE stream-key cg-0079 0
+    - XGROUP CREATE stream-key cg-0080 0
+    - XGROUP CREATE stream-key cg-0081 0
+    - XGROUP CREATE stream-key cg-0082 0
+    - XGROUP CREATE stream-key cg-0083 0
+    - XGROUP CREATE stream-key cg-0084 0
+    - XGROUP CREATE stream-key cg-0085 0
+    - XGROUP CREATE stream-key cg-0086 0
+    - XGROUP CREATE stream-key cg-0087 0
+    - XGROUP CREATE stream-key cg-0088 0
+    - XGROUP CREATE stream-key cg-0089 0
+    - XGROUP CREATE stream-key cg-0090 0
+    - XGROUP CREATE stream-key cg-0091 0
+    - XGROUP CREATE stream-key cg-0092 0
+    - XGROUP CREATE stream-key cg-0093 0
+    - XGROUP CREATE stream-key cg-0094 0
+    - XGROUP CREATE stream-key cg-0095 0
+    - XGROUP CREATE stream-key cg-0096 0
+    - XGROUP CREATE stream-key cg-0097 0
+    - XGROUP CREATE stream-key cg-0098 0
+    - XGROUP CREATE stream-key cg-0099 0
+    - XGROUP CREATE stream-key cg-0100 0
+    - XGROUP CREATE stream-key cg-0101 0
+    - XGROUP CREATE stream-key cg-0102 0
+    - XGROUP CREATE stream-key cg-0103 0
+    - XGROUP CREATE stream-key cg-0104 0
+    - XGROUP CREATE stream-key cg-0105 0
+    - XGROUP CREATE stream-key cg-0106 0
+    - XGROUP CREATE stream-key cg-0107 0
+    - XGROUP CREATE stream-key cg-0108 0
+    - XGROUP CREATE stream-key cg-0109 0
+    - XGROUP CREATE stream-key cg-0110 0
+    - XGROUP CREATE stream-key cg-0111 0
+    - XGROUP CREATE stream-key cg-0112 0
+    - XGROUP CREATE stream-key cg-0113 0
+    - XGROUP CREATE stream-key cg-0114 0
+    - XGROUP CREATE stream-key cg-0115 0
+    - XGROUP CREATE stream-key cg-0116 0
+    - XGROUP CREATE stream-key cg-0117 0
+    - XGROUP CREATE stream-key cg-0118 0
+    - XGROUP CREATE stream-key cg-0119 0
+    - XGROUP CREATE stream-key cg-0120 0
+    - XGROUP CREATE stream-key cg-0121 0
+    - XGROUP CREATE stream-key cg-0122 0
+    - XGROUP CREATE stream-key cg-0123 0
+    - XGROUP CREATE stream-key cg-0124 0
+    - XGROUP CREATE stream-key cg-0125 0
+    - XGROUP CREATE stream-key cg-0126 0
+    - XGROUP CREATE stream-key cg-0127 0
+    - XGROUP CREATE stream-key cg-0128 0
+    - XGROUP CREATE stream-key cg-0129 0
+    - XGROUP CREATE stream-key cg-0130 0
+    - XGROUP CREATE stream-key cg-0131 0
+    - XGROUP CREATE stream-key cg-0132 0
+    - XGROUP CREATE stream-key cg-0133 0
+    - XGROUP CREATE stream-key cg-0134 0
+    - XGROUP CREATE stream-key cg-0135 0
+    - XGROUP CREATE stream-key cg-0136 0
+    - XGROUP CREATE stream-key cg-0137 0
+    - XGROUP CREATE stream-key cg-0138 0
+    - XGROUP CREATE stream-key cg-0139 0
+    - XGROUP CREATE stream-key cg-0140 0
+    - XGROUP CREATE stream-key cg-0141 0
+    - XGROUP CREATE stream-key cg-0142 0
+    - XGROUP CREATE stream-key cg-0143 0
+    - XGROUP CREATE stream-key cg-0144 0
+    - XGROUP CREATE stream-key cg-0145 0
+    - XGROUP CREATE stream-key cg-0146 0
+    - XGROUP CREATE stream-key cg-0147 0
+    - XGROUP CREATE stream-key cg-0148 0
+    - XGROUP CREATE stream-key cg-0149 0
+    - XGROUP CREATE stream-key cg-0150 0
+    - XGROUP CREATE stream-key cg-0151 0
+    - XGROUP CREATE stream-key cg-0152 0
+    - XGROUP CREATE stream-key cg-0153 0
+    - XGROUP CREATE stream-key cg-0154 0
+    - XGROUP CREATE stream-key cg-0155 0
+    - XGROUP CREATE stream-key cg-0156 0
+    - XGROUP CREATE stream-key cg-0157 0
+    - XGROUP CREATE stream-key cg-0158 0
+    - XGROUP CREATE stream-key cg-0159 0
+    - XGROUP CREATE stream-key cg-0160 0
+    - XGROUP CREATE stream-key cg-0161 0
+    - XGROUP CREATE stream-key cg-0162 0
+    - XGROUP CREATE stream-key cg-0163 0
+    - XGROUP CREATE stream-key cg-0164 0
+    - XGROUP CREATE stream-key cg-0165 0
+    - XGROUP CREATE stream-key cg-0166 0
+    - XGROUP CREATE stream-key cg-0167 0
+    - XGROUP CREATE stream-key cg-0168 0
+    - XGROUP CREATE stream-key cg-0169 0
+    - XGROUP CREATE stream-key cg-0170 0
+    - XGROUP CREATE stream-key cg-0171 0
+    - XGROUP CREATE stream-key cg-0172 0
+    - XGROUP CREATE stream-key cg-0173 0
+    - XGROUP CREATE stream-key cg-0174 0
+    - XGROUP CREATE stream-key cg-0175 0
+    - XGROUP CREATE stream-key cg-0176 0
+    - XGROUP CREATE stream-key cg-0177 0
+    - XGROUP CREATE stream-key cg-0178 0
+    - XGROUP CREATE stream-key cg-0179 0
+    - XGROUP CREATE stream-key cg-0180 0
+    - XGROUP CREATE stream-key cg-0181 0
+    - XGROUP CREATE stream-key cg-0182 0
+    - XGROUP CREATE stream-key cg-0183 0
+    - XGROUP CREATE stream-key cg-0184 0
+    - XGROUP CREATE stream-key cg-0185 0
+    - XGROUP CREATE stream-key cg-0186 0
+    - XGROUP CREATE stream-key cg-0187 0
+    - XGROUP CREATE stream-key cg-0188 0
+    - XGROUP CREATE stream-key cg-0189 0
+    - XGROUP CREATE stream-key cg-0190 0
+    - XGROUP CREATE stream-key cg-0191 0
+    - XGROUP CREATE stream-key cg-0192 0
+    - XGROUP CREATE stream-key cg-0193 0
+    - XGROUP CREATE stream-key cg-0194 0
+    - XGROUP CREATE stream-key cg-0195 0
+    - XGROUP CREATE stream-key cg-0196 0
+    - XGROUP CREATE stream-key cg-0197 0
+    - XGROUP CREATE stream-key cg-0198 0
+    - XGROUP CREATE stream-key cg-0199 0
+    - XGROUP CREATE stream-key cg-0200 0
+    - XGROUP CREATE stream-key cg-0201 0
+    - XGROUP CREATE stream-key cg-0202 0
+    - XGROUP CREATE stream-key cg-0203 0
+    - XGROUP CREATE stream-key cg-0204 0
+    - XGROUP CREATE stream-key cg-0205 0
+    - XGROUP CREATE stream-key cg-0206 0
+    - XGROUP CREATE stream-key cg-0207 0
+    - XGROUP CREATE stream-key cg-0208 0
+    - XGROUP CREATE stream-key cg-0209 0
+    - XGROUP CREATE stream-key cg-0210 0
+    - XGROUP CREATE stream-key cg-0211 0
+    - XGROUP CREATE stream-key cg-0212 0
+    - XGROUP CREATE stream-key cg-0213 0
+    - XGROUP CREATE stream-key cg-0214 0
+    - XGROUP CREATE stream-key cg-0215 0
+    - XGROUP CREATE stream-key cg-0216 0
+    - XGROUP CREATE stream-key cg-0217 0
+    - XGROUP CREATE stream-key cg-0218 0
+    - XGROUP CREATE stream-key cg-0219 0
+    - XGROUP CREATE stream-key cg-0220 0
+    - XGROUP CREATE stream-key cg-0221 0
+    - XGROUP CREATE stream-key cg-0222 0
+    - XGROUP CREATE stream-key cg-0223 0
+    - XGROUP CREATE stream-key cg-0224 0
+    - XGROUP CREATE stream-key cg-0225 0
+    - XGROUP CREATE stream-key cg-0226 0
+    - XGROUP CREATE stream-key cg-0227 0
+    - XGROUP CREATE stream-key cg-0228 0
+    - XGROUP CREATE stream-key cg-0229 0
+    - XGROUP CREATE stream-key cg-0230 0
+    - XGROUP CREATE stream-key cg-0231 0
+    - XGROUP CREATE stream-key cg-0232 0
+    - XGROUP CREATE stream-key cg-0233 0
+    - XGROUP CREATE stream-key cg-0234 0
+    - XGROUP CREATE stream-key cg-0235 0
+    - XGROUP CREATE stream-key cg-0236 0
+    - XGROUP CREATE stream-key cg-0237 0
+    - XGROUP CREATE stream-key cg-0238 0
+    - XGROUP CREATE stream-key cg-0239 0
+    - XGROUP CREATE stream-key cg-0240 0
+    - XGROUP CREATE stream-key cg-0241 0
+    - XGROUP CREATE stream-key cg-0242 0
+    - XGROUP CREATE stream-key cg-0243 0
+    - XGROUP CREATE stream-key cg-0244 0
+    - XGROUP CREATE stream-key cg-0245 0
+    - XGROUP CREATE stream-key cg-0246 0
+    - XGROUP CREATE stream-key cg-0247 0
+    - XGROUP CREATE stream-key cg-0248 0
+    - XGROUP CREATE stream-key cg-0249 0
+    - XGROUP CREATE stream-key cg-0250 0
+    - XGROUP CREATE stream-key cg-0251 0
+    - XGROUP CREATE stream-key cg-0252 0
+    - XGROUP CREATE stream-key cg-0253 0
+    - XGROUP CREATE stream-key cg-0254 0
+    - XGROUP CREATE stream-key cg-0255 0
+    - XGROUP CREATE stream-key cg-0256 0
+    - XGROUP CREATE stream-key cg-0257 0
+    - XGROUP CREATE stream-key cg-0258 0
+    - XGROUP CREATE stream-key cg-0259 0
+    - XGROUP CREATE stream-key cg-0260 0
+    - XGROUP CREATE stream-key cg-0261 0
+    - XGROUP CREATE stream-key cg-0262 0
+    - XGROUP CREATE stream-key cg-0263 0
+    - XGROUP CREATE stream-key cg-0264 0
+    - XGROUP CREATE stream-key cg-0265 0
+    - XGROUP CREATE stream-key cg-0266 0
+    - XGROUP CREATE stream-key cg-0267 0
+    - XGROUP CREATE stream-key cg-0268 0
+    - XGROUP CREATE stream-key cg-0269 0
+    - XGROUP CREATE stream-key cg-0270 0
+    - XGROUP CREATE stream-key cg-0271 0
+    - XGROUP CREATE stream-key cg-0272 0
+    - XGROUP CREATE stream-key cg-0273 0
+    - XGROUP CREATE stream-key cg-0274 0
+    - XGROUP CREATE stream-key cg-0275 0
+    - XGROUP CREATE stream-key cg-0276 0
+    - XGROUP CREATE stream-key cg-0277 0
+    - XGROUP CREATE stream-key cg-0278 0
+    - XGROUP CREATE stream-key cg-0279 0
+    - XGROUP CREATE stream-key cg-0280 0
+    - XGROUP CREATE stream-key cg-0281 0
+    - XGROUP CREATE stream-key cg-0282 0
+    - XGROUP CREATE stream-key cg-0283 0
+    - XGROUP CREATE stream-key cg-0284 0
+    - XGROUP CREATE stream-key cg-0285 0
+    - XGROUP CREATE stream-key cg-0286 0
+    - XGROUP CREATE stream-key cg-0287 0
+    - XGROUP CREATE stream-key cg-0288 0
+    - XGROUP CREATE stream-key cg-0289 0
+    - XGROUP CREATE stream-key cg-0290 0
+    - XGROUP CREATE stream-key cg-0291 0
+    - XGROUP CREATE stream-key cg-0292 0
+    - XGROUP CREATE stream-key cg-0293 0
+    - XGROUP CREATE stream-key cg-0294 0
+    - XGROUP CREATE stream-key cg-0295 0
+    - XGROUP CREATE stream-key cg-0296 0
+    - XGROUP CREATE stream-key cg-0297 0
+    - XGROUP CREATE stream-key cg-0298 0
+    - XGROUP CREATE stream-key cg-0299 0
+    - XGROUP CREATE stream-key cg-0300 0
+    - XGROUP CREATE stream-key cg-0301 0
+    - XGROUP CREATE stream-key cg-0302 0
+    - XGROUP CREATE stream-key cg-0303 0
+    - XGROUP CREATE stream-key cg-0304 0
+    - XGROUP CREATE stream-key cg-0305 0
+    - XGROUP CREATE stream-key cg-0306 0
+    - XGROUP CREATE stream-key cg-0307 0
+    - XGROUP CREATE stream-key cg-0308 0
+    - XGROUP CREATE stream-key cg-0309 0
+    - XGROUP CREATE stream-key cg-0310 0
+    - XGROUP CREATE stream-key cg-0311 0
+    - XGROUP CREATE stream-key cg-0312 0
+    - XGROUP CREATE stream-key cg-0313 0
+    - XGROUP CREATE stream-key cg-0314 0
+    - XGROUP CREATE stream-key cg-0315 0
+    - XGROUP CREATE stream-key cg-0316 0
+    - XGROUP CREATE stream-key cg-0317 0
+    - XGROUP CREATE stream-key cg-0318 0
+    - XGROUP CREATE stream-key cg-0319 0
+    - XGROUP CREATE stream-key cg-0320 0
+    - XGROUP CREATE stream-key cg-0321 0
+    - XGROUP CREATE stream-key cg-0322 0
+    - XGROUP CREATE stream-key cg-0323 0
+    - XGROUP CREATE stream-key cg-0324 0
+    - XGROUP CREATE stream-key cg-0325 0
+    - XGROUP CREATE stream-key cg-0326 0
+    - XGROUP CREATE stream-key cg-0327 0
+    - XGROUP CREATE stream-key cg-0328 0
+    - XGROUP CREATE stream-key cg-0329 0
+    - XGROUP CREATE stream-key cg-0330 0
+    - XGROUP CREATE stream-key cg-0331 0
+    - XGROUP CREATE stream-key cg-0332 0
+    - XGROUP CREATE stream-key cg-0333 0
+    - XGROUP CREATE stream-key cg-0334 0
+    - XGROUP CREATE stream-key cg-0335 0
+    - XGROUP CREATE stream-key cg-0336 0
+    - XGROUP CREATE stream-key cg-0337 0
+    - XGROUP CREATE stream-key cg-0338 0
+    - XGROUP CREATE stream-key cg-0339 0
+    - XGROUP CREATE stream-key cg-0340 0
+    - XGROUP CREATE stream-key cg-0341 0
+    - XGROUP CREATE stream-key cg-0342 0
+    - XGROUP CREATE stream-key cg-0343 0
+    - XGROUP CREATE stream-key cg-0344 0
+    - XGROUP CREATE stream-key cg-0345 0
+    - XGROUP CREATE stream-key cg-0346 0
+    - XGROUP CREATE stream-key cg-0347 0
+    - XGROUP CREATE stream-key cg-0348 0
+    - XGROUP CREATE stream-key cg-0349 0
+    - XGROUP CREATE stream-key cg-0350 0
+    - XGROUP CREATE stream-key cg-0351 0
+    - XGROUP CREATE stream-key cg-0352 0
+    - XGROUP CREATE stream-key cg-0353 0
+    - XGROUP CREATE stream-key cg-0354 0
+    - XGROUP CREATE stream-key cg-0355 0
+    - XGROUP CREATE stream-key cg-0356 0
+    - XGROUP CREATE stream-key cg-0357 0
+    - XGROUP CREATE stream-key cg-0358 0
+    - XGROUP CREATE stream-key cg-0359 0
+    - XGROUP CREATE stream-key cg-0360 0
+    - XGROUP CREATE stream-key cg-0361 0
+    - XGROUP CREATE stream-key cg-0362 0
+    - XGROUP CREATE stream-key cg-0363 0
+    - XGROUP CREATE stream-key cg-0364 0
+    - XGROUP CREATE stream-key cg-0365 0
+    - XGROUP CREATE stream-key cg-0366 0
+    - XGROUP CREATE stream-key cg-0367 0
+    - XGROUP CREATE stream-key cg-0368 0
+    - XGROUP CREATE stream-key cg-0369 0
+    - XGROUP CREATE stream-key cg-0370 0
+    - XGROUP CREATE stream-key cg-0371 0
+    - XGROUP CREATE stream-key cg-0372 0
+    - XGROUP CREATE stream-key cg-0373 0
+    - XGROUP CREATE stream-key cg-0374 0
+    - XGROUP CREATE stream-key cg-0375 0
+    - XGROUP CREATE stream-key cg-0376 0
+    - XGROUP CREATE stream-key cg-0377 0
+    - XGROUP CREATE stream-key cg-0378 0
+    - XGROUP CREATE stream-key cg-0379 0
+    - XGROUP CREATE stream-key cg-0380 0
+    - XGROUP CREATE stream-key cg-0381 0
+    - XGROUP CREATE stream-key cg-0382 0
+    - XGROUP CREATE stream-key cg-0383 0
+    - XGROUP CREATE stream-key cg-0384 0
+    - XGROUP CREATE stream-key cg-0385 0
+    - XGROUP CREATE stream-key cg-0386 0
+    - XGROUP CREATE stream-key cg-0387 0
+    - XGROUP CREATE stream-key cg-0388 0
+    - XGROUP CREATE stream-key cg-0389 0
+    - XGROUP CREATE stream-key cg-0390 0
+    - XGROUP CREATE stream-key cg-0391 0
+    - XGROUP CREATE stream-key cg-0392 0
+    - XGROUP CREATE stream-key cg-0393 0
+    - XGROUP CREATE stream-key cg-0394 0
+    - XGROUP CREATE stream-key cg-0395 0
+    - XGROUP CREATE stream-key cg-0396 0
+    - XGROUP CREATE stream-key cg-0397 0
+    - XGROUP CREATE stream-key cg-0398 0
+    - XGROUP CREATE stream-key cg-0399 0
+    - XGROUP CREATE stream-key cg-0400 0
+    - XGROUP CREATE stream-key cg-0401 0
+    - XGROUP CREATE stream-key cg-0402 0
+    - XGROUP CREATE stream-key cg-0403 0
+    - XGROUP CREATE stream-key cg-0404 0
+    - XGROUP CREATE stream-key cg-0405 0
+    - XGROUP CREATE stream-key cg-0406 0
+    - XGROUP CREATE stream-key cg-0407 0
+    - XGROUP CREATE stream-key cg-0408 0
+    - XGROUP CREATE stream-key cg-0409 0
+    - XGROUP CREATE stream-key cg-0410 0
+    - XGROUP CREATE stream-key cg-0411 0
+    - XGROUP CREATE stream-key cg-0412 0
+    - XGROUP CREATE stream-key cg-0413 0
+    - XGROUP CREATE stream-key cg-0414 0
+    - XGROUP CREATE stream-key cg-0415 0
+    - XGROUP CREATE stream-key cg-0416 0
+    - XGROUP CREATE stream-key cg-0417 0
+    - XGROUP CREATE stream-key cg-0418 0
+    - XGROUP CREATE stream-key cg-0419 0
+    - XGROUP CREATE stream-key cg-0420 0
+    - XGROUP CREATE stream-key cg-0421 0
+    - XGROUP CREATE stream-key cg-0422 0
+    - XGROUP CREATE stream-key cg-0423 0
+    - XGROUP CREATE stream-key cg-0424 0
+    - XGROUP CREATE stream-key cg-0425 0
+    - XGROUP CREATE stream-key cg-0426 0
+    - XGROUP CREATE stream-key cg-0427 0
+    - XGROUP CREATE stream-key cg-0428 0
+    - XGROUP CREATE stream-key cg-0429 0
+    - XGROUP CREATE stream-key cg-0430 0
+    - XGROUP CREATE stream-key cg-0431 0
+    - XGROUP CREATE stream-key cg-0432 0
+    - XGROUP CREATE stream-key cg-0433 0
+    - XGROUP CREATE stream-key cg-0434 0
+    - XGROUP CREATE stream-key cg-0435 0
+    - XGROUP CREATE stream-key cg-0436 0
+    - XGROUP CREATE stream-key cg-0437 0
+    - XGROUP CREATE stream-key cg-0438 0
+    - XGROUP CREATE stream-key cg-0439 0
+    - XGROUP CREATE stream-key cg-0440 0
+    - XGROUP CREATE stream-key cg-0441 0
+    - XGROUP CREATE stream-key cg-0442 0
+    - XGROUP CREATE stream-key cg-0443 0
+    - XGROUP CREATE stream-key cg-0444 0
+    - XGROUP CREATE stream-key cg-0445 0
+    - XGROUP CREATE stream-key cg-0446 0
+    - XGROUP CREATE stream-key cg-0447 0
+    - XGROUP CREATE stream-key cg-0448 0
+    - XGROUP CREATE stream-key cg-0449 0
+    - XGROUP CREATE stream-key cg-0450 0
+    - XGROUP CREATE stream-key cg-0451 0
+    - XGROUP CREATE stream-key cg-0452 0
+    - XGROUP CREATE stream-key cg-0453 0
+    - XGROUP CREATE stream-key cg-0454 0
+    - XGROUP CREATE stream-key cg-0455 0
+    - XGROUP CREATE stream-key cg-0456 0
+    - XGROUP CREATE stream-key cg-0457 0
+    - XGROUP CREATE stream-key cg-0458 0
+    - XGROUP CREATE stream-key cg-0459 0
+    - XGROUP CREATE stream-key cg-0460 0
+    - XGROUP CREATE stream-key cg-0461 0
+    - XGROUP CREATE stream-key cg-0462 0
+    - XGROUP CREATE stream-key cg-0463 0
+    - XGROUP CREATE stream-key cg-0464 0
+    - XGROUP CREATE stream-key cg-0465 0
+    - XGROUP CREATE stream-key cg-0466 0
+    - XGROUP CREATE stream-key cg-0467 0
+    - XGROUP CREATE stream-key cg-0468 0
+    - XGROUP CREATE stream-key cg-0469 0
+    - XGROUP CREATE stream-key cg-0470 0
+    - XGROUP CREATE stream-key cg-0471 0
+    - XGROUP CREATE stream-key cg-0472 0
+    - XGROUP CREATE stream-key cg-0473 0
+    - XGROUP CREATE stream-key cg-0474 0
+    - XGROUP CREATE stream-key cg-0475 0
+    - XGROUP CREATE stream-key cg-0476 0
+    - XGROUP CREATE stream-key cg-0477 0
+    - XGROUP CREATE stream-key cg-0478 0
+    - XGROUP CREATE stream-key cg-0479 0
+    - XGROUP CREATE stream-key cg-0480 0
+    - XGROUP CREATE stream-key cg-0481 0
+    - XGROUP CREATE stream-key cg-0482 0
+    - XGROUP CREATE stream-key cg-0483 0
+    - XGROUP CREATE stream-key cg-0484 0
+    - XGROUP CREATE stream-key cg-0485 0
+    - XGROUP CREATE stream-key cg-0486 0
+    - XGROUP CREATE stream-key cg-0487 0
+    - XGROUP CREATE stream-key cg-0488 0
+    - XGROUP CREATE stream-key cg-0489 0
+    - XGROUP CREATE stream-key cg-0490 0
+    - XGROUP CREATE stream-key cg-0491 0
+    - XGROUP CREATE stream-key cg-0492 0
+    - XGROUP CREATE stream-key cg-0493 0
+    - XGROUP CREATE stream-key cg-0494 0
+    - XGROUP CREATE stream-key cg-0495 0
+    - XGROUP CREATE stream-key cg-0496 0
+    - XGROUP CREATE stream-key cg-0497 0
+    - XGROUP CREATE stream-key cg-0498 0
+    - XGROUP CREATE stream-key cg-0499 0
+    - XGROUP CREATE stream-key cg-0500 0
+    - XREADGROUP GROUP cg-0001 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0002 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0003 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0004 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0005 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0006 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0007 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0008 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0009 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0010 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0011 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0012 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0013 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0014 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0015 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0016 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0017 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0018 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0019 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0020 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0021 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0022 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0023 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0024 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0025 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0026 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0027 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0028 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0029 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0030 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0031 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0032 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0033 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0034 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0035 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0036 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0037 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0038 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0039 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0040 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0041 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0042 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0043 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0044 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0045 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0046 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0047 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0048 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0049 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0050 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0051 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0052 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0053 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0054 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0055 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0056 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0057 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0058 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0059 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0060 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0061 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0062 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0063 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0064 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0065 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0066 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0067 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0068 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0069 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0070 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0071 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0072 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0073 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0074 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0075 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0076 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0077 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0078 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0079 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0080 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0081 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0082 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0083 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0084 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0085 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0086 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0087 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0088 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0089 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0090 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0091 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0092 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0093 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0094 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0095 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0096 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0097 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0098 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0099 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0100 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0101 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0102 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0103 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0104 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0105 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0106 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0107 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0108 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0109 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0110 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0111 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0112 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0113 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0114 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0115 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0116 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0117 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0118 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0119 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0120 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0121 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0122 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0123 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0124 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0125 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0126 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0127 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0128 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0129 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0130 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0131 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0132 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0133 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0134 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0135 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0136 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0137 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0138 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0139 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0140 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0141 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0142 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0143 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0144 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0145 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0146 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0147 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0148 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0149 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0150 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0151 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0152 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0153 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0154 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0155 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0156 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0157 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0158 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0159 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0160 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0161 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0162 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0163 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0164 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0165 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0166 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0167 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0168 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0169 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0170 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0171 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0172 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0173 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0174 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0175 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0176 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0177 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0178 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0179 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0180 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0181 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0182 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0183 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0184 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0185 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0186 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0187 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0188 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0189 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0190 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0191 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0192 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0193 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0194 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0195 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0196 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0197 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0198 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0199 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0200 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0201 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0202 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0203 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0204 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0205 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0206 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0207 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0208 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0209 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0210 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0211 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0212 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0213 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0214 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0215 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0216 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0217 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0218 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0219 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0220 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0221 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0222 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0223 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0224 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0225 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0226 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0227 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0228 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0229 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0230 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0231 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0232 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0233 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0234 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0235 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0236 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0237 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0238 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0239 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0240 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0241 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0242 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0243 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0244 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0245 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0246 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0247 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0248 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0249 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0250 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0251 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0252 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0253 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0254 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0255 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0256 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0257 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0258 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0259 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0260 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0261 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0262 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0263 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0264 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0265 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0266 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0267 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0268 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0269 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0270 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0271 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0272 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0273 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0274 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0275 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0276 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0277 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0278 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0279 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0280 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0281 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0282 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0283 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0284 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0285 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0286 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0287 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0288 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0289 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0290 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0291 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0292 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0293 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0294 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0295 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0296 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0297 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0298 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0299 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0300 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0301 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0302 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0303 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0304 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0305 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0306 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0307 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0308 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0309 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0310 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0311 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0312 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0313 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0314 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0315 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0316 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0317 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0318 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0319 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0320 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0321 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0322 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0323 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0324 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0325 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0326 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0327 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0328 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0329 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0330 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0331 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0332 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0333 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0334 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0335 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0336 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0337 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0338 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0339 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0340 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0341 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0342 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0343 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0344 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0345 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0346 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0347 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0348 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0349 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0350 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0351 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0352 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0353 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0354 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0355 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0356 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0357 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0358 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0359 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0360 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0361 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0362 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0363 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0364 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0365 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0366 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0367 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0368 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0369 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0370 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0371 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0372 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0373 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0374 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0375 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0376 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0377 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0378 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0379 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0380 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0381 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0382 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0383 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0384 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0385 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0386 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0387 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0388 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0389 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0390 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0391 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0392 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0393 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0394 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0395 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0396 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0397 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0398 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0399 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0400 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0401 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0402 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0403 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0404 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0405 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0406 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0407 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0408 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0409 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0410 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0411 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0412 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0413 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0414 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0415 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0416 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0417 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0418 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0419 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0420 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0421 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0422 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0423 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0424 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0425 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0426 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0427 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0428 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0429 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0430 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0431 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0432 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0433 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0434 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0435 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0436 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0437 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0438 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0439 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0440 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0441 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0442 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0443 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0444 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0445 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0446 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0447 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0448 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0449 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0450 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0451 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0452 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0453 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0454 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0455 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0456 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0457 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0458 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0459 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0460 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0461 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0462 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0463 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0464 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0465 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0466 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0467 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0468 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0469 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0470 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0471 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0472 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0473 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0474 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0475 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0476 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0477 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0478 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0479 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0480 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0481 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0482 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0483 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0484 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0485 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0486 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0487 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0488 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0489 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0490 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0491 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0492 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0493 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0494 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0495 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0496 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0497 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0498 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0499 consumer1 COUNT 2000 STREAMS stream-key >
+    - XREADGROUP GROUP cg-0500 consumer1 COUNT 2000 STREAMS stream-key >
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-entries-500-consumer-groups
+  dataset_description: A stream with 100K entries and 500 consumer groups with populated PELs (2000 entries each), designed to stress GC compaction at scale.
+tested-commands:
+  - xadd
+  - xtrim
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XADD stream-key * field __data__" --command-key-pattern="P" --command-ratio=70
+    --command="XTRIM stream-key MAXLEN ~ 1000" --command-key-pattern="P" --command-ratio=30
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95
