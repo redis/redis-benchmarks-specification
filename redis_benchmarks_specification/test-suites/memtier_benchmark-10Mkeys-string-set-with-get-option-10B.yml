@@ -1,0 +1,42 @@
+version: 0.4
+name: memtier_benchmark-10Mkeys-string-set-with-get-option-10B
+description: |
+  Targets the propagation rewrite path of the extended `SET key value GET` form
+  (no expire), exercising setGenericCommand() argv-strip in src/t_string.c that
+  removes trailing GET tokens before the command is propagated as a plain SET.
+  10M keyspace, 10-byte values (encoding ≤ 44 bytes => string OBJ_ENCODING_EMBSTR
+  for both the stored value and the value returned by the GET option). Pipeline
+  16 to maximize per-command overhead sensitivity.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "10000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 10Mkeys-string-10B-size
+  dataset_description: 10 million string keys with 10-byte EMBSTR values.
+tested-commands:
+- set
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--data-size 10 --command "SET __key__ __data__ GET" --command-key-pattern R --key-minimum 1 --key-maximum 10000000 --test-time 180 -c 50 -t 4 --pipeline 16 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 1
