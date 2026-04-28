@@ -1,0 +1,80 @@
+version: 0.4
+name: memtier_benchmark-session-caching-hash-100k-sessions-pipeline-16
+description: 'Runs memtier_benchmark to simulate a session caching workload for a SaaS application,
+  with client-side pipelining of 16. This benchmark focuses exclusively on hash-based session
+  storage, where each session is stored in a Redis hash (`session:<id>`) with fields like user ID,
+  timestamps, device info, and metadata (total ~400–600B). The benchmark models a typical
+  read-heavy cache usage pattern, with an approximate **read:write ratio of 90:10**, reflecting
+  session retrievals and infrequent updates. Command groups: - Session cache reads (`HGETALL`):
+  ~90% - Session cache writes (`HSET`): ~10% To better approximate real-world access patterns, the
+  benchmark uses a **Zipfian key distribution** (`--command-key-pattern=Z`). This simulates
+  **skewed access** where a small subset of sessions (hot keys) receives a majority of reads — a
+  common pattern in production workloads. While Zipfian is technically a power-law distribution, it
+  effectively mimics **Poisson-like behavior** in large-scale systems, where access frequency is
+  uneven but statistically predictable. This access skew mirrors real-life scenarios such as: -
+  Frequently accessed or "sticky" user sessions - Popular user accounts or active devices - Hot
+  caches for trending or recently used resources Using Zipfian distribution allows this benchmark
+  to capture **contention**, **cache pressure**, and **read amplification** effects that occur in
+  real SaaS applications under load. Pipeline=16 amplifies per-call overhead reductions and stresses
+  reply-buffer / output-list paths. Encoding: hashtable (10 fields, metadata field ~200-300B
+  exceeds hash-max-listpack-value 64).'
+
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100000
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix "" --command "HSET session:__key__ userId user-id
+      organizationId org-id role member createdAt 0 lastAccessed 0 ipAddress
+      192.168.1.1 device device authMethod password status active metadata
+      __data__" --command-key-pattern="P" --random-data --data-size-range=200-300
+      --key-minimum=1 --key-maximum=100001 -n allkeys -c 1 -t 1 --hide-histogram
+      --pipeline 50'
+
+tested-groups:
+- hash
+
+tested-commands:
+- hgetall
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --data-size-range=400-600
+    --pipeline=16
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="HGETALL session:__key__"
+    --command-key-pattern=Z
+    --command-ratio=90
+    --command="HSET session:__key__ userId user-__key__ organizationId org-__key__ role admin email user__key__@example.com name \"User __key__\" permissions \"[\\\"read\\\",\\\"write\\\"]\" lastActivity __key__ ipAddress 192.168.1.__key__ userAgent \"Mozilla/5.0\" createdAt __key__"
+    --command-key-pattern=Z
+    --command-ratio=10
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

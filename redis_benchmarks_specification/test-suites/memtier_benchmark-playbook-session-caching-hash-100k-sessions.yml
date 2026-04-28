@@ -21,40 +21,20 @@ description: 'Runs memtier_benchmark to simulate a session caching workload for 
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 100000
   resources:
     requests:
       memory: 1g
-  init_lua: |
-    local seed = 12345
-    math.randomseed(seed)
-    local now = tonumber(redis.call('TIME')[1])
-    local function rand_str(len)
-      local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-      local res = ''
-      for i = 1, len do
-        local idx = math.random(#chars)
-        res = res .. chars:sub(idx, idx)
-      end
-      return res
-    end
-    for i = 1, 100000 do
-      local session_id = 'session:' .. i
-      local user_id = 'user-' .. i
-      local org_id = 'org-' .. i
-      redis.call('HSET', session_id,
-        'userId', user_id,
-        'organizationId', org_id,
-        'role', 'member',
-        'createdAt', tostring(now - math.random(3600)),
-        'lastAccessed', tostring(now),
-        'ipAddress', '192.168.1.' .. (i % 255),
-        'device', 'device-' .. rand_str(8),
-        'authMethod', 'password',
-        'status', 'active',
-        'metadata', rand_str(200 + (i % 100))
-      )
-    end
-    return 'OK'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix "" --command "HSET session:__key__ userId user-id
+      organizationId org-id role member createdAt 0 lastAccessed 0 ipAddress
+      192.168.1.1 device device authMethod password status active metadata
+      __data__" --command-key-pattern="P" --random-data --data-size-range=200-300
+      --key-minimum=1 --key-maximum=100001 -n allkeys -c 1 -t 1 --hide-histogram
+      --pipeline 50'
 
 tested-groups:
 - hash
