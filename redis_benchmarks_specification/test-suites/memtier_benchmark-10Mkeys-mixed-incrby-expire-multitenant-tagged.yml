@@ -3,12 +3,12 @@ name: memtier_benchmark-10Mkeys-mixed-incrby-expire-multitenant-tagged
 description: 'Mixed INCRBY+EXPIRE workload on long-keyname multi-tenant
   tagged keys at 10M scale. Models the realistic per-event write pair seen
   in tagged rolling-window analytics workloads: a counter increment paired
-  with a TTL refresh on the same keyspace. memtier picks INCRBY or EXPIRE
-  per request (~50/50 by default with two --command flags), so over the
-  test window every key is hit by both command types but not necessarily
-  in pairs on the same key. Stresses the combined dict + TTL hash table
-  paths under long-keyname load. Sister to the standalone INCRBY and
-  EXPIRE specs in this family.'
+  with a TTL refresh on the same keyspace. The INCRBY:EXPIRE command-ratio
+  is set to 9:20 to match observed traffic (INCRBY ~18%, EXPIRE ~40%
+  of total commands). Over the test window every key is hit by both
+  command types but not necessarily in pairs on the same key. Stresses
+  the combined dict + TTL hash table paths under long-keyname load.
+  Sister to the standalone INCRBY and EXPIRE specs in this family.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -41,8 +41,10 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command "INCRBY {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 1"
+    --command-ratio 9 --command-key-pattern "R"
     --command "EXPIRE {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 7200"
-    --key-prefix "" --command-key-pattern="R" --key-minimum=1 --key-maximum=10000000
+    --command-ratio 20 --command-key-pattern "R"
+    --key-prefix "" --key-minimum=1 --key-maximum=10000000
     --test-time 180 -c 50 -t 4 --hide-histogram
   resources:
     requests:
