@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-10Mkeys-string-incrby-1000-multitenant-tagged
+description: 'INCRBY 1000 on long-keyname multi-tenant tagged sum keys at
+  10M scale. Sister spec to 10Mkeys-string-incrby-multitenant-tagged; differs
+  only in the increment magnitude (1000 vs 1) to model the second mode of
+  the workload distribution: counter keys take INCRBY 1 (~60% of INCRBYs)
+  while sum keys take INCRBY of variable larger values (~40%, range
+  100-10000, median ~1000). Both modes hit the same fast int-encoding
+  code path; the larger value tests the path where the result string
+  representation lengthens over the lifetime of a key.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix ""
+      --command "SET {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 0"
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=10000000
+      -n allkeys -c 50 -t 4 --pipeline 50 --hide-histogram'
+    timeout: 3600
+  resources:
+    requests:
+      memory: 8g
+tested-groups:
+- string
+tested-commands:
+- incrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "INCRBY {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 1000"
+    --key-prefix "" --command-key-pattern="R" --key-minimum=1 --key-maximum=10000000
+    --test-time 180 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 8g
+priority: 50

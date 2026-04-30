@@ -1,0 +1,92 @@
+version: 0.4
+name: memtier_benchmark-10Mkeys-string-mget-80keys-100B-multitenant-tagged
+description: 'Multi-tenant tagged-keyname MGET shape. 10M flat string keys,
+  each named
+  {T:N}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+  (~78-char SDS, RAW encoding) with a unique hash tag per key. MGET 80
+  keys per call. Models structured long-keyname multi-tenant counter
+  fan-out reads at scale. Stresses: (a) MGET reply aggregation for 80
+  keys, (b) dict lookup with long-SDS keys (~6x more bytes hashed/compared
+  per lookup vs the default memtier-N prefix used by sister 5Mkeys-mget
+  specs), (c) per-key kvobj+keyname memory at 10M scale.
+  Caveat: memtier __key__ rotates per occurrence, so each MGET reads 80
+  keys belonging to 80 different tenants (sequential tenant IDs). For
+  oss-standalone this is equivalent in dict-access cost to per-tenant
+  fan-out; cluster topologies would not model hash-tag slot co-location.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--data-size 100 --random-data --key-prefix ""
+      --command "SET {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 __data__"
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=10000000
+      -n allkeys -c 50 -t 4 --pipeline 50 --hide-histogram'
+    timeout: 3600
+  resources:
+    requests:
+      memory: 8g
+tested-groups:
+- string
+tested-commands:
+- mget
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "MGET {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6
+    {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6"
+    --key-prefix "" --command-key-pattern="R" --key-minimum=1 --key-maximum=10000000
+    --test-time 180 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 8g
+priority: 50

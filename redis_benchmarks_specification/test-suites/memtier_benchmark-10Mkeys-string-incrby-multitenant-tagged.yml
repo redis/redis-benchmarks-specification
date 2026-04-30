@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-10Mkeys-string-incrby-multitenant-tagged
+description: 'INCRBY 1 on long-keyname multi-tenant tagged counter keys at
+  10M scale. Each key is named {T:N}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 (~38-char
+  SDS) with a unique hash tag per key, preloaded to "0" so the value is
+  INT-encoded (OBJ_ENCODING_INT). Test phase issues INCRBY 1 against random
+  keys, exercising the unsigned-long fast path of t_string.c:incrCommand
+  on long-keyname dict lookups. Stresses: (a) long-SDS dict lookup with
+  ~6x more bytes hashed/compared per request vs the default short-prefix
+  sister spec 1Mkeys-string-incrby, (b) 5x larger keyspace.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix ""
+      --command "SET {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 0"
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=10000000
+      -n allkeys -c 50 -t 4 --pipeline 50 --hide-histogram'
+    timeout: 3600
+  resources:
+    requests:
+      memory: 8g
+tested-groups:
+- string
+tested-commands:
+- incrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "INCRBY {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 1"
+    --key-prefix "" --command-key-pattern="R" --key-minimum=1 --key-maximum=10000000
+    --test-time 180 -c 50 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 8g
+priority: 50
