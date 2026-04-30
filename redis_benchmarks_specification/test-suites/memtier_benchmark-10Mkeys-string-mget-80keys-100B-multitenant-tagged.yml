@@ -23,8 +23,8 @@ dbconfig:
     tool: memtier_benchmark
     arguments: '--data-size 100 --random-data --key-prefix ""
       --command "SET {T:__key__}_metric_a_window_b_period_c_segment_d_aggregate_e_v1_v2_v3_v4_v5_v6 __data__"
-      --command-key-pattern="P" --key-minimum=1 --key-maximum=10000000
-      -n allkeys -c 50 -t 4 --pipeline 50 --hide-histogram'
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=10000001
+      -n allkeys -c 1 -t 1 --pipeline 50 --hide-histogram'
     timeout: 3600
   resources:
     requests:
