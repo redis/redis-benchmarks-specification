@@ -1780,8 +1780,16 @@ def process_self_contained_coordinator_stream(
                             if tls_cacert is not None and tls_cacert != "":
                                 redis_params["ssl_ca_certs"] = tls_cacert
 
-                        r = redis.StrictRedis.from_url(args.uri, **redis_params)
-                        logging.info(f"Connected to Redis using URI: {args.uri}")
+                        if args.cluster_mode:
+                            # Cluster-mode URI: use RedisCluster so that
+                            # init_commands / direct redis.call commands are
+                            # routed to the correct slot. A plain Redis client
+                            # would receive MOVED redirects and fail.
+                            r = redis.cluster.RedisCluster.from_url(args.uri, **redis_params)
+                            logging.info(f"Connected to Redis Cluster using URI: {args.uri}")
+                        else:
+                            r = redis.StrictRedis.from_url(args.uri, **redis_params)
+                            logging.info(f"Connected to Redis using URI: {args.uri}")
                     else:
                         # Use individual connection parameters
                         redis_params = {
@@ -1802,10 +1810,19 @@ def process_self_contained_coordinator_stream(
                             if tls_cacert is not None and tls_cacert != "":
                                 redis_params["ssl_ca_certs"] = tls_cacert
 
-                        r = redis.StrictRedis(**redis_params)
-                        logging.info(
-                            f"Connected to Redis using individual parameters: {host}:{port}"
-                        )
+                        if args.cluster_mode:
+                            # Cluster-mode individual params: use RedisCluster
+                            # so that init_commands / direct redis.call commands
+                            # are routed to the correct slot.
+                            r = redis.cluster.RedisCluster(**redis_params)
+                            logging.info(
+                                f"Connected to Redis Cluster using individual parameters: {host}:{port}"
+                            )
+                        else:
+                            r = redis.StrictRedis(**redis_params)
+                            logging.info(
+                                f"Connected to Redis using individual parameters: {host}:{port}"
+                            )
                     setup_name = topology_spec_name
                     r.ping()
 
@@ -1861,7 +1878,14 @@ def process_self_contained_coordinator_stream(
                     if oss_cluster_api_enabled:
                         redis_conns = []
                         logging.info("updating redis connections from cluster slots")
-                        slots = r.cluster("slots")
+                        # RedisCluster (cluster-aware) doesn't have .cluster()
+                        # the same way StrictRedis does; use execute_command on
+                        # the underlying primary node. Falls back to .cluster
+                        # for non-cluster client variants.
+                        if isinstance(r, redis.cluster.RedisCluster):
+                            slots = r.execute_command("CLUSTER", "SLOTS")
+                        else:
+                            slots = r.cluster("slots")
                         for slot in slots:
                             # Master for slot range represented as nested networking information starts at pos 2
                             # example: [0, 5460, [b'127.0.0.1', 30001, b'eccd21c2e7e9b7820434080d2e394cb8f2a7eff2', []]]
