@@ -1785,8 +1785,12 @@ def process_self_contained_coordinator_stream(
                             # init_commands / direct redis.call commands are
                             # routed to the correct slot. A plain Redis client
                             # would receive MOVED redirects and fail.
-                            r = redis.cluster.RedisCluster.from_url(args.uri, **redis_params)
-                            logging.info(f"Connected to Redis Cluster using URI: {args.uri}")
+                            r = redis.cluster.RedisCluster.from_url(
+                                args.uri, **redis_params
+                            )
+                            logging.info(
+                                f"Connected to Redis Cluster using URI: {args.uri}"
+                            )
                         else:
                             r = redis.StrictRedis.from_url(args.uri, **redis_params)
                             logging.info(f"Connected to Redis using URI: {args.uri}")
