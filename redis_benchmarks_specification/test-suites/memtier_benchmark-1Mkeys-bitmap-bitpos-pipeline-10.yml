@@ -15,8 +15,8 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --hide-histogram --key-minimum 1 --key-maximum 1000001 -n 1000000
-      --command "SETBIT __key__ 511 0" --command "SETBIT __key__ 7 1" --command-key-pattern
-      "P:P" --pipeline 50 -c 50 -t 2
+      --command "SETBIT __key__ 511 0" --command-key-pattern "P" --command "SETBIT __key__ 7 1"
+      --command-key-pattern "P" --pipeline 50 -c 50 -t 2
   resources:
     requests:
       cpus: '2'
