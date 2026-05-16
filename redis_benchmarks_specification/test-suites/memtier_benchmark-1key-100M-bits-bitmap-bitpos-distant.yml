@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-1key-100M-bits-bitmap-bitpos-distant
+description: Runs memtier_benchmark, for a keyspace length of 1 key focusing on BITPOS
+  performance — variant that targets the SKIP-WORD scan loop. The bitmap is a raw-encoded
+  string of 100M bits (~12.5MB) with the only set bit at position 99,999,999 (the very
+  last bit). Every BITPOS call therefore scans the entire bitmap before finding the
+  match — exercising the AVX2/AVX512 vectorized skip-word path proposed in upstream
+  PR #15217 (slice4e:bitpos_vectorize_scan) and the existing scalar word-step loop
+  on ARM / non-SIMD builds.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"SETBIT" "users" "100000000" "0"'
+  - '"SETBIT" "users" "99999999" "1"'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-bitmap-100Mbits-bitpos-distant
+  dataset_description: This dataset contains 1 raw-encoded bitmap key of 100M bits
+    (~12.5MB) with a single bit set at position 99,999,999 (the last bit). Workloads
+    issuing "BITPOS users 1" must scan ~12.5MB of zero bytes before finding the match,
+    exercising the SIMD-vectorized skip-word path on x86 (AVX2/AVX512 when available)
+    and the scalar word loop on ARM and non-SIMD builds.
+tested-commands:
+- bitpos
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BITPOS users 1" -c 50 -t 2 --pipeline 10 --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19
