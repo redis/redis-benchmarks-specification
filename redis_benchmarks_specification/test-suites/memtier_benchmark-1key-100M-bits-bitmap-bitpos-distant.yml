@@ -1,10 +1,11 @@
 version: 0.4
 name: memtier_benchmark-1key-100M-bits-bitmap-bitpos-distant
-description: Runs memtier_benchmark, for a keyspace length of 1 key focusing on BITPOS
-  performance — variant that targets the SKIP-WORD scan loop. The bitmap is a raw-encoded
+description: >-
+  Runs memtier_benchmark, for a keyspace length of 1 key focusing on BITPOS
+  performance - variant that targets the SKIP-WORD scan loop. The bitmap is a raw-encoded
   string of 100M bits (~12.5MB) with the only set bit at position 99,999,999 (the very
   last bit). Every BITPOS call therefore scans the entire bitmap before finding the
-  match — exercising the AVX2/AVX512 vectorized skip-word path proposed in upstream
+  match - exercising the AVX2/AVX512 vectorized skip-word path proposed in upstream
   PR #15217 (slice4e:bitpos_vectorize_scan) and the existing scalar word-step loop
   on ARM / non-SIMD builds.
 dbconfig:
