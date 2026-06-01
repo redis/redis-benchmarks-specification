@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-zincrby-16-elements-listpack-pipeline-10
+description: 'Runs memtier_benchmark over 1,000,000 SORTED SET keys, each holding 16 members,
+  repeatedly updating an existing member with ZINCRBY (same-member increment path in zsetAdd:
+  find -> delete old (member,score) -> reinsert). Encoding: listpack (16 elements per key, within
+  zset-max-listpack-entries 128). Scales the redis/redis#15288 workload (ZINCRBY -P 10 on a small
+  listpack-encoded zset) across 1M keys to reproduce the regression bisected to 391e3452 (#13981)
+  without single-key cache-hot artifacts.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    zset-max-listpack-entries: '128'
+    zset-max-listpack-value: '64'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="ZADD __key__ 1 e1 2 e2 3 e3 4 e4 5 e5 6 e6 7 e7 8 e8 9 e9 10 e10 11 e11 12 e12 13 e13 14 e14 15 e15 16 e16"
+      --command-key-pattern=P --key-minimum 1 --key-maximum 1000000 --key-prefix "zset:"
+      -n 1000000 --hide-histogram -t 1 -c 1 --pipeline 50
+  resources:
+    requests:
+      memory: 3g
+  dataset_name: 1Mkeys-zset-16-elements-listpack
+  dataset_description: 1,000,000 sorted-set keys, each listpack-encoded with 16 integer-scored
+    members (e1..e16), well within zset-max-listpack-entries 128.
+tested-groups:
+- sorted-set
+tested-commands:
+- zincrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINCRBY __key__ 1 e8" --command-key-pattern=R --key-minimum 1
+    --key-maximum 1000000 --key-prefix "zset:" --hide-histogram --test-time 180 --pipeline 10 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 67
