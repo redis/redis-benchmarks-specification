@@ -1,0 +1,43 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-setnx-10B
+description: 'Runs memtier_benchmark benchmarking SETNX. Preloads 1M string keys, then
+  issues SETNX over a 2M key range so roughly 50% of calls hit an existing key (no-op
+  reject path) and 50% create a new key (write path). Each value is 10 bytes.
+  Encoding: EMBSTR (10B <= 44B embstr threshold).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" --command "SET __key__ __data__" --command-key-pattern="P"
+      -n 5000 --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data
+    size of 10 bytes.
+tested-commands:
+- setnx
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--test-time 180 "--data-size" "10" --command "SETNX __key__ __data__"
+    --command-key-pattern="R" --key-minimum=1 --key-maximum 2000000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- string
+priority: 77
