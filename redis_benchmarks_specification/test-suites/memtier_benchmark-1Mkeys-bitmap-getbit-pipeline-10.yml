@@ -1,7 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-getbit-pipeline-10
 description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
-  EXISTS performance. 50% of the EXIST commands will be on non-existing keys.
+  GETBIT performance. Each key is a 1-bit bitmap preloaded via SETBIT; the client
+  issues GETBIT at offsets 1 and 100 across the keyspace.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -32,7 +33,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 50 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
+  arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
     "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time
     180
   resources:

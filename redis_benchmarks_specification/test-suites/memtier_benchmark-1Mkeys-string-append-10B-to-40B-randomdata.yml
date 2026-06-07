@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-append-10B-to-40B-randomdata
 description: "Append-path benchmark used to validate the EMBSTR -> RAW conversion
-  cost introduced when robj layout changes (e.g. Valkey PR 2516, and any Redis
-  equivalent that packs small values into the robj itself). Preloads 1M keys as
+  cost introduced when robj layout changes (e.g. any change that packs small
+  values into the robj itself). Preloads 1M keys as
   10B EMBSTR (well under the 44B threshold), then runs APPEND ops that push each
   key over the threshold on first touch, forcing the encoding conversion. Uses
   --random-data to exercise realistic allocator behaviour rather than all-zero

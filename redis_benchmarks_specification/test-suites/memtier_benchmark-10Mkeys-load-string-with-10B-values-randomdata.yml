@@ -2,7 +2,8 @@ version: 0.4
 name: memtier_benchmark-10Mkeys-load-string-with-10B-values-randomdata
 description: "Loads 10M string keys with 10B random-data values, all EMBSTR
   encoding. Sister spec to the 1M variant for validating robj-layout changes
-  (e.g. Valkey-#2516-style ptr reuse): at 10M keys the total dataset + robj
+  (e.g. embedding small values in the robj to save a pointer indirection): at
+  10M keys the total dataset + robj
   overhead is ~600MB, so the keyspace no longer fits in any CPU's L3 cache
   and every dict lookup pays DRAM latency. This is where the throughput
   impact of pointer chasing in robj actually surfaces - the 1M variant is
