@@ -389,3 +389,75 @@ def test_remove_started_containers_tolerates_remove_error():
 
     c0.remove.assert_called_once_with(force=True)
     c1.remove.assert_called_once_with(force=True)
+
+
+# --------------------------------------------------------------------------- #
+# cpuset split: memtier and the background helper must get DISJOINT cores
+# --------------------------------------------------------------------------- #
+def _cpu_spec(index, tool, cpus, is_background=False):
+    return multi_tool.ClientRunSpec(
+        client_index=index,
+        client_tool=tool,
+        client_image="img",
+        command_str="cmd",
+        output_filename=f"benchmark_output_{index}.json",
+        is_background=is_background,
+        cpus=cpus,
+    )
+
+
+def test_partition_cpuset_disjoint_when_it_fits():
+    specs = [
+        _cpu_spec(0, "memtier_benchmark", 4),
+        _cpu_spec(1, "bcast-listener", 4, is_background=True),
+    ]
+    part = multi_tool.partition_cpuset("4-11", specs)
+    assert part == {0: "4,5,6,7", 1: "8,9,10,11"}
+    # disjoint
+    assert set(part[0].split(",")).isdisjoint(part[1].split(","))
+
+
+def test_partition_cpuset_shares_when_not_possible():
+    s = [_cpu_spec(0, "memtier_benchmark", 4), _cpu_spec(1, "bcast-listener", 4, True)]
+    assert multi_tool.partition_cpuset("", s) is None  # no cpuset
+    assert multi_tool.partition_cpuset("0-7", [s[0]]) is None  # single client
+    # missing cpu requests -> share
+    no_cpu = [
+        _cpu_spec(0, "memtier_benchmark", 0),
+        _cpu_spec(1, "bcast-listener", 0, True),
+    ]
+    assert multi_tool.partition_cpuset("0-7", no_cpu) is None
+    # doesn't fit (5+5 > 8) -> share
+    big = [
+        _cpu_spec(0, "memtier_benchmark", 5),
+        _cpu_spec(1, "bcast-listener", 5, True),
+    ]
+    assert multi_tool.partition_cpuset("0-7", big) is None
+
+
+def test_run_client_configs_pins_disjoint_cpusets(tmp_path):
+    from unittest.mock import MagicMock
+
+    _write_memtier_output(tmp_path)
+    fg = MagicMock()
+    fg.wait.return_value = {"StatusCode": 0}
+    fg.logs.return_value = b"{}"
+    bg = MagicMock()
+    bg.status = "running"
+    bg.logs.return_value = b""
+    docker_client = MagicMock()
+    docker_client.containers.run.side_effect = [fg, bg]
+
+    specs = [
+        _cpu_spec(0, "memtier_benchmark", 4),
+        _cpu_spec(1, "bcast-listener", 4, is_background=True),
+    ]
+    multi_tool.run_client_configs(
+        docker_client,
+        specs,
+        cpuset_cpus="4-11",
+        temporary_dir_client=str(tmp_path),
+    )
+    calls = docker_client.containers.run.call_args_list
+    cpusets = [c.kwargs.get("cpuset_cpus") for c in calls]
+    assert cpusets == ["4,5,6,7", "8,9,10,11"]  # disjoint, not the shared "4-11"
