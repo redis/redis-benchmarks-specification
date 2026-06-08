@@ -130,3 +130,135 @@ def test_stop_background_helper_always_removes_even_if_stop_raises():
     # stop failing is not itself a measurement failure (helper was running)
     assert failure is None
     c.remove.assert_called_once_with(force=True)
+
+
+def test_remove_started_containers_removes_all_and_tolerates_errors():
+    """A mid-launch failure cleanup must force-remove every started container
+    and not raise if one removal fails."""
+    from redis_benchmarks_specification.__runner__.runner import (
+        remove_started_containers,
+    )
+
+    c0, c1, c2 = MagicMock(), MagicMock(), MagicMock()
+    c1.remove.side_effect = RuntimeError("already gone")  # must be tolerated
+    started = [
+        {"container": c0, "client_index": 0},
+        {"container": c1, "client_index": 1},
+        {"container": c2, "client_index": 2},
+    ]
+    remove_started_containers(started)  # must not raise
+    c0.remove.assert_called_once_with(force=True)
+    c1.remove.assert_called_once_with(force=True)
+    c2.remove.assert_called_once_with(force=True)
+
+
+def test_stop_background_helper_unknown_status_is_a_failure():
+    """If status can't be queried (reload raises a non-NotFound error) the run
+    is treated as failed rather than silently passing."""
+    c = MagicMock()
+    c.reload.side_effect = RuntimeError("docker daemon hiccup")
+    c.attrs = {}
+    failure = stop_background_helper(_bg(c, index=5))
+    assert failure is not None
+    assert failure[0] == 5 and failure[2] == "unknown"
+    c.stop.assert_not_called()
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_stop_background_helper_exit_code_zero_is_still_a_failure():
+    """A helper that exits 0 early still means the listeners were not active
+    for the full window -> failure (keyed on status 'exited', not exit code)."""
+    c = MagicMock()
+    c.status = "exited"
+    c.attrs = {"State": {"ExitCode": 0}}
+    c.logs.return_value = b""
+    failure = stop_background_helper(_bg(c, index=6))
+    assert failure is not None
+    idx, tool, status, code = failure
+    assert idx == 6 and status == "exited" and code == 0
+    c.remove.assert_called_once_with(force=True)
+
+
+def _multi_cfg():
+    return {
+        "clientconfigs": [
+            {
+                "run_image": "redislabs/memtier_benchmark:edge",
+                "tool": "memtier_benchmark",
+                "arguments": '--test-time 1 --command "SET __key__ __data__" '
+                "-c 1 -t 1 --hide-histogram",
+                "resources": {"requests": {"cpus": "1", "memory": "1g"}},
+            },
+            {
+                "run_image": "redis/bcast-tracking-bench:latest",
+                "tool": "bcast-listener",
+                "arguments": "--listener-count 2 --tracking-prefix bench:",
+                "resources": {"requests": {"cpus": "1", "memory": "1g"}},
+            },
+        ]
+    }
+
+
+def _runner_args():
+    return type("A", (), {"benchmark_local_install": False, "timeout_buffer": 1})()
+
+
+def _call_run_multiple(docker_client, tmp_path):
+    from redis_benchmarks_specification.__runner__.runner import run_multiple_clients
+
+    return run_multiple_clients(
+        _multi_cfg(),
+        docker_client,
+        str(tmp_path),
+        "/mnt",
+        str(tmp_path),
+        "0",
+        6379,
+        "localhost",
+        None,
+        False,
+        False,
+        False,
+        None,
+        None,
+        None,
+        "2",
+        0,
+        1,
+        "",
+        _runner_args(),
+    )
+
+
+def test_run_multiple_clients_aborts_when_background_helper_exited(tmp_path):
+    """If the background bcast-listener exited during the run, the whole run
+    must fail rather than report the memtier numbers as valid."""
+    import pytest
+
+    fg = MagicMock()
+    fg.wait.return_value = {"StatusCode": 0}
+    fg.logs.return_value = b"{}"
+    bg = MagicMock()
+    bg.status = "exited"
+    bg.attrs = {"State": {"ExitCode": 1}}
+    bg.logs.return_value = b""
+    docker_client = MagicMock()
+    docker_client.containers.run.side_effect = [fg, bg]
+
+    with pytest.raises(RuntimeError, match="Background helper"):
+        _call_run_multiple(docker_client, tmp_path)
+    bg.remove.assert_called_with(force=True)  # helper still cleaned up
+
+
+def test_run_multiple_clients_cleans_up_on_midlaunch_failure(tmp_path):
+    """If a later container fails to start, the already-started one must be
+    force-removed (no leak)."""
+    import pytest
+
+    started = MagicMock()
+    docker_client = MagicMock()
+    docker_client.containers.run.side_effect = [started, Exception("pull failed")]
+
+    with pytest.raises(RuntimeError, match="Failed to start"):
+        _call_run_multiple(docker_client, tmp_path)
+    started.remove.assert_called_once_with(force=True)
