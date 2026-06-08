@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-100Kkeys-load-hash-20-fields-with-1B-values-pipeline-30
 description: 'Runs memtier_benchmark, for a keyspace length of 100K keys loading HASHES with 50
-  fields each. Each field value has a data size of 10 Bytes. Encoding: listpack (20 fields x 1B
+  fields each. Each field value has a data size of 10 Bytes. Encoding: listpack (50 fields x 10B
   values, below hash-max-listpack-entries 128 and hash-max-listpack-value 64).'
 dbconfig:
   configuration-parameters:
@@ -37,6 +37,7 @@ clientconfig:
     field:42 __data__ field:43 __data__ field:44 __data__ field:45 __data__ field:46
     __data__ field:47 __data__ field:48 __data__ field:49 __data__ field:50 __data__"
     --command-key-pattern="R" --key-minimum=1 --key-maximum 100000 -c 50 -t 4 --hide-histogram
+    --pipeline 30
   resources:
     requests:
       cpus: '4'

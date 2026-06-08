@@ -4,9 +4,10 @@ description: "High-pipeline GET benchmark against a DB with mixed EMBSTR/RAW
   encodings. Preload uses --data-size-range 10-200 with --data-size-pattern R
   so value sizes are uniformly random, producing ~17% EMBSTR (values <=44B)
   and ~83% RAW. Exercises the common-case read path across both encodings so
-  that any EMBSTR-layout change (e.g. Valkey-style robj ptr reuse) can be
-  checked for regressions on the dominant RAW path and on the hot GET dispatch
-  branch. --random-data is used so allocator behaviour reflects realistic byte
+  that any EMBSTR robj-layout change (e.g. embedding small values in the robj
+  to save a pointer indirection) can be checked for regressions on the dominant
+  RAW path and on the hot GET dispatch branch. --random-data is used so
+  allocator behaviour reflects realistic byte
   patterns rather than all-zero pages."
 dbconfig:
   configuration-parameters:
