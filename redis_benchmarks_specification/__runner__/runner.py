@@ -75,7 +75,6 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
     extract_client_configs,
     extract_client_container_images,
-    extract_client_tools,
 )
 from redis_benchmarks_specification.__common__.multi_tool import (
     prepare_client_run_specs,

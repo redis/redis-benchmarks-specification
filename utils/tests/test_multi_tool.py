@@ -230,6 +230,37 @@ def test_run_client_configs_foreground_and_background(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# 3b. SAFETY: a foreground (measuring) client failure must STILL stop+remove
+#     the background helper (the finally) -> no leaked tracking listener.
+# --------------------------------------------------------------------------- #
+def test_run_client_configs_stops_background_when_foreground_fails(tmp_path):
+    from unittest.mock import MagicMock
+
+    fg = MagicMock()
+    fg.wait.return_value = {"StatusCode": 1}  # measuring client fails
+    fg.logs.return_value = b"boom"
+    bg = MagicMock()
+    bg.status = "running"  # helper still alive when fg blew up
+    bg.logs.return_value = b""
+
+    docker_client = MagicMock()
+    docker_client.containers.run.side_effect = [fg, bg]
+
+    with pytest.raises(RuntimeError):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+        )
+
+    # The background helper must NOT leak even though the foreground raised.
+    bg.stop.assert_called_once()
+    bg.remove.assert_called_with(force=True)
+    fg.remove.assert_called_with(force=True)
+
+
+# --------------------------------------------------------------------------- #
 # 4. abort-on-helper-death: bg exited(1) -> RuntimeError + still removed
 # --------------------------------------------------------------------------- #
 def test_run_client_configs_aborts_when_background_helper_exited(tmp_path):
