@@ -1,8 +1,13 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-list-rpoplpush-with-10B-values
-description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs in which
-  the value has a data size of 10 Bytes. After pre-loading the data it issues LPOP and RPOP
-  commands. Encoding: listpack (1 element x 10B per key, single-node listpack).'
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs with
+  ~64 elements of 10B each, then issuing RPOPLPUSH moving one element from a random source
+  list to a random destination list (both __key__, each resolved to an independent random key
+  in [1,1M]). This is globally length-conserving across the keyspace, so total elements stay
+  constant: no single shared destination grows into a hot key (the previous version pushed
+  every element into one `myotherlist`) and the source lists are not drained to empty. The
+  benchmark measures the real RPOPLPUSH pop+push path on per-key listpack lists. Encoding:
+  listpack (~64 x 10B per key, under the 8KB list-max-listpack-size -2 threshold).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -12,11 +17,11 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "10" --command "LPUSH __key__ __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum 1000000 --test-time 60 -c 50 -t 4 --hide-histogram
+      --key-minimum=1 --key-maximum 1000000 -n 320000 -c 50 -t 4 --hide-histogram
       --pipeline 50'
   resources:
     requests:
-      memory: 2g
+      memory: 4g
   dataset_name: 1Mkeys-list-10B-size
   dataset_description: This dataset contains 1 million list keys, each with a data
     size of 10 bytes.
@@ -33,8 +38,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "10" --command "RPOPLPUSH __key__ myotherlist" --command-key-pattern="R"
-    --key-minimum=1 --key-maximum 1000000 --test-time 120 -c 50 -t 4 --hide-histogram'
+  arguments: '"--data-size" "10" --command "RPOPLPUSH __key__ __key__" --command-key-pattern="R"
+    --key-minimum=1 --key-maximum 1000000 -n 50000 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
       cpus: '4'

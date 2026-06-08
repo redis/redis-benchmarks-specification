@@ -1,8 +1,11 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-list-lpop-rpop-with-100B-values
-description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs in which
-  the value has a data size of 100 Bytes. After pre-loading the data it issues LPOP and RPOP
-  commands. Encoding: listpack (1 element x 100B per key, single-node listpack).'
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs with
+  ~64 elements of 100B each, then issuing a bounded number of LPOP and RPOP commands. The
+  client is capped via -n so total pops (~20/key, LPOP+RPOP) stay well below the preloaded depth, so the
+  lists are never drained and the benchmark measures the real LPOP/RPOP path (not the
+  empty-list fast-return). Encoding: listpack (~64 x 100B ~= 6.4KB per key, under the 8KB
+  list-max-listpack-size -2 threshold).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -12,11 +15,11 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "100" --command "LPUSH __key__ __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum 1000000 --test-time 60 -c 50 -t 4 --hide-histogram
+      --key-minimum=1 --key-maximum 1000000 -n 320000 -c 50 -t 4 --hide-histogram
       --pipeline 50'
   resources:
     requests:
-      memory: 4g
+      memory: 10g
   dataset_name: 1Mkeys-list-100B-size
   dataset_description: This dataset contains 1 million list keys, each with a data
     size of 100 bytes.
@@ -36,7 +39,7 @@ clientconfig:
   tool: memtier_benchmark
   arguments: '"--data-size" "100" --command "LPOP __key__" --command-key-pattern="R"
     --command "RPOP __key__" --command-key-pattern="R"  --key-minimum=1 --key-maximum
-    1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+    1000000 -n 50000 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
       cpus: '4'
