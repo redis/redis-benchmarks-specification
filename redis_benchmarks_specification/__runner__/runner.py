@@ -728,6 +728,29 @@ def run_multiple_clients(
                     unix_socket,
                     None,  # username
                 )
+            elif "bcast-listener" in client_tool:
+                (
+                    _,
+                    benchmark_command_str,
+                    arbitrary_command,
+                ) = prepare_bcast_listener_parameters(
+                    client_config,
+                    client_tool,
+                    port,
+                    host,
+                    password,
+                    local_benchmark_output_filename,
+                    oss_cluster_api_enabled,
+                    tls_enabled,
+                    tls_skip_verify,
+                    test_tls_cert,
+                    test_tls_key,
+                    test_tls_cacert,
+                    resp_version,
+                    override_memtier_test_time,
+                    unix_socket,
+                    None,  # username
+                )
             elif "vector-db-benchmark" in client_tool:
                 (
                     _,
@@ -848,6 +871,10 @@ def run_multiple_clients(
                     "client_image": client_image,
                     "benchmark_command_str": benchmark_command_str,
                     "timeout": container_timeout,
+                    # Background helpers (e.g. bcast-listener) never self-exit;
+                    # they are stopped after the measuring clients finish and
+                    # are excluded from metrics aggregation.
+                    "is_background": "bcast-listener" in client_tool,
                 }
             )
 
@@ -859,66 +886,106 @@ def run_multiple_clients(
             # Fail fast on container startup errors
             raise RuntimeError(f"Failed to start client {client_index}: {e}")
 
-    # Wait for all containers to complete
-    logging.info(f"Waiting for {len(containers)} containers to complete...")
+    # Wait for the FOREGROUND (measuring) containers to complete, then stop
+    # any BACKGROUND helpers. Background helpers (e.g. bcast-listener) hold
+    # their connections open until killed and never self-exit, so they must
+    # not be waited on (that would block until the timeout and then fail the
+    # whole run); they are stopped once the measuring clients are done.
+    foreground = [c for c in containers if not c.get("is_background")]
+    background = [c for c in containers if c.get("is_background")]
+    logging.info(
+        f"Waiting for {len(foreground)} foreground container(s) to complete "
+        f"({len(background)} background helper(s) running)..."
+    )
 
-    for container_info in containers:
-        container = container_info["container"]
-        client_index = container_info["client_index"]
-        client_tool = container_info["client_tool"]
-        client_image = container_info["client_image"]
-        benchmark_command_str = container_info["benchmark_command_str"]
+    # A background helper that exits on its own BEFORE we stop it means the
+    # listeners were not active for the full measured window -> the result is
+    # invalid. Tracked here and raised after cleanup.
+    background_failures = []
 
-        try:
-            # Wait for container to complete
-            exit_code = container.wait(timeout=container_info["timeout"])
-            client_stdout = container.logs().decode("utf-8")
+    try:
+        for container_info in foreground:
+            container = container_info["container"]
+            client_index = container_info["client_index"]
+            client_tool = container_info["client_tool"]
+            client_image = container_info["client_image"]
+            benchmark_command_str = container_info["benchmark_command_str"]
 
-            # Check if container succeeded
-            if exit_code.get("StatusCode", 1) != 0:
-                logging.error(
-                    f"Client {client_index} failed with exit code: {exit_code}"
-                )
-                logging.error(f"Client {client_index} stdout/stderr:")
-                logging.error(client_stdout)
-                # Fail fast on container execution errors
-                raise RuntimeError(
-                    f"Client {client_index} ({client_tool}) failed with exit code {exit_code}"
-                )
-
-            logging.info(
-                f"Client {client_index} completed successfully with exit code: {exit_code}"
-            )
-
-            results.append(
-                {
-                    "client_index": client_index,
-                    "stdout": client_stdout,
-                    "config": client_configs[client_index],
-                    "tool": client_tool,
-                    "image": client_image,
-                }
-            )
-
-        except Exception as e:
-            # Get logs even if wait failed
             try:
+                # Wait for container to complete
+                exit_code = container.wait(timeout=container_info["timeout"])
                 client_stdout = container.logs().decode("utf-8")
-                logging.error(f"Client {client_index} logs:")
-                logging.error(client_stdout)
-            except:
-                logging.error(f"Could not retrieve logs for client {client_index}")
 
-            raise RuntimeError(f"Client {client_index} ({client_tool}) failed: {e}")
+                # Check if container succeeded
+                if exit_code.get("StatusCode", 1) != 0:
+                    logging.error(
+                        f"Client {client_index} failed with exit code: {exit_code}"
+                    )
+                    logging.error(f"Client {client_index} stdout/stderr:")
+                    logging.error(client_stdout)
+                    # Fail fast on container execution errors
+                    raise RuntimeError(
+                        f"Client {client_index} ({client_tool}) failed with exit code {exit_code}"
+                    )
 
-        finally:
-            # Clean up container
-            try:
-                container.remove(force=True)
-            except Exception as cleanup_error:
-                logging.warning(f"Client {client_index} cleanup error: {cleanup_error}")
+                logging.info(
+                    f"Client {client_index} completed successfully with exit code: {exit_code}"
+                )
 
-    logging.info(f"Successfully completed {len(containers)} client configurations")
+                results.append(
+                    {
+                        "client_index": client_index,
+                        "stdout": client_stdout,
+                        "config": client_configs[client_index],
+                        "tool": client_tool,
+                        "image": client_image,
+                    }
+                )
+
+            except Exception as e:
+                # Get logs even if wait failed
+                try:
+                    client_stdout = container.logs().decode("utf-8")
+                    logging.error(f"Client {client_index} logs:")
+                    logging.error(client_stdout)
+                except:
+                    logging.error(f"Could not retrieve logs for client {client_index}")
+
+                raise RuntimeError(f"Client {client_index} ({client_tool}) failed: {e}")
+
+            finally:
+                # Clean up container
+                try:
+                    container.remove(force=True)
+                except Exception as cleanup_error:
+                    logging.warning(
+                        f"Client {client_index} cleanup error: {cleanup_error}"
+                    )
+
+    finally:
+        # ALWAYS stop + remove background helpers, even if a measuring client
+        # raised above, so listener containers never leak. Also detect helpers
+        # that exited on their own before we stopped them (auth error, OOM,
+        # crash) -- those invalidate the measurement.
+        for container_info in background:
+            failure = stop_background_helper(container_info)
+            if failure is not None:
+                background_failures.append(failure)
+
+    # If a background helper died before the benchmark finished, abort rather
+    # than report memtier numbers as if the listeners were active. (Only reached
+    # when the foreground loop did not already raise.)
+    if background_failures:
+        details = ", ".join(
+            f"client {i} ({t}) status={s} exit_code={c}"
+            for i, t, s, c in background_failures
+        )
+        raise RuntimeError(
+            f"Background helper(s) exited before the benchmark finished: {details}. "
+            f"Tracking listeners were not active for the full measured window; aborting."
+        )
+
+    logging.info(f"Successfully completed {len(foreground)} measuring client(s)")
 
     # Aggregate results by reading JSON output files
     aggregated_stdout = ""
@@ -1474,6 +1541,169 @@ def prepare_pubsub_sub_bench_parameters(
         benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
 
     return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+def prepare_bcast_listener_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    password,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled=False,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
+    resp_version=None,
+    override_test_time=0,
+    unix_socket="",
+    username=None,
+):
+    """
+    Prepare bcast-listener command parameters.
+
+    bcast-listener (image redis/bcast-tracking-bench) is a CLIENT TRACKING
+    BCAST load/helper tool. In "manual" mode it opens N RESP3 BCAST tracking
+    clients, drains invalidation messages, and holds the connections open
+    until it receives SIGTERM. It produces NO benchmark JSON output, so it is
+    launched as a detached BACKGROUND helper alongside memtier and is stopped
+    by the runner once the measuring clients finish (see run_multiple_clients).
+
+    Unlike memtier/pubsub-sub-bench it takes a single --redis-url instead of
+    -h/-p/-a; credentials (if any) are embedded in the URL. The tool's native
+    flags (--listener-count, --tracking-prefix, ...) are taken verbatim from
+    the YAML clientconfig["arguments"], mirroring the pubsub-sub-bench
+    pass-through.
+
+    NOTE: relies on the image ENTRYPOINT being the bcast-listener binary, so
+    the command is `manual --redis-url ...` (no binary prefix), exactly as the
+    pubsub-sub-bench branch relies on its image ENTRYPOINT.
+    """
+    from urllib.parse import quote
+
+    arbitrary_command = False
+
+    if unix_socket != "":
+        logging.warning("bcast-listener doesn't support unix sockets, using host/port")
+
+    # Build redis://[userinfo@]host:port/0 ; percent-encode credentials so
+    # special characters (@ : / etc.) in passwords do not corrupt the URL.
+    userinfo = ""
+    if password:
+        if username:
+            userinfo = f"{quote(username, safe='')}:{quote(password, safe='')}@"
+        else:
+            userinfo = f":{quote(password, safe='')}@"
+    scheme = "rediss" if tls_enabled else "redis"
+    redis_url = f"{scheme}://{userinfo}{server}:{port}/0"
+    if tls_enabled:
+        logging.warning("bcast-listener TLS (rediss) support not verified yet")
+
+    benchmark_command = ["manual", "--redis-url", redis_url]
+    logging.info(
+        "Preparing bcast-listener parameters: manual --redis-url "
+        f"{scheme}://{'<redacted>@' if userinfo else ''}{server}:{port}/0"
+    )
+    benchmark_command_str = " ".join(benchmark_command)
+
+    # bcast-listener has no test-time concept; it is stopped when the
+    # measuring clients finish, so override_test_time does not apply.
+    if override_test_time and override_test_time > 0:
+        logging.info(
+            "bcast-listener has no test-time; override_test_time ignored "
+            "(helper is stopped when measuring clients finish)"
+        )
+
+    # Append user-defined arguments from YAML verbatim
+    # (e.g. --listener-count 64 --tracking-prefix bench:).
+    user_arguments = ""
+    if "arguments" in clientconfig:
+        user_arguments = clientconfig["arguments"]
+    if user_arguments.strip():
+        benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
+
+    return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+def stop_background_helper(container_info):
+    """Stop a background-helper container (e.g. bcast-listener) and report
+    whether it had already exited before we stopped it.
+
+    Background helpers hold their connections open until killed, so under
+    normal operation they are still ``running`` when the measuring clients
+    finish and we stop them with SIGTERM. If a helper has exited on its own
+    (auth error, OOM, crash) it means the listeners were NOT active for the
+    full measured window, so the run must fail.
+
+    Always attempts to remove the container (no leak, even on failure).
+
+    Returns a failure tuple ``(client_index, client_tool, status, exit_code)``
+    if the helper exited/disappeared during the run, otherwise ``None``.
+    """
+    container = container_info["container"]
+    client_index = container_info["client_index"]
+    client_tool = container_info["client_tool"]
+    failure = None
+    try:
+        try:
+            container.reload()
+            status = container.status
+        except docker.errors.NotFound:
+            status = "not-found"
+        except Exception as e:
+            logging.warning(
+                f"Could not query background helper {client_index} status: {e}"
+            )
+            status = "unknown"
+
+        if status == "running":
+            logging.info(
+                f"Stopping background helper client {client_index} ({client_tool})"
+            )
+            try:
+                container.stop(timeout=10)  # SIGTERM, then SIGKILL after 10s
+            except docker.errors.NotFound:
+                pass
+        elif status == "not-found":
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) container is "
+                f"gone -- it did not survive the run; results are unreliable."
+            )
+            failure = (client_index, client_tool, status, None)
+        else:
+            # Exited/crashed during the measured window.
+            exit_code = None
+            try:
+                exit_code = container.attrs.get("State", {}).get("ExitCode")
+            except Exception:
+                pass
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) exited early "
+                f"(status={status}, exit_code={exit_code}) -- tracking listeners "
+                f"were NOT active for the full measured window; results are "
+                f"unreliable."
+            )
+            failure = (client_index, client_tool, status, exit_code)
+
+        try:
+            bg_stdout = container.logs().decode("utf-8")
+            logging.info(
+                f"Background helper {client_index} ({client_tool}) logs:\n{bg_stdout}"
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logging.warning(f"Error handling background helper {client_index}: {e}")
+    finally:
+        try:
+            container.remove(force=True)
+        except Exception as cleanup_error:
+            logging.warning(
+                f"Background helper {client_index} cleanup error: {cleanup_error}"
+            )
+    return failure
 
 
 def enrich_results_with_redis_info(
