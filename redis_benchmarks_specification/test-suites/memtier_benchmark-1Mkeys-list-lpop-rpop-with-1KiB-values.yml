@@ -1,8 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-list-lpop-rpop-with-1KiB-values
-description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs in which
-  the value has a data size of 1000 Bytes. After pre-loading the data it issues LPOP and RPOP
-  commands. Encoding: listpack (1 element per key, single-node listpack).'
+description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs with
+  ~10 elements of 1000B each, then issuing a bounded number of LPOP and RPOP commands. The
+  client is capped via -n so total pops (~1.6/key) stay below the preloaded depth, so the
+  lists are never drained and the benchmark measures the real LPOP/RPOP path (not the
+  empty-list fast-return). At 1KiB values the list is quicklist-encoded (10 x 1000B exceeds
+  the 8KB list-max-listpack-size -2 threshold). Note: large values keep the keyspace memory
+  high, so the measured window is shorter than the smaller-value siblings.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -12,11 +16,11 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "1000" --command "LPUSH __key__ __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum 1000000 --test-time 60 -c 50 -t 4 --hide-histogram
+      --key-minimum=1 --key-maximum 1000000 -n 50000 -c 50 -t 4 --hide-histogram
       --pipeline 50'
   resources:
     requests:
-      memory: 10g
+      memory: 14g
   dataset_name: 1Mkeys-list-1KiB-size
   dataset_description: This dataset contains 1 million list keys, each with a value
     of data size 1 KiB.
@@ -36,7 +40,7 @@ clientconfig:
   tool: memtier_benchmark
   arguments: '"--data-size" "1000" --command "LPOP __key__" --command-key-pattern="R"
     --command "RPOP __key__" --command-key-pattern="R"  --key-minimum=1 --key-maximum
-    1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+    1000000 -n 8000 -c 50 -t 4 --hide-histogram'
   resources:
     requests:
       cpus: '4'
