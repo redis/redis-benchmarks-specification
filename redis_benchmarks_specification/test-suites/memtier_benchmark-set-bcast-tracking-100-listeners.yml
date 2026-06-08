@@ -9,8 +9,9 @@ description: "CLIENT TRACKING BCAST broadcast-fan-out benchmark with 100 trackin
   cost. Encoding: EMBSTR (data-size 16 bytes, <= 44B embstr threshold). NOTE: this
   measures the UNFILTERED broadcast cost (all listeners are the default user and
   track all keys); it does NOT by itself demonstrate ACL send-time filtering
-  (PR redis/redis#15122) -- that needs the ACL-user-selectivity variant described
-  in approaches/bcast-tracking-multitool-suite.md (blocked on a helper enhancement)."
+  (PR redis/redis#15122) -- that needs listeners authenticated as distinct ACL
+  users with restrictive key patterns, while writing a large fraction of
+  non-permitted keys."
 dbconfig:
   configuration-parameters:
     save: '""'
