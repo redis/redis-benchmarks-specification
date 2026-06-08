@@ -883,6 +883,11 @@ def run_multiple_clients(
             logging.error(error_msg)
             logging.error(f"Image: {client_image}, Tool: {client_tool}")
             logging.error(f"Command: {benchmark_command_str}")
+            # A later container failing to start must not leak the ones already
+            # started in this loop -- especially long-lived background helpers
+            # (bcast-listener) that would otherwise keep tracking connections
+            # open until manual cleanup. Force-remove everything started so far.
+            remove_started_containers(containers)
             # Fail fast on container startup errors
             raise RuntimeError(f"Failed to start client {client_index}: {e}")
 
@@ -1625,6 +1630,22 @@ def prepare_bcast_listener_parameters(
         benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
 
     return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+def remove_started_containers(containers):
+    """Force-remove every container started so far (best effort).
+
+    Used to clean up after a mid-launch failure so partially-started runs do
+    not leak running containers (notably long-lived background helpers).
+    """
+    for started in containers:
+        try:
+            started["container"].remove(force=True)
+        except Exception as cleanup_error:
+            logging.warning(
+                f"Error removing partially-started client "
+                f"{started.get('client_index')}: {cleanup_error}"
+            )
 
 
 def stop_background_helper(container_info):
