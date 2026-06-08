@@ -1,5 +1,6 @@
 import logging
 from github import Github
+from github.GithubException import GithubException
 
 
 def check_regression_comment(comments):
@@ -191,6 +192,11 @@ def update_comment_if_needed(
             print(DF)
             print("---------------------")
     if same_comment is False:
+        if regression_comment is None:
+            logging.warning(
+                "No regression comment object available to update; skipping edit."
+            )
+            return
         if auto_approve:
             print("auto approving...")
         else:
@@ -200,10 +206,19 @@ def update_comment_if_needed(
                 )
             )
         if user_input.lower() == "y" or auto_approve:
-            html_url = regression_comment.html_url
-            print("Updating comment {}".format(html_url))
-            regression_comment.edit(comment_body)
-            print("Updated comment. Access it via {}".format(html_url))
+            try:
+                html_url = regression_comment.html_url
+                print("Updating comment {}".format(html_url))
+                regression_comment.edit(comment_body)
+                print("Updated comment. Access it via {}".format(html_url))
+            except GithubException as e:
+                # The comment may have been deleted between fetch and edit, or
+                # the token may lack permissions. Don't abort the whole run for
+                # a single comment update -- log and move on. (issue #252)
+                logging.warning(
+                    "Failed to update github comment (it may have been "
+                    "deleted or be inaccessible): {}. Skipping update.".format(e)
+                )
 
 
 def check_benchmark_build_comment(comments):
