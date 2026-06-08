@@ -898,92 +898,92 @@ def run_multiple_clients(
         f"({len(background)} background helper(s) running)..."
     )
 
-    for container_info in foreground:
-        container = container_info["container"]
-        client_index = container_info["client_index"]
-        client_tool = container_info["client_tool"]
-        client_image = container_info["client_image"]
-        benchmark_command_str = container_info["benchmark_command_str"]
+    # A background helper that exits on its own BEFORE we stop it means the
+    # listeners were not active for the full measured window -> the result is
+    # invalid. Tracked here and raised after cleanup.
+    background_failures = []
 
-        try:
-            # Wait for container to complete
-            exit_code = container.wait(timeout=container_info["timeout"])
-            client_stdout = container.logs().decode("utf-8")
+    try:
+        for container_info in foreground:
+            container = container_info["container"]
+            client_index = container_info["client_index"]
+            client_tool = container_info["client_tool"]
+            client_image = container_info["client_image"]
+            benchmark_command_str = container_info["benchmark_command_str"]
 
-            # Check if container succeeded
-            if exit_code.get("StatusCode", 1) != 0:
-                logging.error(
-                    f"Client {client_index} failed with exit code: {exit_code}"
-                )
-                logging.error(f"Client {client_index} stdout/stderr:")
-                logging.error(client_stdout)
-                # Fail fast on container execution errors
-                raise RuntimeError(
-                    f"Client {client_index} ({client_tool}) failed with exit code {exit_code}"
-                )
-
-            logging.info(
-                f"Client {client_index} completed successfully with exit code: {exit_code}"
-            )
-
-            results.append(
-                {
-                    "client_index": client_index,
-                    "stdout": client_stdout,
-                    "config": client_configs[client_index],
-                    "tool": client_tool,
-                    "image": client_image,
-                }
-            )
-
-        except Exception as e:
-            # Get logs even if wait failed
             try:
+                # Wait for container to complete
+                exit_code = container.wait(timeout=container_info["timeout"])
                 client_stdout = container.logs().decode("utf-8")
-                logging.error(f"Client {client_index} logs:")
-                logging.error(client_stdout)
-            except:
-                logging.error(f"Could not retrieve logs for client {client_index}")
 
-            raise RuntimeError(f"Client {client_index} ({client_tool}) failed: {e}")
+                # Check if container succeeded
+                if exit_code.get("StatusCode", 1) != 0:
+                    logging.error(
+                        f"Client {client_index} failed with exit code: {exit_code}"
+                    )
+                    logging.error(f"Client {client_index} stdout/stderr:")
+                    logging.error(client_stdout)
+                    # Fail fast on container execution errors
+                    raise RuntimeError(
+                        f"Client {client_index} ({client_tool}) failed with exit code {exit_code}"
+                    )
 
-        finally:
-            # Clean up container
-            try:
-                container.remove(force=True)
-            except Exception as cleanup_error:
-                logging.warning(f"Client {client_index} cleanup error: {cleanup_error}")
-
-    # Stop background helpers (SIGTERM via docker stop) now that the measuring
-    # clients have finished. They emit no benchmark JSON and are never added to
-    # `results`, so they do not enter metrics aggregation.
-    for container_info in background:
-        container = container_info["container"]
-        client_index = container_info["client_index"]
-        client_tool = container_info["client_tool"]
-        try:
-            logging.info(
-                f"Stopping background helper client {client_index} ({client_tool})"
-            )
-            container.stop(timeout=10)  # SIGTERM, then SIGKILL after 10s
-            try:
-                bg_stdout = container.logs().decode("utf-8")
                 logging.info(
-                    f"Background helper {client_index} ({client_tool}) logs:\n{bg_stdout}"
+                    f"Client {client_index} completed successfully with exit code: {exit_code}"
                 )
-            except Exception:
-                pass
-        except docker.errors.NotFound:
-            logging.info(f"Background helper {client_index} already gone")
-        except Exception as e:
-            logging.warning(f"Error stopping background helper {client_index}: {e}")
-        finally:
-            try:
-                container.remove(force=True)
-            except Exception as cleanup_error:
-                logging.warning(
-                    f"Background helper {client_index} cleanup error: {cleanup_error}"
+
+                results.append(
+                    {
+                        "client_index": client_index,
+                        "stdout": client_stdout,
+                        "config": client_configs[client_index],
+                        "tool": client_tool,
+                        "image": client_image,
+                    }
                 )
+
+            except Exception as e:
+                # Get logs even if wait failed
+                try:
+                    client_stdout = container.logs().decode("utf-8")
+                    logging.error(f"Client {client_index} logs:")
+                    logging.error(client_stdout)
+                except:
+                    logging.error(f"Could not retrieve logs for client {client_index}")
+
+                raise RuntimeError(f"Client {client_index} ({client_tool}) failed: {e}")
+
+            finally:
+                # Clean up container
+                try:
+                    container.remove(force=True)
+                except Exception as cleanup_error:
+                    logging.warning(
+                        f"Client {client_index} cleanup error: {cleanup_error}"
+                    )
+
+    finally:
+        # ALWAYS stop + remove background helpers, even if a measuring client
+        # raised above, so listener containers never leak. Also detect helpers
+        # that exited on their own before we stopped them (auth error, OOM,
+        # crash) -- those invalidate the measurement.
+        for container_info in background:
+            failure = stop_background_helper(container_info)
+            if failure is not None:
+                background_failures.append(failure)
+
+    # If a background helper died before the benchmark finished, abort rather
+    # than report memtier numbers as if the listeners were active. (Only reached
+    # when the foreground loop did not already raise.)
+    if background_failures:
+        details = ", ".join(
+            f"client {i} ({t}) status={s} exit_code={c}"
+            for i, t, s, c in background_failures
+        )
+        raise RuntimeError(
+            f"Background helper(s) exited before the benchmark finished: {details}. "
+            f"Tracking listeners were not active for the full measured window; aborting."
+        )
 
     logging.info(f"Successfully completed {len(foreground)} measuring client(s)")
 
@@ -1625,6 +1625,85 @@ def prepare_bcast_listener_parameters(
         benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
 
     return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+def stop_background_helper(container_info):
+    """Stop a background-helper container (e.g. bcast-listener) and report
+    whether it had already exited before we stopped it.
+
+    Background helpers hold their connections open until killed, so under
+    normal operation they are still ``running`` when the measuring clients
+    finish and we stop them with SIGTERM. If a helper has exited on its own
+    (auth error, OOM, crash) it means the listeners were NOT active for the
+    full measured window, so the run must fail.
+
+    Always attempts to remove the container (no leak, even on failure).
+
+    Returns a failure tuple ``(client_index, client_tool, status, exit_code)``
+    if the helper exited/disappeared during the run, otherwise ``None``.
+    """
+    container = container_info["container"]
+    client_index = container_info["client_index"]
+    client_tool = container_info["client_tool"]
+    failure = None
+    try:
+        try:
+            container.reload()
+            status = container.status
+        except docker.errors.NotFound:
+            status = "not-found"
+        except Exception as e:
+            logging.warning(
+                f"Could not query background helper {client_index} status: {e}"
+            )
+            status = "unknown"
+
+        if status == "running":
+            logging.info(
+                f"Stopping background helper client {client_index} ({client_tool})"
+            )
+            try:
+                container.stop(timeout=10)  # SIGTERM, then SIGKILL after 10s
+            except docker.errors.NotFound:
+                pass
+        elif status == "not-found":
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) container is "
+                f"gone -- it did not survive the run; results are unreliable."
+            )
+            failure = (client_index, client_tool, status, None)
+        else:
+            # Exited/crashed during the measured window.
+            exit_code = None
+            try:
+                exit_code = container.attrs.get("State", {}).get("ExitCode")
+            except Exception:
+                pass
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) exited early "
+                f"(status={status}, exit_code={exit_code}) -- tracking listeners "
+                f"were NOT active for the full measured window; results are "
+                f"unreliable."
+            )
+            failure = (client_index, client_tool, status, exit_code)
+
+        try:
+            bg_stdout = container.logs().decode("utf-8")
+            logging.info(
+                f"Background helper {client_index} ({client_tool}) logs:\n{bg_stdout}"
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logging.warning(f"Error handling background helper {client_index}: {e}")
+    finally:
+        try:
+            container.remove(force=True)
+        except Exception as cleanup_error:
+            logging.warning(
+                f"Background helper {client_index} cleanup error: {cleanup_error}"
+            )
+    return failure
 
 
 def enrich_results_with_redis_info(
