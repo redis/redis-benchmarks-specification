@@ -14,6 +14,7 @@ cycle.
 
 import json
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -39,6 +40,7 @@ class ClientRunSpec:
     environment: Optional[dict] = None  # vector-db env vars
     working_dir: Optional[str] = None  # vector-db => /app
     extra_volumes: Optional[dict] = None  # vector-db => /app/results mount
+    cpus: float = 0.0  # this client's resources.requests.cpus (for cpuset split)
 
 
 @dataclass
@@ -320,6 +322,13 @@ def prepare_client_run_specs(
 
         is_background = "bcast-listener" in client_tool
 
+        try:
+            client_cpus = float(
+                client_config.get("resources", {}).get("requests", {}).get("cpus", 0)
+            )
+        except (TypeError, ValueError):
+            client_cpus = 0.0
+
         working_dir = None
         environment = None
         extra_volumes = None
@@ -341,10 +350,70 @@ def prepare_client_run_specs(
                 environment=environment,
                 working_dir=working_dir,
                 extra_volumes=extra_volumes,
+                cpus=client_cpus,
             )
         )
 
     return run_specs
+
+
+def _expand_cpuset(cpuset_cpus):
+    """Parse a cpuset string ('4-11', '4,5,6', '4-7,12') into an ordered list of ints."""
+    ids = []
+    if not cpuset_cpus:
+        return ids
+    for part in str(cpuset_cpus).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            ids.extend(range(int(a), int(b) + 1))
+        else:
+            ids.append(int(part))
+    return ids
+
+
+def partition_cpuset(cpuset_cpus, run_specs):
+    """Give each client container a DISJOINT contiguous sub-range of the aggregate
+    client cpuset, sized by its requested cpus (rounded up), so a measuring client
+    (memtier) and a background helper (e.g. bcast-listener) do not contend for the
+    same cores -- which would contaminate the measurement.
+
+    Returns a dict {client_index: 'a,b,c'} when a clean disjoint split is possible.
+    Returns None (caller shares the full cpuset for all clients, the legacy
+    behavior) when the split is not possible: a single client, no cpuset, any
+    client without a positive cpus request, or the per-client ceils not fitting
+    the aggregate.
+    """
+    cores = _expand_cpuset(cpuset_cpus)
+    if not cores or len(run_specs) < 2:
+        return None
+    needs = []
+    for spec in run_specs:
+        try:
+            n = int(math.ceil(float(getattr(spec, "cpus", 0) or 0)))
+        except (TypeError, ValueError):
+            n = 0
+        if n <= 0:
+            return None  # cannot size this container's pin -> share the full set
+        needs.append(n)
+    if sum(needs) > len(cores):
+        logging.warning(
+            "multi_tool: sum of client cpu requests (ceil=%d) exceeds the client "
+            "cpuset size (%d cores: %s); sharing the full cpuset across all client "
+            "containers (no isolation)",
+            sum(needs),
+            len(cores),
+            cpuset_cpus,
+        )
+        return None
+    partition = {}
+    pos = 0
+    for spec, n in zip(run_specs, needs):
+        partition[spec.client_index] = ",".join(str(x) for x in cores[pos : pos + n])
+        pos += n
+    return partition
 
 
 def run_client_configs(
@@ -373,12 +442,25 @@ def run_client_configs(
     containers = []
     results = []
 
+    # Pin each client container to a DISJOINT slice of the client cpuset so a
+    # measuring client (memtier) and a background helper (e.g. bcast-listener) do
+    # not contend for the same cores. Falls back to the shared cpuset when a clean
+    # split isn't possible (single client, missing cpu requests, doesn't fit).
+    cpuset_partition = partition_cpuset(cpuset_cpus, run_specs)
+    if cpuset_partition:
+        logging.info("multi_tool: cpuset split per client -> %s", cpuset_partition)
+
     # Start all containers simultaneously (detached)
     for spec in run_specs:
         client_index = spec.client_index
         client_tool = spec.client_tool
         client_image = spec.client_image
         benchmark_command_str = spec.command_str
+        spec_cpuset = (
+            cpuset_partition.get(client_index, cpuset_cpus)
+            if cpuset_partition
+            else cpuset_cpus
+        )
         try:
             # Calculate container timeout
             container_timeout = default_timeout
@@ -398,7 +480,7 @@ def run_client_configs(
 
             logging.info(
                 f"Starting client {client_index} with docker image {client_image} "
-                f"(cpuset={cpuset_cpus}) with args: {benchmark_command_str}"
+                f"(cpuset={spec_cpuset}) with args: {benchmark_command_str}"
             )
 
             # Set working directory based on tool
@@ -428,7 +510,7 @@ def run_client_configs(
                 "command": benchmark_command_str,
                 "network_mode": "host",
                 "detach": True,
-                "cpuset_cpus": cpuset_cpus,
+                "cpuset_cpus": spec_cpuset,
             }
 
             # Only add user for non-vector-db-benchmark tools to avoid
