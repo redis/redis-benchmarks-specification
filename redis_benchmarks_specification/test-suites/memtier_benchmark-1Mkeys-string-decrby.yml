@@ -1,0 +1,41 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-decrby
+description: 'Runs memtier_benchmark for a keyspace of 1M string keys using
+  integer-encoded values and issuing DECRBY by a fixed amount.
+  Encoding: INT (integer-parsable value stored as a shared/long encoding).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: ' --command "SET __key__ 9223372036854775807" --command-key-pattern="P"
+      -n 5000 --key-minimum=1 --key-maximum 1000000 -c 50 -t 4 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-int-size
+  dataset_description: This dataset contains 1 million integer-encoded string keys.
+tested-commands:
+- decrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 --command "DECRBY __key__ 1" --command-key-pattern="R"
+    --key-minimum=1 --key-maximum 1000000 -c 4 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- string
+priority: 115
