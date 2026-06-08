@@ -9,7 +9,8 @@ description: "CLIENT TRACKING BCAST send-time ACL-filtering benchmark (realistic
   that the baseline would deliver. Compare SET ops/sec and p50/p99 latency between a build
   with and without the filtering change. Encoding: EMBSTR (data-size 16 bytes, <= 44B embstr
   threshold). Requires a bcast-tracking-bench image with --acl-user-patterns support, and
-  runs via the multi-tool runner path."
+  runs as a multi-tool clientconfigs suite; on the self-contained coordinator this
+  requires BENCHMARK_MULTITOOL_ENABLED=1."
 dbconfig:
   configuration-parameters:
     save: '""'

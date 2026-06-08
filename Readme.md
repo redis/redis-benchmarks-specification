@@ -242,6 +242,31 @@ $ poetry run redis-benchmarks-spec-sc-coordinator --platform-name example-platfo
 
 You're now actively listening for benchmarks requests to Redis!
 
+### Multi-tool client configurations
+
+Some benchmark suites describe more than one client tool running concurrently against
+the same DB topology — for example a measuring client (`memtier_benchmark`) together with
+a helper client such as `bcast-listener` or `pubsub-sub-bench`. These suites use the
+`clientconfigs` list (plural) instead of a single `clientconfig`. Historically only the
+standalone `redis-benchmarks-spec-client-runner` could run them; the self-contained
+coordinator could not.
+
+The self-contained coordinator can now run multi-tool `clientconfigs` suites as well. The
+helper client (e.g. `bcast-listener`) runs in the background to generate the accompanying
+workload, while the measuring client (`memtier_benchmark`) runs in the foreground — and
+**all reported metrics come from the memtier client's output**, exactly as in a single-tool
+run. The background helper only shapes the workload; it does not contribute measured
+numbers.
+
+This path is gated behind the `BENCHMARK_MULTITOOL_ENABLED` environment flag, which is
+**off by default**:
+
+- `BENCHMARK_MULTITOOL_ENABLED=1` — the coordinator runs `clientconfigs` suites.
+- unset / `0` (default) — a `clientconfigs` suite is logged and cleanly skipped (the
+  single-`clientconfig` path is completely unaffected).
+
+The flag exists so the capability can ship dark and be rolled out to the fleet gradually
+after validation. Single-tool (`clientconfig`) suites are unchanged regardless of the flag.
 
 
 ## Architecture diagram

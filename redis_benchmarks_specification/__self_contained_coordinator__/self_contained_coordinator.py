@@ -69,6 +69,10 @@ from redis_benchmarks_specification.__runner__.runner import (
     prepare_memtier_benchmark_parameters,
     validate_benchmark_metrics,
 )
+from redis_benchmarks_specification.__common__.multi_tool import (
+    prepare_client_run_specs,
+    run_client_configs,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.args import (
     create_self_contained_coordinator_args,
 )
@@ -1965,265 +1969,378 @@ def process_self_contained_coordinator_stream(
                                         dbconfig_keyname="dbconfig",
                                     )
 
-                                benchmark_tool = extract_client_tool(benchmark_config)
-                                # backwards compatible
-                                if benchmark_tool is None:
-                                    benchmark_tool = "redis-benchmark"
-                                if benchmark_tool == "vector_db_benchmark":
-                                    full_benchmark_path = "python /code/run.py"
-                                else:
-                                    full_benchmark_path = "/usr/local/bin/{}".format(
-                                        benchmark_tool
-                                    )
-
-                                # setup the benchmark
-                                (
-                                    start_time,
-                                    start_time_ms,
-                                    start_time_str,
-                                ) = get_start_time_vars()
-                                local_benchmark_output_filename = (
-                                    get_local_run_full_filename(
+                                # Multi-tool clientconfigs suites (e.g. memtier +
+                                # bcast-listener) are gated behind a feature flag and
+                                # routed through the shared multi_tool engine. The
+                                # single-tool `clientconfig` path below is unchanged.
+                                MULTITOOL_ENABLED = (
+                                    os.getenv("BENCHMARK_MULTITOOL_ENABLED", "0") == "1"
+                                )
+                                if "clientconfigs" in benchmark_config:
+                                    if not MULTITOOL_ENABLED:
+                                        logging.warning(
+                                            "skipping multi-tool clientconfigs suite %s (BENCHMARK_MULTITOOL_ENABLED not set)",
+                                            test_name,
+                                        )
+                                        # Clean skip: nothing was run for this topology,
+                                        # treat as passed (mirrors the topology-filtered
+                                        # semantics) and move on to the next test/topology.
+                                        test_result = True
+                                        continue
+                                    # Feature flag ON: run the multi-tool suite.
+                                    (
+                                        start_time,
+                                        start_time_ms,
                                         start_time_str,
-                                        git_hash,
-                                        test_name,
-                                        setup_name,
+                                    ) = get_start_time_vars()
+                                    local_benchmark_output_filename = (
+                                        get_local_run_full_filename(
+                                            start_time_str,
+                                            git_hash,
+                                            test_name,
+                                            setup_name,
+                                        )
                                     )
-                                )
-                                logging.info(
-                                    "Will store benchmark json output to local file {}".format(
-                                        local_benchmark_output_filename
+                                    logging.info(
+                                        "Will store benchmark json output to local file {}".format(
+                                            local_benchmark_output_filename
+                                        )
                                     )
-                                )
-                                if "memtier_benchmark" in benchmark_tool:
-                                    # prepare the benchmark command
-                                    (
-                                        _,
-                                        benchmark_command_str,
-                                        arbitrary_command,
-                                    ) = prepare_memtier_benchmark_parameters(
-                                        benchmark_config["clientconfig"],
-                                        full_benchmark_path,
-                                        redis_proc_start_port,
-                                        "localhost",
-                                        redis_password,
-                                        local_benchmark_output_filename,
-                                        setup_type == "oss-cluster",
-                                        False,
-                                        False,
-                                        None,
-                                        None,
-                                        None,
-                                        None,
-                                        override_test_time,
-                                    )
-                                elif "vector_db_benchmark" in benchmark_tool:
-                                    (
-                                        _,
-                                        benchmark_command_str,
-                                    ) = prepare_vector_db_benchmark_parameters(
-                                        benchmark_config["clientconfig"],
-                                        full_benchmark_path,
-                                        redis_proc_start_port,
-                                        "localhost",
-                                        None,
-                                        client_mnt_point,
-                                    )
-                                else:
-                                    (
-                                        benchmark_command,
-                                        benchmark_command_str,
-                                    ) = prepare_benchmark_parameters(
+                                    # Profiling is not wired for multi-tool suites in v1;
+                                    # provide the locals the shared tail expects.
+                                    profiler_name = None
+                                    profilers_map = {}
+                                    benchmark_start_time = datetime.datetime.now()
+                                    run_specs = prepare_client_run_specs(
                                         benchmark_config,
-                                        full_benchmark_path,
-                                        redis_proc_start_port,
-                                        "localhost",
-                                        local_benchmark_output_filename,
-                                        False,
-                                        benchmark_tool_workdir,
-                                        False,
+                                        host="localhost",
+                                        port=redis_proc_start_port,
+                                        password=redis_password,
+                                        oss_cluster_api_enabled=setup_type
+                                        == "oss-cluster",
+                                        tls_enabled=False,
+                                        tls_skip_verify=False,
+                                        test_tls_cert=None,
+                                        test_tls_key=None,
+                                        test_tls_cacert=None,
+                                        resp_version=None,
+                                        override_memtier_test_time=override_test_time,
+                                        override_test_runs=1,
+                                        unix_socket="",
+                                        benchmark_tool_workdir=benchmark_tool_workdir,
+                                        client_mnt_point=client_mnt_point,
                                     )
-
-                                client_container_image = extract_client_container_image(
-                                    benchmark_config
-                                )
-                                profiler_call_graph_mode = "dwarf"
-                                profiler_frequency = 99
-                                # start the profile
-                                (
-                                    profiler_name,
-                                    profilers_map,
-                                ) = profilers_start_if_required(
-                                    profilers_enabled,
-                                    profilers_list,
-                                    redis_pids,
-                                    setup_name,
-                                    start_time_str,
-                                    test_name,
-                                    profiler_frequency,
-                                    profiler_call_graph_mode,
-                                )
-
-                                # Extract test time from benchmark command (used for
-                                # both topdown duration and container timeout)
-                                test_time_match = re.search(
-                                    r"--?test-time[=\s]+(\d+)", benchmark_command_str
-                                )
-
-                                # Start topdown-profiler collection alongside benchmark
-                                if _topdown_available and topdown_labels:
-                                    topdown_duration = 30  # default
-                                    if test_time_match:
-                                        topdown_duration = min(
-                                            int(test_time_match.group(1)), 30
+                                    res = run_client_configs(
+                                        docker_client,
+                                        run_specs,
+                                        cpuset_cpus=client_cpuset_cpus,
+                                        temporary_dir_client=temporary_dir_client,
+                                        client_mnt_point=client_mnt_point,
+                                        inject_user=False,
+                                    )
+                                    benchmark_end_time = datetime.datetime.now()
+                                    benchmark_duration_seconds = (
+                                        calculate_client_tool_duration_and_check(
+                                            benchmark_end_time, benchmark_start_time
                                         )
-                                    # ARM perf stat --topdown only supports L1;
-                                    # Intel supports up to L6. Auto-select.
-                                    import platform
-
-                                    topdown_level = (
-                                        1
-                                        if platform.machine() in ("aarch64", "arm64")
-                                        else 4
                                     )
-                                    topdown_collector = TopdownCollector(
-                                        process_name=executable.split("/")[-1],
-                                        duration_seconds=topdown_duration,
-                                        level=topdown_level,
-                                        labels=topdown_labels,
+                                    client_container_stdout = res.aggregated_stdout
+                                    # The shared tail (post_process_benchmark_results /
+                                    # json.load) reads the on-disk memtier result file at
+                                    # {temporary_dir_client}/{local_benchmark_output_filename}.
+                                    # Point it at the measured client's JSON if the engine
+                                    # already wrote one; otherwise materialize the
+                                    # aggregated memtier JSON there ourselves.
+                                    if res.memtier_output_filename is not None:
+                                        local_benchmark_output_filename = (
+                                            res.memtier_output_filename
+                                        )
+                                    else:
+                                        with open(
+                                            "{}/{}".format(
+                                                temporary_dir_client,
+                                                local_benchmark_output_filename,
+                                            ),
+                                            "w",
+                                        ) as multitool_json_file:
+                                            multitool_json_file.write(
+                                                res.aggregated_stdout
+                                            )
+                                    # Force the tail down the memtier_benchmark code path
+                                    # (aggregated_stdout is memtier-shaped JSON).
+                                    benchmark_tool = "memtier_benchmark"
+                                    logging.info(
+                                        "multi-tool output {}".format(
+                                            client_container_stdout
+                                        )
                                     )
-                                    topdown_collector.start()
+                                    # Fall through to the shared tail (topdown wait /
+                                    # post_process / validate / exporter_datasink_common).
 
-                                logging.info(
-                                    "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
-                                        client_container_image,
-                                        client_cpuset_cpus,
+                                else:
+                                    benchmark_tool = extract_client_tool(
+                                        benchmark_config
+                                    )
+                                    # backwards compatible
+                                    if benchmark_tool is None:
+                                        benchmark_tool = "redis-benchmark"
+                                    if benchmark_tool == "vector_db_benchmark":
+                                        full_benchmark_path = "python /code/run.py"
+                                    else:
+                                        full_benchmark_path = (
+                                            "/usr/local/bin/{}".format(benchmark_tool)
+                                        )
+
+                                    # setup the benchmark
+                                    (
+                                        start_time,
+                                        start_time_ms,
+                                        start_time_str,
+                                    ) = get_start_time_vars()
+                                    local_benchmark_output_filename = (
+                                        get_local_run_full_filename(
+                                            start_time_str,
+                                            git_hash,
+                                            test_name,
+                                            setup_name,
+                                        )
+                                    )
+                                    logging.info(
+                                        "Will store benchmark json output to local file {}".format(
+                                            local_benchmark_output_filename
+                                        )
+                                    )
+                                    if "memtier_benchmark" in benchmark_tool:
+                                        # prepare the benchmark command
+                                        (
+                                            _,
+                                            benchmark_command_str,
+                                            arbitrary_command,
+                                        ) = prepare_memtier_benchmark_parameters(
+                                            benchmark_config["clientconfig"],
+                                            full_benchmark_path,
+                                            redis_proc_start_port,
+                                            "localhost",
+                                            redis_password,
+                                            local_benchmark_output_filename,
+                                            setup_type == "oss-cluster",
+                                            False,
+                                            False,
+                                            None,
+                                            None,
+                                            None,
+                                            None,
+                                            override_test_time,
+                                        )
+                                    elif "vector_db_benchmark" in benchmark_tool:
+                                        (
+                                            _,
+                                            benchmark_command_str,
+                                        ) = prepare_vector_db_benchmark_parameters(
+                                            benchmark_config["clientconfig"],
+                                            full_benchmark_path,
+                                            redis_proc_start_port,
+                                            "localhost",
+                                            None,
+                                            client_mnt_point,
+                                        )
+                                    else:
+                                        (
+                                            benchmark_command,
+                                            benchmark_command_str,
+                                        ) = prepare_benchmark_parameters(
+                                            benchmark_config,
+                                            full_benchmark_path,
+                                            redis_proc_start_port,
+                                            "localhost",
+                                            local_benchmark_output_filename,
+                                            False,
+                                            benchmark_tool_workdir,
+                                            False,
+                                        )
+
+                                    client_container_image = (
+                                        extract_client_container_image(benchmark_config)
+                                    )
+                                    profiler_call_graph_mode = "dwarf"
+                                    profiler_frequency = 99
+                                    # start the profile
+                                    (
+                                        profiler_name,
+                                        profilers_map,
+                                    ) = profilers_start_if_required(
+                                        profilers_enabled,
+                                        profilers_list,
+                                        redis_pids,
+                                        setup_name,
+                                        start_time_str,
+                                        test_name,
+                                        profiler_frequency,
+                                        profiler_call_graph_mode,
+                                    )
+
+                                    # Extract test time from benchmark command (used for
+                                    # both topdown duration and container timeout)
+                                    test_time_match = re.search(
+                                        r"--?test-time[=\s]+(\d+)",
                                         benchmark_command_str,
                                     )
-                                )
-                                # run the benchmark
-                                benchmark_start_time = datetime.datetime.now()
 
-                                # Calculate container timeout
-                                container_timeout = 300  # 5 minutes default
-                                buffer_timeout = 60  # Default buffer
+                                    # Start topdown-profiler collection alongside benchmark
+                                    if _topdown_available and topdown_labels:
+                                        topdown_duration = 30  # default
+                                        if test_time_match:
+                                            topdown_duration = min(
+                                                int(test_time_match.group(1)), 30
+                                            )
+                                        # ARM perf stat --topdown only supports L1;
+                                        # Intel supports up to L6. Auto-select.
+                                        import platform
 
-                                if test_time_match:
-                                    test_time = int(test_time_match.group(1))
-                                    container_timeout = test_time + buffer_timeout
-                                    logging.info(
-                                        f"Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
-                                    )
-                                else:
-                                    logging.info(
-                                        f"Using default container timeout: {container_timeout}s"
-                                    )
-
-                                try:
-                                    # Start container with detach=True to enable timeout handling
-                                    container = docker_client.containers.run(
-                                        image=client_container_image,
-                                        volumes={
-                                            temporary_dir_client: {
-                                                "bind": client_mnt_point,
-                                                "mode": "rw",
-                                            },
-                                        },
-                                        auto_remove=False,  # Don't auto-remove so we can get logs if timeout
-                                        privileged=True,
-                                        working_dir=benchmark_tool_workdir,
-                                        command=benchmark_command_str,
-                                        network_mode="host",
-                                        detach=True,  # Detach to enable timeout
-                                        cpuset_cpus=client_cpuset_cpus,
-                                    )
-
-                                    logging.info(
-                                        f"Started container {container.name} ({container.id[:12]}) with {container_timeout}s timeout"
-                                    )
-
-                                    # Wait for container with timeout
-                                    try:
-                                        result = container.wait(
-                                            timeout=container_timeout
+                                        topdown_level = (
+                                            1
+                                            if platform.machine()
+                                            in ("aarch64", "arm64")
+                                            else 4
                                         )
-                                        client_container_stdout = container.logs(
-                                            stdout=True, stderr=False
-                                        ).decode("utf-8")
-                                        container_stderr = container.logs(
-                                            stdout=False, stderr=True
-                                        ).decode("utf-8")
+                                        topdown_collector = TopdownCollector(
+                                            process_name=executable.split("/")[-1],
+                                            duration_seconds=topdown_duration,
+                                            level=topdown_level,
+                                            labels=topdown_labels,
+                                        )
+                                        topdown_collector.start()
 
-                                        # Check exit code
-                                        if result["StatusCode"] != 0:
-                                            logging.error(
-                                                f"Container exited with code {result['StatusCode']}"
-                                            )
-                                            logging.error(
-                                                f"Container stderr: {container_stderr}"
-                                            )
-                                            raise docker.errors.ContainerError(
-                                                container,
-                                                result["StatusCode"],
-                                                benchmark_command_str,
-                                                client_container_stdout,
-                                                container_stderr,
-                                            )
+                                    logging.info(
+                                        "Using docker image {} as benchmark client image (cpuset={}) with the following args: {}".format(
+                                            client_container_image,
+                                            client_cpuset_cpus,
+                                            benchmark_command_str,
+                                        )
+                                    )
+                                    # run the benchmark
+                                    benchmark_start_time = datetime.datetime.now()
+
+                                    # Calculate container timeout
+                                    container_timeout = 300  # 5 minutes default
+                                    buffer_timeout = 60  # Default buffer
+
+                                    if test_time_match:
+                                        test_time = int(test_time_match.group(1))
+                                        container_timeout = test_time + buffer_timeout
+                                        logging.info(
+                                            f"Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
+                                        )
+                                    else:
+                                        logging.info(
+                                            f"Using default container timeout: {container_timeout}s"
+                                        )
+
+                                    try:
+                                        # Start container with detach=True to enable timeout handling
+                                        container = docker_client.containers.run(
+                                            image=client_container_image,
+                                            volumes={
+                                                temporary_dir_client: {
+                                                    "bind": client_mnt_point,
+                                                    "mode": "rw",
+                                                },
+                                            },
+                                            auto_remove=False,  # Don't auto-remove so we can get logs if timeout
+                                            privileged=True,
+                                            working_dir=benchmark_tool_workdir,
+                                            command=benchmark_command_str,
+                                            network_mode="host",
+                                            detach=True,  # Detach to enable timeout
+                                            cpuset_cpus=client_cpuset_cpus,
+                                        )
 
                                         logging.info(
-                                            f"Container {container.name} completed successfully"
+                                            f"Started container {container.name} ({container.id[:12]}) with {container_timeout}s timeout"
                                         )
 
-                                    except Exception as timeout_error:
-                                        if "timeout" in str(timeout_error).lower():
-                                            logging.error(
-                                                f"Container {container.name} timed out after {container_timeout}s"
+                                        # Wait for container with timeout
+                                        try:
+                                            result = container.wait(
+                                                timeout=container_timeout
                                             )
-                                            # Get logs before killing
-                                            try:
-                                                timeout_logs = container.logs(
-                                                    stdout=True, stderr=True
-                                                ).decode("utf-8")
+                                            client_container_stdout = container.logs(
+                                                stdout=True, stderr=False
+                                            ).decode("utf-8")
+                                            container_stderr = container.logs(
+                                                stdout=False, stderr=True
+                                            ).decode("utf-8")
+
+                                            # Check exit code
+                                            if result["StatusCode"] != 0:
                                                 logging.error(
-                                                    f"Container logs before timeout: {timeout_logs}"
+                                                    f"Container exited with code {result['StatusCode']}"
                                                 )
+                                                logging.error(
+                                                    f"Container stderr: {container_stderr}"
+                                                )
+                                                raise docker.errors.ContainerError(
+                                                    container,
+                                                    result["StatusCode"],
+                                                    benchmark_command_str,
+                                                    client_container_stdout,
+                                                    container_stderr,
+                                                )
+
+                                            logging.info(
+                                                f"Container {container.name} completed successfully"
+                                            )
+
+                                        except Exception as timeout_error:
+                                            if "timeout" in str(timeout_error).lower():
+                                                logging.error(
+                                                    f"Container {container.name} timed out after {container_timeout}s"
+                                                )
+                                                # Get logs before killing
+                                                try:
+                                                    timeout_logs = container.logs(
+                                                        stdout=True, stderr=True
+                                                    ).decode("utf-8")
+                                                    logging.error(
+                                                        f"Container logs before timeout: {timeout_logs}"
+                                                    )
+                                                except:
+                                                    pass
+                                                # Kill the container
+                                                container.kill()
+                                                raise Exception(
+                                                    f"Container timed out after {container_timeout} seconds"
+                                                )
+                                            else:
+                                                raise timeout_error
+                                        finally:
+                                            # Clean up container
+                                            try:
+                                                container.remove(force=True)
                                             except:
                                                 pass
-                                            # Kill the container
-                                            container.kill()
-                                            raise Exception(
-                                                f"Container timed out after {container_timeout} seconds"
+                                    except docker.errors.ContainerError as e:
+                                        logging.info(
+                                            "stdout: {}".format(
+                                                e.container.logs(stdout=True)
                                             )
-                                        else:
-                                            raise timeout_error
-                                    finally:
-                                        # Clean up container
-                                        try:
-                                            container.remove(force=True)
-                                        except:
-                                            pass
-                                except docker.errors.ContainerError as e:
-                                    logging.info(
-                                        "stdout: {}".format(
-                                            e.container.logs(stdout=True)
                                         )
-                                    )
-                                    logging.info(
-                                        "stderr: {}".format(
-                                            e.container.logs(stderr=True)
+                                        logging.info(
+                                            "stderr: {}".format(
+                                                e.container.logs(stderr=True)
+                                            )
                                         )
-                                    )
-                                    raise e
+                                        raise e
 
-                                benchmark_end_time = datetime.datetime.now()
-                                benchmark_duration_seconds = (
-                                    calculate_client_tool_duration_and_check(
-                                        benchmark_end_time, benchmark_start_time
+                                    benchmark_end_time = datetime.datetime.now()
+                                    benchmark_duration_seconds = (
+                                        calculate_client_tool_duration_and_check(
+                                            benchmark_end_time, benchmark_start_time
+                                        )
                                     )
-                                )
-                                logging.info(
-                                    "output {}".format(client_container_stdout)
-                                )
+                                    logging.info(
+                                        "output {}".format(client_container_stdout)
+                                    )
 
                                 # Wait for topdown-profiler if it was started
                                 if topdown_collector is not None:
