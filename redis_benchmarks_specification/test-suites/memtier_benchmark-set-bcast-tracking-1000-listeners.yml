@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-set-bcast-tracking-1000-listeners
+description: "CLIENT TRACKING BCAST broadcast-fan-out benchmark with 1000 tracking
+  listeners. The bcast-listener helper (redis/bcast-tracking-bench) registers 1000
+  RESP3 broadcast-tracking clients, while a memtier writer issues SET into the
+  'bench:' prefix; every write fans an invalidation push out to all 1000 listeners.
+  Scaling the listener count from 0 -> 100 -> 1000 maps how the per-write fan-out
+  cost grows. Compare ops/sec and SET latency against the 0-listener baseline.
+  Encoding: EMBSTR (data-size 16 bytes, <= 44B embstr threshold). NOTE: this
+  measures the UNFILTERED broadcast cost (all listeners are the default user and
+  track all keys); it does NOT by itself demonstrate ACL send-time filtering
+  (PR redis/redis#15122) -- that needs the ACL-user-selectivity variant described
+  in approaches/bcast-tracking-multitool-suite.md (blocked on a helper enhancement)."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- string
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 -d 16 --key-prefix "bench:" --key-minimum 1 --key-maximum
+    1000000 --command "SET __key__ __data__" --command-key-pattern="R" --pipeline 1
+    -c 4 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+- run_image: redis/bcast-tracking-bench:latest
+  tool: bcast-listener
+  arguments: "--listener-count 1000 --tracking-prefix bench:"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 50

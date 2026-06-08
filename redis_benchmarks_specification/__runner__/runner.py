@@ -728,6 +728,29 @@ def run_multiple_clients(
                     unix_socket,
                     None,  # username
                 )
+            elif "bcast-listener" in client_tool:
+                (
+                    _,
+                    benchmark_command_str,
+                    arbitrary_command,
+                ) = prepare_bcast_listener_parameters(
+                    client_config,
+                    client_tool,
+                    port,
+                    host,
+                    password,
+                    local_benchmark_output_filename,
+                    oss_cluster_api_enabled,
+                    tls_enabled,
+                    tls_skip_verify,
+                    test_tls_cert,
+                    test_tls_key,
+                    test_tls_cacert,
+                    resp_version,
+                    override_memtier_test_time,
+                    unix_socket,
+                    None,  # username
+                )
             elif "vector-db-benchmark" in client_tool:
                 (
                     _,
@@ -848,6 +871,10 @@ def run_multiple_clients(
                     "client_image": client_image,
                     "benchmark_command_str": benchmark_command_str,
                     "timeout": container_timeout,
+                    # Background helpers (e.g. bcast-listener) never self-exit;
+                    # they are stopped after the measuring clients finish and
+                    # are excluded from metrics aggregation.
+                    "is_background": "bcast-listener" in client_tool,
                 }
             )
 
@@ -859,10 +886,19 @@ def run_multiple_clients(
             # Fail fast on container startup errors
             raise RuntimeError(f"Failed to start client {client_index}: {e}")
 
-    # Wait for all containers to complete
-    logging.info(f"Waiting for {len(containers)} containers to complete...")
+    # Wait for the FOREGROUND (measuring) containers to complete, then stop
+    # any BACKGROUND helpers. Background helpers (e.g. bcast-listener) hold
+    # their connections open until killed and never self-exit, so they must
+    # not be waited on (that would block until the timeout and then fail the
+    # whole run); they are stopped once the measuring clients are done.
+    foreground = [c for c in containers if not c.get("is_background")]
+    background = [c for c in containers if c.get("is_background")]
+    logging.info(
+        f"Waiting for {len(foreground)} foreground container(s) to complete "
+        f"({len(background)} background helper(s) running)..."
+    )
 
-    for container_info in containers:
+    for container_info in foreground:
         container = container_info["container"]
         client_index = container_info["client_index"]
         client_tool = container_info["client_tool"]
@@ -918,7 +954,38 @@ def run_multiple_clients(
             except Exception as cleanup_error:
                 logging.warning(f"Client {client_index} cleanup error: {cleanup_error}")
 
-    logging.info(f"Successfully completed {len(containers)} client configurations")
+    # Stop background helpers (SIGTERM via docker stop) now that the measuring
+    # clients have finished. They emit no benchmark JSON and are never added to
+    # `results`, so they do not enter metrics aggregation.
+    for container_info in background:
+        container = container_info["container"]
+        client_index = container_info["client_index"]
+        client_tool = container_info["client_tool"]
+        try:
+            logging.info(
+                f"Stopping background helper client {client_index} ({client_tool})"
+            )
+            container.stop(timeout=10)  # SIGTERM, then SIGKILL after 10s
+            try:
+                bg_stdout = container.logs().decode("utf-8")
+                logging.info(
+                    f"Background helper {client_index} ({client_tool}) logs:\n{bg_stdout}"
+                )
+            except Exception:
+                pass
+        except docker.errors.NotFound:
+            logging.info(f"Background helper {client_index} already gone")
+        except Exception as e:
+            logging.warning(f"Error stopping background helper {client_index}: {e}")
+        finally:
+            try:
+                container.remove(force=True)
+            except Exception as cleanup_error:
+                logging.warning(
+                    f"Background helper {client_index} cleanup error: {cleanup_error}"
+                )
+
+    logging.info(f"Successfully completed {len(foreground)} measuring client(s)")
 
     # Aggregate results by reading JSON output files
     aggregated_stdout = ""
@@ -1470,6 +1537,90 @@ def prepare_pubsub_sub_bench_parameters(
         logging.info(f"Applied test-time override: {override_test_time}s")
 
     # Add cleaned user arguments
+    if user_arguments.strip():
+        benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
+
+    return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+def prepare_bcast_listener_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    password,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled=False,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
+    resp_version=None,
+    override_test_time=0,
+    unix_socket="",
+    username=None,
+):
+    """
+    Prepare bcast-listener command parameters.
+
+    bcast-listener (image redis/bcast-tracking-bench) is a CLIENT TRACKING
+    BCAST load/helper tool. In "manual" mode it opens N RESP3 BCAST tracking
+    clients, drains invalidation messages, and holds the connections open
+    until it receives SIGTERM. It produces NO benchmark JSON output, so it is
+    launched as a detached BACKGROUND helper alongside memtier and is stopped
+    by the runner once the measuring clients finish (see run_multiple_clients).
+
+    Unlike memtier/pubsub-sub-bench it takes a single --redis-url instead of
+    -h/-p/-a; credentials (if any) are embedded in the URL. The tool's native
+    flags (--listener-count, --tracking-prefix, ...) are taken verbatim from
+    the YAML clientconfig["arguments"], mirroring the pubsub-sub-bench
+    pass-through.
+
+    NOTE: relies on the image ENTRYPOINT being the bcast-listener binary, so
+    the command is `manual --redis-url ...` (no binary prefix), exactly as the
+    pubsub-sub-bench branch relies on its image ENTRYPOINT.
+    """
+    from urllib.parse import quote
+
+    arbitrary_command = False
+
+    if unix_socket != "":
+        logging.warning("bcast-listener doesn't support unix sockets, using host/port")
+
+    # Build redis://[userinfo@]host:port/0 ; percent-encode credentials so
+    # special characters (@ : / etc.) in passwords do not corrupt the URL.
+    userinfo = ""
+    if password:
+        if username:
+            userinfo = f"{quote(username, safe='')}:{quote(password, safe='')}@"
+        else:
+            userinfo = f":{quote(password, safe='')}@"
+    scheme = "rediss" if tls_enabled else "redis"
+    redis_url = f"{scheme}://{userinfo}{server}:{port}/0"
+    if tls_enabled:
+        logging.warning("bcast-listener TLS (rediss) support not verified yet")
+
+    benchmark_command = ["manual", "--redis-url", redis_url]
+    logging.info(
+        "Preparing bcast-listener parameters: manual --redis-url "
+        f"{scheme}://{'<redacted>@' if userinfo else ''}{server}:{port}/0"
+    )
+    benchmark_command_str = " ".join(benchmark_command)
+
+    # bcast-listener has no test-time concept; it is stopped when the
+    # measuring clients finish, so override_test_time does not apply.
+    if override_test_time and override_test_time > 0:
+        logging.info(
+            "bcast-listener has no test-time; override_test_time ignored "
+            "(helper is stopped when measuring clients finish)"
+        )
+
+    # Append user-defined arguments from YAML verbatim
+    # (e.g. --listener-count 64 --tracking-prefix bench:).
+    user_arguments = ""
+    if "arguments" in clientconfig:
+        user_arguments = clientconfig["arguments"]
     if user_arguments.strip():
         benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
 
