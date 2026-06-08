@@ -1,0 +1,45 @@
+version: 0.4
+name: memtier_benchmark-set-bcast-tracking-acl-200-listeners-all-filtered
+description: "CLIENT TRACKING BCAST send-time ACL-filtering benchmark (max-delta case).
+  200 bcast-listener clients all authenticate as an ACL user permitted only 'bench:hot:*'
+  (--acl-user-patterns 'bench:hot:*'), while the memtier writer SETs into 'bench:cold:*'.
+  Every write is therefore NOT permitted for any listener, so send-time ACL filtering
+  (redis/redis#15122) drops 100% of the invalidations at send time, whereas the baseline
+  delivers all of them. Compare SET ops/sec and p50/p99 latency between a build with and
+  without the filtering change. Encoding: EMBSTR (data-size 16 bytes, <= 44B embstr
+  threshold). Requires a bcast-tracking-bench image with --acl-user-patterns support, and
+  runs via the multi-tool runner path."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- string
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 -d 16 --key-prefix "bench:cold:" --key-minimum 1 --key-maximum
+    1000000 --command "SET __key__ __data__" --command-key-pattern="R" --pipeline 1
+    -c 4 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+- run_image: redis/bcast-tracking-bench:latest
+  tool: bcast-listener
+  arguments: "--listener-count 200 --tracking-prefix bench: --acl-user-patterns bench:hot:*"
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+priority: 50
