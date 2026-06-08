@@ -2,7 +2,7 @@ version: 0.4
 name: memtier_benchmark-1Mkeys-list-lpop-rpop-with-100B-values
 description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading LISTs with
   ~64 elements of 100B each, then issuing a bounded number of LPOP and RPOP commands. The
-  client is capped via -n so total pops (~10/key) stay well below the preloaded depth, so the
+  client is capped via -n so total pops (~20/key, LPOP+RPOP) stay well below the preloaded depth, so the
   lists are never drained and the benchmark measures the real LPOP/RPOP path (not the
   empty-list fast-return). Encoding: listpack (~64 x 100B ~= 6.4KB per key, under the 8KB
   list-max-listpack-size -2 threshold).'
