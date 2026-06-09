@@ -41,7 +41,7 @@ def inject_replication_sync_metrics(
         return False
 
 
-def generate_standalone_redis_server_args(
+def generate_standalone_dragonfly_server_args(
     binary,
     port,
     dbdir,
@@ -49,6 +49,88 @@ def generate_standalone_redis_server_args(
     redis_arguments="",
     password=None,
 ):
+    """Build a launch command for a Dragonfly server (gflags-based CLI).
+
+    Dragonfly parses its flags with Abseil/gflags and ABORTS on any unknown flag, so we
+    cannot pass the redis-style args (``--protected-mode``, ``--logfile``, ``--save``,
+    ``--maxmemory-policy``, ``--io-threads`` ...). We emit only valid Dragonfly gflags and
+    translate / drop the redis ``configuration-parameters`` accordingly. Snapshotting to a
+    file is disabled (``--dbfilename=``) and the server is pinned to a single proactor
+    thread by default so a standalone run is comparable to single-threaded redis-server
+    (a topology may override via a ``--proactor_threads=N`` token in ``redis_arguments``).
+    """
+    # Allow a topology to override the proactor-thread count; default to 1 (apples-to-apples
+    # vs single-threaded redis-server). Accept both the gflags "=" form (--proactor_threads=N)
+    # and the space form (--proactor_threads N); warn loudly if a proactor override is present
+    # but un-parseable so a benchmark never silently runs on the wrong thread count.
+    proactor_threads = "1"
+    if redis_arguments != "":
+        toks = redis_arguments.split(" ")
+        for i, tok in enumerate(toks):
+            if tok.startswith("--proactor_threads="):
+                proactor_threads = tok.split("=", 1)[1]
+            elif tok == "--proactor_threads" and i + 1 < len(toks):
+                proactor_threads = toks[i + 1]
+        if "proactor_threads" in redis_arguments and proactor_threads == "1":
+            logging.warning(
+                "redis_arguments contains 'proactor_threads' but no value was parsed; "
+                "defaulting Dragonfly to --proactor_threads=1. redis_arguments=%r",
+                redis_arguments,
+            )
+    command = [
+        binary,
+        "--port",
+        "{}".format(port),
+        "--logtostderr",  # replaces redis --logfile
+        "--proactor_threads={}".format(proactor_threads),
+        "--dbfilename=",  # no snapshot file (the Dragonfly analogue of redis save "")
+        "--version_check=false",  # disable the once-a-day phone-home (jitter / egress dep)
+        "--default_lua_flags=allow-undeclared-keys",  # tolerate EVAL-based init_commands
+    ]
+    if password is not None and password != "":
+        command.extend(["--requirepass", password])
+        logging.info("Dragonfly server will be started with password authentication")
+    if dbdir != "":
+        command.extend(["--dir", dbdir])
+    # Translate the handful of redis config params that have a Dragonfly equivalent; all
+    # other redis-only params are silently dropped so Dragonfly does not abort on startup.
+    dragonfly_param_map = {"maxmemory": "maxmemory"}
+    if configuration_parameters is not None:
+        for parameter, parameter_value in configuration_parameters.items():
+            if parameter in dragonfly_param_map:
+                command.append(
+                    "--{}={}".format(dragonfly_param_map[parameter], parameter_value)
+                )
+            else:
+                logging.info(
+                    "Dropping redis-only config parameter '{}' for Dragonfly launch".format(
+                        parameter
+                    )
+                )
+    return command
+
+
+def generate_standalone_redis_server_args(
+    binary,
+    port,
+    dbdir,
+    configuration_parameters=None,
+    redis_arguments="",
+    password=None,
+    server_name="redis",
+):
+    # Dragonfly speaks RESP/port-6379 but uses a gflags CLI that aborts on redis-style
+    # flags — dispatch to a server-specific arg generator. Default path (redis/valkey,
+    # which share redis-server semantics) is unchanged.
+    if server_name == "dragonfly":
+        return generate_standalone_dragonfly_server_args(
+            binary,
+            port,
+            dbdir,
+            configuration_parameters,
+            redis_arguments,
+            password,
+        )
     added_params = ["port", "protected-mode", "dir", "requirepass", "logfile"]
     # start redis-server
     command = [
@@ -227,6 +309,14 @@ def spin_docker_cluster_redis(
     Returns:
         tuple: (cluster_conns, current_cpu_pos)
     """
+    # Dragonfly support is standalone-only (P1). The cluster path emits redis-style flags
+    # (--cluster-enabled ...) that Dragonfly's gflags parser aborts on, and uses a bare PING.
+    # Fail loudly rather than silently mis-launch / hang.
+    if server_name == "dragonfly":
+        raise NotImplementedError(
+            "Dragonfly benchmarking currently supports standalone topologies only; "
+            "cluster topologies are not yet wired (see competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md)."
+        )
     executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
@@ -351,6 +441,13 @@ def spin_up_redis_replicas(
     the wall-clock time from container start to master_link_status=up.
     Use this as a benchmark metric for full-sync performance testing.
     """
+    # Dragonfly support is standalone-only (P1); replica topologies pass redis-style
+    # --replicaof/--masterauth flags that Dragonfly's gflags parser aborts on. Fail loudly.
+    if server_name == "dragonfly":
+        raise NotImplementedError(
+            "Dragonfly benchmarking currently supports standalone topologies only; "
+            "replica topologies are not yet wired (see competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md)."
+        )
     replica_conns = []
     sync_times_seconds = []
     for i in range(1, replica_count + 1):
