@@ -528,7 +528,11 @@ def builder_process_stream(
                 z = ZipFileWithPermissions(io.BytesIO(buffer))
                 z.extractall(temporary_dir)
                 redis_dir = os.listdir(temporary_dir + "/")[0]
-                deps_dir = os.listdir(temporary_dir + "/" + redis_dir + "/deps")
+                # Not every server source tree has a top-level deps/ dir (e.g. CMake-based
+                # source trees). Guard so the listdir doesn't abort the build; deps_list is
+                # only consumed by the (currently commented-out) make-based deps path.
+                deps_path = temporary_dir + "/" + redis_dir + "/deps"
+                deps_dir = os.listdir(deps_path) if os.path.isdir(deps_path) else []
                 deps_list = [
                     "hiredis",
                     "jemalloc",
@@ -561,6 +565,20 @@ def builder_process_stream(
                 server_name = "redis"
                 if b"server_name" in testDetails:
                     server_name = testDetails[b"server_name"].decode()
+
+                # Per-build wall-clock cap for the container build step. Defaults to 600s;
+                # heavier source builds (large C++/CMake trees) can opt into a larger budget
+                # via --build_timeout without affecting existing make-based builds.
+                build_timeout_secs = 600
+                if b"build_timeout" in testDetails:
+                    try:
+                        build_timeout_secs = int(testDetails[b"build_timeout"].decode())
+                    except (ValueError, AttributeError):
+                        build_timeout_secs = 600
+                    # Guard against a 0/negative override that would make container.wait
+                    # time out immediately (or behave undefined).
+                    if build_timeout_secs <= 0:
+                        build_timeout_secs = 600
 
                 # Check if artifacts already exist before building
                 prefix = f"build_spec={build_spec}/github_org={github_org}/github_repo={github_repo}/git_branch={str(git_branch)}/git_version={str(git_version)}/git_hash={str(git_hash)}"
@@ -713,7 +731,9 @@ def builder_process_stream(
                         detach=True,
                     )
                     try:
-                        result = container.wait(timeout=600)  # 10 min max
+                        result = container.wait(
+                            timeout=build_timeout_secs
+                        )  # default 10 min; override via --build_timeout
                         exit_code = result.get("StatusCode", -1)
                         if exit_code != 0:
                             logs = container.logs(tail=50).decode(

@@ -13,7 +13,9 @@ from redis_benchmarks_specification.__common__.timeseries import (
 )
 
 
-def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
+def execute_init_commands(
+    benchmark_config, r, dbconfig_keyname="dbconfig", server_name="redis"
+):
     cmds = None
     lua_scripts = None
     res = 0
@@ -45,6 +47,20 @@ def execute_init_commands(benchmark_config, r, dbconfig_keyname="dbconfig"):
                     stdout = r.execute_command(cmd)
                 res = res + 1
                 logging.info("Command reply: {}".format(stdout))
+            except redis.exceptions.ResponseError as e:
+                # Some RESP servers reject redis-specific seeding commands (e.g. a
+                # CONFIG SET / DEBUG subcommand or an option form they don't implement).
+                # Keep the historical fail-fast behavior for redis-semantics servers
+                # (redis, valkey) where a seeding error is a real problem; tolerate-and-
+                # continue for other servers so a benchmark isn't aborted by an
+                # unsupported init command.
+                if server_name in ("redis", "valkey"):
+                    raise
+                logging.warning(
+                    "Tolerating unsupported init command for server '{}': {}".format(
+                        server_name, e
+                    )
+                )
             except redis.connection.ConnectionError as e:
                 logging.error(
                     "Error establishing connection to Redis. Message: {}".format(

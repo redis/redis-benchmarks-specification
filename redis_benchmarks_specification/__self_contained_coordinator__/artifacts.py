@@ -18,7 +18,7 @@ def restore_build_artifacts_from_test_details(
             artifact_fname = "{}/{}".format(temporary_dir, build_artifact)
             with open(artifact_fname, "wb") as fd:
                 fd.write(buffer)
-                os.chmod(artifact_fname, 755)
+                os.chmod(artifact_fname, 0o755)  # octal: rwxr-xr-x (was decimal 755)
 
             logging.info(
                 "Successfully restored {} into {}".format(
