@@ -309,13 +309,15 @@ def spin_docker_cluster_redis(
     Returns:
         tuple: (cluster_conns, current_cpu_pos)
     """
-    # Dragonfly support is standalone-only (P1). The cluster path emits redis-style flags
-    # (--cluster-enabled ...) that Dragonfly's gflags parser aborts on, and uses a bare PING.
-    # Fail loudly rather than silently mis-launch / hang.
+    # gflags-based servers (e.g. dragonfly) are standalone-only for now. The cluster path
+    # emits redis-style flags (--cluster-enabled ...) such a server aborts on, and uses a
+    # bare PING. Fail loudly rather than silently mis-launch / hang.
     if server_name == "dragonfly":
         raise NotImplementedError(
-            "Dragonfly benchmarking currently supports standalone topologies only; "
-            "cluster topologies are not yet wired (see competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md)."
+            "server_name='{}' is only supported for standalone topologies; "
+            "cluster mode is not yet implemented for gflags-based servers.".format(
+                server_name
+            )
         )
     executable = "{}{}-server".format(mnt_point, server_name)
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
@@ -441,12 +443,14 @@ def spin_up_redis_replicas(
     the wall-clock time from container start to master_link_status=up.
     Use this as a benchmark metric for full-sync performance testing.
     """
-    # Dragonfly support is standalone-only (P1); replica topologies pass redis-style
-    # --replicaof/--masterauth flags that Dragonfly's gflags parser aborts on. Fail loudly.
+    # gflags-based servers (e.g. dragonfly) are standalone-only for now; replica topologies
+    # pass redis-style --replicaof/--masterauth flags such a server aborts on. Fail loudly.
     if server_name == "dragonfly":
         raise NotImplementedError(
-            "Dragonfly benchmarking currently supports standalone topologies only; "
-            "replica topologies are not yet wired (see competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md)."
+            "server_name='{}' is only supported for standalone topologies; "
+            "replica mode is not yet implemented for gflags-based servers.".format(
+                server_name
+            )
         )
     replica_conns = []
     sync_times_seconds = []

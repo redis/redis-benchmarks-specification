@@ -230,6 +230,12 @@ def test_init_commands_reraise_for_redis():
         execute_init_commands(_INIT_CFG, _RaisingConn(), server_name="redis")
 
 
+def test_init_commands_reraise_for_valkey():
+    """valkey is redis-semantics: a failing init command still fails fast."""
+    with pytest.raises(redis.exceptions.ResponseError):
+        execute_init_commands(_INIT_CFG, _RaisingConn(), server_name="valkey")
+
+
 def test_init_commands_tolerated_for_dragonfly():
     """A failing/unsupported init command is tolerated for non-redis servers."""
     # Should NOT raise.

@@ -2641,18 +2641,24 @@ def process_self_contained_coordinator_stream(
 
                                     # Shut down all nodes in reverse order: replicas, then primary (idx 0).
                                     # ConnectionError is the expected success path (the server drops the
-                                    # connection on SHUTDOWN). Some RESP servers (e.g. Dragonfly) don't drop
-                                    # it the way redis-py expects, so .shutdown() raises a generic RedisError
-                                    # ("SHUTDOWN seems to have failed") — tolerate it: results are already
-                                    # pushed at this point and the container is force-stopped in teardown.
+                                    # connection on SHUTDOWN). redis keeps fail-fast on any other RedisError
+                                    # so a genuinely-broken shutdown still fails the test; non-redis servers
+                                    # (e.g. Dragonfly, which doesn't drop the connection the way redis-py
+                                    # expects and raises a generic "SHUTDOWN seems to have failed") tolerate
+                                    # it — results are already pushed and the container is force-stopped in
+                                    # teardown.
                                     for redis_conn in reversed(redis_conns):
                                         try:
                                             redis_conn.shutdown(save=False)
+                                        except redis.exceptions.ConnectionError:
+                                            pass
                                         except redis.exceptions.RedisError as e:
-                                            logging.info(
-                                                "Ignoring non-fatal error during server shutdown "
-                                                "(results already collected): {}".format(
-                                                    e
+                                            if server_name == "redis":
+                                                raise
+                                            logging.warning(
+                                                "Tolerating non-fatal shutdown error for server "
+                                                "'{}' (results already collected): {} ({})".format(
+                                                    server_name, e, type(e).__name__
                                                 )
                                             )
 

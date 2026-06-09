@@ -50,10 +50,11 @@ def execute_init_commands(
             except redis.exceptions.ResponseError as e:
                 # Some RESP servers reject redis-specific seeding commands (e.g. a
                 # CONFIG SET / DEBUG subcommand or an option form they don't implement).
-                # Keep the historical fail-fast behavior for redis; tolerate-and-continue
-                # for other servers so a benchmark isn't aborted by an unsupported init
-                # command.
-                if server_name == "redis":
+                # Keep the historical fail-fast behavior for redis-semantics servers
+                # (redis, valkey) where a seeding error is a real problem; tolerate-and-
+                # continue for other servers so a benchmark isn't aborted by an
+                # unsupported init command.
+                if server_name in ("redis", "valkey"):
                     raise
                 logging.warning(
                     "Tolerating unsupported init command for server '{}': {}".format(
