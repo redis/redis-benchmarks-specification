@@ -1,0 +1,94 @@
+version: 0.4
+name: memtier_benchmark-session-caching-hash-100k-sessions-with-hfe-expired-fields-hkeys
+description: |
+  Runs memtier_benchmark to stress `HKEYS` on hashes that contain a large fraction
+  of **expired hash fields** (hash-field expiration / HFE).
+
+  This is a sibling suite of:
+    - memtier_benchmark-session-caching-hash-100k-sessions-with-hfe-expired-fields
+
+  Differences vs the HGETALL variant:
+    - Measures `HKEYS` instead of `HGETALL`.
+    - This reduces reply payload size, which can make CPU-side improvements (like
+      avoiding an up-front visible-length pre-pass) easier to observe.
+
+  Benchmark design:
+    - Preload 100,000 hashes (`session:<id>`) with 50 small fields each.
+    - Apply HFE (HPEXPIRE) with a very short TTL (1s) to 45/50 fields per hash.
+      The remaining 5 fields have no TTL and should remain visible.
+    - Benchmark issues `HKEYS` reads on random keys.
+
+  Notes:
+    - This benchmark is intentionally designed as a detector for the deferred-length
+      `genericHgetallCommand` optimization (used by `HKEYS` as well).
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_lua: |
+    local seed = 12345
+    math.randomseed(seed)
+
+    local total_keys = 100000
+    local total_fields = 50
+    local expire_fields = 45
+    local ttl_ms = 1000
+
+    for i = 1, total_keys do
+      local key = 'session:' .. i
+
+      local hset_args = {key}
+      for f = 1, total_fields do
+        hset_args[#hset_args+1] = 'field:' .. f
+        hset_args[#hset_args+1] = 'v' .. f
+      end
+      redis.call('HSET', unpack(hset_args))
+
+      local hexp_args = {key, ttl_ms, 'FIELDS', expire_fields}
+      for f = 1, expire_fields do
+        hexp_args[#hexp_args+1] = 'field:' .. f
+      end
+      redis.call('HPEXPIRE', unpack(hexp_args))
+    end
+
+    return 'OK'
+
+tested-groups:
+- hash
+
+tested-commands:
+- hkeys
+- hpexpire
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --key-prefix "session:"
+    --key-minimum 1
+    --key-maximum 100000
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="HKEYS __key__"
+    --command-key-pattern=R
+    --hide-histogram
+    -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
