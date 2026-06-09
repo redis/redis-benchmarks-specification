@@ -6,8 +6,15 @@
 
 import argparse
 import re
+import tempfile
+import yaml
+import os
+from unittest.mock import Mock, patch
 
 import redis
+from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
+    process_self_contained_coordinator_stream,
+)
 
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
 from redis_benchmarks_specification.__cli__.admin import (
@@ -224,6 +231,7 @@ def test_generate_benchmark_stream_request_deployment_regexp():
             {},
             "linux",
             deployment_name_regexp=".*",
+            override_deployment_regexp="",
         )
         assert "deployment_name_regexp" not in fields
 
@@ -236,11 +244,125 @@ def test_generate_benchmark_stream_request_deployment_regexp():
             {},
             "linux",
             deployment_name_regexp="oss-standalone-0[48]-io-threads",
+            override_deployment_regexp="",
         )
         assert fields["deployment_name_regexp"] == "oss-standalone-0[48]-io-threads"
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_generate_benchmark_stream_request_override_deployment_regexp():
+    """Test that override_deployment_regexp is included correctly in stream fields."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        # Without override_deployment_regexp (default) - should NOT include field
+        fields, result = generate_benchmark_stream_request(
+            "test-id",
+            conn,
+            "redis",
+            "amd64",
+            {},
+            "linux",
+            deployment_name_regexp=".*",
+            override_deployment_regexp="",
+        )
+        assert "override_deployment_regexp" not in fields
+
+        # With override_deployment_regexp - should include field
+        fields, result = generate_benchmark_stream_request(
+            "test-id",
+            conn,
+            "redis",
+            "amd64",
+            {},
+            "linux",
+            deployment_name_regexp=".*",
+            override_deployment_regexp="oss-standalone-0[12]-replicas",
+        )
+        assert fields["override_deployment_regexp"] == "oss-standalone-0[12]-replicas"
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_override_deployment_regexp_with_deployment_name_regexp():
+    """Test topology filtering: override to standalone, filter to replicas.
+
+    Mocks pipeline.lpush to verify only 'oss-standalone-01-replicas' gets queued
+    when override_deployment_regexp='oss-standalone-.*' and deployment_name_regexp='.*replicas'.
+    """
+
+    # Test config with single topology to prove override works from ALL available
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
+        yaml.dump(
+            {
+                "name": "test",
+                "redis-topologies": ["oss-standalone-with-redisearch"],
+            },
+            f,
+        )
+        test_file = f.name
+
+    # Create realistic topologies_map with all topologies
+    topologies_map = {
+        "oss-standalone-01-replicas": {"type": "oss-standalone"},
+        "oss-standalone-04-io-threads": {"type": "oss-standalone"},
+        "oss-cluster-01-replicas": {"type": "oss-cluster"},
+        "oss-cluster-3-primaries": {"type": "oss-cluster"},
+    }
+
+    try:
+        # Test stream with both filters
+        test_details = {
+            b"override_deployment_regexp": b"oss-standalone-.*",  # Get standalone
+            b"deployment_name_regexp": b".*replicas",  # Filter to replicas
+            b"run_image": b"redis:latest",
+            b"build_image": b"redis:latest",
+            b"build_variant_name": b"redis",
+            b"metadata": b"{}",
+            b"build_artifacts": b"{}",
+            b"git_hash": b"abc",
+            b"git_branch": b"main",
+            b"git_version": b"1.0",
+        }
+
+        with patch("redis.StrictRedis"), patch("docker.from_env"), patch(
+            "redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator.get_benchmark_specs",
+            return_value=[test_file],
+        ):
+
+            mock_pipeline = Mock()
+            mock_conn = Mock()
+            mock_conn.pipeline.return_value = mock_pipeline
+
+            process_self_contained_coordinator_stream(
+                github_event_conn=mock_conn,
+                datasink_push_results_redistimeseries=False,
+                docker_client=Mock(),
+                home="/tmp",
+                newTestInfo=[["stream", [[b"123", test_details]]]],
+                datasink_conn=Mock(),
+                testsuite_spec_files=[test_file],
+                topologies_map=topologies_map,
+                running_platform="test",
+            )
+
+            # Extract queued topologies
+            queued = [
+                call[0][1].split("::")[1]
+                for call in mock_pipeline.lpush.call_args_list
+                if len(call[0]) == 2 and "::" in str(call[0][1])
+            ]
+
+            # Should get all standalone topologies that match ".*replicas" filter
+            # With override, we select from ALL available topologies, not just config topologies
+            assert queued == ["oss-standalone-01-replicas"]
+
+    finally:
+        os.unlink(test_file)
 
 
 def test_dry_run_topology_breakdown():

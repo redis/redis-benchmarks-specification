@@ -647,6 +647,7 @@ def builder_process_stream(
                         github_repo,
                         artifact_keys,  # Pass existing artifact keys
                         deployment_name_regexp,
+                        "",  # override_deployment_regexp - not used for reuse case
                     )
                     # Add to benchmark stream even when reusing artifacts
                     if result is True:
@@ -806,6 +807,7 @@ def builder_process_stream(
                     github_repo,
                     None,  # existing_artifact_keys - None for new builds
                     deployment_name_regexp,
+                    "",  # override_deployment_regexp - not available at builder level
                 )
                 if result is True:
                     arch_specific_stream = get_arch_specific_stream_name(build_arch)
@@ -953,6 +955,7 @@ def generate_benchmark_stream_request(
     github_repo="redis",
     existing_artifact_keys=None,
     deployment_name_regexp=".*",
+    override_deployment_regexp="",
 ):
     build_stream_fields = {
         "id": id,
@@ -972,6 +975,8 @@ def generate_benchmark_stream_request(
     }
     if deployment_name_regexp != ".*":
         build_stream_fields["deployment_name_regexp"] = deployment_name_regexp
+    if override_deployment_regexp != "":
+        build_stream_fields["override_deployment_regexp"] = override_deployment_regexp
     if build_config_metadata is not None:
         build_stream_fields["metadata"] = json.dumps(build_config_metadata)
     if compiler is not None:
