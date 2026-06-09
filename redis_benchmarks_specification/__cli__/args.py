@@ -200,6 +200,13 @@ def spec_cli_args(parser):
         default="",
     )
     parser.add_argument(
+        "--build_timeout",
+        type=int,
+        default=0,
+        help="Per-build container wall-clock cap in seconds (0 = pipeline default of 600). "
+        "Raise for heavy source builds such as large C++/CMake trees (e.g. 1800).",
+    )
+    parser.add_argument(
         "--git_hash",
         type=str,
         default="",

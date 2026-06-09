@@ -613,6 +613,8 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 commit_dict["build_artifacts"] = args.build_artifacts
             if args.build_command != "":
                 commit_dict["build_command"] = args.build_command
+            if getattr(args, "build_timeout", 0):
+                commit_dict["build_timeout"] = str(args.build_timeout)
             if args.target_platform is not None:
                 commit_dict["target_platform"] = args.target_platform
                 logging.info(f"Targeting specific runner: {args.target_platform}")
