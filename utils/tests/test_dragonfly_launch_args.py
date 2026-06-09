@@ -20,6 +20,15 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     spin_up_redis_replicas,
 )
 from redis_benchmarks_specification.__cli__.args import spec_cli_args
+from redis_benchmarks_specification.__common__.runner import execute_init_commands
+import redis
+
+
+class _RaisingConn:
+    """Minimal fake redis conn whose execute_command always raises ResponseError."""
+
+    def execute_command(self, *args, **kwargs):
+        raise redis.exceptions.ResponseError("ERR unknown command")
 
 
 # Flags that Dragonfly's gflags parser would abort on if we ever emitted them.
@@ -176,7 +185,10 @@ def test_dragonfly_proactor_override_space_form():
 
 def test_dragonfly_proactor_defaults_to_one_when_absent():
     cmd = generate_standalone_dragonfly_server_args(
-        "/mnt/redis/dragonfly-server", 6379, "/mnt/redis/", redis_arguments="--io-threads 4"
+        "/mnt/redis/dragonfly-server",
+        6379,
+        "/mnt/redis/",
+        redis_arguments="--io-threads 4",
     )
     assert "--proactor_threads=1" in cmd
 
@@ -207,3 +219,18 @@ def test_replica_topology_rejects_dragonfly():
             None,
             server_name="dragonfly",
         )
+
+
+_INIT_CFG = {"dbconfig": {"init_commands": ["CONFIG SET some-redis-only-param yes"]}}
+
+
+def test_init_commands_reraise_for_redis():
+    """A failing init command still fails the run for redis (historical behavior)."""
+    with pytest.raises(redis.exceptions.ResponseError):
+        execute_init_commands(_INIT_CFG, _RaisingConn(), server_name="redis")
+
+
+def test_init_commands_tolerated_for_dragonfly():
+    """A failing/unsupported init command is tolerated for non-redis servers."""
+    # Should NOT raise.
+    execute_init_commands(_INIT_CFG, _RaisingConn(), server_name="dragonfly")

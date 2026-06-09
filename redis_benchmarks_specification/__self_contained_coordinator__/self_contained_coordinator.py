@@ -1997,6 +1997,7 @@ def process_self_contained_coordinator_stream(
                                         benchmark_config,
                                         redis_conn,
                                         dbconfig_keyname="dbconfig",
+                                        server_name=server_name,
                                     )
 
                                 # Multi-tool clientconfigs suites (e.g. memtier +
@@ -2650,7 +2651,9 @@ def process_self_contained_coordinator_stream(
                                         except redis.exceptions.RedisError as e:
                                             logging.info(
                                                 "Ignoring non-fatal error during server shutdown "
-                                                "(results already collected): {}".format(e)
+                                                "(results already collected): {}".format(
+                                                    e
+                                                )
                                             )
 
                                 except redis.exceptions.ConnectionError as e:
