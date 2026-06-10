@@ -1,0 +1,62 @@
+version: 0.4
+name: memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10
+description: >
+  Runs memtier_benchmark BITOP XOR over 10 short (50-byte) string source keys with pipeline 10.
+  Each source key (key:1..key:10) is pre-loaded with a 50-byte string value (not a 32-byte
+  multiple — leaves an 18-byte scalar tail after the first AVX2 block). The benchmark
+  repeatedly issues `BITOP XOR tmp key:1 key:2 ... key:10`, exercising the BITOP short-tail
+  path that combines one AVX2 vector iteration with the rewritten scalar tail loop in
+  bitopCommandAVX. Scopes redis/redis#15289 reproduction (-5.4% RPS on 391e3452 -> 8dfb823,
+  10 source keys × 50-byte values × XOR × pipeline 10) into a registered spec so we can
+  bisect and track parity on the AVX2 fleet.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "SET __key__ __data__"
+      --command-key-pattern P
+      --data-size 50
+      --key-prefix "key:"
+      --key-minimum 1
+      --key-maximum 10
+      -n 10
+      -c 1
+      -t 1
+      --hide-histogram
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 10keys-bitmap-50B-strings
+  dataset_description: 10 string keys (key:1..key:10), each holding a 50-byte value (32-byte
+    AVX2 block + 18-byte scalar tail).
+tested-commands:
+- bitop
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "BITOP XOR tmp key:1 key:2 key:3 key:4 key:5 key:6 key:7 key:8 key:9 key:10"
+    --command-key-pattern R
+    --hide-histogram
+    --test-time 180
+    --pipeline 10
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 67
