@@ -1,0 +1,22 @@
+{
+  "_comment": "Curated 'core' benchmark set: one representative spec per command group, used as the webhook's fallback when a labeled PR touches a broad/infra/unmapped source file (so it runs a small cross-group smoke set instead of the full ~394 suite). The webhook emits these as an anchored tests_regexp. Each entry is a test-suite FILENAME STEM (no .yml) — it must exist in test-suites/ (a CI test enforces this) and collectively these must cover every group that has specs (another CI test enforces this). Tune freely; keep one per group. cluster/sentinel have no specs in this repo and are intentionally absent.",
+  "core_specs": [
+    "memtier_benchmark-1Mkeys-string-get-10B",
+    "memtier_benchmark-1Mkeys-hash-hmget-5-fields-with-100B-values-pipeline-10",
+    "memtier_benchmark-1key-list-10K-elements-lpos-string",
+    "memtier_benchmark-1key-set-10M-elements-srem-50pct-chance",
+    "memtier_benchmark-1key-zset-100-elements-zrangebyscore-all-elements",
+    "memtier_benchmark-1Mkeys-load-stream-1-fields-with-100B-values",
+    "memtier_benchmark-1key-geo-2-elements-geopos",
+    "memtier_benchmark-1key-100M-bits-bitmap-bitpos",
+    "memtier_benchmark-multiple-hll-pfcount-1key-10Mkeys-multitenant-tagged",
+    "memtier_benchmark-nokeys-pubsub-publish-1K-channels-10B-no-subscribers",
+    "memtier_benchmark-playbook-rate-limiting-lua-100k-sessions",
+    "memtier_benchmark-1Mkeys-string-watch-multi-exec-32B",
+    "memtier_benchmark-1Mkeys-generic-expire-pipeline-10",
+    "memtier_benchmark-connection-hello",
+    "memtier_benchmark-nokeys-server-time-pipeline-10",
+    "memtier_benchmark-playbook-session-caching-json-100k-sessions",
+    "memtier_benchmark-array-arget-1K-random"
+  ]
+}

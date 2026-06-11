@@ -1,0 +1,20 @@
+{
+  "_comment": "Maps a changed Redis source-file basename to the benchmark command group(s) it exercises. Used by the webhook (__api__/app.py) to scope an action:run-benchmark run from the PR diff instead of running the full suite. Group names MUST match groups.json (a CI test enforces this). Source files NOT listed here (server.c, networking.c, db.c, dict.c, kvstore.c, object.c, sds.c, ae.c, rdb.c, aof.c, replication.c, cluster*.c, *.h, brand-new files, ...) are treated as broad/infra: the run falls back to the curated core set in core-specs.json. This is the only file->group source of truth; commands.json is keyed by command, not file. Keyed by basename (Redis has no same-basename collisions across dirs for these).",
+  "exact": {
+    "t_string.c": ["string"],
+    "t_hash.c": ["hash"],
+    "t_zset.c": ["sorted-set"],
+    "t_list.c": ["list"],
+    "t_set.c": ["set"],
+    "t_stream.c": ["stream"],
+    "t_array.c": ["array"],
+    "geo.c": ["geo", "sorted-set"],
+    "hyperloglog.c": ["hyperloglog"],
+    "bitops.c": ["bitmap"],
+    "pubsub.c": ["pubsub"],
+    "multi.c": ["transactions"],
+    "eval.c": ["scripting"],
+    "script.c": ["scripting"],
+    "functions.c": ["scripting"]
+  }
+}

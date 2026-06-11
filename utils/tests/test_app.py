@@ -6,9 +6,11 @@
 import json
 from hashlib import sha1
 from hmac import HMAC
+from unittest.mock import patch, MagicMock
 
 import redis
 
+import redis_benchmarks_specification.__api__.app as app_module
 from redis_benchmarks_specification.__api__.app import (
     create_app,
     SIG_HEADER,
@@ -74,7 +76,11 @@ def test_create_app():
                 key=auth_token.encode(), msg=req_data, digestmod=sha1
             ).hexdigest()
 
-            with flask_app.test_client() as test_client:
+            # Stub diff-scoping so this test does not depend on a live GitHub PR-files
+            # lookup (the scope-merge itself is covered by the dedicated tests below).
+            with flask_app.test_client() as test_client, patch.object(
+                app_module, "compute_pr_scope_fields", return_value=({}, "noop")
+            ):
                 response = test_client.post(
                     "/api/gh/redis/redis/commits",
                     content_type="application/json",
@@ -163,3 +169,71 @@ def test_should_action():
     assert should_action("na") == False
     assert should_action("reopened") == True
     assert should_action("synchronize") == True
+    # exact match: a substring of a real action must NOT trigger
+    assert should_action("label") == False
+    assert should_action("open") == False
+    assert should_action("unlabeled") == False
+
+
+def _post_labelled_pr(flask_app, auth_token):
+    with open("./utils/tests/test_data/event_webhook_labelled_pr.json") as fh:
+        req_data = json.dumps(json.load(fh)).encode()
+    sign = HMAC(key=auth_token.encode(), msg=req_data, digestmod=sha1).hexdigest()
+    with flask_app.test_client() as client:
+        return client.post(
+            "/api/gh/redis/redis/commits",
+            content_type="application/json",
+            data=req_data,
+            headers={
+                "Content-type": "application/json",
+                SIG_HEADER: "sha1={}".format(sign),
+            },
+        )
+
+
+# These app-level tests run with NO redis and NO network: a MagicMock conn satisfies
+# the auth lookup, and commit_schema_to_stream is stubbed to echo the event fields it
+# is handed — so they deterministically prove the app.py scope-field merge in any CI
+# lane (no silent skip when redis is absent).
+def _mock_app(auth_token="diff-scope-test-token"):
+    conn = MagicMock()
+    conn.get.return_value = auth_token  # default:auth_token lookup in verify_signature
+    return create_app(conn, "default"), auth_token
+
+
+def _echo_commit_schema(fields, *args, **kwargs):
+    # mirror commit_schema_to_stream's contract: (result, reply_fields, err)
+    return True, dict(fields), None
+
+
+def test_pr_event_merges_scope_fields_into_stream_event():
+    # a labeled PR whose diff scopes to a group must carry that filter into the event
+    flask_app, auth_token = _mock_app()
+    with patch.object(
+        app_module,
+        "compute_pr_scope_fields",
+        return_value=({"tests_groups_regexp": "^(?:hash)$"}, "stub"),
+    ), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=_echo_commit_schema
+    ):
+        resp = _post_labelled_pr(flask_app, auth_token)
+    assert resp.status_code == 200
+    assert resp.json.get("tests_groups_regexp") == "^(?:hash)$"
+
+
+def test_pr_event_disabled_gate_skips_scoping():
+    # with scoping disabled, the GitHub helper must not be called and no filter is added
+    flask_app, auth_token = _mock_app()
+
+    def _boom(*a, **k):
+        raise AssertionError("compute_pr_scope_fields called while disabled")
+
+    with patch.object(app_module, "BENCHMARK_PR_DIFF_SCOPING", False), patch.object(
+        app_module, "compute_pr_scope_fields", _boom
+    ), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=_echo_commit_schema
+    ):
+        resp = _post_labelled_pr(flask_app, auth_token)
+    assert resp.status_code == 200
+    assert "tests_groups_regexp" not in resp.json
+    assert "tests_regexp" not in resp.json

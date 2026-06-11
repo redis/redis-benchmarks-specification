@@ -280,6 +280,29 @@ The HTTP request is then converted into an event ( tracked within redis ) that w
 
 As soon as a new build variant request is received, the build agent ([`redis-benchmarks-spec-builder`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__builder__/)) 
 prepares the artifact(s) and proceeds into adding an artifact benchmark event so that the benchmark coordinator ([`redis-benchmarks-spec-sc-coordinator`](https://github.com/filipecosta90/redis-benchmarks-specification/tree/main/redis_benchmarks_specification/__self_contained_coordinator__/))  can deploy/manage the required infrastructure and DB topologies, run the benchmark, and export the performance results.
+
+### PR diff-driven benchmark scoping
+
+When a pull request is labeled with the trigger label (`action:run-benchmark`), the API
+scopes the run to the part of the suite the PR's diff actually touches, instead of running
+the full suite:
+
+- changed data-type files (`t_hash.c` → `hash`, `t_zset.c` → `sorted-set`, …) run only those
+  command groups (`tests_groups_regexp`). The file→group map is
+  [`__common__/files-to-groups.json`](redis_benchmarks_specification/__common__/files-to-groups.json);
+- a change to a broad/infra/unmapped file (`server.c`, `networking.c`, `db.c`, a new file, …),
+  or a PR with no source changes, runs a small cross-group "core" set — one representative
+  spec per group, in [`__common__/core-specs.json`](redis_benchmarks_specification/__common__/core-specs.json);
+- a very large PR, an unavailable GitHub lookup, or a push event runs the **full** suite.
+
+The active filter is shown in the build-started PR comment, so a scoped run is visible on the PR.
+
+| env var | default | meaning |
+|---|---|---|
+| `BENCHMARK_PR_DIFF_SCOPING` | `1` (on) | set to `0`/`false`/`no`/`off` to restore full-suite-on-label |
+| `BENCHMARK_PR_MAX_FILES` | `100` | PRs changing more files than this are treated as broad → full suite |
+| `GH_TOKEN` | — | recommended; without it the PR-files lookup is unauthenticated (60/hr) and degrades to full suite |
+
 ## Directory layout
 
 ### Specifications 

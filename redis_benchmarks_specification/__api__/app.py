@@ -13,18 +13,19 @@ from redis_benchmarks_specification.__common__.env import (
     BENCHMARK_TRIGGER_BRANCHES,
     BENCHMARK_TRIGGER_ORGS,
     PULL_REQUEST_TRIGGER_LABEL,
+    BENCHMARK_PR_DIFF_SCOPING,
+    BENCHMARK_PR_MAX_FILES,
+    GH_TOKEN,
 )
+from redis_benchmarks_specification.__common__.scope import compute_pr_scope_fields
 
 SIG_HEADER = "X-Hub-Signature"
 
 
 def should_action(action):
-    res = False
-    types = ["synchronize", "opened", "reopened", "labeled"]
-    for tt in types:
-        if action in tt:
-            res = True
-    return res
+    # Exact match — a substring test (`action in tt`) would let stray action strings
+    # that happen to be substrings of these spuriously trigger.
+    return action in ("synchronize", "opened", "reopened", "labeled")
 
 
 def create_app(conn, user, test_config=None):
@@ -91,6 +92,11 @@ def create_app(conn, user, test_config=None):
             use_event = False
             # Pull request labeled
             pull_request_number = None
+            # Base repo of the PR (where the PR number is valid) — used to fetch the
+            # changed files for diff-scoping. For a fork PR the head repo is the fork,
+            # whose API has no such PR number, so we must query the base repo.
+            pr_base_org = None
+            pr_base_repo = None
             trigger_label = PULL_REQUEST_TRIGGER_LABEL
             if "pull_request" in request_data:
                 action = request_data["action"]
@@ -99,6 +105,12 @@ def create_app(conn, user, test_config=None):
 
                     head_dict = pull_request_dict["head"]
                     repo_dict = head_dict["repo"]
+                    base_repo_dict = (pull_request_dict.get("base") or {}).get(
+                        "repo"
+                    ) or {}
+                    base_full_name = base_repo_dict.get("full_name")
+                    if base_full_name and "/" in base_full_name:
+                        pr_base_org, pr_base_repo = base_full_name.split("/")[-2:]
                     labels = []
                     if "labels" in pull_request_dict:
                         labels = pull_request_dict["labels"]
@@ -162,6 +174,26 @@ def create_app(conn, user, test_config=None):
                     event_type = f"Push event skipped: {'; '.join(skip_reasons)}"
 
             if use_event is True:
+                # Diff-driven scoping: for a labeled PR, derive the affected command
+                # group(s) from the changed files and scope the run; broad/infra/unmapped
+                # diffs fall back to a curated core set. Empty -> full suite (today's
+                # behavior). Gated by BENCHMARK_PR_DIFF_SCOPING so it can be disabled.
+                scope_fields = {}
+                if BENCHMARK_PR_DIFF_SCOPING and pull_request_number is not None:
+                    # Query the PR's BASE repo (fall back to head if base is absent),
+                    # since the PR number only exists there.
+                    scope_fields, scope_msg = compute_pr_scope_fields(
+                        GH_TOKEN,
+                        pr_base_org or gh_org,
+                        pr_base_repo or gh_repo,
+                        pull_request_number,
+                        BENCHMARK_PR_MAX_FILES,
+                    )
+                    app.logger.info(scope_msg)
+                # NOTE: scope_fields is only ever non-empty for labeled-PR events. The
+                # merge-base baseline below runs on PUSH events (where there is no PR),
+                # so it is intentionally NOT scoped — scoped PR-head runs are compared
+                # against the full-suite baseline of the corresponding subset.
                 if before_sha is not None:
                     fields_before = {
                         "git_hash": sha,
@@ -192,6 +224,7 @@ def create_app(conn, user, test_config=None):
                 }
                 if pull_request_number is not None:
                     fields_after["pull_request"] = pull_request_number
+                fields_after.update(scope_fields)
                 app.logger.info(
                     "Using event {} to trigger benchmark. final fields: {}".format(
                         event_type, fields_after
