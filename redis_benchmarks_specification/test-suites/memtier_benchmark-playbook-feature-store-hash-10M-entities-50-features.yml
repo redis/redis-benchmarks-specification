@@ -98,7 +98,7 @@ dbconfig:
       --command-key-pattern=P
       --key-minimum=1
       --key-maximum=10000000
-      -n 50000
+      -n allkeys
       -c 50
       -t 4
       --pipeline 50
