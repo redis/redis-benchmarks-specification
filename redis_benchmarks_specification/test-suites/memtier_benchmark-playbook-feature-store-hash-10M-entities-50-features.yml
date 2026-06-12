@@ -33,15 +33,6 @@ description: |
   field names across hashes). At this scale the keyspace dict is well beyond cache, so the spec
   exercises large-keyspace serving the existing small-keyspace HGETALL coverage cannot reach.
 
-  Metric of interest: PRIMARY = throughput (Hgetalls/Totals Ops/sec) of HGETALL at fixed concurrency
-  (200 total connections, t=4 x c=50, pipeline 1) against a large keyspace of small listpack hashes. SECONDARY = serving
-  latency p50/p99 — reported as CLOSED-LOOP under-load latency: representative of a concurrent serving
-  layer, but the deep tail is under-reported by coordinated omission at this concurrency, so do NOT
-  treat p99 here as an SLO-grade tail (for that, run a low-concurrency `--rate-limiting` open-loop
-  variant). Access is Zipfian over entities (`--command-key-pattern=Z`): popular / recently-active
-  entities are served far more often, exposing hot-key locality (the served working set is therefore
-  much smaller than 10M — this measures hot / cache-warm serving, not cold-keyspace random access).
-
   Command mix (read-dominated online serving, ~95:5):
     - Whole-entity serving read (`HGETALL`): ratio 19
     - Whole-row feature materialization write (`HSET` all 51 fields): ratio 1
@@ -99,8 +90,8 @@ dbconfig:
       --key-minimum=1
       --key-maximum=10000000
       -n allkeys
-      -c 50
-      -t 4
+      -c 1
+      -t 1
       --pipeline 50
       --hide-histogram
   resources:
