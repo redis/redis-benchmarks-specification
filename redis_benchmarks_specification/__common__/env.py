@@ -125,7 +125,7 @@ BENCHMARK_TRIGGER_ORGS = os.getenv("BENCHMARK_TRIGGER_ORGS", "redis")
 # suite. Set BENCHMARK_PR_DIFF_SCOPING to a falsey value (0/false/no/off) to restore
 # full-suite-on-label.
 BENCHMARK_PR_DIFF_SCOPING = os.getenv(
-    "BENCHMARK_PR_DIFF_SCOPING", "1"
+    "BENCHMARK_PR_DIFF_SCOPING", "0"
 ).strip().lower() in ("1", "true", "yes", "on")
 # PRs changing more than this many files are treated as inherently broad -> full suite
 # (also bounds the synchronous GitHub pagination done inside the webhook request).
