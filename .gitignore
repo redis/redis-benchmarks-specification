@@ -230,6 +230,9 @@ fabric.properties
 
 # Json result files
 *.json
+# ...except in-package data files that must ship with the wheel
+!redis_benchmarks_specification/__common__/files-to-groups.json
+!redis_benchmarks_specification/__common__/core-specs.json
 
 # perf related
 *.out

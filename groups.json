@@ -1,4 +1,8 @@
 {
+  "array": {
+    "description": "Operations on the Array data type",
+    "display": "Array"
+  },
   "bitmap": {
     "description": "Operations on the Bitmap data type",
     "display": "Bitmap"

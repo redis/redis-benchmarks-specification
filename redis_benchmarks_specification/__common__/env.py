@@ -119,3 +119,29 @@ MACHINE_NAME = os.uname()[1]
 # Webhook push filtering — comma-separated allowlists
 BENCHMARK_TRIGGER_BRANCHES = os.getenv("BENCHMARK_TRIGGER_BRANCHES", "unstable")
 BENCHMARK_TRIGGER_ORGS = os.getenv("BENCHMARK_TRIGGER_ORGS", "redis")
+
+# Webhook PR diff-driven scoping. When a PR is labeled with the trigger label, derive
+# which command groups its diff touches and scope the run instead of executing the full
+# suite. Set BENCHMARK_PR_DIFF_SCOPING to a falsey value (0/false/no/off) to restore
+# full-suite-on-label.
+BENCHMARK_PR_DIFF_SCOPING = os.getenv(
+    "BENCHMARK_PR_DIFF_SCOPING", "1"
+).strip().lower() in ("1", "true", "yes", "on")
+# PRs changing more than this many files are treated as inherently broad -> full suite
+# (also bounds the synchronous GitHub pagination done inside the webhook request).
+try:
+    BENCHMARK_PR_MAX_FILES = int(os.getenv("BENCHMARK_PR_MAX_FILES", "100"))
+    if BENCHMARK_PR_MAX_FILES <= 0:
+        raise ValueError("must be > 0")
+except ValueError:
+    logging.warning(
+        "invalid BENCHMARK_PR_MAX_FILES (must be a positive int); using 100"
+    )
+    BENCHMARK_PR_MAX_FILES = 100
+# Diff-scoping needs to read PR files from the GitHub API. Without a token it runs
+# unauthenticated (60 req/hr) and will usually rate-limit -> silent full-suite fallback.
+if BENCHMARK_PR_DIFF_SCOPING and not GH_TOKEN:
+    logging.warning(
+        "BENCHMARK_PR_DIFF_SCOPING is on but GH_TOKEN is unset; PR diff lookups will hit "
+        "the 60/hr unauthenticated GitHub limit and degrade to full-suite runs"
+    )
