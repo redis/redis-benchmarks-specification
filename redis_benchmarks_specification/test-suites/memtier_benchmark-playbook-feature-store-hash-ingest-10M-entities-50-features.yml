@@ -7,12 +7,18 @@ description: |
   5%. Each entity is one hash written whole-row with a single 51-field HSET (50 feature fields +
   event_ts), pipelined — modeling a batch materialization job that rewrites a full row at once.
 
-  This is a one-time bulk load: with -n allkeys over a P (parallel, collision-free) key pattern, each
-  of the 10,000,000 entity keys is written EXACTLY ONCE, so the whole run measures the fresh-insert
-  HSET path — bulk-argument parsing (~104 args/command) and building a 51-entry listpack per key plus
-  the keyspace-dict insert/rehash as the dictionary grows from 0 to 10M. Because every key is written
-  once (no wrap, no overwrite), the measured code path does not change as the server under test gets
-  faster, keeping it sound for A/B comparison.
+  This is a one-time bulk load with a fixed, count-bounded amount of work (no --test-time): each of
+  the 100 connections (-c 10 -t 10) issues exactly -n 100000 HSETs, so the run does 100 x 100000 =
+  10,000,000 HSETs total. With the P (parallel) key pattern over the [1, 10000000] range, the 100
+  connections partition the keyspace into disjoint, collision-free sub-ranges, so those 10M HSETs
+  write each of the 10M entity keys EXACTLY ONCE (n_per_conn = key-range / (c x t) = 10000000 / 100 =
+  100000 — this coupling is load-bearing; changing -c/-t or the key range requires re-deriving -n).
+  The whole run therefore measures the fresh-insert HSET path — bulk-argument parsing (~104
+  args/command), building a 51-entry listpack per key, and the keyspace dict growing toward 10M
+  entries. Because the work is count-bounded (not time-bounded) and every key is written once (no
+  wrap, no overwrite), the measured code path does not change as the server under test gets faster,
+  keeping it sound for A/B comparison. (Reported Ops/sec is the mean across the 0->10M dict-growth
+  ramp; use the BEST<->WORST spread as the variance signal.)
 
   Encoding: listpack (51 fields < hash-max-listpack-entries 128; every value 8-24B and every field
   name <= 10B, both < hash-max-listpack-value 64B; default config, not overridden).
@@ -87,6 +93,7 @@ clientconfig:
     -n 100000
     -c 10
     -t 10
+
     --pipeline=50
     --key-minimum=1
     --key-maximum=10000000
