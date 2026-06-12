@@ -1,0 +1,144 @@
+version: 0.4
+name: memtier_benchmark-playbook-feature-store-hash-10M-entities-50-features
+description: |
+  Runs memtier_benchmark to simulate ONE specific online machine-learning feature-store layout on
+  Redis: ENTITY-MAJOR storage where each entity is a single hash holding all of that entity's feature
+  values, and single-entity online serving fetches the whole entity in one round-trip with HGETALL.
+  This is one of several feature-store serving layouts (see "Not modeled" below) — it is the one this
+  spec measures, not a claim that it is the only or dominant pattern.
+
+    - Each entity is ONE Redis hash, keyed `<prefix><entity-id>`, whose FIELDS are the feature
+      columns and whose VALUES are the serialized feature values, plus an `event_ts` metadata
+      timestamp field.
+    - Materialization writes the whole row at once: `HSET <key> f1 v1 ... fN vN event_ts <ts>`.
+    - Single-entity online serving reads the whole entity in ONE round-trip: `HGETALL <key>`.
+
+  Data shape:
+    - 10,000,000 entity hashes, key `feature_store:user_features:entity:<id>`.
+    - Each hash holds 50 feature fields (`feature_1`..`feature_50`) + `event_ts` = 51 fields.
+    - Values are realistic short scalar sizes (8..24 bytes) — the stringified scalars a feature store
+      serves (float scores, integer counts, booleans, RFC3339 timestamps, short categoricals).
+      Content is randomized at the right size — for HGETALL/HSET cost the value SIZE is what matters,
+      not the exact bytes — so the per-op serving cost is equivalent to typed scalars (numeric scalars
+      would listpack integer-encode slightly smaller).
+
+  Encoding: listpack (DEFAULT config, NOT overridden). 51 fields < hash-max-listpack-entries (128)
+  and every field/value <= hash-max-listpack-value (64B), so each entity hash is a listpack. HGETALL
+  walks a compact ~1.7KB listpack body (a cache-friendly contiguous read); at 10M keys the keyspace
+  dict lookup for a cold id is partly DRAM-bound, though the Zipf hot set keeps popular dict entries
+  warm. (An entity with >128 features would tip to hashtable; not modeled.)
+
+  Expected footprint: ~17 GB resident at 10M entities x 51 listpack fields (measured ~1.7 KB/entity:
+  feature-name strings are repeated per hash and account for a large share — Redis does not dedup
+  field names across hashes). At this scale the keyspace dict is well beyond cache, so the spec
+  exercises large-keyspace serving the existing small-keyspace HGETALL coverage cannot reach.
+
+  Command mix (read-dominated online serving, ~95:5):
+    - Whole-entity serving read (`HGETALL`): ratio 19
+    - Whole-row feature materialization write (`HSET` all 51 fields): ratio 1
+
+  Not modeled (intentional scope limits, NOT claims about all feature stores):
+    - HMGET-subset serving: layouts that fetch only a named subset of features per inference (a single
+      `HMGET key f1..fK` of K of the 50 fields) — a common alternative serving pattern — are out of
+      scope; this spec measures whole-entity HGETALL only.
+    - Per-feature-view freshness / TTL: the single `event_ts` stands in for what may be several
+      per-view timestamps, and no key TTL / active-expiry pressure is exercised (`save ""`, no expiry).
+    - Pipelined batch scoring (many entities per round-trip), cluster topology, and cold-start MISS
+      traffic (the keyspace is fully preloaded, so Misses/sec ~ 0) are not modeled.
+
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Hgetalls."Ops/sec"
+    - $."BEST RUN RESULTS".Hsets."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Misses/sec"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hgetalls."Ops/sec"
+    - $."ALL STATS".Hsets."Ops/sec"
+    - $."ALL STATS".Hgetalls."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hgetalls."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+
+dbconfig:
+  dataset_name: 10Mkeys-feature-store-hash-50-features-entity-major
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --data-size-range=8-24
+      --random-data
+      --key-prefix "feature_store:user_features:entity:"
+      --command='HSET __key__ feature_1 __data__ feature_2 __data__ feature_3 __data__ feature_4 __data__ feature_5 __data__ feature_6 __data__ feature_7 __data__ feature_8 __data__ feature_9 __data__ feature_10 __data__ feature_11 __data__ feature_12 __data__ feature_13 __data__ feature_14 __data__ feature_15 __data__ feature_16 __data__ feature_17 __data__ feature_18 __data__ feature_19 __data__ feature_20 __data__ feature_21 __data__ feature_22 __data__ feature_23 __data__ feature_24 __data__ feature_25 __data__ feature_26 __data__ feature_27 __data__ feature_28 __data__ feature_29 __data__ feature_30 __data__ feature_31 __data__ feature_32 __data__ feature_33 __data__ feature_34 __data__ feature_35 __data__ feature_36 __data__ feature_37 __data__ feature_38 __data__ feature_39 __data__ feature_40 __data__ feature_41 __data__ feature_42 __data__ feature_43 __data__ feature_44 __data__ feature_45 __data__ feature_46 __data__ feature_47 __data__ feature_48 __data__ feature_49 __data__ feature_50 __data__ event_ts __data__'
+      --command-key-pattern=P
+      --key-minimum=1
+      --key-maximum=10000000
+      -n allkeys
+      -c 1
+      -t 1
+      --pipeline 50
+      --hide-histogram
+  resources:
+    requests:
+      memory: 32g
+  dataset_description: 10 million entity hashes (one hash per entity, entity-major), each with 50
+    feature fields + an event_ts timestamp field (51 fields), values 8-24 bytes, listpack-encoded.
+
+tested-groups:
+- hash
+tested-commands:
+- hgetall
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size-range=8-24
+    --random-data
+    --key-prefix "feature_store:user_features:entity:"
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,99
+    --test-time=120
+    -c 50
+    -t 4
+    --key-minimum=1
+    --key-maximum=10000000
+    --command='HGETALL __key__'
+    --command-key-pattern=Z
+    --command-ratio=19
+    --command='HSET __key__ feature_1 __data__ feature_2 __data__ feature_3 __data__ feature_4 __data__ feature_5 __data__ feature_6 __data__ feature_7 __data__ feature_8 __data__ feature_9 __data__ feature_10 __data__ feature_11 __data__ feature_12 __data__ feature_13 __data__ feature_14 __data__ feature_15 __data__ feature_16 __data__ feature_17 __data__ feature_18 __data__ feature_19 __data__ feature_20 __data__ feature_21 __data__ feature_22 __data__ feature_23 __data__ feature_24 __data__ feature_25 __data__ feature_26 __data__ feature_27 __data__ feature_28 __data__ feature_29 __data__ feature_30 __data__ feature_31 __data__ feature_32 __data__ feature_33 __data__ feature_34 __data__ feature_35 __data__ feature_36 __data__ feature_37 __data__ feature_38 __data__ feature_39 __data__ feature_40 __data__ feature_41 __data__ feature_42 __data__ feature_43 __data__ feature_44 __data__ feature_45 __data__ feature_46 __data__ feature_47 __data__ feature_48 __data__ feature_49 __data__ feature_50 __data__ event_ts __data__'
+    --command-key-pattern=Z
+    --command-ratio=1
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 38

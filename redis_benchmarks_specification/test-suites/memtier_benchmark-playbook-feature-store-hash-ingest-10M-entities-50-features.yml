@@ -1,0 +1,108 @@
+version: 0.4
+name: memtier_benchmark-playbook-feature-store-hash-ingest-10M-entities-50-features
+description: |
+  Ingestion / materialization benchmark for an entity-major online ML feature store on Redis: it
+  measures the throughput of POPULATING the entity hashes — the write side that the companion serving
+  playbook (memtier_benchmark-playbook-feature-store-hash-10M-entities-50-features) only exercises at
+  5%. Each entity is one hash written whole-row with a single 51-field HSET (50 feature fields +
+  event_ts), pipelined — modeling a batch materialization job that rewrites a full row at once.
+
+  This is a one-time bulk load with a fixed, count-bounded amount of work (no --test-time): each of
+  the 100 connections (-c 10 -t 10) issues exactly -n 100000 HSETs, so the run does 100 x 100000 =
+  10,000,000 HSETs total. With the P (parallel) key pattern over the [1, 10000000] range, the 100
+  connections partition the keyspace into disjoint, collision-free sub-ranges, so those 10M HSETs
+  write each of the 10M entity keys EXACTLY ONCE (n_per_conn = key-range / (c x t) = 10000000 / 100 =
+  100000 — this coupling is load-bearing; changing -c/-t or the key range requires re-deriving -n).
+  The whole run therefore measures the fresh-insert HSET path — bulk-argument parsing (~104
+  args/command), building a 51-entry listpack per key, and the keyspace dict growing toward 10M
+  entries. Because the work is count-bounded (not time-bounded) and every key is written once (no
+  wrap, no overwrite), the measured code path does not change as the server under test gets faster,
+  keeping it sound for A/B comparison. (Reported Ops/sec is the mean across the 0->10M dict-growth
+  ramp; use the BEST<->WORST spread as the variance signal.)
+
+  Encoding: listpack (51 fields < hash-max-listpack-entries 128; every value 8-24B and every field
+  name <= 10B, both < hash-max-listpack-value 64B; default config, not overridden).
+
+  Metric of interest: HSET ingestion throughput (Hsets/Totals Ops/sec; for a single-command run these
+  are equal). Secondary: write p50/p99.
+
+  Not modeled (intentional scope limits, NOT claims about all feature stores):
+    - Partial-column / streaming materialization: per-feature-view producers that update a few fields
+      (HSET of K << 51 fields) rather than the whole row are out of scope; this measures full-row
+      batch materialization only.
+    - Persistence pressure: save is disabled and there is no AOF, so RDB fork/CoW and AOF fsync/rewrite
+      cost under heavy write load is excluded — real durable ingestion throughput will be lower.
+    - TTL/freshness-on-write, HDEL of null fields, and replication propagation to replicas are not
+      modeled (oss-standalone, no expiry).
+
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Hsets."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p99.00"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Hsets."Ops/sec"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Ops/sec"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Percentile Latencies"."p50.00"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hsets."Ops/sec"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 32g
+
+tested-groups:
+- hash
+tested-commands:
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size-range=8-24
+    --random-data
+    --distinct-client-seed
+    --key-prefix "feature_store:user_features:entity:"
+    --print-percentiles=50,99
+    -n 100000
+    -c 10
+    -t 10
+
+    --pipeline=50
+    --key-minimum=1
+    --key-maximum=10000000
+    --command='HSET __key__ feature_1 __data__ feature_2 __data__ feature_3 __data__ feature_4 __data__ feature_5 __data__ feature_6 __data__ feature_7 __data__ feature_8 __data__ feature_9 __data__ feature_10 __data__ feature_11 __data__ feature_12 __data__ feature_13 __data__ feature_14 __data__ feature_15 __data__ feature_16 __data__ feature_17 __data__ feature_18 __data__ feature_19 __data__ feature_20 __data__ feature_21 __data__ feature_22 __data__ feature_23 __data__ feature_24 __data__ feature_25 __data__ feature_26 __data__ feature_27 __data__ feature_28 __data__ feature_29 __data__ feature_30 __data__ feature_31 __data__ feature_32 __data__ feature_33 __data__ feature_34 __data__ feature_35 __data__ feature_36 __data__ feature_37 __data__ feature_38 __data__ feature_39 __data__ feature_40 __data__ feature_41 __data__ feature_42 __data__ feature_43 __data__ feature_44 __data__ feature_45 __data__ feature_46 __data__ feature_47 __data__ feature_48 __data__ feature_49 __data__ feature_50 __data__ event_ts __data__'
+    --command-key-pattern=P
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '10'
+      memory: 2g
+
+priority: 5
