@@ -17,7 +17,7 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --command="ZADD __key__ 1 e1 2 e2 3 e3 4 e4 5 e5 6 e6 7 e7 8 e8 9 e9 10 e10 11 e11 12 e12 13 e13 14 e14 15 e15 16 e16"
-      --command-key-pattern=P --key-minimum 1 --key-maximum 1000000 --key-prefix "zset:"
+      --command-key-pattern=P --key-minimum 1 --key-maximum 1000001 --key-prefix "zset:"
       -n 1000000 --hide-histogram -t 1 -c 1 --pipeline 50
   resources:
     requests:
