@@ -93,7 +93,6 @@ clientconfig:
     -n 100000
     -c 10
     -t 10
-
     --pipeline=50
     --key-minimum=1
     --key-maximum=10000000
