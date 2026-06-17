@@ -1,0 +1,60 @@
+version: 0.4
+name: memtier_benchmark-1key-hash-listpack-9-fields-short-values-hmset-pipeline-1
+description: >
+  Runs memtier_benchmark HMSET overwrite on a single listpack-encoded hash with 9 short
+  field/value pairs (values 3-20 bytes), mirroring the reporter's repro in
+  redis/redis#13876 (HMSET regression bisected to a25b153 / PR #13279). Each HMSET call
+  rewrites every field on the same key (`test_hmset`), so the workload exercises
+  `lpFindCmp` once per field — the function the issue identifies as the regressed path
+  after the `arg->` indirection was introduced. The existing
+  `memtier_benchmark-1Mkeys-load-hash-hmset-5-fields-with-1000B-values` spec uses
+  1000-byte values, which exceeds `hash-max-listpack-value=64` and therefore exercises
+  the hashtable encoding (different code path); this spec stays comfortably under
+  `hash-max-listpack-entries=128` and `hash-max-listpack-value=64` so the hash remains
+  listpack-encoded throughout.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "HMSET test_hmset username alice age 30 location Paris field4 weugfuwebgfiwebviu field5 ewuvbgevhberihvneirn field6 weufgewihiwer field7 4tvnreiknveir field8 23rgwnrighnkwn2 field9 23jrb234jbg34ibgi3"
+      --command-key-pattern P
+      -n 1
+      -c 1
+      -t 1
+      --hide-histogram
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-hash-listpack-9-fields-short-values
+  dataset_description: Single listpack-encoded hash key `test_hmset` with 9 fields (values 3-20 bytes).
+tested-commands:
+- hmset
+tested-groups:
+- hash
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "HMSET test_hmset username alice age 30 location Paris field4 weugfuwebgfiwebviu field5 ewuvbgevhberihvneirn field6 weufgewihiwer field7 4tvnreiknveir field8 23rgwnrighnkwn2 field9 23jrb234jbg34ibgi3"
+    --command-key-pattern R
+    --hide-histogram
+    --test-time 180
+    --pipeline 1
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 67
