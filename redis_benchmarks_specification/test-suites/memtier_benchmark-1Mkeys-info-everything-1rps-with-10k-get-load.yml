@@ -1,0 +1,58 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-info-everything-1rps-with-10k-get-load
+description: Reproduces a monitoring poll pattern under data-path load. One memtier client issues INFO everything from a single connection at 1 request/sec (a typical monitoring poll cadence), running concurrently with a second memtier client driving a steady 10,000 ops/sec GET workload over the same 1M-key dataset. Because Redis is single-threaded, each INFO everything (commandstats/latencystats/errorstats) steals main-thread time from the GET stream, so this spec surfaces the periodic tail-latency impact of monitoring polling on the data path rather than INFO throughput in isolation.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+# tested-commands/groups reflect the first clientconfig (the INFO poller), which
+# is what the spec-fields validator inspects; the GET data-path load runs as the
+# second clientconfig below.
+tested-commands:
+- info
+tested-groups:
+- server
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+# NOTE: the GET client is listed LAST on purpose. The multi-client runner keeps
+# the last-read memtier JSON as the exported "Totals", so the measured/exported
+# percentiles are the GET data-path client's, not the 1-RPS INFO poller's.
+clientconfigs:
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "INFO everything" -c 1 -t 1 --rate-limiting=1 --test-time 180
+    --print-percentiles=50,99,99.9,99.99 --hide-histogram
+  resources:
+    requests:
+      cpus: '1'
+      memory: 1g
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum 1 --key-maximum
+    1000000 -c 10 -t 1 --rate-limiting=1000 --test-time 180
+    --print-percentiles=50,99,99.9,99.99 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.90"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.99"
+priority: 50
