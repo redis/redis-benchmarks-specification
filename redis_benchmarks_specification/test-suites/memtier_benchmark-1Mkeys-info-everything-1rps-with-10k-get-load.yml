@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-info-everything-1rps-with-10k-get-load
-description: Reproduces a monitoring poll pattern under data-path load. One memtier client issues INFO everything from a single connection at 1 request/sec (a typical monitoring poll cadence), running concurrently with a second memtier client driving a steady 10,000 ops/sec GET workload over the same 1M-key dataset. Because Redis is single-threaded, each INFO everything (commandstats/latencystats/errorstats) steals main-thread time from the GET stream, so this spec surfaces the periodic tail-latency impact of monitoring polling on the data path rather than INFO throughput in isolation.
+description: Reproduces a monitoring poll pattern under data-path load. One memtier client issues INFO everything from a single connection at 1 request/sec (a typical monitoring poll cadence) while a second memtier client drives a steady, open-loop (rate-limited) 10,000 ops/sec GET workload over the same 1M-key dataset (10-byte string values, EMBSTR encoding). Because Redis is single-threaded, each INFO everything (commandstats/latencystats/errorstats, plus a per-connection clients section) steals main-thread time from the GET stream. With the offered GET rate fixed at 10,000 ops/sec, the number of requests a single stall delays is bounded by that arrival rate, not by the connection count — a few hundred connections already absorb the in-flight backlog of a millisecond-scale stall. The 1000-connection count (-c 250 -t 4) is a deliberate modeling choice representing a realistically large connected client base. Accepted caveat — because the INFO clients section is traversed per connection, 1000 connections also lengthen the INFO stall itself, so the measured tail conflates main-thread stat-collection cost with per-connection clients-section traversal cost; keep the connection count fixed when comparing builds. Metric of interest is the GET data-path p99.9/p99.99 tail (sampled over ~300 stall events in the 300s window), surfacing the periodic tail-latency impact of monitoring polling on the data path rather than INFO throughput in isolation.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -31,10 +31,16 @@ build-variants:
 # NOTE: the GET client is listed LAST on purpose. The multi-client runner keeps
 # the last-read memtier JSON as the exported "Totals", so the measured/exported
 # percentiles are the GET data-path client's, not the 1-RPS INFO poller's.
+# GET-client flag rationale: --rate-limiting=10/conn over 1000 conns = open-loop
+# 10k ops/sec (sub-saturation, avoids coordinated omission); --distinct-client-seed
+# decorrelates the 1000 R-pattern readers; --thread-conn-start-max-jitter-micros
+# spreads the 1000-conn connect storm so it stays out of the exported tail (it
+# decorrelates the connect storm, not steady-state per-conn rate phase). Both
+# clients use --test-time 300 so they overlap for the full window.
 clientconfigs:
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "INFO everything" -c 1 -t 1 --rate-limiting=1 --test-time 180
+  arguments: --command "INFO everything" -c 1 -t 1 --rate-limiting=1 --test-time 300
     --print-percentiles=50,99,99.9,99.99 --hide-histogram
   resources:
     requests:
@@ -43,11 +49,12 @@ clientconfigs:
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum 1 --key-maximum
-    1000000 -c 10 -t 1 --rate-limiting=1000 --test-time 180
+    1000000 -c 250 -t 4 --rate-limiting=10 --distinct-client-seed
+    --thread-conn-start-max-jitter-micros=50000 --test-time 300
     --print-percentiles=50,99,99.9,99.99 --hide-histogram
   resources:
     requests:
-      cpus: '4'
+      cpus: '6'
       memory: 2g
 exporter:
   redistimeseries:
