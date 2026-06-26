@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-session-caching-hash-100k-sessions-with-hfe-expired-fields-hkeys
+name: memtier_benchmark-playbook-session-caching-hash-100k-sessions-with-hfe-expired-fields-hkeys
 description: |
   Runs memtier_benchmark to stress `HKEYS` on hashes that contain a large fraction
   of **expired hash fields** (hash-field expiration / HFE).
