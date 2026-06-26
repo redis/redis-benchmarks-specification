@@ -21,12 +21,12 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: >
-      --command "ZADD test_zadd __key__ sortset-__key__"
+      --command "ZADD test_zadd 1 sortset-__key__"
       --command-key-pattern P
       --key-prefix ""
       --key-minimum 1
-      --key-maximum 1000
-      -n 1000
+      --key-maximum 1001
+      -n allkeys
       -c 1
       -t 1
       --hide-histogram
@@ -34,7 +34,7 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-hashtable-1K-elements-sortset-named
-  dataset_description: Single zset key `test_zadd` with 1000 members named `sortset-1`..`sortset-1000` (scores 1..1000); exceeds zset-max-listpack-entries=128, so skiplist+dict encoded.
+  dataset_description: Single zset key `test_zadd` with 1000 members named `sortset-1`..`sortset-1000` (all at score 1; ZSCAN walks the dict, so member-name distribution is what matters); exceeds zset-max-listpack-entries=128, so skiplist+dict encoded.
 tested-commands:
 - zscan
 tested-groups:
