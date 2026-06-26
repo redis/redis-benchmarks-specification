@@ -1,9 +1,18 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.3.18"
+version = "0.3.23"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
+# Ship in-package data files. These are needed because the blanket `*.json` rule in
+# .gitignore makes them untracked -> invisible to Poetry's git-based file discovery,
+# so they must be force-tracked (see .gitignore negation) AND listed here to land in
+# the wheel. The dict `format=` form needs poetry-core >= 1.1; the build-system below
+# pins >= 1.5.0 for safety.
+include = [
+    { path = "redis_benchmarks_specification/__common__/files-to-groups.json", format = ["sdist", "wheel"] },
+    { path = "redis_benchmarks_specification/__common__/core-specs.json", format = ["sdist", "wheel"] },
+]
 
 [tool.poetry.dependencies]
 python = "^3.10.0"
@@ -54,7 +63,9 @@ docker = ">=7.1.0"
 docker = "^7.1.0"
 
 [build-system]
-requires = ["poetry_core>=1.0.0"]
+# >=1.5.0: the dict-form `include` with `format=[...]` (used to ship in-package json
+# data files into the wheel) is only honored by poetry-core >= 1.1; pin higher for safety.
+requires = ["poetry_core>=1.5.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
