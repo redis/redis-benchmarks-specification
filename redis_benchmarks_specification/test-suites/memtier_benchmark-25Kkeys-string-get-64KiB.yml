@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-25Kkeys-string-get-64KiB
+description: 'Runs memtier_benchmark for a keyspace of 25K STRING keys, each holding
+  a 65536-byte (64 KiB) value, issuing read-only GET. Values >44B are OBJ_ENCODING_RAW.
+  At 64 KiB the reply takes the large-object copy-avoidance path: for a RAW string,
+  isCopyAvoidPreferred (networking.c) returns true once len >= COPY_AVOID_MIN_STRING_SIZE
+  (16384, no IO threads) / COPY_AVOID_MIN_STRING_SIZE_THREADED (65536, with IO threads),
+  and reply-copy-avoidance is enabled by default (server.reply_copy_avoidance_enabled=1).
+  64 KiB is decisively past BOTH thresholds, so the value is served zero-copy by reference
+  (bulkStrRef) through the writev/gather path REGARDLESS of the io-threads setting — not
+  memcpy''d into the per-client reply buffer. This is the large-object reply-serving
+  regime the existing GET ladder (10B..1KiB, all far below 16384, served via the
+  small-reply static buffer copy) never reaches. 25K x 64 KiB = ~1.6 GB working set, far
+  larger than L3, so each GET is a cold DRAM value fetch. Metric of interest: p50 / p99
+  latency (Ops/sec secondary) of the large-value reply path. Concurrency is deliberately
+  kept low (-c 1 -t 1 --pipeline 1): a 64 KiB value saturates the NIC at far lower ops/sec
+  than a small value, so a single connection keeps the probe sub-saturation and measures
+  per-op reply latency rather than link bandwidth. Encoding: RAW string.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 25000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 65536 --pipeline 50 -n allkeys --ratio 1:0 --key-pattern
+      P:P -c 1 -t 4 --hide-histogram --key-minimum 1 --key-maximum 25000
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 25Kkeys-string-64KiB-size
+  dataset_description: This dataset contains 25 thousand string keys, each with a
+    RAW-encoded value of 64 KiB.
+tested-commands:
+- get
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 1 --data-size 65536 --ratio 0:1 --distinct-client-seed --key-pattern
+    R:R -c 1 -t 1 --hide-histogram --test-time 180 --key-minimum 1 --key-maximum 25000
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+tested-groups:
+- string
+priority: 10
