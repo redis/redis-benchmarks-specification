@@ -1,0 +1,48 @@
+version: 0.4
+name: memtier_benchmark-100keys-mset-overwrite-10B-pipeline-1
+description: 'Runs memtier_benchmark over a tiny keyspace of 100 STRING keys (~11-byte
+  key names, matching a real report) repeatedly overwritten with MSET (3 key-value
+  pairs per command). Values are 10 bytes. The tiny keyspace keeps the Redis main
+  dict and all key objects resident in L1/L2 cache with near-zero hash collisions and
+  no rehashing, so dictFind is cache-latency dominated rather than DRAM-latency
+  dominated. Encoding: EMBSTR (10B value < 44B threshold). Metric of interest is p50
+  latency (lower is better). Designed to surface dictFind fast-path regressions on a
+  cache-hot, low-collision keyspace (redis/redis#15320 regime) that the existing
+  1M-10M distinct-key MSET load specs (DRAM-latency dominated) cannot show.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SET __key__ __data__" --command-key-pattern=P --key-prefix
+      "test_mset_" --key-minimum 1 --key-maximum 101 --data-size 10 -n allkeys
+      --hide-histogram -t 1 -c 1 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 100keys-string-10B-embstr
+  dataset_description: 100 string keys named test_mset_1..test_mset_100 (~11-byte
+    keys) with 10-byte EMBSTR values. The tiny keyspace fits entirely in L1/L2 cache,
+    making dictFind cache-latency dominated with no rehashing.
+tested-groups:
+- string
+tested-commands:
+- mset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="MSET __key__ __data__ __key__ __data__ __key__ __data__" --command-key-pattern=R --key-prefix "test_mset_" --key-minimum 1 --key-maximum 100 --data-size 10 --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 69
