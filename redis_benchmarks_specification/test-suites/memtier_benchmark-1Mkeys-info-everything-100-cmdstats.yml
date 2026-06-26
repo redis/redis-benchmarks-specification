@@ -1,0 +1,155 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-info-everything-100-cmdstats
+description: Measures INFO everything throughput (the metric of interest) on a server whose command table has 100 distinct command histograms populated, with p99.9/p99.99 reported as secondary closed-loop diagnostics. INFO everything emits the commandstats and latencystats sections, which iterate every command's histogram, so its per-call main-thread cost grows with the number of exercised commands. This variant fixes the injected count at 100 distinct commands (populated once via an init_lua EVAL). The effective table is 100 plus a small FIXED overhead (the one init EVAL and the harness CONFIG RESETSTAT, plus the run's own INFO/AUTH/HELLO) that is identical across the 1/5/20/50/100 siblings, so the inter-variant difference equals the injected 100 and the suite measures the slope of INFO cost versus command-table size. 1M 10B-value string keys (EMBSTR) are also loaded for realistic dataset size and apples-to-apples comparison with the generic sibling; the keyspace does not affect the measured INFO cost. Load is 40 closed-loop connections hammering INFO everything for 180s.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    latency-tracking: 'yes'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  init_lua: |-
+    -- INFO everything command-table sizing: the N distinct commands below populate N
+    -- commandstats+latencystats histograms (the dimension INFO everything iterates).
+    -- redis.pcall so an errored command still registers its histogram without aborting;
+    -- the loop only adds a few samples per histogram (count = the distinct command set).
+    for i=1,50 do
+    redis.pcall('SET','cs:s','v')
+    redis.pcall('GET','cs:s')
+    redis.pcall('HSET','cs:h','f1','v1','f2','v2')
+    redis.pcall('HGET','cs:h','f1')
+    redis.pcall('EXPIRE','cs:s',1000)
+    redis.pcall('INCR','cs:n')
+    redis.pcall('DEL','cs:s2')
+    redis.pcall('EXISTS','cs:s')
+    redis.pcall('TTL','cs:s')
+    redis.pcall('LPUSH','cs:l','a','b','c')
+    redis.pcall('LRANGE','cs:l',0,-1)
+    redis.pcall('RPUSH','cs:l','d')
+    redis.pcall('LLEN','cs:l')
+    redis.pcall('SADD','cs:set','x','y','z')
+    redis.pcall('SCARD','cs:set')
+    redis.pcall('SISMEMBER','cs:set','x')
+    redis.pcall('ZADD','cs:z',1,'a',2,'b',3,'c')
+    redis.pcall('ZSCORE','cs:z','a')
+    redis.pcall('ZRANGE','cs:z',0,-1)
+    redis.pcall('TYPE','cs:s')
+    redis.pcall('APPEND','cs:s','x')
+    redis.pcall('STRLEN','cs:s')
+    redis.pcall('GETRANGE','cs:s',0,2)
+    redis.pcall('SETRANGE','cs:s',0,'Z')
+    redis.pcall('INCRBY','cs:n',5)
+    redis.pcall('DECR','cs:n')
+    redis.pcall('INCRBYFLOAT','cs:f',1.5)
+    redis.pcall('SETNX','cs:s3','v')
+    redis.pcall('MSET','cs:m1','1','cs:m2','2')
+    redis.pcall('MGET','cs:m1','cs:m2')
+    redis.pcall('HMGET','cs:h','f1','f2')
+    redis.pcall('HDEL','cs:h','f2')
+    redis.pcall('HLEN','cs:h')
+    redis.pcall('HEXISTS','cs:h','f1')
+    redis.pcall('HGETALL','cs:h')
+    redis.pcall('HINCRBY','cs:h','cnt',1)
+    redis.pcall('HKEYS','cs:h')
+    redis.pcall('LINDEX','cs:l',0)
+    redis.pcall('LPOP','cs:l')
+    redis.pcall('RPOP','cs:l')
+    redis.pcall('SREM','cs:set','z')
+    redis.pcall('SMEMBERS','cs:set')
+    redis.pcall('SINTERSTORE','cs:set3','cs:set','cs:set2')
+    redis.pcall('ZCARD','cs:z')
+    redis.pcall('ZRANK','cs:z','a')
+    redis.pcall('ZINCRBY','cs:z',1,'a')
+    redis.pcall('ZPOPMIN','cs:z')
+    redis.pcall('PTTL','cs:s')
+    redis.pcall('PERSIST','cs:s')
+    redis.pcall('UNLINK','cs:m2')
+    redis.pcall('GETSET','cs:s','w')
+    redis.pcall('GETDEL','cs:s4')
+    redis.pcall('DECRBY','cs:n',2)
+    redis.pcall('SETEX','cs:s5',1000,'v')
+    redis.pcall('PSETEX','cs:s6',1000000,'v')
+    redis.pcall('SETBIT','cs:b',7,1)
+    redis.pcall('GETBIT','cs:b',7)
+    redis.pcall('BITCOUNT','cs:b')
+    redis.pcall('BITPOS','cs:b',1)
+    redis.pcall('BITOP','AND','cs:bdst','cs:b','cs:b')
+    redis.pcall('HVALS','cs:h')
+    redis.pcall('HSTRLEN','cs:h','f1')
+    redis.pcall('HSETNX','cs:h','f9','v')
+    redis.pcall('HINCRBYFLOAT','cs:h','cf',1.5)
+    redis.pcall('HSCAN','cs:h',0)
+    redis.pcall('HRANDFIELD','cs:h')
+    redis.pcall('RPUSHX','cs:l','e')
+    redis.pcall('LPUSHX','cs:l','f')
+    redis.pcall('LSET','cs:l',0,'Z')
+    redis.pcall('LINSERT','cs:l','BEFORE','Z','Y')
+    redis.pcall('LREM','cs:l',1,'Y')
+    redis.pcall('LTRIM','cs:l',0,10)
+    redis.pcall('LPOS','cs:l','Z')
+    redis.pcall('SMISMEMBER','cs:set','x','y')
+    redis.pcall('SUNIONSTORE','cs:set4','cs:set','cs:set2')
+    redis.pcall('SDIFFSTORE','cs:set5','cs:set','cs:set2')
+    redis.pcall('SSCAN','cs:set',0)
+    redis.pcall('SMOVE','cs:set','cs:set2','x')
+    redis.pcall('SINTER','cs:set','cs:set')
+    redis.pcall('SUNION','cs:set','cs:set2')
+    redis.pcall('SDIFF','cs:set','cs:set2')
+    redis.pcall('ZCOUNT','cs:z','-inf','+inf')
+    redis.pcall('ZREVRANK','cs:z','b')
+    redis.pcall('ZRANGEBYSCORE','cs:z','-inf','+inf')
+    redis.pcall('ZMSCORE','cs:z','a','b')
+    redis.pcall('ZPOPMAX','cs:z')
+    redis.pcall('ZREMRANGEBYRANK','cs:z',0,0)
+    redis.pcall('ZSCAN','cs:z',0)
+    redis.pcall('ZUNIONSTORE','cs:z3',2,'cs:z','cs:z2')
+    redis.pcall('ZRANDMEMBER','cs:z')
+    redis.pcall('PEXPIRE','cs:s',1000000)
+    redis.pcall('TOUCH','cs:s')
+    redis.pcall('COPY','cs:s','cs:scopy','REPLACE')
+    redis.pcall('PFADD','cs:hll','a','b','c')
+    redis.pcall('PFCOUNT','cs:hll')
+    redis.pcall('PFMERGE','cs:hll3','cs:hll','cs:hll2')
+    redis.pcall('GEOADD','cs:geo',13.361,38.115,'a',15.087,37.502,'b')
+    redis.pcall('GEODIST','cs:geo','a','b')
+    redis.pcall('XADD','cs:x','*','f','v')
+    redis.pcall('XLEN','cs:x')
+    end
+    return 100
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+# tested-commands/groups reflect the measured command (INFO); init_lua only shapes
+# the command table the INFO call has to format.
+tested-commands:
+- info
+tested-groups:
+- server
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "INFO everything" -c 10 -t 4 --hide-histogram --test-time 180
+    --print-percentiles=50,99,99.9,99.99
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.90"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.99"
+priority: 50
