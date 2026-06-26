@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1K-elements-zscan-match-count-100
+description: >
+  Runs memtier_benchmark ZSCAN with MATCH pattern and COUNT 100 on a single
+  hashtable-encoded zset (1000 elements, exceeds `zset-max-listpack-entries=128`
+  so the zset is dict+skiplist). Mirrors the reporter's repro in redis/redis#13855
+  (`ZSCAN test_zadd 0 MATCH sortset*1* COUNT 100`). The currently registered ZSCAN
+  specs (`memtier_benchmark-1key-zset-{100,1K}-elements-zscan`) issue `ZSCAN key 0`
+  with no MATCH / no COUNT, which iterates a small fixed number of slots; this spec
+  exercises the scan-callback path identified in the issue, where commit
+  `7f0a7f0a` moved the TYPE filtering branch into `scanCallback` and added an
+  unconditional `if (!o && data->type != LLONG_MAX)` check that is evaluated for
+  every visited entry — quickly dominated by the COUNT 100 walk on a populated
+  hashtable.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "ZADD test_zadd 1 sortset-__key__"
+      --command-key-pattern P
+      --key-prefix ""
+      --key-minimum 1
+      --key-maximum 1001
+      -n allkeys
+      -c 1
+      -t 1
+      --hide-histogram
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-hashtable-1K-elements-sortset-named
+  dataset_description: Single zset key `test_zadd` with 1000 members named `sortset-1`..`sortset-1000` (all at score 1; ZSCAN walks the dict, so member-name distribution is what matters); exceeds zset-max-listpack-entries=128, so skiplist+dict encoded.
+tested-commands:
+- zscan
+tested-groups:
+- sorted-set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "ZSCAN test_zadd 0 MATCH sortset*1* COUNT 100"
+    --command-key-pattern R
+    --hide-histogram
+    --test-time 180
+    --pipeline 1
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 67
