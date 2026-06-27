@@ -1,0 +1,69 @@
+version: 0.4
+name: memtier_benchmark-2000conns-client-list
+description: >
+  CLIENT LIST cost at high connection scale. A PING keepalive client holds ~2000 open
+  connections (-c 250 -t 8, 1 thread/core); a separate single-connection prober issues
+  CLIENT LIST at a low fixed open-loop rate (--rate-limiting), so each CLIENT LIST walks
+  all ~2000 clients one-at-a-time without self-queueing or coordinated omission. The
+  exported metric is the prober's CLIENT LIST latency (its Totals — the prober is the
+  last clientconfig, so the multi-client runner exports its JSON): it captures the server
+  main-thread O(N-connections) client iteration + per-client formatting
+  (catClientInfoString) plus the ~2000-line reply transfer, as a connection-scale
+  regression sentinel (not a pure server-CPU isolation — pair with a profiler TMA capture
+  to attribute the walk CPU). No keyspace required.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+# tested-commands/groups reflect the CLIENT LIST prober, the exported (last) clientconfig
+# and the command this spec measures; the PING keepalive client only holds the connections.
+tested-commands:
+- client|list
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+# Two concurrent clients (multitool suite — runs ONLY on a BENCHMARK_MULTITOOL_ENABLED
+# runner, e.g. m7i.metal-24xl; other runners skip it). EXPORT-PROVENANCE INVARIANT: the
+# runner exports the LAST memtier clientconfig's JSON (by client index — it overwrites a
+# single memtier_json slot per memtier client). The CLIENT LIST prober MUST therefore stay
+# the LAST clientconfig so the exported "Totals" is its CLIENT LIST latency (~ms), not the
+# PING client's (~sub-ms) — same convention as info-everything-1rps-with-10k-get-load,
+# whose measured client is likewise its last. Verify on the first fleet run that the
+# exported p50 matches the prober (~ms), not PING. Both run --test-time 180 to overlap fully.
+clientconfigs:
+- run_image: redislabs/memtier_benchmark:edge   # idle-hold: keeps ~2000 connections OPEN
+  tool: memtier_benchmark
+  # --rate-limiting=1 = the minimum (1 PING/s per conn): the 2000 connections are held
+  # open and present in CLIENT LIST while adding only ~2000 trivial PING/s of main-thread
+  # work (negligible), so the prober measures the O(N) walk, not a queue behind PING load.
+  arguments: --command "PING" -c 250 -t 8 --rate-limiting=1
+    --thread-conn-start-max-jitter-micros=50000 --test-time 180 --hide-histogram
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+- run_image: redislabs/memtier_benchmark:edge   # CLIENT LIST prober: 1 conn, low fixed rate
+  tool: memtier_benchmark
+  arguments: --command "CLIENT LIST" -c 1 -t 1 --rate-limiting=10 --test-time 180
+    --print-percentiles "50,99" --hide-histogram
+  resources:
+    requests:
+      cpus: '1'
+      memory: 1g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+priority: 50
