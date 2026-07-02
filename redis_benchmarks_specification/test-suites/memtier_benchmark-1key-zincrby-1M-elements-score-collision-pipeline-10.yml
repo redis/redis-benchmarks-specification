@@ -1,0 +1,61 @@
+version: 0.4
+name: memtier_benchmark-1key-zincrby-1M-elements-score-collision-pipeline-10
+description: 'Throughput counterpart of 1key-zincrby-1M-elements-score-collision-pipeline-1.
+  Runs memtier_benchmark against a single SORTED SET key of 1M elements in which EVERY
+  member shares the same initial score (0); ZINCRBY then moves members by +1. Because
+  R-uniform selection over 1M members keeps the per-member touch count Poisson-distributed
+  with a single-digit mean, the live scores stay concentrated in a narrow (translating)
+  integer band, so every reinsert lands into a dense (tens-of-thousands-deep) equal-score
+  run for the whole 180s window. The skiplist orders by (score, member) and only falls back
+  to member-string sdscmp when scores are EQUAL (zslCompareWithNode -> sdscmp in t_zset.c),
+  so each update walk does O(log run_length) member-string compares instead of the cheap
+  early-terminating score compares of the distinct-score sibling — i.e. essentially every
+  ZINCRBY hits the equal-neighbor skiplist path (~99.8% fast-path firing; only a ~0.2-1%
+  leading-edge tail — members pushed to a brand-new maximum score with no equal-score
+  neighbor yet — takes the ordinary path). Members are numeric-string SDS; the skiplist
+  stores members as sds and compares them via sdscmp regardless of numeric form. Unlike the
+  -c 1 -t 1 --pipeline 1
+  latency-probe sibling (whose Ops/sec is capped by the per-op kernel write() syscall, masking
+  the per-op skiplist-walk CPU cost), this variant SATURATES the single-threaded server core
+  with 200 connections (-t 4 -c 50) at --pipeline 10, so the
+  syscall cost is amortized ~10x and the per-op skiplist-walk cost becomes the binding
+  constraint — surfacing any equal-score-run walk optimization as a throughput delta.
+  Encoding: skiplist+hashtable (1,000,000 elements, exceeds zset-max-listpack-entries 128).
+  Metric of interest: Ops/sec (throughput) of the saturated ZINCRBY equal-score-run walk.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="ZADD lb 0 __key__" --command-key-pattern=P --key-maximum
+      1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-score-collision
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    every element sharing the same initial score (0) so the skiplist holds a single
+    1M-long equal-score run.
+tested-groups:
+- sorted-set
+tested-commands:
+- zincrby
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINCRBY lb 1 __key__" -t 4 -c 50 --key-maximum 999999 --command-key-pattern=R
+    --key-prefix "" --hide-histogram --test-time 180 --pipeline 10
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 67
