@@ -1,0 +1,48 @@
+version: 0.4
+name: memtier_benchmark-1key-set-10K-elements-hashtable-srandmember-count-100
+description: 'Runs memtier_benchmark against a single SET key of 10,000 elements, issuing
+  SRANDMEMBER key 100 (the positive-count, unique-elements variant). Because the requested
+  count (100) is a small fraction of the set (100*3 <= 10000), srandmemberWithCountCommand takes
+  its CASE 4 strategy: it repeatedly samples a random member into an auxiliary dictionary until
+  it has collected `count` unique members. For a hashtable-encoded set the generic path
+  heap-allocates a fresh SDS copy per sampled member; this spec exercises that per-sample
+  allocation churn on the small-count CASE 4 path (the common "sample a handful of random
+  members" usage). Companion to the count-5K (CASE 3) spec. Encoding: hashtable (10,000 integer
+  elements exceed set-max-intset-entries 512 and set-max-listpack-entries 128). Metric of
+  interest: Ops/sec (throughput); the small 100-element reply keeps the client cheap so the
+  server-side sampling/allocation cost dominates the delta.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SADD set:10K:elements __key__" --command-key-pattern=P --key-maximum
+      10000 --key-prefix "" -n 10000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-set-10K-elements-int
+  dataset_description: This dataset contains 1 set key with 10,000 integer elements
+    (hashtable-encoded, exceeds set-max-intset-entries 512).
+tested-groups:
+- set
+tested-commands:
+- srandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SRANDMEMBER set:10K:elements 100" --pipeline 10 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 1

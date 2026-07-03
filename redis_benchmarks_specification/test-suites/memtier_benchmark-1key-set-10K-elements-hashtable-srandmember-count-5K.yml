@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-1key-set-10K-elements-hashtable-srandmember-count-5K
+description: 'Runs memtier_benchmark against a single SET key of 10,000 elements, issuing
+  SRANDMEMBER key 5000 (the positive-count, unique-elements variant). Because the requested
+  count (5000) is a large fraction of the set (5000*3 > 10000), srandmemberWithCountCommand
+  takes its CASE 3 strategy: it builds an auxiliary dictionary holding the WHOLE set and then
+  removes random elements down to the requested count. For a hashtable-encoded set every one of
+  those inserted members is a heap-allocated SDS in the generic path, so CASE 3 is dominated by
+  per-element sds allocation + free churn (~one alloc/free per set element per call). This spec
+  exercises that allocation-heavy CASE 3 large-fraction path on a hashtable set. Encoding:
+  hashtable (10,000 integer elements exceed set-max-intset-entries 512 and
+  set-max-listpack-entries 128). Metric of interest: Ops/sec (throughput). A modest --pipeline 4
+  keeps the single-threaded server continuously busy on the CASE 3 allocation path (avoids an
+  RTT-bound closed loop) while bounding in-flight reply memory for the large 5000-element replies.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SADD set:10K:elements __key__" --command-key-pattern=P --key-maximum
+      10000 --key-prefix "" -n 10000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-set-10K-elements-int
+  dataset_description: This dataset contains 1 set key with 10,000 integer elements
+    (hashtable-encoded, exceeds set-max-intset-entries 512).
+tested-groups:
+- set
+tested-commands:
+- srandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SRANDMEMBER set:10K:elements 5000" --pipeline 4 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 1
