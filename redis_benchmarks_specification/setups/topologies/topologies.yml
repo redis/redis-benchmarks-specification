@@ -117,6 +117,49 @@ spec:
       requests:
         cpus: "3"
         memory: "30g"
+  # Persistence-enabled replica setups. Policy is encoded in the setup name
+  # (…-rdb, …-aof-everysec) because deployment names are the comparison key in
+  # the results TSDB and cannot be renamed later without breaking continuity.
+  #
+  # How the persistence override works (order is load-bearing): the coordinator
+  # emits a spec's dbconfig configuration-parameters FIRST and the topology's
+  # redis_arguments AFTER them on the redis-server command line. `save` is NOT
+  # last-wins — the first save directive RESETS the save points and every later
+  # one APPENDS. So a spec that sets `save: '""'` (reset to none) combined with
+  # this topology's `--save 10 1000` yields exactly one save point (10/1000).
+  # Specs using the -rdb setup MUST set `save: '""'` in configuration-parameters;
+  # a spec with a non-empty save value would ACCUMULATE both schedules.
+  # Both primary AND replica receive these arguments (replicas persist too,
+  # mirroring a typical HA deployment; per-replica dbfilename/appendfilename
+  # overrides are appended after them by the coordinator).
+  #
+  # cpus deliberately matches the plain oss-standalone-01-replicas setup
+  # (primary 1 core, replica 1 core) so results are directly comparable to that
+  # baseline cell. The bgsave / AOF-rewrite fork child inherits the primary's
+  # cpuset and competes with the main thread — that contention is part of the
+  # phenomenon these setups exist to measure.
+  - name: oss-standalone-01-replicas-rdb
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+      placement: "sparse"
+    redis_arguments: --save 10 1000
+    resources:
+      requests:
+        cpus: "2"
+        memory: "20g"
+  - name: oss-standalone-01-replicas-aof-everysec
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 1
+      placement: "sparse"
+    redis_arguments: --appendonly yes --appendfsync everysec
+    resources:
+      requests:
+        cpus: "2"
+        memory: "20g"
   - name: oss-standalone-01-replicas-02-io-threads
     type: oss-standalone
     redis_topology:
