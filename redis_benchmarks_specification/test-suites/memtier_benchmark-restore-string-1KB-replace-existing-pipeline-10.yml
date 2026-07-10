@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-restore-string-1KB-replace-existing-pipeline-10
-description: 'RESTORE ... REPLACE of a 1KB (incompressible) RAW string DUMP payload against a small pre-populated keyspace exercising the replace dbDelete+dbAdd path, at pipeline depth 10 (throughput regime: amortized round-trips, max ops/sec). Payload was produced by a real SET/HSET + DUMP on Redis 7.4 (RDB version 12); accepted by any server with RDB_VERSION >= 12 (Redis >= 7.4). Measures the restoreCommand insertion path (verifyDumpPayload -> rdbLoadObject -> dbDelete+dbAdd). Regenerate the payload from DUMP if bumping the pinned RDB version.'
+description: 'RESTORE ... REPLACE of a 1KB (incompressible) RAW string DUMP payload against a small pre-populated keyspace exercising the replace dbDelete+dbAdd path, at pipeline depth 10 (throughput regime: amortized round-trips, max ops/sec). Payload was produced by a real SET/HSET + DUMP on Redis 7.4 (RDB version 12); accepted by any server with RDB_VERSION >= 12 (Redis >= 7.4). Measures the restoreCommand insertion path (verifyDumpPayload -> rdbLoadObject -> dbDelete+dbAdd). Regenerate the payload from DUMP if bumping the pinned RDB version. The 1000-key working set is deliberately tiny and cache-resident, isolating the replace code path (dbDelete+dbAdd) from memory effects.'
 dbconfig:
   configuration-parameters:
     save: '""'

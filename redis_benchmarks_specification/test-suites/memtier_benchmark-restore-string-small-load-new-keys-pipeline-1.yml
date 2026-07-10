@@ -1,12 +1,12 @@
 version: 0.4
 name: memtier_benchmark-restore-string-small-load-new-keys-pipeline-1
-description: 'RESTORE of a 10-byte EMBSTR DUMP payload against fresh (non-existent) keys exercising the new-key dbAdd insertion path, at pipeline depth 1 (latency regime: clean p50/p99 per RESTORE round-trip). Payload was produced by a real SET/HSET + DUMP on Redis 7.4 (RDB version 12); accepted by any server with RDB_VERSION >= 12 (Redis >= 7.4). Measures the restoreCommand insertion path (verifyDumpPayload -> rdbLoadObject -> dbAdd). Regenerate the payload from DUMP if bumping the pinned RDB version.'
+description: 'RESTORE of a 10-byte EMBSTR DUMP payload against fresh (non-existent) keys exercising the new-key dbAdd insertion path, at pipeline depth 1 (latency regime: clean p50/p99 per RESTORE round-trip). Payload was produced by a real SET/HSET + DUMP on Redis 7.4 (RDB version 12); accepted by any server with RDB_VERSION >= 12 (Redis >= 7.4). Measures the restoreCommand insertion path (verifyDumpPayload -> rdbLoadObject -> dbAdd). Regenerate the payload from DUMP if bumping the pinned RDB version. NOTE: the run inserts fresh keys for its entire duration, so the keyspace grows continuously across the measured window (dict-rehash cost is part of what is measured, and it drifts upward as the table grows - inherent to load-shape specs); peak memory scales with achieved throughput x test-time, reflected in the memory request.'
 dbconfig:
   configuration-parameters:
     save: '""'
   resources:
     requests:
-      memory: 1g
+      memory: 4g
 tested-groups:
 - generic
 tested-commands:
@@ -17,12 +17,17 @@ build-variants:
 - gcc:15.2.0-amd64-debian-bookworm-default
 - gcc:15.2.0-arm64-debian-bookworm-default
 - dockerhub
+  # No-wrap invariant: the 1..1e9 key range is P-partitioned across all connections
+  # (range/(clients*threads) keys per connection) and must stay far above the ops one
+  # connection can issue in --test-time. Wrapping a slice would hit BUSYKEY errors
+  # (no REPLACE on this spec) and silently benchmark the error path instead of dbAdd.
+  # Keep a >5x margin when changing -c/-t/--test-time.
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command 'RESTORE __key__ 0 "\x00\x0a\x41\x41\x41\x41\x41\x41\x41\x41\x41\x41\x0c\x00\x86\xc3\x89\x83\xde\x57\xe3\x8a"' --command-key-pattern=P --key-prefix "restore_" --key-minimum 1 --key-maximum 1000000000 --pipeline 1 -c 1 -t 1 --test-time 180 --hide-histogram
   resources:
     requests:
-      cpus: '4'
+      cpus: '2'
       memory: 2g
 priority: 111
