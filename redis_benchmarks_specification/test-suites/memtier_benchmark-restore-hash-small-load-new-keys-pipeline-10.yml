@@ -1,0 +1,28 @@
+version: 0.4
+name: memtier_benchmark-restore-hash-small-load-new-keys-pipeline-10
+description: 'RESTORE of a 3-field listpack-encoded hash DUMP payload against fresh (non-existent) keys exercising the new-key dbAdd insertion path, at pipeline depth 10 (throughput regime: amortized round-trips, max ops/sec). Payload was produced by a real SET/HSET + DUMP on Redis 7.4 (RDB version 12); accepted by any server with RDB_VERSION >= 12 (Redis >= 7.4). Measures the restoreCommand insertion path (verifyDumpPayload -> rdbLoadObject -> dbAdd). Regenerate the payload from DUMP if bumping the pinned RDB version.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+tested-groups:
+- generic
+tested-commands:
+- restore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command 'RESTORE __key__ 0 "\x10\x1f\x1f\x00\x00\x00\x06\x00\x82\x66\x31\x03\x82\x76\x31\x03\x82\x66\x32\x03\x82\x76\x32\x03\x82\x66\x33\x03\x82\x76\x33\x03\xff\x0c\x00\xee\x64\x56\xd6\x2f\x81\x0f\xa4"' --command-key-pattern=P --key-prefix "restore_" --key-minimum 1 --key-maximum 1000000000 --pipeline 10 -c 50 -t 4 --test-time 180 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 111
