@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-playbook-feature-store-hash-himport-ingest-10M-entities-50-features
+description: 'HIMPORT bulk-ingest counterpart of memtier_benchmark-playbook-feature-store-hash-ingest-10M-entities-50-features. Each connection PREPAREs the 51-field fieldset ONCE (fs = feature_1..50 + event_ts), then issues values-only HIMPORT SET per entity (--command-ratio 1:100000), creating template-encoded hashes directly (HIMPORT always hints template). Matches the HSET ingest exactly on key layout, data sizes (8-24B), concurrency (-c 10 -t 10), pipeline (50) and 10M entity range, so HIMPORT-vs-HSET ingest throughput is directly comparable. Measures the values-only bulk-load path the PR positions as the mitigation for the per-key template-resolution cost of HSET auto-conversion. Encoding: template-listpack.'
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Himports."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p99.00"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Himports."Ops/sec"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Ops/sec"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Percentile Latencies"."p50.00"
+    - $."AGGREGATED AVERAGE RESULTS (3 runs)".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Himports."Ops/sec"
+    - $."ALL STATS".Himports."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Himports."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 32g
+tested-groups:
+- hash
+tested-commands:
+- himport
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --data-size-range=8-24 --random-data --distinct-client-seed --key-prefix "feature_store:user_features:entity:" --print-percentiles=50,99 -n 100001 -c 10 -t 10 --pipeline=50 --key-minimum=1 --key-maximum=10000000 --command "HIMPORT PREPARE fs feature_1 feature_2 feature_3 feature_4 feature_5 feature_6 feature_7 feature_8 feature_9 feature_10 feature_11 feature_12 feature_13 feature_14 feature_15 feature_16 feature_17 feature_18 feature_19 feature_20 feature_21 feature_22 feature_23 feature_24 feature_25 feature_26 feature_27 feature_28 feature_29 feature_30 feature_31 feature_32 feature_33 feature_34 feature_35 feature_36 feature_37 feature_38 feature_39 feature_40 feature_41 feature_42 feature_43 feature_44 feature_45 feature_46 feature_47 feature_48 feature_49 feature_50 event_ts" --command-ratio 1 --command-key-pattern P --command "HIMPORT SET __key__ fs __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__ __data__" --command-ratio 100000 --command-key-pattern P --hide-histogram
+  resources:
+    requests:
+      cpus: '10'
+      memory: 2g
+priority: 5
