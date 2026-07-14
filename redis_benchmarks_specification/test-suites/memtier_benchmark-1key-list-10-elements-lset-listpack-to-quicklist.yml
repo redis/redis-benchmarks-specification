@@ -1,0 +1,41 @@
+version: 0.4
+name: memtier_benchmark-1key-list-10-elements-lset-listpack-to-quicklist
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST starts as a small
+  listpack (10 elements) and we LSET an element with a value of 9000 Bytes, which is above the
+  list-max-listpack-size -2 (8 KiB) node limit and therefore forces a listpack -> quicklist
+  conversion. This exercises the GROWING branch of the per-call encoding-conversion check
+  (listTypeTryConversionRaw in t_list.c). The first LSET performs the actual conversion; every
+  subsequent LSET still pays the encoding-conversion check on a quicklist. Encoding: listpack -> quicklist.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"RPUSH" "growlist:10" "elem000000" "elem000001" "elem000002" "elem000003" "elem000004"
+    "elem000005" "elem000006" "elem000007" "elem000008" "elem000009"'
+  dataset_name: 1key-list-10-elements
+  dataset_description: This dataset contains 1 list key with 10 small elements (listpack encoded).
+tested-groups:
+- list
+tested-commands:
+- lset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="LSET growlist:10 5 __data__" --data-size 9000 --command-key-pattern
+    R  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

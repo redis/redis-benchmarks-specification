@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-1key-list-100-elements-lset-listpack
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 100
+  elements in it and we replace an element in the middle using LSET with a same-sized small value.
+  This exercises the LSET hot path where the per-call encoding-conversion check (listTypeTryConversion
+  in t_list.c) runs but keeps the encoding unchanged. Encoding: listpack (100 elements, fits in single
+  listpack node under list-max-listpack-size -2; the replacement value is 10B so it stays listpack).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"LPUSH" "list:100" "vyoomgwuzv" "xamjodnbpf" "ewomnmugfa" "ljcgdooafo" "pcxdhdjwnf"
+    "djetcyfxuc" "licotqplim" "alqlzsvuuz" "ijsmoyesvd" "whmotknaff" "rkaznetutk"
+    "ksqpdywgdd" "gorgpnnqwr" "gekntrykfh" "rjkknoigmu" "luemuetmia" "gxephxbdru"
+    "ncjfckgkcl" "hhjclfbbka" "cgoeihlnei" "zwnitejtpg" "upodnpqenn" "mibvtmqxcy"
+    "htvbwmfyic" "rqvryfvlie" "nxcdcaqgit" "gfdqdrondm" "lysbgqqfqw" "nxzsnkmxvi"
+    "nsxaigrnje" "cwaveajmcz" "xsepfhdizi" "owtkxlzaci" "agsdggdghc" "tcjvjofxtd"
+    "kgqrovsxce" "ouuybhtvyb" "ueyrvldzwl" "vpbkvwgxsf" "pytrnqdhvs" "qbiwbqiubb"
+    "ssjqrsluod" "urvgxwbiiz" "ujrxcmpvsq" "mtccjerdon" "xczfmrxrja" "imyizmhzjk"
+    "oguwnmniig" "mxwgdcutnb" "pqyurbvifk" "ccagtnjilc" "mbxohpancs" "lgrkndhekf"
+    "eqlgkwosie" "jxoxtnzujs" "lbtpbknelm" "ichqzmiyot" "mbgehjiauu" "aovfsvbwjg"
+    "nmgxcctxpn" "vyqqkuszzh" "rojeolnopp" "ibhohmfxzt" "qbyhorvill" "nhfnbxqgol"
+    "wkbasfyzqz" "mjjuylgssm" "imdqxmkzdj" "oapbvnisyq" "bqntlsaqjb" "ocrcszcznp"
+    "hhniikmtsx" "hlpdstpvzw" "wqiwdbncmt" "vymjzlzqcn" "hhjchwjlmc" "ypfeltycpy"
+    "qjyeqcfhjj" "uapsgmizgh" "owbbdezgxn" "qrosceblyo" "sahqeskveq" "dapacykoah"
+    "wvcnqbvlnf" "perfwnpvkl" "ulbrotlhze" "fhuvzpxjbc" "holjcdpijr" "onzjrteqmu"
+    "pquewclxuy" "vpmpffdoqz" "eouliovvra" "vxcbagyymm" "jekkafodvk" "ypekeuutef"
+    "dlbqcynhrn" "erxulvebrj" "qwxrsgafzy" "dlsjwmqzhx" "exvhmqxvvp"'
+  dataset_name: 1key-list-100-elements
+  dataset_description: This dataset contains 1 list key with 100 elements.
+tested-groups:
+- list
+tested-commands:
+- lset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="LSET list:100 50 abcdefghij"  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
