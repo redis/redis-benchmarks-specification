@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-10K-elements-skiplist-zrandmember-count-5K
+description: 'Runs memtier_benchmark against a single ZSET key of 10,000 elements, issuing
+  ZRANDMEMBER key 5000. Because the requested count (5000) is a large fraction of the zset
+  (5000*ZRANDMEMBER_SUB_STRATEGY_MUL > 10000), zrandmemberWithCountCommand takes its CASE 3
+  strategy: it builds an auxiliary dictionary holding the WHOLE zset and then removes random
+  elements down to the requested count. Only skiplist-encoded zsets reach CASE 3 (listpack is
+  served by CASE 2.5), and in the generic path every inserted member is a heap-allocated SDS
+  copy (zuiNewSdsFromValue), so CASE 3 is dominated by per-element sds allocation + free churn
+  (~one alloc/free per zset element per call). This spec exercises that allocation-heavy CASE 3
+  large-fraction path on a skiplist zset. Encoding: skiplist (10,000 elements exceed
+  zset-max-listpack-entries 128). Metric of interest: Ops/sec (throughput). A modest --pipeline 4
+  keeps the single-threaded server continuously busy on the allocation path while bounding
+  in-flight reply memory for the large 5000-element replies.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="ZADD zset:10K:elements 1 __key__" --command-key-pattern=P --key-maximum
+      10000 --key-prefix "member:" -n 10000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-zset-10K-elements-skiplist
+  dataset_description: This dataset contains 1 zset key with 10,000 elements
+    (skiplist-encoded, exceeds zset-max-listpack-entries 128).
+tested-groups:
+- sorted-set
+tested-commands:
+- zrandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANDMEMBER zset:10K:elements 5000" --pipeline 4 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 1
