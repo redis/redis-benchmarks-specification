@@ -1,0 +1,93 @@
+version: 0.4
+name: memtier_benchmark-Nclients-xread-block-consumer-group
+description: >
+  Blocking stream consumer-group unblock-latency sentinel (see issue #402).
+  Exercises the blocked-to-unblocked client code path in blocked.c
+  (blockForKeys with the stream/consumer-group path, handleClientsBlockedOnKeys,
+  serveClientBlockedOnKey -> streamReplyWithRange for the group, streamID PEL
+  bookkeeping, processUnblockedClients, unblockClient) which no existing
+  memtier_benchmark spec covers. One producer (a single connection) issues XADD
+  onto a single stream (bounded with MAXLEN ~ 10000 so memory stays flat) while
+  N=100 consumer connections (-c 25 -t 4) each run
+  XREADGROUP GROUP g c1 BLOCK 0 COUNT 1 STREAMS stream:1 > with pipeline 1.
+  Because the consumers vastly outnumber the single producer, there is rarely a
+  backlog of new entries, so almost every XREADGROUP registers as blocked-on-key
+  and is later served by an XADD -- driving traffic through the stream unblock
+  path on essentially every op and growing the processUnblockedClients queue that
+  beforeSleep() drains each tick. The exported Totals are the consumer group's
+  (last clientconfig): Ops/sec is the unblock rate and p50/p99 are the unblock
+  latency. MULTI-CLIENT SUITE: runs only on a runner with
+  BENCHMARK_MULTITOOL_ENABLED=1 (the coordinator skips it otherwise).
+  EXPORT-PROVENANCE INVARIANT: the multi-client runner exports the LAST memtier
+  clientconfig's JSON, so the XREADGROUP consumer group MUST stay last. The
+  producer uses a longer --test-time than the consumers on purpose: when the
+  consumers stop issuing new XREADGROUPs at their test-time, the still-running
+  producer drains every outstanding blocked XREADGROUP so the consumer containers
+  exit cleanly (BLOCK 0 would otherwise hang forever with no producer). Do NOT run
+  this suite with a single uniform --override-memtier-test-time (it would stop the
+  producer at the same instant and leave blocked consumers hanging).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - XGROUP CREATE stream:1 test-group $ MKSTREAM
+  dataset_name: 1stream-empty-with-consumer-group
+  dataset_description: A single empty stream (created via MKSTREAM) with a consumer group named 'test-group' reading only new entries.
+  resources:
+    requests:
+      memory: 1g
+# tested-commands lists every verb the workload sends (both clientconfigs): xadd
+# is the producer feed; xreadgroup is the measured/exported blocking consumer command.
+tested-commands:
+- xadd
+- xreadgroup
+tested-groups:
+- stream
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+# Producer (index 0): 1 connection appending rotating 32B entries to the single
+# stream, capped with MAXLEN ~ 10000 so the stream does not grow unbounded over
+# the run. --test-time 150 > consumers' 120 so it outlives them and drains all
+# outstanding blocked XREADGROUPs at the end of the consumer window.
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >-
+    --data-size 32
+    --command "XADD stream:1 MAXLEN ~ 10000 * field __data__"
+    -c 1 -t 1 --pipeline 1 --distinct-client-seed
+    --test-time 150 --hide-histogram
+  resources:
+    requests:
+      cpus: '1'
+      memory: 1g
+# Consumer group (index 1, LAST => exported): N=100 connections each blocking on
+# the single stream with XREADGROUP ... BLOCK 0 reading only new entries (>) and
+# pipeline 1. All connections share consumer name c1; Redis delivers each new
+# entry to one blocked consumer. Its Totals p50/p99 are the unblock latency and
+# Ops/sec the unblock rate.
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >-
+    --command "XREADGROUP GROUP test-group c1 COUNT 1 BLOCK 0 STREAMS stream:1 >"
+    -c 25 -t 4 --pipeline 1
+    --test-time 120 --print-percentiles 50,99 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+priority: 50
