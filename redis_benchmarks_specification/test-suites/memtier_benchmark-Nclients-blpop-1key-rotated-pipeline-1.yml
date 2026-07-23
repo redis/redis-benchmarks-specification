@@ -1,0 +1,100 @@
+version: 0.4
+name: memtier_benchmark-Nclients-blpop-1key-rotated-pipeline-1
+description: >
+  Blocking-list unblock-latency sentinel (see issue #402). Exercises the
+  blocked-to-unblocked client code path in blocked.c (blockForKeys,
+  handleClientsBlockedOnKeys, serveClientBlockedOnList, processUnblockedClients,
+  unblockClient) which no existing memtier_benchmark spec covers. One producer
+  (a single connection) issues rotating LPUSH on a single list key while N=100
+  consumer connections (-c 25 -t 4) each run BLPOP key 0 with pipeline 1. Because
+  the consumers vastly outnumber the single producer, the list stays near-empty,
+  so almost every BLPOP registers as blocked-on-key and is later served by an
+  LPUSH -- driving traffic through serveClientBlockedOnList on essentially every
+  op and growing the processUnblockedClients queue that beforeSleep() drains each
+  tick. The exported Totals are the consumer group's (last clientconfig): Ops/sec
+  is the unblock rate and p50/p99 are the unblock latency. MULTI-CLIENT SUITE:
+  runs only on a runner with BENCHMARK_MULTITOOL_ENABLED=1 (the coordinator skips
+  it otherwise). EXPORT-PROVENANCE INVARIANT: the multi-client runner exports the
+  LAST memtier clientconfig's JSON, so the BLPOP consumer group MUST stay last.
+  CLEAN SHUTDOWN: the producer uses a slightly longer --test-time than the
+  consumers (125 vs 120) purely so it outlives them -- any consumer still parked
+  in a blocking BLPOP when its own test-time expires gets one final LPUSH and
+  returns, instead of hanging forever on BLPOP timeout 0. The producer does NOT
+  "drain the backlog": once the consumers stop, the small ~5s producer tail simply
+  LPUSHes onto an idle list that nobody is popping. Do NOT run this suite with a
+  single uniform --override-memtier-test-time (it would stop the producer at the
+  same instant and could leave a blocked consumer hanging). MEMORY CEILING: while
+  the consumers run they drain essentially every op, so the list stays ~empty
+  during the measured window; only the ~5s solo-producer tail after the consumers
+  stop grows it (~17K LPUSH/s => <100K 32B elements, a few MB), which is why the
+  tail is kept small -- a large tail (the old 150 vs 120) would balloon the list
+  into the hundreds of thousands of elements. VERIFYING THE BLOCKING PATH: there
+  is no in-spec assertion for this (the runner's dbconfig.check only asserts
+  keyspacelen at benchmark start, not blocked_clients during the run). To confirm
+  the workload is genuinely blocking, poll `INFO clients` and `LLEN blpop:key:1`
+  every 1s while the suite runs: on the blocking path blocked_clients approaches
+  the consumer connection count (~100) and LLEN stays ~0; if instead
+  blocked_clients ~0 and LLEN grows, the workload has regressed to the
+  non-blocking fast path. Measured locally with a reduced -c 25 -t 2 (= 50 conns)
+  copy: blocked_clients held at 48-50 and LLEN stayed 0 for the entire measured
+  window (confirmed on the blocking path).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 0
+  resources:
+    requests:
+      memory: 1g
+# tested-commands lists every verb the workload sends (both clientconfigs): lpush
+# is the producer feed; blpop is the measured/exported blocking consumer command.
+tested-commands:
+- lpush
+- blpop
+tested-groups:
+- list
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+# Producer (index 0): 1 connection feeding rotating 32B payloads onto the single
+# list key. --test-time 125 is a small tail past the consumers' 120 so the
+# producer outlives them (the last blocked BLPOP gets one final LPUSH and
+# returns); it is NOT draining a backlog. Keep the tail small: after the consumers
+# stop it LPUSHes onto an idle list (~17K ops/s => <100K elements, a few MB).
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >-
+    --data-size 32
+    --command "LPUSH blpop:key:1 __data__"
+    -c 1 -t 1 --pipeline 1 --distinct-client-seed
+    --test-time 125 --hide-histogram
+  resources:
+    requests:
+      cpus: '1'
+      memory: 1g
+# Consumer group (index 1, LAST => exported): N=100 connections each blocking on
+# the same single key with BLPOP ... 0 and pipeline 1. Its Totals p50/p99 are the
+# unblock latency and Ops/sec the unblock rate.
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >-
+    --command "BLPOP blpop:key:1 0"
+    -c 25 -t 4 --pipeline 1
+    --test-time 120 --print-percentiles 50,99 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+priority: 50
