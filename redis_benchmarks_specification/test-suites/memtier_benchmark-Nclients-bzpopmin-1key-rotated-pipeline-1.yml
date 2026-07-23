@@ -17,13 +17,27 @@ description: >
   SUITE: runs only on a runner with BENCHMARK_MULTITOOL_ENABLED=1 (the coordinator
   skips it otherwise). EXPORT-PROVENANCE INVARIANT: the multi-client runner
   exports the LAST memtier clientconfig's JSON, so the BZPOPMIN consumer group
-  MUST stay last. The producer uses a longer --test-time than the consumers on
-  purpose: when the consumers stop issuing new BZPOPMINs at their test-time, the
-  still-running producer drains every outstanding blocked BZPOPMIN so the consumer
-  containers exit cleanly (timeout 0 would otherwise hang forever with no
-  producer). Do NOT run this suite with a single uniform
-  --override-memtier-test-time (it would stop the producer at the same instant and
-  leave blocked consumers hanging).
+  MUST stay last. CLEAN SHUTDOWN: the producer uses a slightly longer --test-time
+  than the consumers (125 vs 120) purely so it outlives them -- any consumer still
+  parked in a blocking BZPOPMIN when its own test-time expires gets one final ZADD
+  and returns, instead of hanging forever on BZPOPMIN timeout 0. The producer does
+  NOT "drain the backlog": once the consumers stop, the small ~5s producer tail
+  simply ZADDs onto an idle zset that nobody is popping. Do NOT run this suite with
+  a single uniform --override-memtier-test-time (it would stop the producer at the
+  same instant and could leave a blocked consumer hanging). MEMORY CEILING: while
+  the consumers run they drain essentially every op, so the zset stays ~empty
+  during the measured window; only the ~5s solo-producer tail after the consumers
+  stop grows it (~17K ZADD/s => <100K 32B members, a few MB), which is why the tail
+  is kept small -- a large tail (the old 150 vs 120) would balloon the zset into
+  the hundreds of thousands of members. VERIFYING THE BLOCKING PATH: there is no
+  in-spec assertion for this (the runner's dbconfig.check only asserts keyspacelen
+  at benchmark start, not blocked_clients during the run). To confirm the workload
+  is genuinely blocking, poll `INFO clients` and `ZCARD bzpopmin:key:1` every 1s
+  while the suite runs: on the blocking path blocked_clients approaches the
+  consumer connection count (~100) and ZCARD stays ~0; if instead blocked_clients
+  ~0 and ZCARD grows, the workload has regressed to the non-blocking fast path.
+  This mirrors the sibling BLPOP suite, where the same method measured
+  blocked_clients 48-50 and an empty key throughout a reduced-connection run.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -47,15 +61,18 @@ build-variants:
 - dockerhub
 clientconfigs:
 # Producer (index 0): 1 connection adding members with a constant score 1 and a
-# rotating 32B member onto the single zset key. --test-time 150 > consumers' 120
-# so it outlives them and drains all outstanding blocked BZPOPMINs at the end.
+# rotating 32B member onto the single zset key. --test-time 125 is a small tail
+# past the consumers' 120 so the producer outlives them (the last blocked BZPOPMIN
+# gets one final ZADD and returns); it is NOT draining a backlog. Keep the tail
+# small: after the consumers stop it ZADDs onto an idle zset (~17K ops/s => <100K
+# members, a few MB).
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >-
     --data-size 32
     --command "ZADD bzpopmin:key:1 1 __data__"
     -c 1 -t 1 --pipeline 1 --distinct-client-seed
-    --test-time 150 --hide-histogram
+    --test-time 125 --hide-histogram
   resources:
     requests:
       cpus: '1'

@@ -19,13 +19,32 @@ description: >
   latency. MULTI-CLIENT SUITE: runs only on a runner with
   BENCHMARK_MULTITOOL_ENABLED=1 (the coordinator skips it otherwise).
   EXPORT-PROVENANCE INVARIANT: the multi-client runner exports the LAST memtier
-  clientconfig's JSON, so the XREADGROUP consumer group MUST stay last. The
-  producer uses a longer --test-time than the consumers on purpose: when the
-  consumers stop issuing new XREADGROUPs at their test-time, the still-running
-  producer drains every outstanding blocked XREADGROUP so the consumer containers
-  exit cleanly (BLOCK 0 would otherwise hang forever with no producer). Do NOT run
-  this suite with a single uniform --override-memtier-test-time (it would stop the
-  producer at the same instant and leave blocked consumers hanging).
+  clientconfig's JSON, so the XREADGROUP consumer group MUST stay last. CLEAN
+  SHUTDOWN: the producer uses a slightly longer --test-time than the consumers
+  (125 vs 120) purely so it outlives them -- any consumer still parked in a
+  blocking XREADGROUP when its own test-time expires gets one final XADD delivered
+  and returns, instead of hanging forever on BLOCK 0. The producer does NOT "drain
+  the backlog": once the consumers stop, the small ~5s producer tail simply XADDs
+  new entries that nobody reads (they age out of the MAXLEN ~ 10000 window and pile
+  up as unread group lag, capped by MAXLEN). Do NOT run this suite with a single
+  uniform --override-memtier-test-time (it would stop the producer at the same
+  instant and could leave a blocked consumer hanging). MEMORY CEILING: the stream
+  is capped with MAXLEN ~ 10000 so its size stays flat regardless of the run
+  length; the ~5s solo-producer tail only lets group lag climb toward that same
+  ~10000 ceiling, so there is no memory balloon here (unlike the BLPOP/BZPOPMIN
+  suites, whose keys are uncapped). VERIFYING THE BLOCKING PATH: there is no
+  in-spec assertion for this (the runner's dbconfig.check only asserts keyspacelen
+  at benchmark start, not blocked_clients during the run). To confirm the workload
+  is genuinely blocking, poll `INFO clients` and the consumer-group lag
+  (`XINFO GROUPS stream:1`) every 1s while the suite runs: on the blocking path
+  blocked_clients approaches the consumer connection count (~100) and the group
+  lag stays ~0. NOTE the correct signal here is group lag, not "key empty": XLEN
+  sits at the MAXLEN cap (~10000) throughout because stream reads never delete
+  entries, so an empty stream is NOT expected. If blocked_clients ~0 and group lag
+  grows, the workload has regressed to the non-blocking fast path. Measured locally
+  with a reduced -c 25 -t 2 (= 50 conns) copy: blocked_clients held at 43-49, XLEN
+  pinned at the ~10000 MAXLEN cap and group lag 0 for the entire measured window
+  (confirmed on the blocking path).
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -54,15 +73,17 @@ build-variants:
 clientconfigs:
 # Producer (index 0): 1 connection appending rotating 32B entries to the single
 # stream, capped with MAXLEN ~ 10000 so the stream does not grow unbounded over
-# the run. --test-time 150 > consumers' 120 so it outlives them and drains all
-# outstanding blocked XREADGROUPs at the end of the consumer window.
+# the run. --test-time 125 is a small tail past the consumers' 120 so the producer
+# outlives them (the last blocked XREADGROUP gets one final entry and returns); it
+# is NOT draining a backlog. The MAXLEN cap keeps memory flat regardless of tail
+# length.
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >-
     --data-size 32
     --command "XADD stream:1 MAXLEN ~ 10000 * field __data__"
     -c 1 -t 1 --pipeline 1 --distinct-client-seed
-    --test-time 150 --hide-histogram
+    --test-time 125 --hide-histogram
   resources:
     requests:
       cpus: '1'
