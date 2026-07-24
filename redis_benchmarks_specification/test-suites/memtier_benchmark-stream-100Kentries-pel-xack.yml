@@ -1,0 +1,68 @@
+version: 0.4
+name: memtier_benchmark-stream-100Kentries-pel-xack
+description: >
+  Measures the XACK (acknowledge / remove-from-PEL) settlement hot path as a
+  fixed-work drain of a large, pre-populated consumer-group PEL. Pre-loads 100K
+  stream entries with deterministic IDs (1-0..100000-0) via XADD, creates one
+  consumer group, and delivers all 100K entries to consumer1 via XREADGROUP (no
+  ACK), so the group PEL starts fully populated. The benchmark then acknowledges
+  every pending entry exactly once: `XACK stream-key g1 <id>` with the target ID
+  walked sequentially over [1,100000] via the __key__-0 pattern (`P`), `-n 100000`.
+  Because each ID is acked once, EVERY call is a hit that performs the real
+  settlement work — unlink the streamNACK from both the group `pel` rax and the
+  owning consumer `pel` rax. A single client (`-c 1 -t 1`) is used deliberately:
+  XACK is destructive, so concurrent clients over the same ID range would race
+  and collapse into the O(1) already-acked miss path; a single sequential drainer
+  keeps the run a clean 100%-hit measurement of the settlement path. `--pipeline 16`
+  amortises the client/server round-trip so the reported Ops/sec reflects
+  server-side XACK cost rather than network latency. This is fixed-work (not
+  `--test-time`) because XACK cannot be a steady-state workload — its targets are
+  consumed; the model mirrors a real consumer draining its pending backlog. This
+  is the first benchmark coverage of the XACK path. Primary metric is Ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key __key__-0 field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=100000 --key-prefix="" -n 100000 -c 1 -t 1 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key g1 0 MKSTREAM
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-det-ids-pel-100k-1group-1consumer
+  dataset_description: A stream with 100K deterministic-ID entries (1-0..100000-0) and one consumer group whose single consumer holds all 100K entries in its PEL (unacked). Designed to measure the XACK settlement path as a single-pass drain of a large populated PEL.
+tested-commands:
+  - xack
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XACK stream-key g1 __key__-0" --command-key-pattern="P" --key-minimum=1 --key-maximum=100000 --key-prefix=""
+    --pipeline 16
+    --hide-histogram
+    -n 100000
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95
