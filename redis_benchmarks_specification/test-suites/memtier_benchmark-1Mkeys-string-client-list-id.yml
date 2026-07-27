@@ -1,0 +1,36 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-client-list-id
+description: Measures throughput of CLIENT LIST ID <ids> command. This exercises the filter-match path of CLIENT LIST, where the full client list is walked and each client id is matched against the requested id set before serialization. A sustained population of ~1000 connections (-c 250 -t 4) is kept open by the benchmark itself so the id-filter loop walks a large list. Preloads 1M keys to simulate a realistic server state.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+tested-commands:
+- client
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "CLIENT LIST ID 1 2 3 4 5 6 7 8 9 10" -c 250 -t 4 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 50
