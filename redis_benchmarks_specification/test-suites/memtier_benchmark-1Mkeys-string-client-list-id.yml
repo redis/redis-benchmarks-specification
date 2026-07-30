@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-client-list-id
-description: Measures throughput of CLIENT LIST ID <ids> command. This exercises the filter-match path of CLIENT LIST, where the full client list is walked and each client id is matched against the requested id set before serialization. A sustained population of ~1000 connections (-c 250 -t 4) is kept open by the benchmark itself so the id-filter loop walks a large list. Preloads 1M keys to simulate a realistic server state.
+description: Measures throughput of CLIENT LIST ID <id> with a single random id per call. This isolates the id-filter WALK cost of CLIENT LIST - the full client list (~1000 sustained connections from -c 250 -t 4) is traversed and each client id is checked against the requested id set - while serializing at most one matched client (catClientInfoString) per call. It therefore complements, rather than overlaps, the full CLIENT LIST test (which measures bulk serialization of all clients) and the CLIENT KILL ADDR no-match test. The single id is injected via memtier's __key__ substitution with --key-prefix "" and a random pattern (--command-key-pattern R) over --key-minimum 1 --key-maximum 2000; that range comfortably spans the active-connection id window (Redis assigns ids monotonically, so the benchmark's connections land in ~[130,1130] after the small preload offset), so a large fraction of calls hit a live client, and calls that miss still exercise the same full walk. Preloads 1M keys to simulate a realistic server state.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -28,7 +28,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "CLIENT LIST ID 1 2 3 4 5 6 7 8 9 10" -c 250 -t 4 --hide-histogram --test-time 120
+  arguments: --command "CLIENT LIST ID __key__" --command-key-pattern R --key-minimum 1 --key-maximum 2000 --key-prefix "" -c 250 -t 4 --hide-histogram --test-time 120
   resources:
     requests:
       cpus: '4'
