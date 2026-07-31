@@ -1,0 +1,47 @@
+name: Stream contract
+
+# Guards the Redis Stream field contract between the trigger CLI, the builder, and the
+# coordinator. These components talk only through stream field names written as bare string
+# literals on both sides, so a rename or typo does not fail — the consumer's
+# `if b"name" in testDetails` check is simply False and it silently falls back to a default.
+#
+# That is not hypothetical: the builder writes `tests_priority_upper_limit` while the coordinator
+# read `priority_upper_limit`, so `--tests-priority-upper-limit` had no effect on any run and the
+# "detected a priority_upper_limit definition on the streamdata" log line never fired.
+#
+# Deliberately cheap and dependency-free: no Redis, no Docker, no benchmark fleet. It runs in
+# seconds on every PR so this class of silent breakage cannot reach the fleet, where it would
+# only ever surface as a setting that quietly stopped working.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stream-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Stream field contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # No poetry install: these tests import one dependency-free module and read source files,
+      # so a bare interpreter plus pytest is enough and keeps the job at a few seconds.
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run stream contract tests
+        run: python -m pytest utils/tests/test_stream_contract.py -v
