@@ -456,3 +456,75 @@ def test_the_by_str_labels_match_what_the_ingest_side_writes():
             "version",
             "branch",
         ), f"'{composed}' is not a target+<key> pair the ingest side can produce"
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", None),
+        (None, None),
+        ("unstable", "unstable"),
+        (" ", " "),
+        ("0", "0"),
+    ],
+)
+def test_absent_if_empty(value, expected):
+    """Only the empty string becomes absent.
+
+    A space is not "absent" -- silently trimming it would be a new untruth of the same kind this
+    module is being fixed for -- and "0" is a legitimate value.
+    """
+    from redis_benchmarks_specification.__compare__.compare import absent_if_empty
+
+    assert absent_if_empty(value) is expected or absent_if_empty(value) == expected
+
+
+def test_every_selector_is_normalized_before_use():
+    """All ten selectors must go through absent_if_empty, not just the two branches.
+
+    Downstream code tests `is not None` in places the resolver never sees -- the grafana link
+    built into the PR comment, and the pull-request zset write -- so normalizing only the
+    branches left an empty tag looking supplied. That combination was previously refused outright
+    and became reachable once the resolver started treating "" as absent, which is exactly the
+    kind of second-order effect a partial normalization produces.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    normalized = {
+        target.id
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", None) == "absent_if_empty"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    expected = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+    assert not expected - normalized, f"not normalized: {sorted(expected - normalized)}"
+
+
+def test_the_grafana_link_never_carries_an_empty_selector():
+    """An empty tag used to add a bare var-version and a second "?" to a link posted on the PR."""
+    import inspect
+
+    from redis_benchmarks_specification.__compare__.compare import (
+        prepare_regression_comment,
+    )
+
+    src = inspect.getsource(prepare_regression_comment)
+    assert "if baseline_tag and comparison_tag:" in src, (
+        "the tag pair is gated on `is not None`, so an empty tag contributes an empty "
+        "var-version parameter to the link"
+    )
+    assert "if baseline_branch and comparison_branch:" in src, (
+        "the branch pair is gated on `is not None`, so an empty branch contributes an empty "
+        "var-branch parameter to the link"
+    )

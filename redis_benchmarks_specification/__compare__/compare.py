@@ -254,6 +254,17 @@ def list_available_deployments(rts, args):
     print()
 
 
+def absent_if_empty(value):
+    """An empty selector means "not supplied".
+
+    Selecting a side by hash requires clearing the branch that defaults to unstable, and "" is
+    how callers do it. Several downstream checks test `is not None`, so leaving "" in place makes
+    an unsupplied selector look supplied: it reaches the resolver as a conflict, and it reaches
+    the grafana link builder as an empty query parameter.
+    """
+    return None if value == "" else value
+
+
 def compare_command_logic(args, project_name, project_version):
 
     logger = logging.getLogger()
@@ -331,21 +342,14 @@ def compare_command_logic(args, project_name, project_version):
             )
         )
         baseline_branch = default_baseline_branch
-    if baseline_branch == "":
-        baseline_branch = None
-    comparison_branch = args.comparison_branch
-    # Mirror the baseline normalization above. Selecting a side by hash means clearing its
-    # branch with '', and only the baseline side was normalized -- so '' reached the selector
-    # resolver as a supplied value and, once the comparison-side exclusion is enforced, a
-    # documented invocation would be rejected while being told it had selected a branch.
-    if comparison_branch == "":
-        comparison_branch = None
+    baseline_branch = absent_if_empty(baseline_branch)
+    comparison_branch = absent_if_empty(args.comparison_branch)
     simplify_table = args.simple_table
     print_regressions_only = args.print_regressions_only
     print_improvements_only = args.print_improvements_only
     skip_unstable = args.skip_unstable
-    baseline_tag = args.baseline_tag
-    comparison_tag = args.comparison_tag
+    baseline_tag = absent_if_empty(args.baseline_tag)
+    comparison_tag = absent_if_empty(args.comparison_tag)
     last_n_baseline = args.last_n
     last_n_comparison = args.last_n
     if last_n_baseline < 0:
@@ -394,16 +398,16 @@ def compare_command_logic(args, project_name, project_version):
     triggering_env_baseline = args.triggering_env_baseline or args.triggering_env
     triggering_env_comparison = args.triggering_env_comparison or args.triggering_env
 
-    baseline_target_version = args.baseline_target_version
-    comparison_target_version = args.comparison_target_version
-    baseline_target_branch = args.baseline_target_branch
-    comparison_target_branch = args.comparison_target_branch
+    baseline_target_version = absent_if_empty(args.baseline_target_version)
+    comparison_target_version = absent_if_empty(args.comparison_target_version)
+    baseline_target_branch = absent_if_empty(args.baseline_target_branch)
+    comparison_target_branch = absent_if_empty(args.comparison_target_branch)
     baseline_github_repo = args.baseline_github_repo
     comparison_github_repo = args.comparison_github_repo
     baseline_github_org = args.baseline_github_org
     comparison_github_org = args.comparison_github_org
-    baseline_hash = args.baseline_hash
-    comparison_hash = args.comparison_hash
+    baseline_hash = absent_if_empty(args.baseline_hash)
+    comparison_hash = absent_if_empty(args.comparison_hash)
 
     # Log platform and environment information
     if running_platform_baseline == running_platform_comparison:
@@ -865,11 +869,13 @@ def prepare_regression_comment(
 
         if grafana_link_base is not None:
             grafana_link = "{}/".format(grafana_link_base)
-            if baseline_tag is not None and comparison_tag is not None:
+            # Truthiness, not `is not None`: an empty tag would otherwise contribute an
+            # empty var-version parameter and a second "?" to the link posted on the PR.
+            if baseline_tag and comparison_tag:
                 grafana_link += "?var-version={}&var-version={}".format(
                     baseline_tag, comparison_tag
                 )
-            if baseline_branch is not None and comparison_branch is not None:
+            if baseline_branch and comparison_branch:
                 grafana_link += "?var-branch={}&var-branch={}".format(
                     baseline_branch, comparison_branch
                 )
@@ -996,7 +1002,7 @@ def compute_env_comparison_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    # Declared baseline-first to match this function's only caller, which passes all of these
+    # Declared baseline-first to match the in-module caller, which passes all of these
     # positionally. The previous order was comparison_hash then baseline_hash, so the caller's
     # --baseline-hash bound to comparison_hash and vice versa; the values were then forwarded
     # to get_by_strings under the swapped local names, transposing the two sides of every
@@ -1302,7 +1308,8 @@ def compute_regression_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    # Baseline-first, matching this function's only caller, which passes positionally. The
+    # Baseline-first, matching the in-module caller, which passes positionally. (The
+    # coordinator also calls this, but by keyword, so it is unaffected either way.) The
     # previous order was comparison-first while the forward to get_by_strings below was ALSO
     # comparison-first, so the two inversions cancelled and positional callers were correct --
     # but any keyword caller, or any refactor of either list alone, silently transposed the two
