@@ -5,8 +5,8 @@
 #
 import datetime
 import os
-from distutils.util import strtobool
 from redis_benchmarks_specification.__common__.env import (
+    parse_bool_arg,
     GH_REDIS_SERVER_HOST,
     GH_TOKEN,
     GH_REDIS_SERVER_PORT,
@@ -75,7 +75,7 @@ def spec_cli_args(parser):
     )
     parser.add_argument(
         "--use-git-timestamp",
-        type=lambda x: bool(strtobool(x)),
+        type=parse_bool_arg,
         default=True,
         help="Use git timestamp",
     )

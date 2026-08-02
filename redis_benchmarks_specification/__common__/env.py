@@ -87,6 +87,66 @@ REDIS_BINS_EXPIRE_SECS = int(
     os.getenv("REDIS_BINS_EXPIRE_SECS", "{}".format(24 * 7 * 60 * 60))
 )
 
+TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
+FALSE_STRINGS = ("0", "false", "f", "no", "n", "off", "")
+
+
+def parse_bool(value, default=False):
+    """Decode a boolean that has been through a string round-trip.
+
+    Booleans reach us as strings: written to the commits/builds streams with str(), and read from
+    the environment. A bare bool() on that is wrong in the one direction that matters -- every
+    non-empty string is truthy, so "False", "0" and "no" all decode to True and the flag is stuck
+    on. bytes are accepted because stream reads are not always decoded first.
+
+    An unrecognised string returns `default` rather than guessing, since guessing is what bool()
+    already does. Callers that need to distinguish "absent" from "unparseable" should check
+    membership before calling.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode()
+        except UnicodeDecodeError:
+            return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in TRUE_STRINGS:
+            return True
+        if normalized in FALSE_STRINGS:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def parse_bool_arg(value):
+    """argparse `type=` for a boolean flag.
+
+    Same accepted spellings as parse_bool, but unrecognised input raises so argparse turns it into
+    a usage error instead of silently substituting a default -- on a command line, a typo should be
+    reported, not guessed at. The empty string is rejected for the same reason.
+
+    Accepts exactly the spellings distutils.util.strtobool did, which this replaces: distutils was
+    removed from the standard library in 3.12 and only resolves today via a setuptools shim, so
+    importing it made the CLI fail at import time in any environment without setuptools.
+    """
+    normalized = str(value).strip().lower()
+    if normalized in TRUE_STRINGS:
+        return True
+    if normalized and normalized in FALSE_STRINGS:
+        return False
+    raise ValueError(
+        "invalid boolean {!r}; expected one of {}".format(
+            value, ", ".join(TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f))
+        )
+    )
+
+
 # environment variables
 PULL_REQUEST_TRIGGER_LABEL = os.getenv(
     "PULL_REQUEST_TRIGGER_LABEL", "action:run-benchmark"
