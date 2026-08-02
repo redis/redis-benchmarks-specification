@@ -190,7 +190,12 @@ def commandstats_latencystats_process_name(
         command_and_metric = remainder
         shard = "1"
         if "_shard_" in remainder:
-            command_and_metric, _, shard = remainder.rpartition("_shard_")
+            head, _, tail = remainder.rpartition("_shard_")
+            # Only a numeric tail is a shard index: the producer emits "_shard_<conn_n+1>".
+            # Requiring digits keeps a command or metric that merely contains the literal
+            # "_shard_" (e.g. a command named "shard") from being mistaken for one.
+            if head and tail.isdigit():
+                command_and_metric, shard = head, tail
 
         # Split command from metric on the KNOWN metric vocabulary, matched from the right.
         # Splitting on the first "_" instead attributes any command whose own name contains
@@ -220,14 +225,11 @@ def commandstats_latencystats_process_name(
             command = command_and_metric[0] + head
             metric = tail
 
+        # Preserved for the label of the same name: the metric as it appeared on the wire,
+        # shard suffix included.
         metric_and_shard = (
             metric if shard == "1" else "{}_shard_{}".format(metric, shard)
         )
-        shard = "1"
-        if "_shard_" in metric_and_shard:
-            # maxsplit=1: a metric that itself contains "_shard_" keeps the trailing
-            # component as the shard rather than losing it.
-            metric, _, shard = metric_and_shard.rpartition("_shard_")
         # All-or-nothing, and no empty values: this is on the results-export path, where
         # every label below is copied verbatim into a datapoint's tags. A partial or
         # empty-valued label misfiles the datapoint, which is harder to notice than the
