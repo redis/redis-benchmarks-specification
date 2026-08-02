@@ -25,7 +25,22 @@ def get_start_time_vars(start_time=None):
 
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
-PERFORMANCE_RTS_PUSH = bool(int(os.getenv("PUSH_RTS", "0")))
+# parse_bool, not bool(int(...)): the latter raises ValueError at import time on PUSH_RTS=false,
+# which aborts every command that imports this module. The default preserves the old integer
+# reading so no non-zero value flips to disabled.
+_PUSH_RTS_RAW = os.getenv("PUSH_RTS", "0")
+
+
+def _push_rts_was_enabled(raw):
+    try:
+        return bool(int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return False
+
+
+PERFORMANCE_RTS_PUSH = parse_bool(
+    _PUSH_RTS_RAW, default=_push_rts_was_enabled(_PUSH_RTS_RAW)
+)
 
 
 _, NOW_UTC, _ = get_start_time_vars()

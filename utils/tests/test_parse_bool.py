@@ -157,12 +157,17 @@ def test_the_cli_no_longer_imports_distutils():
     It resolves only through a setuptools shim. setuptools is an explicit runtime dependency here,
     so this is hygiene -- dropping a dependency on a deprecated shim -- and not the "the CLI cannot
     start" hazard an earlier version of this PR claimed.
+
+    Asserted against sys.modules rather than the module's source text: a source check passes on
+    `importlib.import_module("distutils.util")` and fails on the word appearing in a comment.
     """
-    import inspect
+    import sys
 
-    import redis_benchmarks_specification.__cli__.args as args_mod
+    import redis_benchmarks_specification.__cli__.args  # noqa: F401
 
-    assert "distutils" not in inspect.getsource(args_mod)
+    assert (
+        "distutils" not in sys.modules
+    ), "importing the CLI args module still pulls in distutils"
 
 
 def test_use_git_timestamp_flag_parses_false():
@@ -323,33 +328,47 @@ def test_the_accepted_spellings_are_strtobool_s_plus_whitespace():
 
 
 def _all_parsers():
-    """The parsers that can be built in-process.
+    """Every parser that can be built in this process.
 
-    __spec__/args.py is covered separately, in a subprocess. It IS importable once a sibling has
+    __spec__/args.py is covered separately, in a subprocess: it IS importable once a sibling has
     populated sys.modules -- the cold-interpreter failure of issue #466 is an import-order artifact,
-    not an absolute -- but importing it binds the subpackage over the parent's ModuleSpec for the
-    rest of the process, and Flask reads `.origin` off that to find an app's root path. Doing it here
-    breaks test_app.py whenever the two files run in the same session, in that order.
+    not an absolute -- but importing it binds the subpackage over the parent's ModuleSpec, and Flask
+    reads `.origin` off that to find an app's root path, so doing it here breaks test_app.py when the
+    two files share a session.
+
+    __builder__/builder.py and __api__/api.py build their parsers inline in main() and so cannot be
+    introspected without running them. Those two are covered by the source scan below instead.
     """
     import argparse
 
     from redis_benchmarks_specification.__cli__.args import spec_cli_args
     from redis_benchmarks_specification.__compare__.args import create_compare_arguments
+    from redis_benchmarks_specification.__runner__.args import create_client_runner_args
+    from redis_benchmarks_specification.__self_contained_coordinator__.args import (
+        create_self_contained_coordinator_args,
+    )
+    from redis_benchmarks_specification.__watchdog__.args import spec_watchdog_args
 
     return {
         "compare": create_compare_arguments(argparse.ArgumentParser()),
         "cli": spec_cli_args(argparse.ArgumentParser()),
+        "runner": create_client_runner_args("probe"),
+        "coordinator": create_self_contained_coordinator_args("probe"),
+        "watchdog": spec_watchdog_args(argparse.ArgumentParser()),
     }
 
 
-def test_no_parser_action_converts_with_builtin_bool():
-    """Introspect what argparse will call, not the characters used to name it.
+def test_no_parser_action_reads_the_string_false_as_true():
+    """Probe what argparse will call, rather than comparing it by identity.
 
-    A text scan for "type=bool" is the obvious guard and the wrong one: it misses
-    `builtins.bool`, `eval("bool")`, a functools.partial, an alias, a tab, and -- the one that
-    happens without any intent to evade -- a kwarg that black reformats across lines. Reading
-    action.type off the built parser catches all of them, and cannot pass vacuously depending on
-    the working directory the way a relative path scan did.
+    Forbidding the name `bool` catches one spelling. A one-line helper returning bool(x), a lambda, a
+    callable class, a locally shadowed name and `builtins.bool` all reintroduce the defect and all
+    pass an identity check. What they share is the only thing worth asserting: no converter anywhere
+    may turn the string "false" into True.
+
+    This needs no allowlist to maintain, which matters -- an allowlist of permitted types flagged the
+    legitimate --from-date and --to-date parsers on the first run. Legitimate converters either
+    return a non-True value or reject the input outright, and both are accepted here.
     """
     import functools
 
@@ -357,11 +376,19 @@ def test_no_parser_action_converts_with_builtin_bool():
     for name, parser in _all_parsers().items():
         for action in parser._actions:
             converter = action.type
+            if converter is None:
+                continue
             if isinstance(converter, functools.partial):
                 converter = converter.func
-            if converter is bool:
-                offenders.append(f"{name}:{action.option_strings}")
-    assert not offenders, f"builtin bool used as an argparse converter: {offenders}"
+            try:
+                result = converter("false")
+            except Exception:
+                continue  # rejects the value outright, which is fine
+            if result is True:
+                offenders.append(f"{name}:{action.option_strings} -> {converter!r}")
+    assert (
+        not offenders
+    ), f'converter maps "false" to True, so a falsy value reads as enabled: {offenders}'
 
 
 def test_every_boolean_flag_uses_the_canonical_decoder():
@@ -383,6 +410,10 @@ def test_every_boolean_flag_uses_the_canonical_decoder():
     seen = set()
     for parser in _all_parsers().values():
         for action in parser._actions:
+            if action.nargs == 0:
+                # store_true / store_false consume no value, so no converter is called and none is
+                # needed. Only flags that take a value can feed a string to bool().
+                continue
             for option in action.option_strings:
                 if option in known_boolean_flags:
                     seen.add(option)
@@ -444,7 +475,14 @@ def _env_probe(script, **env):
     import sys
 
     environment = dict(os.environ)
-    environment.pop("DATASINK_PUSH_RTS", None)
+    # Cleared so an "unset" case is genuinely unset regardless of the developer's shell.
+    for name in (
+        "DATASINK_PUSH_RTS",
+        "PROFILE",
+        "BENCHMARK_PR_DIFF_SCOPING",
+        "PUSH_RTS",
+    ):
+        environment.pop(name, None)
     environment.update({key: str(value) for key, value in env.items()})
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -697,3 +735,162 @@ def test_the_spec_parser_uses_the_canonical_decoder():
         "a.type is env.parse_bool for a in p._actions))"
     )
     assert _env_probe(script) == "True"
+
+
+def test_no_module_in_the_package_passes_builtin_bool_to_add_argument():
+    """A source scan alongside the introspection guard, because neither covers everything.
+
+    Introspection reads the object argparse will call, so it catches builtins.bool, an alias, a
+    partial and a multi-line kwarg -- but only for parsers that can be built here. Two modules build
+    theirs inline in main() (__builder__/builder.py, __api__/api.py) and one needs a subprocess
+    (__spec__), so introspection alone left six of the eight add_argument modules uncovered. An
+    earlier revision of this branch made exactly that trade without noticing.
+
+    Reads the syntax tree rather than the characters, for two reasons: a text scan matched its own
+    explanatory prose in this very branch, and matching `add_argument(type=...)` specifically also
+    catches `builtins.bool` and survives reformatting.
+
+    Anchored to the package's __file__ and asserting it scanned something: a relative path made an
+    earlier version pass vacuously from any directory but the repo root.
+    """
+    import ast
+    import pathlib
+
+    import redis_benchmarks_specification
+
+    package = pathlib.Path(redis_benchmarks_specification.__file__).parent
+    scanned = sorted(package.rglob("*.py"))
+    assert len(scanned) > 20, f"only scanned {len(scanned)} files under {package}"
+
+    def names_builtin_bool(node):
+        if isinstance(node, ast.Name):
+            return node.id == "bool"
+        # builtins.bool, and any other attribute access ending in .bool
+        return isinstance(node, ast.Attribute) and node.attr == "bool"
+
+    offenders = []
+    for path in scanned:
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "attr", None) != "add_argument":
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "type" and names_builtin_bool(keyword.value):
+                    offenders.append(f"{path.relative_to(package)}:{node.lineno}")
+    assert not offenders, f"builtin bool used as an argparse converter at {offenders}"
+
+
+def test_every_add_argument_module_is_covered_by_one_guard_or_the_other():
+    """Neither guard is complete alone, so pin which module each one covers.
+
+    Otherwise a future narrowing of either guard silently drops modules, which is what happened here
+    when the source scan was replaced rather than supplemented.
+    """
+    import pathlib
+
+    import redis_benchmarks_specification
+
+    package = pathlib.Path(redis_benchmarks_specification.__file__).parent
+    with_arguments = {
+        str(path.relative_to(package))
+        for path in package.rglob("*.py")
+        if "add_argument" in path.read_text()
+    }
+    introspected = {
+        "__cli__/args.py",
+        "__compare__/args.py",
+        "__runner__/args.py",
+        "__self_contained_coordinator__/args.py",
+        "__watchdog__/args.py",
+    }
+    subprocess_covered = {"__spec__/args.py"}
+    scan_only = {"__builder__/builder.py", "__api__/api.py"}
+    assert with_arguments == introspected | subprocess_covered | scan_only, (
+        "a module gained or lost add_argument; assign it to a guard: "
+        f"{with_arguments ^ (introspected | subprocess_covered | scan_only)}"
+    )
+
+
+def test_the_sentinel_survives_a_module_reload():
+    """Why the sentinel is Ellipsis and not a module-level object().
+
+    A module-level sentinel is captured in the signature at definition time while the identity test
+    reads the module global, so importlib.reload rebinds one and not the other -- parse_bool then
+    treats "no default" as "default given" and returns the sentinel instead of raising. The
+    environment tests that first exposed this were later replaced by subprocesses, which removed the
+    only mechanism that failed on it; this keeps the property under test on its own terms.
+    """
+    import importlib
+
+    import redis_benchmarks_specification.__common__.env as env_mod
+
+    importlib.reload(env_mod)
+    with pytest.raises(argparse.ArgumentTypeError):
+        env_mod.parse_bool("maybe")
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_bool("maybe")
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("2", "True"), ("0", "False"), ("false", "False"), ("maybe", "False")],
+)
+def test_push_rts_no_longer_aborts_on_a_word(raw, expected):
+    """The competing bool(int(...)) decoder in a file this branch already edits.
+
+    PUSH_RTS=false raised ValueError at import of __compare__/args, aborting every compare command
+    -- the same defect fixed for PROFILE. The default preserves the old integer reading so no
+    non-zero value flips to disabled.
+    """
+    script = (
+        "from redis_benchmarks_specification.__compare__.args import PERFORMANCE_RTS_PUSH;"
+        "print(PERFORMANCE_RTS_PUSH)"
+    )
+    assert _env_probe(script, PUSH_RTS=raw) == expected
+
+
+@pytest.mark.parametrize("flag", COMPARE_BOOL_FLAGS)
+def test_the_compare_flags_still_default_to_false(flag):
+    """The declared defaults, which nothing covered.
+
+    Every case above passes an explicit value, so flipping all six declarations to default=True
+    passed the whole suite -- and that would make every default comparison skip unstable rows and
+    print regressions only.
+    """
+    parser = _all_parsers()["compare"]
+    namespace = parser.parse_args([])
+    assert getattr(namespace, flag.lstrip("-").replace("-", "_")) is False
+
+
+@pytest.mark.parametrize(
+    "attribute,expected",
+    [
+        ("DATASINK_RTS_PUSH", "False"),
+        ("PROFILERS_ENABLED", "False"),
+        ("BENCHMARK_PR_DIFF_SCOPING", "True"),
+    ],
+)
+def test_the_environment_defaults_when_nothing_is_set(attribute, expected):
+    """The unset direction, which is what almost every process actually runs with.
+
+    Every environment case above sets a value, so changing a default passed the suite. An unset
+    DATASINK_PUSH_RTS reading True would start pushing to the datasink from a process that had never
+    asked to -- the mirror image of the failure this branch was opened to prevent, and the direction
+    the branch claims to have made unreachable.
+    """
+    script = (
+        f"from redis_benchmarks_specification.__common__.env import {attribute};"
+        f"print({attribute})"
+    )
+    assert _env_probe(script) == expected
+
+
+def test_the_push_rts_default_when_nothing_is_set():
+    """Same, for the constant in __compare__/args.py."""
+    script = (
+        "from redis_benchmarks_specification.__compare__.args import PERFORMANCE_RTS_PUSH;"
+        "print(PERFORMANCE_RTS_PUSH)"
+    )
+    assert _env_probe(script) == "False"
