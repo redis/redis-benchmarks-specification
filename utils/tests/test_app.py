@@ -175,9 +175,9 @@ def test_should_action():
     assert should_action("unlabeled") == False
 
 
-def _post_labelled_pr(flask_app, auth_token):
-    with open("./utils/tests/test_data/event_webhook_labelled_pr.json") as fh:
-        req_data = json.dumps(json.load(fh)).encode()
+def _post_event(flask_app, auth_token, payload):
+    """POST a webhook payload, signed the way verify_signature requires."""
+    req_data = json.dumps(payload).encode()
     sign = HMAC(key=auth_token.encode(), msg=req_data, digestmod=sha1).hexdigest()
     with flask_app.test_client() as client:
         return client.post(
@@ -189,6 +189,11 @@ def _post_labelled_pr(flask_app, auth_token):
                 SIG_HEADER: "sha1={}".format(sign),
             },
         )
+
+
+def _post_labelled_pr(flask_app, auth_token):
+    with open("./utils/tests/test_data/event_webhook_labelled_pr.json") as fh:
+        return _post_event(flask_app, auth_token, json.load(fh))
 
 
 # These app-level tests run with NO redis and NO network: a MagicMock conn satisfies
@@ -239,28 +244,12 @@ def test_pr_event_disabled_gate_skips_scoping():
     assert "tests_regexp" not in resp.json
 
 
-def _post_push_event(flask_app, auth_token, payload):
-    """POST a push-event payload, signing it the way the webhook requires."""
-    req_data = json.dumps(payload).encode()
-    sign = HMAC(key=auth_token.encode(), msg=req_data, digestmod=sha1).hexdigest()
-    with flask_app.test_client() as client:
-        return client.post(
-            "/api/gh/redis/redis/commits",
-            content_type="application/json",
-            data=req_data,
-            headers={
-                "Content-type": "application/json",
-                SIG_HEADER: "sha1={}".format(sign),
-            },
-        )
-
-
 def _push_payload(**overrides):
-    """Load the push fixture and make it pass the org/branch allowlists.
+    """Load the push fixture and normalise it to an allowlisted org/branch.
 
-    The fixture is a fork push to a scratch branch, which the trigger gates reject; the
-    gates are not what these tests are about, so normalise the payload rather than patching
-    module constants.
+    Paired with _allowlisted() below: the payload is made to match and the module constants
+    are pinned, so an operator with BENCHMARK_TRIGGER_BRANCHES exported in their shell does
+    not see these tests fail for a reason that has nothing to do with what they assert.
     """
     with open("./utils/tests/test_data/event_webhook_pushed_repo.json") as fh:
         payload = json.load(fh)
@@ -268,6 +257,15 @@ def _push_payload(**overrides):
     payload["repository"]["html_url"] = "https://github.com/redis/redis"
     payload.update(overrides)
     return payload
+
+
+def _allowlisted():
+    """Pin the trigger allowlists so the gates are not an ambient dependency."""
+    return patch.multiple(
+        app_module,
+        BENCHMARK_TRIGGER_ORGS="redis",
+        BENCHMARK_TRIGGER_BRANCHES="unstable",
+    )
 
 
 def test_push_event_baseline_entry_carries_before_sha_not_the_head_sha():
@@ -290,8 +288,10 @@ def test_push_event_baseline_entry_carries_before_sha_not_the_head_sha():
         calls.append(dict(fields))
         return True, dict(fields), None
 
-    with patch.object(app_module, "commit_schema_to_stream", side_effect=_record):
-        resp = _post_push_event(flask_app, auth_token, payload)
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=_record
+    ):
+        resp = _post_event(flask_app, auth_token, payload)
 
     assert resp.status_code == 200
     hashes = [c.get("git_hash") for c in calls]
@@ -318,8 +318,10 @@ def test_push_event_with_created_ref_sentinel_enqueues_only_the_head():
         calls.append(dict(fields))
         return True, dict(fields), None
 
-    with patch.object(app_module, "commit_schema_to_stream", side_effect=_record):
-        resp = _post_push_event(flask_app, auth_token, payload)
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=_record
+    ):
+        resp = _post_event(flask_app, auth_token, payload)
 
     assert resp.status_code == 200
     hashes = [c.get("git_hash") for c in calls]
@@ -347,8 +349,10 @@ def test_deleted_ref_push_enqueues_nothing():
     flask_app, auth_token = _mock_app()
     payload = _push_payload(before="a" * 40, after="0" * 40, deleted=True)
     calls, rec = _record_calls()
-    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
-        resp = _post_push_event(flask_app, auth_token, payload)
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        resp = _post_event(flask_app, auth_token, payload)
     assert resp.status_code == 200
     assert calls == [], f"deletion enqueued {[c.get('git_hash') for c in calls]}"
 
@@ -358,8 +362,10 @@ def test_forced_push_does_not_benchmark_the_overwritten_commit():
     flask_app, auth_token = _mock_app()
     payload = _push_payload(forced=True)
     calls, rec = _record_calls()
-    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
-        resp = _post_push_event(flask_app, auth_token, payload)
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        resp = _post_event(flask_app, auth_token, payload)
     assert resp.status_code == 200
     assert [c.get("git_hash") for c in calls] == [payload["after"]]
 
@@ -374,8 +380,10 @@ def test_malformed_before_does_not_500():
     for bad in (0, 12345, True, 1.5, "", []):
         payload = _push_payload(before=bad)
         calls, rec = _record_calls()
-        with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
-            resp = _post_push_event(flask_app, auth_token, payload)
+        with _allowlisted(), patch.object(
+            app_module, "commit_schema_to_stream", side_effect=rec
+        ):
+            resp = _post_event(flask_app, auth_token, payload)
         assert resp.status_code == 200, f"before={bad!r} returned {resp.status_code}"
         assert [c.get("git_hash") for c in calls] == [
             payload["after"]
@@ -393,6 +401,8 @@ def test_head_is_enqueued_before_the_baseline():
     flask_app, auth_token = _mock_app()
     payload = _push_payload()
     calls, rec = _record_calls()
-    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
-        _post_push_event(flask_app, auth_token, payload)
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        _post_event(flask_app, auth_token, payload)
     assert [c.get("git_hash") for c in calls] == [payload["after"], payload["before"]]

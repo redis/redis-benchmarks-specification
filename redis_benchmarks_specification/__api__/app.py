@@ -249,11 +249,7 @@ def create_app(conn, user, test_config=None):
                 # against the full-suite baseline of the corresponding subset.
                 if before_sha is not None:
                     fields_before = {
-                        # before_sha, not sha: this entry exists to benchmark the commit the
-                        # push moved *from*, so the scoped head run has something to compare
-                        # against. Sending sha here made it a duplicate of the head entry,
-                        # so the baseline commit was never benchmarked and every push
-                        # enqueued the same commit twice.
+                        # The previous tip, not the head: the head is enqueued above.
                         "git_hash": before_sha,
                         "ref_label": ref_label,
                         "ref": ref,
