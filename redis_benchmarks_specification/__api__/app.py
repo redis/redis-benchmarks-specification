@@ -16,6 +16,7 @@ from redis_benchmarks_specification.__common__.env import (
     BENCHMARK_PR_DIFF_SCOPING,
     BENCHMARK_PR_MAX_FILES,
     GH_TOKEN,
+    is_buildable_sha,
 )
 from redis_benchmarks_specification.__common__.scope import compute_pr_scope_fields
 
@@ -144,12 +145,19 @@ def create_app(conn, user, test_config=None):
                 gh_org = html_url[-2]
                 ref = request_data["ref"].split("/")[-1]
                 ref_label = request_data["ref"]
-                sha = request_data["after"]
-                before_sha = request_data["before"]
-                # GitHub sends an all-zero "before" when a ref is created, and an all-zero
-                # "after" when one is deleted -- neither names a commit that can be built.
-                # Treat the sentinel as absent so no baseline entry is enqueued for it.
-                if before_sha is not None and set(before_sha) == {"0"}:
+                sha = request_data.get("after")
+                before_sha = request_data.get("before")
+                # GitHub sends an all-zero sha for the absent end of a ref creation or
+                # deletion, so neither end can be assumed buildable. is_buildable_sha is
+                # non-throwing, so a malformed payload value is rejected rather than 500ing.
+                if not is_buildable_sha(before_sha):
+                    before_sha = None
+                if not is_buildable_sha(sha):
+                    sha = None
+                # A deleted ref has no current tip, and a force-push's "before" is no longer
+                # on the branch -- benchmarking it would attribute a datapoint to a commit the
+                # branch does not contain. Gate on the event's own booleans.
+                if request_data.get("deleted") or request_data.get("forced"):
                     before_sha = None
 
                 allowed_orgs = [
@@ -213,18 +221,32 @@ def create_app(conn, user, test_config=None):
                         "gh_org": gh_org,
                     }
                     app.logger.info(
-                        "Using event {} to trigger merge-base commit benchmark. final fields: {}".format(
+                        "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
                             event_type, fields_before
                         )
                     )
                     result, response_data, err_message = commit_schema_to_stream(
                         fields_before, conn, gh_org, gh_repo
                     )
+                    if result is False:
+                        app.logger.error(
+                            "Baseline commit {} could not be enqueued: {}".format(
+                                before_sha, err_message
+                            )
+                        )
+                    else:
+                        app.logger.info(
+                            "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
+                                event_type, response_data
+                            )
+                        )
+                if sha is None:
                     app.logger.info(
-                        "Using event {} to trigger merge-base commit benchmark. final fields: {}".format(
-                            event_type, response_data
+                        "Skipping benchmark trigger for {}: no buildable head commit".format(
+                            ref_label
                         )
                     )
+                    return jsonify({"message": "no buildable head commit"}), 200
                 fields_after = {
                     "git_hash": sha,
                     "ref_label": ref_label,

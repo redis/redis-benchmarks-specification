@@ -325,3 +325,68 @@ def test_push_event_with_created_ref_sentinel_enqueues_only_the_head():
     hashes = [c.get("git_hash") for c in calls]
     assert "0" * 40 not in hashes, f"all-zero sentinel was enqueued: {hashes}"
     assert hashes == [payload["after"]], f"expected only the head entry, got {hashes}"
+
+
+def _record_calls():
+    calls = []
+
+    def _rec(fields, *args, **kwargs):
+        calls.append(dict(fields))
+        return True, dict(fields), None
+
+    return calls, _rec
+
+
+def test_deleted_ref_push_enqueues_nothing():
+    """Deleting a ref must not benchmark the tip it just removed.
+
+    A deletion arrives as a push with a real `before` and an all-zero `after`. Repointing the
+    baseline entry at `before` would otherwise turn a harmless no-op into a full-suite run
+    attributed to a ref that no longer exists.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload(before="a" * 40, after="0" * 40, deleted=True)
+    calls, rec = _record_calls()
+    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
+        resp = _post_push_event(flask_app, auth_token, payload)
+    assert resp.status_code == 200
+    assert calls == [], f"deletion enqueued {[c.get('git_hash') for c in calls]}"
+
+
+def test_forced_push_does_not_benchmark_the_overwritten_commit():
+    """A force-push's `before` is no longer on the branch, so it is not a valid baseline."""
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload(forced=True)
+    calls, rec = _record_calls()
+    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
+        resp = _post_push_event(flask_app, auth_token, payload)
+    assert resp.status_code == 200
+    assert [c.get("git_hash") for c in calls] == [payload["after"]]
+
+
+def test_malformed_before_does_not_500():
+    """A non-string `before` must be rejected, not raise.
+
+    `set(0)` raises TypeError, so a shape-sniffing guard turned four payload types that
+    previously returned 200 into 500s -- on events the allowlist may not even accept.
+    """
+    flask_app, auth_token = _mock_app()
+    for bad in (0, 12345, True, 1.5, "", []):
+        payload = _push_payload(before=bad)
+        calls, rec = _record_calls()
+        with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
+            resp = _post_push_event(flask_app, auth_token, payload)
+        assert resp.status_code == 200, f"before={bad!r} returned {resp.status_code}"
+        assert [c.get("git_hash") for c in calls] == [
+            payload["after"]
+        ], f"before={bad!r} enqueued {[c.get('git_hash') for c in calls]}"
+
+
+def test_baseline_is_enqueued_before_the_head():
+    """Order is observable behaviour: the baseline is enqueued first."""
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload()
+    calls, rec = _record_calls()
+    with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
+        _post_push_event(flask_app, auth_token, payload)
+    assert [c.get("git_hash") for c in calls] == [payload["before"], payload["after"]]
