@@ -1605,6 +1605,45 @@ def get_by_error(name, by_str_arr):
     return f"--{name}-branch, --{name}-tag, --{name}-target-branch, --{name}-hash, and --{name}-target-version are mutually exclusive. You selected a total of {len(by_str_arr)}: {by_string}. Pick one..."
 
 
+# (flag suffix, label reported as by_str). Order fixes which selector is named first in an
+# error and is otherwise immaterial, since at most one may be supplied.
+_SELECTORS = (
+    ("branch", "branch"),
+    ("tag", "version"),
+    ("target_version", "target+version"),
+    ("target_branch", "target+branch"),
+    ("hash", "hash"),
+)
+
+
+def _resolve_by(name, supplied):
+    """Pick the single selector for one side, or exit with an accurate error.
+
+    `supplied` maps selector suffix -> value (None when absent).
+
+    Every selector is collected before anything is reported, so the error names all of them
+    and the count matches. The previous per-selector chain appended to the error list only
+    inside its own failure branch, so whichever selector was supplied *first* was never
+    recorded: any pair not involving --*-branch reported "a total of 1" and named the wrong
+    flag. The --*-hash arm additionally had its exclusion check commented out (#312, a squash
+    with no rationale for it), so on the comparison side four pairs were accepted silently and
+    the hash quietly won by being last in the chain.
+    """
+    chosen = [(label, supplied.get(suffix)) for suffix, label in _SELECTORS]
+    chosen = [(label, value) for label, value in chosen if value is not None]
+    if len(chosen) > 1:
+        logging.error(get_by_error(name, [label for label, _ in chosen]))
+        exit(1)
+    if not chosen:
+        flags = ", ".join(
+            "--{}-{}".format(name, s.replace("_", "-")) for s, _ in _SELECTORS
+        )
+        logging.error("You need to provide one of ( {} )".format(flags))
+        exit(1)
+    label, value = chosen[0]
+    return value, label
+
+
 def get_by_strings(
     baseline_branch,
     comparison_branch,
@@ -1617,120 +1656,26 @@ def get_by_strings(
     baseline_target_branch=None,
     comparison_target_branch=None,
 ):
-    baseline_covered = False
-    comparison_covered = False
-    by_str_baseline = ""
-    by_str_comparison = ""
-    baseline_str = ""
-    comparison_str = ""
-    baseline_by_arr = []
-    comparison_by_arr = []
-
-    ################# BASELINE BY ....
-
-    if baseline_branch is not None:
-        by_str_baseline = "branch"
-        baseline_covered = True
-        baseline_str = baseline_branch
-        baseline_by_arr.append(by_str_baseline)
-
-    if baseline_tag is not None:
-        by_str_baseline = "version"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_tag
-
-    if baseline_target_version is not None:
-        by_str_baseline = "target+version"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_target_version
-
-    if baseline_hash is not None:
-        by_str_baseline = "hash"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_hash
-    if baseline_target_branch is not None:
-        by_str_baseline = "target+branch"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_target_branch
-
-    ################# COMPARISON BY ....
-
-    if comparison_branch is not None:
-        by_str_comparison = "branch"
-        comparison_covered = True
-        comparison_str = comparison_branch
-
-    if comparison_tag is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch and --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "version"
-        comparison_str = comparison_tag
-    if comparison_target_version is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "target+version"
-        comparison_str = comparison_target_version
-
-    if comparison_target_branch is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "target+branch"
-        comparison_str = comparison_target_branch
-
-    if comparison_hash is not None:
-        # check if we had already covered comparison
-        # if comparison_covered:
-        #     logging.error(
-        #         "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-        #     )
-        #     exit(1)
-        comparison_covered = True
-        by_str_comparison = "hash"
-        comparison_str = comparison_hash
-
-    if baseline_covered is False:
-        logging.error(
-            "You need to provider either "
-            + "( --baseline-branch, --baseline-tag, --baseline-hash, --baseline-target-branch or --baseline-target-version ) "
-        )
-        exit(1)
-    if comparison_covered is False:
-        logging.error(
-            "You need to provider either "
-            + "( --comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch or --comparison-target-version ) "
-        )
-        exit(1)
+    baseline_str, by_str_baseline = _resolve_by(
+        "baseline",
+        {
+            "branch": baseline_branch,
+            "tag": baseline_tag,
+            "target_version": baseline_target_version,
+            "target_branch": baseline_target_branch,
+            "hash": baseline_hash,
+        },
+    )
+    comparison_str, by_str_comparison = _resolve_by(
+        "comparison",
+        {
+            "branch": comparison_branch,
+            "tag": comparison_tag,
+            "target_version": comparison_target_version,
+            "target_branch": comparison_target_branch,
+            "hash": comparison_hash,
+        },
+    )
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
 
 
