@@ -32,7 +32,15 @@ COMMANDSTATS_PREFIX = "commandstats_cmdstat_"
 LATENCYSTATS_PREFIX = "latencystats_latency_percentiles_usec_"
 PREFIXES = st.sampled_from([COMMANDSTATS_PREFIX, LATENCYSTATS_PREFIX])
 
-LABELS = ("command", "metric", "shard", "command_and_metric")
+LABELS = (
+    "command",
+    "metric",
+    "shard",
+    "command_and_metric",
+    "command_and_metric_and_setup",
+    "command_and_setup",
+    "metric_and_shard",
+)
 
 # Deliberately hostile: empty strings, bare separators, and the prefix embedded at a
 # non-zero offset -- the shapes that used to raise or mis-slice.
@@ -83,7 +91,13 @@ def test_no_labels_derived_when_the_prefix_is_not_at_the_start(prefix, lead, tai
     ),
 )
 def test_wellformed_names_round_trip(prefix, command, metric):
-    """`<prefix><command>_<metric>` must yield exactly that command and metric."""
+    """`<prefix><command>_<metric>` must yield exactly that command and metric.
+
+    The command alphabet excludes an interior "_" on purpose: `a_b_c` is genuinely ambiguous
+    (command `a_b` + metric `c` vs command `a` + metric `b_c`) and the wire format carries
+    nothing to disambiguate it. A leading underscore is unambiguous and is covered by
+    test_leading_underscore_command_keeps_its_underscore.
+    """
     labels = {}
     commandstats_latencystats_process_name(
         f"{prefix}{command}_{metric}", prefix, "oss-standalone", labels
@@ -144,3 +158,133 @@ def test_all_label_keys_are_set_together_or_not_at_all():
         assert (
             len(present) == len(LABELS)
         ) is expect_labels, f"{name!r} produced a partial label set: {labels}"
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    prefix=PREFIXES,
+    command=st.text(alphabet="abcdefghijklmnopqrstuvwxyz.", min_size=1, max_size=8),
+    metric=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=8),
+)
+def test_leading_underscore_command_keeps_its_underscore(prefix, command, metric):
+    """A command named `_foo` must parse as `_foo`, not lose the underscore or be dropped.
+
+    The original implementation split at the first "_" *after* the leading character
+    specifically so that a leading underscore survived. A naive `partition("_")` drops such
+    commands entirely, which is a silent reclassification -- so this pins the behaviour.
+    """
+    labels = {}
+    commandstats_latencystats_process_name(
+        f"{prefix}_{command}_{metric}", prefix, "oss-standalone", labels
+    )
+    assert labels["command"] == "_" + command
+    assert labels["metric"] == metric
+
+
+@settings(max_examples=300, deadline=None)
+@given(prefix=PREFIXES, tail=NAME_PARTS)
+def test_no_label_is_ever_empty(prefix, tail):
+    """No derived label may be the empty string.
+
+    An empty-valued label is a real tag on a real datapoint, so it misfiles the point just
+    as surely as a wrong one -- the failure this whole fix is about. Shapes like
+    "get__shard_2" (empty metric) and "get_calls_shard_" (empty shard) reached this.
+    """
+    labels = {}
+    commandstats_latencystats_process_name(
+        prefix + tail, prefix, "oss-standalone", labels
+    )
+    for key in LABELS:
+        if key in labels:
+            assert labels[key] != "", f"{key} is empty for tail {tail!r}"
+
+
+def test_stale_labels_are_not_left_behind_on_a_reused_dict():
+    """A name this function cannot parse must not leave the previous metric's labels behind.
+
+    `export_redis_metrics` binds one `variant_labels_dict` per variant and reuses it for every
+    metric, setting `variant_labels_dict["metric"] = metric_name` immediately before each call.
+    So `metric` is the caller's key -- this function does not own it and must not clear it --
+    but every label it *derives* has to go, or the metric is exported under the previous
+    command's tags. This test mimics that caller exactly.
+    """
+    derived = tuple(k for k in LABELS if k != "metric")
+    labels = {}
+
+    labels["metric"] = COMMANDSTATS_PREFIX + "get_calls"
+    commandstats_latencystats_process_name(
+        COMMANDSTATS_PREFIX + "get_calls", COMMANDSTATS_PREFIX, "oss-standalone", labels
+    )
+    assert labels["command"] == "get"
+
+    # next metric of the same variant, prefixed but unparseable
+    labels["metric"] = COMMANDSTATS_PREFIX + "g"
+    commandstats_latencystats_process_name(
+        COMMANDSTATS_PREFIX + "g", COMMANDSTATS_PREFIX, "oss-standalone", labels
+    )
+    for key in derived:
+        assert (
+            key not in labels
+        ), f"stale {key}={labels.get(key)!r} survived an unparseable name"
+    # the caller's own key is untouched
+    assert labels["metric"] == COMMANDSTATS_PREFIX + "g"
+
+
+CORE_UNDERSCORE_COMMANDS = (
+    "sort_ro",
+    "eval_ro",
+    "evalsha_ro",
+    "fcall_ro",
+    "bitfield_ro",
+    "georadius_ro",
+    "georadiusbymember_ro",
+)
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    command=st.sampled_from(CORE_UNDERSCORE_COMMANDS),
+    metric=st.sampled_from(
+        ("calls", "usec", "usec_per_call", "rejected_calls", "failed_calls")
+    ),
+    shard=st.one_of(st.none(), st.integers(1, 9).map(str)),
+)
+def test_commands_whose_name_contains_underscore_are_not_folded_into_another_command(
+    command, metric, shard
+):
+    """A command whose own name contains "_" must not be attributed to a shorter command.
+
+    Seven core commands end in "_RO". Splitting on the first "_" filed SORT_RO's metrics
+    under command="sort" with metric="ro_calls", silently merging them into the real SORT
+    series -- the same misfiling this fix is about, but reachable with real command names.
+    """
+    name = f"{COMMANDSTATS_PREFIX}{command}_{metric}"
+    if shard is not None:
+        name += f"_shard_{shard}"
+    labels = {}
+    commandstats_latencystats_process_name(
+        name, COMMANDSTATS_PREFIX, "oss-standalone", labels
+    )
+    assert labels["command"] == command
+    assert labels["metric"] == metric
+    assert labels["shard"] == (shard or "1")
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    command=st.sampled_from(CORE_UNDERSCORE_COMMANDS + ("get", "set", "client|list")),
+    pct=st.sampled_from(("p50", "p99", "p99.9", "p50.00", "p99.99")),
+)
+def test_latency_percentiles_split_on_the_percentile_not_the_first_underscore(
+    command, pct
+):
+    """Percentile metrics must split on the percentile, so "_RO" stays with the command."""
+    labels = {}
+    commandstats_latencystats_process_name(
+        f"{LATENCYSTATS_PREFIX}{command}_{pct}",
+        LATENCYSTATS_PREFIX,
+        "oss-standalone",
+        labels,
+    )
+    assert labels["command"] == command
+    assert labels["metric"] == pct
