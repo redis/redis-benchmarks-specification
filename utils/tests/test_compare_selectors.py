@@ -76,7 +76,7 @@ def test_every_pair_of_selectors_is_rejected_with_an_accurate_count(caplog, side
     a, b = pair
     result, text = _call(caplog, **{f"{side}_{a}": "AAA", f"{side}_{b}": "BBB"})
     assert result is None, f"{side} {a}+{b} was accepted instead of rejected"
-    match = re.search(r"total of (\d+): ([^.]*)", text)
+    match = re.search(r"total of (\d+): (.*?)\. Pick", text)
     assert match, f"no count in error for {side} {a}+{b}: {text!r}"
     assert int(match.group(1)) == 2, f"{side} {a}+{b} reported {match.group(1)}, not 2"
     named = [n.strip() for n in match.group(2).split(",")]
@@ -351,20 +351,23 @@ def test_the_cli_translates_a_selector_error_into_exit_1():
         for n in ast.walk(tree)
         if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
     )
-    handlers = [
-        h
+    codes = [
+        c.args[0].value
         for node in ast.walk(fn)
         if isinstance(node, ast.Try)
         for h in node.handlers
         if getattr(h.type, "id", None) == "ValueError"
-        and any(
-            isinstance(c, ast.Call)
-            and getattr(getattr(c.func, "value", None), "id", None) == "sys"
-            and getattr(c.func, "attr", None) == "exit"
-            for c in ast.walk(h)
-        )
+        for c in ast.walk(h)
+        if isinstance(c, ast.Call)
+        and getattr(getattr(c.func, "value", None), "id", None) == "sys"
+        and getattr(c.func, "attr", None) == "exit"
+        and c.args
+        and isinstance(c.args[0], ast.Constant)
     ]
-    assert handlers, "no ValueError handler in compare_command_logic calls sys.exit"
+    assert codes, "no ValueError handler in compare_command_logic calls sys.exit"
+    # the code itself, not just that it exits: `set -e` and every CI step branch on it, so
+    # exiting 0 while printing an error is indistinguishable from a successful comparison
+    assert all(code == 1 for code in codes), f"selector errors exit with {codes}, not 1"
 
 
 def test_no_selector_is_reassigned_between_validation_and_the_table_calls():
@@ -411,3 +414,45 @@ def test_no_selector_is_reassigned_between_validation_and_the_table_calls():
         and validated_at < node.lineno < last_table_call
     ]
     assert not reassigned, f"selectors reassigned after validation: {reassigned}"
+
+
+def test_the_by_str_labels_match_what_the_ingest_side_writes():
+    """These labels are TimeSeries label names, not display strings.
+
+    by_str is interpolated straight into a query filter, so renaming one makes every query for
+    that selector return zero series -- indistinguishable from "this version was never
+    benchmarked". Asserting them against LABELS above would be tautological: LABELS is a copy of
+    _SELECTORS, so the natural single edit renames both and ships green. This checks the other
+    side of the wire instead.
+
+    `hash` is excluded deliberately: it is written by redisbench-admin, not by this repo, so
+    there is nothing local to compare it against.
+    """
+    import inspect
+
+    import redis_benchmarks_specification.__common__.timeseries as ts_mod
+    from redis_benchmarks_specification.__compare__.compare import _SELECTORS
+
+    ingest = inspect.getsource(ts_mod)
+    labels = {label for _, label in _SELECTORS}
+
+    for plain in ("version", "branch"):
+        assert plain in labels, f"_SELECTORS no longer resolves anything to '{plain}'"
+        assert (
+            f'labels["{plain}"]' in ingest or f'["labels"]["{plain}"]' in ingest
+        ), f"the ingest side no longer writes a '{plain}' label"
+
+    # target+<key> is built by joining, so match the construction rather than a literal
+    assert '"{}+{}".format("target", break_by_key)' in ingest, (
+        "the ingest side no longer builds target+<key> labels; the two target selectors "
+        "would query a label that is never written"
+    )
+    for composed in ("target+version", "target+branch"):
+        assert (
+            composed in labels
+        ), f"_SELECTORS no longer resolves anything to '{composed}'"
+        prefix, _, key = composed.partition("+")
+        assert prefix == "target" and key in (
+            "version",
+            "branch",
+        ), f"'{composed}' is not a target+<key> pair the ingest side can produce"
