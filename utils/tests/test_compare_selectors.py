@@ -351,11 +351,25 @@ def test_the_cli_translates_a_selector_error_into_exit_1():
         for n in ast.walk(tree)
         if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
     )
-    codes = [
-        c.args[0].value
+    guards = [
+        node
         for node in ast.walk(fn)
         if isinstance(node, ast.Try)
-        for h in node.handlers
+        and any(getattr(h.type, "id", None) == "ValueError" for h in node.handlers)
+    ]
+    assert len(guards) == 1, "expected exactly one selector-validation guard"
+    # The guard must wrap the validation call itself. Asserting only that some handler exists
+    # would still pass with the call moved out of the try, which is the regression this prevents:
+    # the tables would then raise uncaught and the user would get a traceback.
+    guarded = [
+        c
+        for c in ast.walk(guards[0])
+        if isinstance(c, ast.Call) and getattr(c.func, "id", None) == "get_by_strings"
+    ]
+    assert guarded, "the ValueError guard does not wrap a get_by_strings call"
+    codes = [
+        c.args[0].value
+        for h in guards[0].handlers
         if getattr(h.type, "id", None) == "ValueError"
         for c in ast.walk(h)
         if isinstance(c, ast.Call)
@@ -364,7 +378,7 @@ def test_the_cli_translates_a_selector_error_into_exit_1():
         and c.args
         and isinstance(c.args[0], ast.Constant)
     ]
-    assert codes, "no ValueError handler in compare_command_logic calls sys.exit"
+    assert codes, "the ValueError handler does not call sys.exit"
     # the code itself, not just that it exits: `set -e` and every CI step branch on it, so
     # exiting 0 while printing an error is indistinguishable from a successful comparison
     assert all(code == 1 for code in codes), f"selector errors exit with {codes}, not 1"
@@ -527,4 +541,43 @@ def test_the_grafana_link_never_carries_an_empty_selector():
     assert "if baseline_branch and comparison_branch:" in src, (
         "the branch pair is gated on `is not None`, so an empty branch contributes an empty "
         "var-branch parameter to the link"
+    )
+
+
+def test_the_default_baseline_branch_is_not_injected_over_an_explicit_selector():
+    """A default must not manufacture a conflict with a flag the user never typed.
+
+    compare_command_logic falls back to a configured default baseline branch. Applying it
+    unconditionally meant `--baseline-hash X` alone resolved to branch+hash and was rejected for
+    conflicting with a --baseline-branch that appeared nowhere on the command line. That is why
+    clearing the branch with '' was needed to select by hash at all.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    guarded = [
+        node
+        for node in ast.walk(fn)
+        if isinstance(node, ast.If)
+        and any(
+            isinstance(c, ast.Name) and c.id == "explicit_baseline_selectors"
+            for c in ast.walk(node.test)
+        )
+        and any(
+            isinstance(t, ast.Name) and t.id == "baseline_branch"
+            for b in node.body
+            if isinstance(b, ast.Assign)
+            for t in b.targets
+        )
+    ]
+    assert guarded, (
+        "the default-baseline-branch fallback is not gated on the absence of an explicit "
+        "baseline selector, so it can manufacture a conflict the user did not create"
     )

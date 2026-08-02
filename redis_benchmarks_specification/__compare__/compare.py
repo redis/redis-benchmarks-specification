@@ -335,7 +335,26 @@ def compare_command_logic(args, project_name, project_version):
     from_date = args.from_date
     to_date = args.to_date
     baseline_branch = args.baseline_branch
-    if baseline_branch is None and default_baseline_branch is not None:
+    # Only fall back to the configured default when the user identified the baseline no other
+    # way. Injecting it unconditionally manufactured a second selector, so `--baseline-hash X`
+    # was rejected for conflicting with a `--baseline-branch` the user never typed -- the same
+    # kind of untruth about someone's own command line that this resolver is being fixed for. It
+    # is also why clearing the branch with '' was needed to select by hash; that still works, but
+    # is no longer required.
+    explicit_baseline_selectors = [
+        absent_if_empty(value)
+        for value in (
+            args.baseline_tag,
+            args.baseline_hash,
+            args.baseline_target_version,
+            args.baseline_target_branch,
+        )
+    ]
+    if (
+        baseline_branch is None
+        and default_baseline_branch is not None
+        and all(value is None for value in explicit_baseline_selectors)
+    ):
         logging.info(
             "Given --baseline-branch was null using the default baseline branch {}".format(
                 default_baseline_branch
@@ -376,7 +395,7 @@ def compare_command_logic(args, project_name, project_version):
             "You need to provider either "
             + " --metric_name or provide a defaults file via --defaults_filename that contains exporter.redistimeseries.comparison.metrics array. Exiting..."
         )
-        exit(1)
+        sys.exit(1)
     else:
         logging.info("Using metric {}".format(metric_name))
 
@@ -408,6 +427,28 @@ def compare_command_logic(args, project_name, project_version):
     comparison_github_org = args.comparison_github_org
     baseline_hash = absent_if_empty(args.baseline_hash)
     comparison_hash = absent_if_empty(args.comparison_hash)
+
+    # Validate the selectors here so the CLI still exits 1 with an accurate message, while the
+    # resolver itself only raises. get_by_strings is also reached from compute_regression_table,
+    # which the coordinator daemon calls inside an `except Exception` it documents as
+    # best-effort observability -- and SystemExit is not an Exception, so exiting down there
+    # escaped that guard, killed the daemon and left the stream un-ACKed.
+    try:
+        get_by_strings(
+            baseline_branch,
+            comparison_branch,
+            baseline_tag,
+            comparison_tag,
+            baseline_target_version,
+            comparison_target_version,
+            baseline_hash,
+            comparison_hash,
+            baseline_target_branch,
+            comparison_target_branch,
+        )
+    except ValueError as selector_error:
+        logging.error(str(selector_error))
+        sys.exit(1)
 
     # Log platform and environment information
     if running_platform_baseline == running_platform_comparison:
@@ -495,28 +536,6 @@ def compare_command_logic(args, project_name, project_version):
         logging.info(
             "Auto-enabling environment comparison mode due to comma-separated deployment names"
         )
-
-    # Validate the selectors here so the CLI still exits 1 with an accurate message, while the
-    # resolver itself only raises. get_by_strings is also reached from compute_regression_table,
-    # which the coordinator daemon calls inside an `except Exception` it documents as
-    # best-effort observability -- and SystemExit is not an Exception, so exiting down there
-    # escaped that guard, killed the daemon and left the stream un-ACKed.
-    try:
-        get_by_strings(
-            baseline_branch,
-            comparison_branch,
-            baseline_tag,
-            comparison_tag,
-            baseline_target_version,
-            comparison_target_version,
-            baseline_hash,
-            comparison_hash,
-            baseline_target_branch,
-            comparison_target_branch,
-        )
-    except ValueError as selector_error:
-        logging.error(str(selector_error))
-        sys.exit(1)
 
     if compare_by_env:
         logging.info("Environment comparison mode enabled")
@@ -1682,7 +1701,9 @@ def _resolve_by(name, supplied):
 
     `supplied` maps every selector suffix in _SELECTORS to its value, using None -- or "" -- for
     "not supplied". Returns (value, by_str) for the one selector supplied, where by_str is the
-    datasink label that value filters on. Exits if none or more than one is supplied.
+    datasink label that value filters on. Raises ValueError if none or more than one is supplied,
+    and KeyError if `supplied` omits a selector _SELECTORS lists -- that is a call-site bug, not
+    user input, so it is deliberately not folded into the user-facing error.
 
     Both defects this replaces were silent: the per-selector chain recorded an offender only
     inside its own failure branch, so any pair not involving --*-branch reported "a total of 1"
