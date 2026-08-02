@@ -17,15 +17,14 @@ and produced confident nonsense (``shard_commandstats_cmdstat_get_calls`` →
 Offline and dependency-light so it runs on every pull request.
 """
 
-import pytest
+# hypothesis is a hard import, not pytest.importorskip: it is pinned in
+# dev_requirements.txt, which is what tox installs, so a missing dependency is a
+# packaging bug. A skip would hide that and let CI report green while this file
+# never runs -- the same silent-success failure mode this fix is about.
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-hypothesis = pytest.importorskip(
-    "hypothesis", reason="hypothesis is required for property tests"
-)
-from hypothesis import given, settings  # noqa: E402
-from hypothesis import strategies as st  # noqa: E402
-
-from redis_benchmarks_specification.__common__.runner import (  # noqa: E402
+from redis_benchmarks_specification.__common__.runner import (
     commandstats_latencystats_process_name,
 )
 
