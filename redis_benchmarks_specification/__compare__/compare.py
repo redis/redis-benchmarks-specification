@@ -334,6 +334,12 @@ def compare_command_logic(args, project_name, project_version):
     if baseline_branch == "":
         baseline_branch = None
     comparison_branch = args.comparison_branch
+    # Mirror the baseline normalization above. Selecting a side by hash means clearing its
+    # branch with '', and only the baseline side was normalized -- so '' reached the selector
+    # resolver as a supplied value and, once the comparison-side exclusion is enforced, a
+    # documented invocation would be rejected while being told it had selected a branch.
+    if comparison_branch == "":
+        comparison_branch = None
     simplify_table = args.simple_table
     print_regressions_only = args.print_regressions_only
     print_improvements_only = args.print_improvements_only
@@ -485,6 +491,28 @@ def compare_command_logic(args, project_name, project_version):
         logging.info(
             "Auto-enabling environment comparison mode due to comma-separated deployment names"
         )
+
+    # Validate the selectors here so the CLI still exits 1 with an accurate message, while the
+    # resolver itself only raises. get_by_strings is also reached from compute_regression_table,
+    # which the coordinator daemon calls inside an `except Exception` it documents as
+    # best-effort observability -- and SystemExit is not an Exception, so exiting down there
+    # escaped that guard, killed the daemon and left the stream un-ACKed.
+    try:
+        get_by_strings(
+            baseline_branch,
+            comparison_branch,
+            baseline_tag,
+            comparison_tag,
+            baseline_target_version,
+            comparison_target_version,
+            baseline_hash,
+            comparison_hash,
+            baseline_target_branch,
+            comparison_target_branch,
+        )
+    except ValueError as selector_error:
+        logging.error(str(selector_error))
+        sys.exit(1)
 
     if compare_by_env:
         logging.info("Environment comparison mode enabled")
@@ -968,8 +996,13 @@ def compute_env_comparison_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    comparison_hash=None,
+    # Declared baseline-first to match this function's only caller, which passes all of these
+    # positionally. The previous order was comparison_hash then baseline_hash, so the caller's
+    # --baseline-hash bound to comparison_hash and vice versa; the values were then forwarded
+    # to get_by_strings under the swapped local names, transposing the two sides of every
+    # --compare-by-env comparison filtered by hash.
     baseline_hash=None,
+    comparison_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_target_branch=None,
@@ -1269,8 +1302,13 @@ def compute_regression_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    comparison_hash=None,
+    # Baseline-first, matching this function's only caller, which passes positionally. The
+    # previous order was comparison-first while the forward to get_by_strings below was ALSO
+    # comparison-first, so the two inversions cancelled and positional callers were correct --
+    # but any keyword caller, or any refactor of either list alone, silently transposed the two
+    # sides of the comparison. Both are now canonical so neither can drift alone.
     baseline_hash=None,
+    comparison_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_target_branch=None,
@@ -1310,8 +1348,8 @@ def compute_regression_table(
         comparison_tag,
         baseline_target_version,
         comparison_target_version,
-        comparison_hash,
         baseline_hash,
+        comparison_hash,
         baseline_target_branch,
         comparison_target_branch,
     )
@@ -1600,11 +1638,6 @@ def compute_regression_table(
     )
 
 
-def get_by_error(name, by_str_arr):
-    by_string = ",".join(by_str_arr)
-    return f"--{name}-branch, --{name}-tag, --{name}-target-branch, --{name}-hash, and --{name}-target-version are mutually exclusive. You selected a total of {len(by_str_arr)}: {by_string}. Pick one..."
-
-
 # (flag suffix, label reported as by_str). Order fixes which selector is named first in an
 # error and is otherwise immaterial, since at most one may be supplied.
 _SELECTORS = (
@@ -1616,31 +1649,62 @@ _SELECTORS = (
 )
 
 
+def _selector_flags(name):
+    """The CLI flag for every selector, derived from _SELECTORS so there is a single ordering."""
+    return [
+        "--{}-{}".format(name, suffix.replace("_", "-")) for suffix, _ in _SELECTORS
+    ]
+
+
+def get_by_error(name, suffixes):
+    """Name the offenders by their CLI flag.
+
+    The by_str labels are datasink label names ("version" for --<name>-tag, "target+version"
+    for --<name>-target-version) and were previously reported verbatim, so a user who passed
+    --baseline-tag was told they had selected "version" -- a word absent from their command
+    line. The labels cannot be renamed; they are the filter keys used downstream.
+    """
+    by_string = ",".join("--{}-{}".format(name, s.replace("_", "-")) for s in suffixes)
+    flags = _selector_flags(name)
+    flag_list = ", ".join(flags[:-1]) + ", and " + flags[-1]
+    return f"{flag_list} are mutually exclusive. You selected a total of {len(suffixes)}: {by_string}. Pick one..."
+
+
 def _resolve_by(name, supplied):
     """Pick the single selector for one side, or exit with an accurate error.
 
-    `supplied` maps selector suffix -> value (None when absent).
+    `supplied` maps every selector suffix in _SELECTORS to its value, using None -- or "" -- for
+    "not supplied". Returns (value, by_str) for the one selector supplied, where by_str is the
+    datasink label that value filters on. Exits if none or more than one is supplied.
 
-    Every selector is collected before anything is reported, so the error names all of them
-    and the count matches. The previous per-selector chain appended to the error list only
-    inside its own failure branch, so whichever selector was supplied *first* was never
-    recorded: any pair not involving --*-branch reported "a total of 1" and named the wrong
-    flag. The --*-hash arm additionally had its exclusion check commented out (#312, a squash
-    with no rationale for it), so on the comparison side four pairs were accepted silently and
-    the hash quietly won by being last in the chain.
+    Both defects this replaces were silent: the per-selector chain recorded an offender only
+    inside its own failure branch, so any pair not involving --*-branch reported "a total of 1"
+    and named the wrong flag; and the --*-hash arm's exclusion check had been commented out in
+    d62497b (WIP boxplot work later squashed into #312, unrelated to selector semantics), so on
+    the comparison side four pairs were accepted silently and the hash won by being last.
     """
-    chosen = [(label, supplied.get(suffix)) for suffix, label in _SELECTORS]
-    chosen = [(label, value) for label, value in chosen if value is not None]
+    # Indexed, not .get(): a selector present in _SELECTORS but absent from a call-site dict is
+    # a programming error, and .get() would turn it into a selector that can never be supplied
+    # while the error message still advertised its flag.
+    chosen = [(suffix, label, supplied[suffix]) for suffix, label in _SELECTORS]
+    # An empty string means "not supplied". compare_command_logic defaults --baseline-branch to
+    # "unstable", so filtering the baseline by hash requires passing --baseline-branch '' to
+    # clear it; that is a documented idiom and the same is done on the comparison side. Only
+    # the baseline was normalized (compare_command_logic), so enforcing the exclusion on a bare
+    # `is not None` would reject the comparison form that callers actually use, and would report
+    # a count of 2 for the one selector they passed.
+    chosen = [
+        (suffix, label, value)
+        for suffix, label, value in chosen
+        if value is not None and value != ""
+    ]
     if len(chosen) > 1:
-        logging.error(get_by_error(name, [label for label, _ in chosen]))
-        exit(1)
+        raise ValueError(get_by_error(name, [suffix for suffix, _, _ in chosen]))
     if not chosen:
-        flags = ", ".join(
-            "--{}-{}".format(name, s.replace("_", "-")) for s, _ in _SELECTORS
+        raise ValueError(
+            "You need to provide one of ( {} )".format(", ".join(_selector_flags(name)))
         )
-        logging.error("You need to provide one of ( {} )".format(flags))
-        exit(1)
-    label, value = chosen[0]
+    _, label, value = chosen[0]
     return value, label
 
 
