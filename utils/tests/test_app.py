@@ -406,3 +406,87 @@ def test_head_is_enqueued_before_the_baseline():
     ):
         _post_event(flask_app, auth_token, payload)
     assert [c.get("git_hash") for c in calls] == [payload["after"], payload["before"]]
+
+
+def test_baseline_entry_is_unscoped_and_carries_no_pull_request():
+    """Pin the invariant the code comment states.
+
+    Before the sha fix, "unscoped baseline" and "the head commit again" were the same object,
+    so this invariant was untestable. Now that the baseline names a distinct commit it is
+    load-bearing: if it ever picked up scope fields, every comparison would silently stop
+    being against a full-suite baseline, with a green suite.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload()
+    calls, rec = _record_calls()
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        _post_event(flask_app, auth_token, payload)
+    baseline = next(c for c in calls if c["git_hash"] == payload["before"])
+    for key in ("tests_groups_regexp", "tests_regexp", "pull_request"):
+        assert (
+            key not in baseline
+        ), f"baseline entry picked up {key}={baseline.get(key)!r}"
+
+
+def test_baseline_entry_carries_the_fields_the_builder_needs():
+    """Assert the whole baseline payload, not just its git_hash.
+
+    `ref` is what gets checked out and gh_org/gh_repo are what the archive is fetched from, so
+    dropping or transposing any of them ships an entry that cannot build -- previously
+    invisible, since only git_hash was asserted.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload()
+    calls, rec = _record_calls()
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        _post_event(flask_app, auth_token, payload)
+    baseline = next(c for c in calls if c["git_hash"] == payload["before"])
+    assert baseline == {
+        "git_hash": payload["before"],
+        "ref_label": payload["ref"],
+        "ref": payload["ref"].split("/")[-1],
+        "gh_repo": "redis",
+        "gh_org": "redis",
+    }
+
+
+def test_a_baseline_sha_beginning_with_zero_is_still_enqueued():
+    """Negative test for the sentinel guard.
+
+    A guard written as `startswith("0")` rather than an all-zero check would silently discard
+    roughly one push in sixteen. The fixture's sha does not start with 0, so without this case
+    that mistake is undetectable.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload(before="0" + "a" * 39)
+    calls, rec = _record_calls()
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        _post_event(flask_app, auth_token, payload)
+    assert [c["git_hash"] for c in calls] == [payload["after"], payload["before"]]
+
+
+def test_unallowlisted_push_enqueues_nothing():
+    """The gate that decides whether a fork push spends fleet time must be covered.
+
+    The other push tests normalise the payload past the org/branch allowlists, so without this
+    case a wide-open gate would be invisible. Uses the fixture verbatim -- a fork push to a
+    scratch branch -- and asserts nothing is enqueued.
+    """
+    flask_app, auth_token = _mock_app()
+    with open("./utils/tests/test_data/event_webhook_pushed_repo.json") as fh:
+        payload = json.load(fh)
+    calls, rec = _record_calls()
+    with _allowlisted(), patch.object(
+        app_module, "commit_schema_to_stream", side_effect=rec
+    ):
+        resp = _post_event(flask_app, auth_token, payload)
+    assert resp.status_code == 200
+    assert (
+        calls == []
+    ), f"un-allowlisted push enqueued {[c.get('git_hash') for c in calls]}"
