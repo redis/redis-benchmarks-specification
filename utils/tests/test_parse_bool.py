@@ -540,10 +540,14 @@ def test_the_other_boolean_environment_variables_use_the_same_decoder(
 def test_the_spec_subpackage_cannot_be_imported():
     """Documents why __spec__/args.py is not covered by introspection above.
 
-    The package contains a subpackage named __spec__, which shadows the module attribute CPython's
-    import machinery reads (`parent.__spec__._uninitialized_submodules`), so importing anything
-    beneath it raises AttributeError. That also means the `redis-benchmarks-spec` console script,
-    whose entrypoint is redis_benchmarks_specification.__spec__.cli:main, cannot start.
+    The package contains a subpackage named __spec__, which shadows the ModuleSpec CPython's import
+    machinery puts on the parent package, so importing anything beneath it raises AttributeError.
+    That also means the `redis-benchmarks-spec` console script, whose entrypoint is
+    redis_benchmarks_specification.__spec__.cli:main, cannot start.
+
+    Broken on every supported version; only the attribute named in the error differs -- 3.10 reports
+    submodule_search_locations, 3.12 reports _uninitialized_submodules. So the assertion matches the
+    shadowed module rather than either internal name.
 
     Pre-existing and out of scope here, but asserted so that fixing it fails this test and prompts
     restoring the coverage that had to be dropped.
@@ -560,4 +564,5 @@ def test_the_spec_subpackage_cannot_be_imported():
         "__spec__ is importable now -- restore it to _all_parsers() and re-enable the "
         "trigger-unstable-commits cases for it"
     )
-    assert "_uninitialized_submodules" in result.stderr
+    assert "AttributeError" in result.stderr, result.stderr
+    assert "__spec__" in result.stderr, result.stderr
