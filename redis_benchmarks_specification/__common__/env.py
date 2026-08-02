@@ -118,6 +118,16 @@ def parse_bool(value, default=False):
             return True
         if normalized in FALSE_STRINGS:
             return False
+        # Warn rather than fall back quietly. The previous bool() read every non-empty string as
+        # True, so an unrecognised truthy-looking value like "2" or "enabled" silently flips to
+        # this default -- and where the flag gates recording benchmark results, that turns a
+        # misconfiguration into missing data rather than an error.
+        logging.warning(
+            "Unrecognised boolean %r; expected one of %s. Using %r.",
+            value,
+            ", ".join(TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f)),
+            default,
+        )
         return default
     if isinstance(value, (int, float)):
         return bool(value)

@@ -10,6 +10,7 @@ Offline; no Redis, no Docker.
 """
 
 import itertools
+import logging
 
 import pytest
 from hypothesis import given
@@ -251,3 +252,37 @@ def test_datasink_push_env_var_honours_a_falsy_value():
         if original is not None:
             os.environ["DATASINK_PUSH_RTS"] = original
         importlib.reload(env_mod)
+
+
+@pytest.mark.parametrize("value", ["2", "enabled", "maybe", "None"])
+def test_an_unrecognised_value_warns_rather_than_falling_back_quietly(caplog, value):
+    """A silent fallback would turn a misconfiguration into missing data.
+
+    bool() read every non-empty string as True, so an unrecognised truthy-looking value used to
+    enable a flag and now takes the default instead. Where the flag gates whether benchmark results
+    are recorded, flipping it off without saying so is worse than either answer.
+    """
+    with caplog.at_level(logging.WARNING):
+        parse_bool(value)
+    assert any(
+        "Unrecognised boolean" in record.getMessage() for record in caplog.records
+    ), f"no warning for {value!r}"
+
+
+@pytest.mark.parametrize("value", list(TRUE_STRINGS) + [f for f in FALSE_STRINGS if f])
+def test_a_recognised_value_does_not_warn(caplog, value):
+    """Otherwise every normal run logs noise and the real warnings stop being read."""
+    with caplog.at_level(logging.WARNING):
+        parse_bool(value)
+    assert not [
+        r for r in caplog.records if "Unrecognised boolean" in r.getMessage()
+    ], f"spurious warning for {value!r}"
+
+
+def test_the_warning_names_the_accepted_spellings(caplog):
+    """A warning that does not say what was expected sends the reader to the source."""
+    with caplog.at_level(logging.WARNING):
+        parse_bool("enabled")
+    text = " ".join(r.getMessage() for r in caplog.records)
+    for spelling in TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f):
+        assert spelling in text, f"warning does not mention {spelling!r}"
