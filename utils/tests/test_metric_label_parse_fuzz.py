@@ -288,3 +288,51 @@ def test_latency_percentiles_split_on_the_percentile_not_the_first_underscore(
     )
     assert labels["command"] == command
     assert labels["metric"] == pct
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    prefix=PREFIXES,
+    command=st.sampled_from(("get", "sort_ro", "client|list")),
+    metric=st.sampled_from(("calls", "usec_per_call")),
+    setup_name=st.text(
+        alphabet="abcdefghijklmnopqrstuvwxyz-0123456789", min_size=1, max_size=20
+    ),
+)
+def test_setup_name_reaches_the_labels_that_carry_it(
+    prefix, command, metric, setup_name
+):
+    """`setup_name` is a parameter whose only purpose is these two labels.
+
+    Two of the seven labels exist solely to carry the topology it names, so ignoring the
+    argument would leave every datapoint tagged with the wrong topology while all the
+    command/metric assertions still passed.
+    """
+    labels = {}
+    commandstats_latencystats_process_name(
+        f"{prefix}{command}_{metric}", prefix, setup_name, labels
+    )
+    assert labels["command_and_setup"] == f"{command} - {setup_name}"
+    assert (
+        labels["command_and_metric_and_setup"] == f"{command} - {metric} - {setup_name}"
+    )
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    prefix=PREFIXES,
+    command=st.sampled_from(("get", "sort_ro")),
+    metric=st.sampled_from(("calls", "usec")),
+)
+def test_prefix_matching_is_case_sensitive(prefix, command, metric):
+    """Prefix matching must stay case-sensitive.
+
+    Redis emits these section names in lower case, so an upper-cased name is not one of
+    ours and must derive nothing. Every generator alphabet here is lower case, so without
+    this assertion a case-insensitive match would go unnoticed.
+    """
+    labels = {}
+    commandstats_latencystats_process_name(
+        f"{prefix.upper()}{command}_{metric}", prefix, "oss-standalone", labels
+    )
+    assert labels == {}, f"derived {labels} from an upper-cased prefix"
