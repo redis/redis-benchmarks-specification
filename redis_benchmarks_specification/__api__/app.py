@@ -203,43 +203,13 @@ def create_app(conn, user, test_config=None):
                         BENCHMARK_PR_MAX_FILES,
                     )
                     app.logger.info(scope_msg)
-                # NOTE: scope_fields is only ever non-empty for labeled-PR events. The
-                # merge-base baseline below runs on PUSH events (where there is no PR),
-                # so it is intentionally NOT scoped — scoped PR-head runs are compared
-                # against the full-suite baseline of the corresponding subset.
-                if before_sha is not None:
-                    fields_before = {
-                        # before_sha, not sha: this entry exists to benchmark the commit the
-                        # push moved *from*, so the scoped head run has something to compare
-                        # against. Sending sha here made it a duplicate of the head entry,
-                        # so the baseline commit was never benchmarked and every push
-                        # enqueued the same commit twice.
-                        "git_hash": before_sha,
-                        "ref_label": ref_label,
-                        "ref": ref,
-                        "gh_repo": gh_repo,
-                        "gh_org": gh_org,
-                    }
-                    app.logger.info(
-                        "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
-                            event_type, fields_before
-                        )
-                    )
-                    result, response_data, err_message = commit_schema_to_stream(
-                        fields_before, conn, gh_org, gh_repo
-                    )
-                    if result is False:
-                        app.logger.error(
-                            "Baseline commit {} could not be enqueued: {}".format(
-                                before_sha, err_message
-                            )
-                        )
-                    else:
-                        app.logger.info(
-                            "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
-                                event_type, response_data
-                            )
-                        )
+                # The head entry is enqueued FIRST, deliberately. Each entry occupies a
+                # platform for a full suite and the queue is oversubscribed, so whichever
+                # entry is enqueued second is the one that starves. Enqueuing the head first
+                # keeps the newest point on by.branch/<branch> equal to the branch tip: the
+                # coordinator baselines every automated regression table on that series'
+                # single newest point (self_contained_coordinator.py:2930,2939), so a starved
+                # head would silently baseline PRs against the previous commit.
                 if sha is None:
                     app.logger.info(
                         "Skipping benchmark trigger for {}: no buildable head commit".format(
@@ -270,6 +240,47 @@ def create_app(conn, user, test_config=None):
                         event_type, response_data
                     )
                 )
+                # The response describes the head entry, which is the primary trigger. The
+                # baseline enqueue below must not overwrite it.
+                head_response_data = response_data
+                # NOTE: scope_fields is only ever non-empty for labeled-PR events. The
+                # merge-base baseline below runs on PUSH events (where there is no PR),
+                # so it is intentionally NOT scoped — scoped PR-head runs are compared
+                # against the full-suite baseline of the corresponding subset.
+                if before_sha is not None:
+                    fields_before = {
+                        # before_sha, not sha: this entry exists to benchmark the commit the
+                        # push moved *from*, so the scoped head run has something to compare
+                        # against. Sending sha here made it a duplicate of the head entry,
+                        # so the baseline commit was never benchmarked and every push
+                        # enqueued the same commit twice.
+                        "git_hash": before_sha,
+                        "ref_label": ref_label,
+                        "ref": ref,
+                        "gh_repo": gh_repo,
+                        "gh_org": gh_org,
+                    }
+                    app.logger.info(
+                        "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
+                            event_type, fields_before
+                        )
+                    )
+                    result, baseline_response, err_message = commit_schema_to_stream(
+                        fields_before, conn, gh_org, gh_repo
+                    )
+                    if result is False:
+                        app.logger.error(
+                            "Baseline commit {} could not be enqueued: {}".format(
+                                before_sha, err_message
+                            )
+                        )
+                    else:
+                        app.logger.info(
+                            "Using event {} to trigger previous-tip baseline benchmark. final fields: {}".format(
+                                event_type, baseline_response
+                            )
+                        )
+                    response_data = head_response_data
             else:
                 app.logger.info(
                     "{}. input json was: {}".format(event_type, request_data)

@@ -382,11 +382,17 @@ def test_malformed_before_does_not_500():
         ], f"before={bad!r} enqueued {[c.get('git_hash') for c in calls]}"
 
 
-def test_baseline_is_enqueued_before_the_head():
-    """Order is observable behaviour: the baseline is enqueued first."""
+def test_head_is_enqueued_before_the_baseline():
+    """Order is load-bearing, not cosmetic.
+
+    Each entry occupies a platform for a full suite and the queue is oversubscribed, so the
+    second-enqueued entry is the one that starves. The coordinator baselines every automated
+    regression table on the single newest point of by.branch/<branch>, so if the head starved
+    the baseline would silently become the previous commit.
+    """
     flask_app, auth_token = _mock_app()
     payload = _push_payload()
     calls, rec = _record_calls()
     with patch.object(app_module, "commit_schema_to_stream", side_effect=rec):
         _post_push_event(flask_app, auth_token, payload)
-    assert [c.get("git_hash") for c in calls] == [payload["before"], payload["after"]]
+    assert [c.get("git_hash") for c in calls] == [payload["after"], payload["before"]]
