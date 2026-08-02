@@ -165,7 +165,14 @@ PULL_REQUEST_TRIGGER_LABEL = os.getenv(
 # store_true flag, so a stray truthy read cannot be overridden on the command line -- setting
 # DATASINK_PUSH_RTS=0 would enable pushing forever. Note the sibling PUSH_RTS in __compare__/args
 # already reads 0 correctly, via int().
-DATASINK_RTS_PUSH = parse_bool(os.getenv("DATASINK_PUSH_RTS"), default=False)
+_DATASINK_PUSH_RTS_RAW = os.getenv("DATASINK_PUSH_RTS")
+# The default deliberately reproduces the old bool() reading -- any non-empty string is True -- so
+# an unrecognised value cannot flip this off. When the flag is False the datasink connection is
+# None and nothing is exported, so a wrong answer in that direction means benchmark results stop
+# being recorded with nothing to indicate why. Only recognised falsy spellings change meaning.
+DATASINK_RTS_PUSH = parse_bool(
+    _DATASINK_PUSH_RTS_RAW, default=bool(_DATASINK_PUSH_RTS_RAW)
+)
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
 DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")

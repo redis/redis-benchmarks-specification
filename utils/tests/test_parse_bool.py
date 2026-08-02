@@ -286,3 +286,29 @@ def test_the_warning_names_the_accepted_spellings(caplog):
     text = " ".join(r.getMessage() for r in caplog.records)
     for spelling in TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f):
         assert spelling in text, f"warning does not mention {spelling!r}"
+
+
+@pytest.mark.parametrize("raw", ["2", "enabled", "on-please", "sure"])
+def test_an_unrecognised_datasink_setting_cannot_turn_pushing_off(raw):
+    """The fix must never be able to stop results reaching the datasink.
+
+    When DATASINK_RTS_PUSH is False the datasink connection is None and nothing is exported, so a
+    wrong answer in that direction means benchmark results silently stop being recorded. The old
+    bool() read any non-empty string as True; the default here reproduces that, so only recognised
+    falsy spellings change meaning. The fleet's actual setting is not visible from here, which is
+    exactly why this direction is pinned rather than assumed.
+    """
+    import importlib
+    import os
+
+    import redis_benchmarks_specification.__common__.env as env_mod
+
+    original = os.environ.get("DATASINK_PUSH_RTS")
+    try:
+        os.environ["DATASINK_PUSH_RTS"] = raw
+        assert importlib.reload(env_mod).DATASINK_RTS_PUSH is True
+    finally:
+        os.environ.pop("DATASINK_PUSH_RTS", None)
+        if original is not None:
+            os.environ["DATASINK_PUSH_RTS"] = original
+        importlib.reload(env_mod)
