@@ -365,3 +365,49 @@ def test_the_cli_translates_a_selector_error_into_exit_1():
         )
     ]
     assert handlers, "no ValueError handler in compare_command_logic calls sys.exit"
+
+
+def test_no_selector_is_reassigned_between_validation_and_the_table_calls():
+    """The up-front validation is only meaningful if it inspects the values the tables receive.
+
+    compare_command_logic validates the selectors once, then calls one of the two table functions
+    much later. A reassignment in between would leave the validation checking stale values, and a
+    conflict reaching the resolver at runtime would surface as an uncaught ValueError -- a
+    traceback rather than the clean exit 1 the validation exists to produce.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    guards = [
+        n
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Try)
+        and any(getattr(h.type, "id", None) == "ValueError" for h in n.handlers)
+    ]
+    assert len(guards) == 1, "expected exactly one selector-validation guard"
+    validated_at = guards[0].end_lineno
+    last_table_call = max(
+        n.lineno
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", "")
+        in ("compute_env_comparison_table", "compute_regression_table")
+    )
+    selectors = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+    reassigned = [
+        (node.lineno, target.id)
+        for node in ast.walk(fn)
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+        and target.id in selectors
+        and validated_at < node.lineno < last_table_call
+    ]
+    assert not reassigned, f"selectors reassigned after validation: {reassigned}"
