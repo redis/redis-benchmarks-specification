@@ -150,13 +150,21 @@ def extract_testsuites(args):
 def commandstats_latencystats_process_name(
     metric_name, prefix, setup_name, variant_labels_dict
 ):
-    if prefix in metric_name:
+    # startswith, not `in`: the slice below is metric_name[len(prefix):], which is only
+    # correct when the prefix is actually at offset 0. With `in`, a name that merely
+    # *contains* the prefix was sliced at the wrong offset and produced plausible but
+    # wrong labels -- e.g. "shard_commandstats_cmdstat_get_calls" yielded
+    # command="dstat", metric="get_calls".
+    if metric_name.startswith(prefix):
         command_and_metric_and_shard = metric_name[len(prefix) :]
-        command = (
-            command_and_metric_and_shard[0]
-            + command_and_metric_and_shard[1:].split("_", 1)[0]
-        )
-        metric_and_shard = command_and_metric_and_shard[1:].split("_", 1)[1]
+        # Expect "<command>_<metric>". Anything without a command and a metric is not a
+        # name this function can describe, so leave the labels untouched rather than
+        # raising: this runs inside the results-export path, where an IndexError would
+        # lose an entire benchmark's metrics. Previously "" (name == prefix), a single
+        # character, and any remainder with no "_" each raised IndexError.
+        command, _, metric_and_shard = command_and_metric_and_shard.partition("_")
+        if not command or not metric_and_shard:
+            return
         metric = metric_and_shard
         shard = "1"
         if "_shard_" in metric_and_shard:
