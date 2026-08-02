@@ -228,66 +228,6 @@ def test_compare_boolean_flags_reject_a_typo(flag):
         parser.parse_args([flag, "flase"])
 
 
-def test_no_argument_parser_uses_type_bool():
-    """`type=bool` is never what anyone means.
-
-    argparse hands the `type` callable the raw argv string, so `type=bool` accepts any non-empty
-    value as True -- including "false", "0" and "no". Guarding the whole package because the
-    mistake is easy to reintroduce and impossible to see at the call site.
-    """
-    import pathlib
-
-    import redis_benchmarks_specification
-
-    package = pathlib.Path(redis_benchmarks_specification.__file__).parent
-    scanned = list(package.rglob("*.py"))
-    # A guard that cannot see the package must fail, not pass. Derived from __file__ because a
-    # relative path made this succeed vacuously from any directory but the repo root.
-    assert len(scanned) > 20, f"only scanned {len(scanned)} files under {package}"
-    offenders = [
-        f"{path}:{number}"
-        for path in scanned
-        for number, line in enumerate(path.read_text().splitlines(), start=1)
-        if "type=bool" in line.replace(" ", "")
-    ]
-    assert not offenders, f"type=bool used at {offenders}"
-
-
-def test_datasink_push_env_var_honours_a_falsy_value():
-    """DATASINK_PUSH_RTS=0 previously enabled pushing, with no way to turn it off.
-
-    It is the default of a --datasink_push_results_redistimeseries store_true flag, so once the
-    default reads True the command line cannot override it. Re-imports the module because the value
-    is computed at import time.
-    """
-    import importlib
-    import os
-
-    import redis_benchmarks_specification.__common__.env as env_mod
-
-    original = os.environ.get("DATASINK_PUSH_RTS")
-    try:
-        for raw, expected in (
-            ("0", False),
-            ("false", False),
-            ("no", False),
-            ("1", True),
-            ("true", True),
-        ):
-            os.environ["DATASINK_PUSH_RTS"] = raw
-            reloaded = importlib.reload(env_mod)
-            assert (
-                reloaded.DATASINK_RTS_PUSH is expected
-            ), f"DATASINK_PUSH_RTS={raw!r} read as {reloaded.DATASINK_RTS_PUSH!r}"
-        os.environ.pop("DATASINK_PUSH_RTS")
-        assert importlib.reload(env_mod).DATASINK_RTS_PUSH is False
-    finally:
-        os.environ.pop("DATASINK_PUSH_RTS", None)
-        if original is not None:
-            os.environ["DATASINK_PUSH_RTS"] = original
-        importlib.reload(env_mod)
-
-
 @pytest.mark.parametrize("value", ["2", "enabled", "maybe", "None"])
 def test_an_unrecognised_value_warns_rather_than_falling_back_quietly(caplog, value):
     """A silent fallback would turn a misconfiguration into missing data.
@@ -322,32 +262,6 @@ def test_the_warning_names_the_accepted_spellings(caplog):
     text = " ".join(r.getMessage() for r in caplog.records)
     for spelling in accepted_bool_spellings():
         assert spelling in text, f"warning does not mention {spelling!r}"
-
-
-@pytest.mark.parametrize("raw", ["2", "enabled", "on-please", "sure"])
-def test_an_unrecognised_datasink_setting_cannot_turn_pushing_off(raw):
-    """The fix must never be able to stop results reaching the datasink.
-
-    When DATASINK_RTS_PUSH is False the datasink connection is None and nothing is exported, so a
-    wrong answer in that direction means benchmark results silently stop being recorded. The old
-    bool() read any non-empty string as True; the default here reproduces that, so only recognised
-    falsy spellings change meaning. The fleet's actual setting is not visible from here, which is
-    exactly why this direction is pinned rather than assumed.
-    """
-    import importlib
-    import os
-
-    import redis_benchmarks_specification.__common__.env as env_mod
-
-    original = os.environ.get("DATASINK_PUSH_RTS")
-    try:
-        os.environ["DATASINK_PUSH_RTS"] = raw
-        assert importlib.reload(env_mod).DATASINK_RTS_PUSH is True
-    finally:
-        os.environ.pop("DATASINK_PUSH_RTS", None)
-        if original is not None:
-            os.environ["DATASINK_PUSH_RTS"] = original
-        importlib.reload(env_mod)
 
 
 @pytest.mark.parametrize("text", ["", "   ", "\t"])
@@ -403,65 +317,247 @@ def test_the_accepted_spellings_are_exactly_strtobool_s():
             parse_bool(text)
 
 
-def test_the_strict_form_survives_a_module_reload():
-    """A module-level object() sentinel silently breaks the strict form after a reload.
+def _all_parsers():
+    """Every argparse parser the package builds that can actually be imported.
 
-    The signature default is captured once at definition time while the identity test reads the
-    module global, so a reload rebinds one and not the other -- and parse_bool then treats "no
-    default" as "default given" and returns the sentinel instead of raising. Found because the
-    environment-variable tests in this file reload the module, which made the number-rejection
-    tests pass alone and fail in the suite. Ellipsis is a builtin singleton and cannot drift.
+    __spec__/args.py is deliberately absent: the package contains a subpackage literally named
+    __spec__, which shadows the attribute CPython's import machinery reads, so importing anything
+    beneath it raises. See test_the_spec_subpackage_cannot_be_imported.
     """
-    import importlib
+    import argparse
 
-    import redis_benchmarks_specification.__common__.env as env_mod
+    from redis_benchmarks_specification.__cli__.args import spec_cli_args
+    from redis_benchmarks_specification.__compare__.args import create_compare_arguments
 
-    importlib.reload(env_mod)
-    with pytest.raises(argparse.ArgumentTypeError):
-        env_mod.parse_bool("maybe")
-    # and the binding captured before the reload must behave the same way
-    with pytest.raises(argparse.ArgumentTypeError):
-        parse_bool("maybe")
+    return {
+        "compare": create_compare_arguments(argparse.ArgumentParser()),
+        "cli": spec_cli_args(argparse.ArgumentParser()),
+    }
+
+
+def test_no_parser_action_converts_with_builtin_bool():
+    """Introspect what argparse will call, not the characters used to name it.
+
+    A text scan for "type=bool" is the obvious guard and the wrong one: it misses
+    `builtins.bool`, `eval("bool")`, a functools.partial, an alias, a tab, and -- the one that
+    happens without any intent to evade -- a kwarg that black reformats across lines. Reading
+    action.type off the built parser catches all of them, and cannot pass vacuously depending on
+    the working directory the way a relative path scan did.
+    """
+    import functools
+
+    offenders = []
+    for name, parser in _all_parsers().items():
+        for action in parser._actions:
+            converter = action.type
+            if isinstance(converter, functools.partial):
+                converter = converter.func
+            if converter is bool:
+                offenders.append(f"{name}:{action.option_strings}")
+    assert not offenders, f"builtin bool used as an argparse converter: {offenders}"
+
+
+def test_every_boolean_flag_uses_the_canonical_decoder():
+    """Any flag that takes a boolean-looking value must go through parse_bool.
+
+    Otherwise a flag can be added with a hand-rolled converter that accepts a different set, which
+    is how the spellings drifted apart inside env.py in the first place.
+    """
+    known_boolean_flags = {
+        "--print-regressions-only",
+        "--print-improvements-only",
+        "--skip-unstable",
+        "--verbose",
+        "--simple-table",
+        "--use_metric_context_path",
+        "--use-git-timestamp",
+        "--trigger-unstable-commits",
+    }
+    seen = set()
+    for parser in _all_parsers().values():
+        for action in parser._actions:
+            for option in action.option_strings:
+                if option in known_boolean_flags:
+                    seen.add(option)
+                    assert (
+                        action.type is parse_bool
+                    ), f"{option} converts with {action.type!r}, not parse_bool"
+    assert (
+        seen == known_boolean_flags
+    ), f"flags not found in any parser: {known_boolean_flags - seen}"
+
+
+@pytest.mark.parametrize("parser_name", ["cli"])
+@pytest.mark.parametrize(
+    "text,expected", [("false", False), ("0", False), ("true", True)]
+)
+def test_trigger_unstable_commits_honours_a_false_value(parser_name, text, expected):
+    """The two flags that were previously guarded by nothing but a text scan.
+
+    Declared in two separate parsers and read nowhere, so the conversion is a no-op today -- but a
+    dead flag is exactly where a reintroduced defect goes unnoticed.
+    """
+    parser = _all_parsers()[parser_name]
+    assert (
+        parser.parse_args(["--trigger-unstable-commits", text]).trigger_unstable_commits
+        is expected
+    )
+
+
+@pytest.mark.parametrize("parser_name", ["cli"])
+def test_trigger_unstable_commits_rejects_a_typo(parser_name):
+    parser = _all_parsers()[parser_name]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--trigger-unstable-commits", "flase"])
+
+
+@pytest.mark.parametrize("text", ["FALSE", " false ", "\tFalse\n", "OFF"])
+def test_the_strict_form_tolerates_case_and_padding(text):
+    """The CLI half of the case/padding contract, which was pinned only for the other half."""
+    assert parse_bool(text) is False
+
+
+@pytest.mark.parametrize("value", [bytearray(b"false"), bytearray(b"true")])
+def test_bytearray_is_decoded_like_bytes(value):
+    """Accepted for the stream sites, so it needs a pin rather than an untested branch."""
+    assert parse_bool(value) is (value == bytearray(b"true"))
+
+
+def _env_probe(script, **env):
+    """Run a snippet in a subprocess with the given environment, returning its stdout.
+
+    A subprocess rather than importlib.reload: env.py computes its constants at import time, and
+    reloading it rebinds function objects while every module that did a from-import keeps the old
+    ones. That makes identity checks order-dependent -- a test can pass alone and fail in the suite,
+    which is exactly what happened here -- and it never reaches the from-import copies that are what
+    production actually ships.
+    """
+    import os
+    import subprocess
+    import sys
+
+    environment = dict(os.environ)
+    environment.pop("DATASINK_PUSH_RTS", None)
+    environment.update({key: str(value) for key, value in env.items()})
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 @pytest.mark.parametrize(
-    "name,default",
-    [("PROFILE", False), ("BENCHMARK_PR_DIFF_SCOPING", True)],
+    "raw,expected",
+    [
+        ("0", "False"),
+        ("false", "False"),
+        ("no", "False"),
+        ("off", "False"),
+        ("1", "True"),
+        ("true", "True"),
+    ],
 )
-def test_the_other_boolean_environment_variables_use_the_same_decoder(name, default):
+def test_datasink_push_env_var_honours_a_falsy_value(raw, expected):
+    """DATASINK_PUSH_RTS=0 previously enabled pushing, with no way to turn it off."""
+    script = (
+        "from redis_benchmarks_specification.__common__.env import DATASINK_RTS_PUSH;"
+        "print(DATASINK_RTS_PUSH)"
+    )
+    assert _env_probe(script, DATASINK_PUSH_RTS=raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["2", "enabled", "on-please", " "])
+def test_an_unrecognised_datasink_setting_cannot_turn_pushing_off(raw):
+    """The fix must never be able to stop results reaching the datasink.
+
+    When this is False the datasink connection is None and nothing is exported, so a wrong answer in
+    that direction means benchmark results silently stop being recorded. The old bool() read any
+    non-empty string as True and the default reproduces that, so only recognised falsy spellings
+    change meaning. The fleet's setting is not visible from here, which is why this is pinned.
+    """
+    script = (
+        "from redis_benchmarks_specification.__common__.env import DATASINK_RTS_PUSH;"
+        "print(DATASINK_RTS_PUSH)"
+    )
+    assert _env_probe(script, DATASINK_PUSH_RTS=raw) == "True"
+
+
+@pytest.mark.parametrize("module", ["__runner__", "__self_contained_coordinator__"])
+@pytest.mark.parametrize("raw,expected", [("0", "False"), ("1", "True")])
+def test_the_datasink_flag_default_the_parsers_ship_follows_the_env_var(
+    module, raw, expected
+):
+    """Assert the argparse default, not the module constant.
+
+    Both of these do `from ...env import DATASINK_RTS_PUSH` and use it as a store_true default, so
+    the constant is copied at import. Asserting the constant would pass while the default the flag
+    actually ships was stale -- and the default is the whole reason this value matters, since a
+    store_true flag cannot turn itself off.
+    """
+    factory = (
+        "create_client_runner_args"
+        if module == "__runner__"
+        else "create_self_contained_coordinator_args"
+    )
+    script = (
+        f"from redis_benchmarks_specification.{module}.args import {factory};"
+        f"p={factory}('probe');"
+        "print(p.parse_args([]).datasink_push_results_redistimeseries)"
+    )
+    assert _env_probe(script, DATASINK_PUSH_RTS=raw) == expected
+
+
+@pytest.mark.parametrize(
+    "name,attribute,raw,expected",
+    [
+        ("PROFILE", "PROFILERS_ENABLED", "false", "False"),
+        ("PROFILE", "PROFILERS_ENABLED", "off", "False"),
+        ("PROFILE", "PROFILERS_ENABLED", "1", "True"),
+        ("PROFILE", "PROFILERS_ENABLED", "t", "True"),
+        ("BENCHMARK_PR_DIFF_SCOPING", "BENCHMARK_PR_DIFF_SCOPING", "0", "False"),
+        ("BENCHMARK_PR_DIFF_SCOPING", "BENCHMARK_PR_DIFF_SCOPING", "t", "True"),
+    ],
+)
+def test_the_other_boolean_environment_variables_use_the_same_decoder(
+    name, attribute, raw, expected
+):
     """One decoder for the whole module, not four idioms in one file.
 
     PROFILE was bool(int(...)), which raises at import time on "false" and aborts every entrypoint.
-    BENCHMARK_PR_DIFF_SCOPING was a hand-rolled copy of parse_bool accepting a different set -- no
-    "t", no "y" -- which is exactly how the spellings drift apart.
+    BENCHMARK_PR_DIFF_SCOPING was a hand-rolled copy accepting a different set -- no "t", no "y" --
+    which is exactly how spellings drift apart.
     """
-    import importlib
-    import os
+    script = (
+        f"from redis_benchmarks_specification.__common__.env import {attribute};"
+        f"print({attribute})"
+    )
+    assert _env_probe(script, **{name: raw}) == expected
 
-    import redis_benchmarks_specification.__common__.env as env_mod
 
-    attribute = {
-        "PROFILE": "PROFILERS_ENABLED",
-        "BENCHMARK_PR_DIFF_SCOPING": "BENCHMARK_PR_DIFF_SCOPING",
-    }[name]
-    original = os.environ.get(name)
-    try:
-        for raw, expected in (
-            ("0", False),
-            ("false", False),
-            ("off", False),
-            ("1", True),
-            ("t", True),
-        ):
-            os.environ[name] = raw
-            reloaded = importlib.reload(env_mod)
-            assert (
-                getattr(reloaded, attribute) is expected
-            ), f"{name}={raw!r} read as {getattr(reloaded, attribute)!r}"
-        os.environ.pop(name)
-        assert getattr(importlib.reload(env_mod), attribute) is default
-    finally:
-        os.environ.pop(name, None)
-        if original is not None:
-            os.environ[name] = original
-        importlib.reload(env_mod)
+def test_the_spec_subpackage_cannot_be_imported():
+    """Documents why __spec__/args.py is not covered by introspection above.
+
+    The package contains a subpackage named __spec__, which shadows the module attribute CPython's
+    import machinery reads (`parent.__spec__._uninitialized_submodules`), so importing anything
+    beneath it raises AttributeError. That also means the `redis-benchmarks-spec` console script,
+    whose entrypoint is redis_benchmarks_specification.__spec__.cli:main, cannot start.
+
+    Pre-existing and out of scope here, but asserted so that fixing it fails this test and prompts
+    restoring the coverage that had to be dropped.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import redis_benchmarks_specification.__spec__.args"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, (
+        "__spec__ is importable now -- restore it to _all_parsers() and re-enable the "
+        "trigger-unstable-commits cases for it"
+    )
+    assert "_uninitialized_submodules" in result.stderr
