@@ -9,6 +9,7 @@ import datetime
 import os
 
 from redis_benchmarks_specification.__common__.env import (
+    parse_bool_arg,
     SPECS_PATH_TEST_SUITES,
 )
 
@@ -172,12 +173,12 @@ def create_compare_arguments(parser):
     parser.add_argument(
         "--comparison-target-branch", type=str, default=None, required=False
     )
-    parser.add_argument("--print-regressions-only", type=bool, default=False)
-    parser.add_argument("--print-improvements-only", type=bool, default=False)
-    parser.add_argument("--skip-unstable", type=bool, default=False)
-    parser.add_argument("--verbose", type=bool, default=False)
-    parser.add_argument("--simple-table", type=bool, default=False)
-    parser.add_argument("--use_metric_context_path", type=bool, default=False)
+    parser.add_argument("--print-regressions-only", type=parse_bool_arg, default=False)
+    parser.add_argument("--print-improvements-only", type=parse_bool_arg, default=False)
+    parser.add_argument("--skip-unstable", type=parse_bool_arg, default=False)
+    parser.add_argument("--verbose", type=parse_bool_arg, default=False)
+    parser.add_argument("--simple-table", type=parse_bool_arg, default=False)
+    parser.add_argument("--use_metric_context_path", type=parse_bool_arg, default=False)
     parser.add_argument("--testname_regex", type=str, default=".*", required=False)
     parser.add_argument(
         "--command-group-regex",

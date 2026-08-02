@@ -158,7 +158,7 @@ def spec_cli_args(parser):
     )
     parser.add_argument("--id", type=str, default="dockerhub")
     parser.add_argument("--mnt_point", type=str, default="")
-    parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
+    parser.add_argument("--trigger-unstable-commits", type=parse_bool_arg, default=True)
     parser.add_argument(
         "--docker-dont-air-gap",
         default=False,

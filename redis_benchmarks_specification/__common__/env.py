@@ -151,7 +151,11 @@ def parse_bool_arg(value):
 PULL_REQUEST_TRIGGER_LABEL = os.getenv(
     "PULL_REQUEST_TRIGGER_LABEL", "action:run-benchmark"
 )
-DATASINK_RTS_PUSH = bool(os.getenv("DATASINK_PUSH_RTS", False))
+# parse_bool, not bool(): this is the default of a --datasink_push_results_redistimeseries
+# store_true flag, so a stray truthy read cannot be overridden on the command line -- setting
+# DATASINK_PUSH_RTS=0 would enable pushing forever. Note the sibling PUSH_RTS in __compare__/args
+# already reads 0 correctly, via int().
+DATASINK_RTS_PUSH = parse_bool(os.getenv("DATASINK_PUSH_RTS"), default=False)
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
 DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")

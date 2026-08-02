@@ -154,3 +154,100 @@ def test_every_accepted_spelling_is_lowercase_in_the_tables():
     """Lookup lowercases its input, so an uppercase table entry would be unreachable."""
     for text in itertools.chain(TRUE_STRINGS, FALSE_STRINGS):
         assert text == text.lower(), f"{text!r} can never match"
+
+
+# --- the flags this defect reached ------------------------------------------------------------
+
+COMPARE_BOOL_FLAGS = (
+    "--print-regressions-only",
+    "--print-improvements-only",
+    "--skip-unstable",
+    "--verbose",
+    "--simple-table",
+    "--use_metric_context_path",
+)
+
+
+@pytest.mark.parametrize("flag", COMPARE_BOOL_FLAGS)
+@pytest.mark.parametrize(
+    "text,expected", [("true", True), ("false", False), ("0", False)]
+)
+def test_compare_boolean_flags_honour_a_false_value(flag, text, expected):
+    """`type=bool` called bool() on the raw argv string, so `--skip-unstable false` meant True.
+
+    These six are all consumed by compare_command_logic, and they are the flags the compare CLI is
+    driven with, so a flag that silently inverts changes which rows a comparison prints.
+    """
+    import argparse
+
+    from redis_benchmarks_specification.__compare__.args import create_compare_arguments
+
+    parser = create_compare_arguments(argparse.ArgumentParser())
+    namespace = parser.parse_args([flag, text])
+    assert getattr(namespace, flag.lstrip("-").replace("-", "_")) is expected
+
+
+@pytest.mark.parametrize("flag", COMPARE_BOOL_FLAGS)
+def test_compare_boolean_flags_reject_a_typo(flag):
+    """A misspelled value must be a usage error, not silently False."""
+    import argparse
+
+    from redis_benchmarks_specification.__compare__.args import create_compare_arguments
+
+    parser = create_compare_arguments(argparse.ArgumentParser())
+    with pytest.raises(SystemExit):
+        parser.parse_args([flag, "flase"])
+
+
+def test_no_argument_parser_uses_type_bool():
+    """`type=bool` is never what anyone means.
+
+    argparse hands the `type` callable the raw argv string, so `type=bool` accepts any non-empty
+    value as True -- including "false", "0" and "no". Guarding the whole package because the
+    mistake is easy to reintroduce and impossible to see at the call site.
+    """
+    import pathlib
+
+    package = pathlib.Path("redis_benchmarks_specification")
+    offenders = [
+        f"{path}:{number}"
+        for path in package.rglob("*.py")
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if "type=bool" in line.replace(" ", "")
+    ]
+    assert not offenders, f"type=bool used at {offenders}"
+
+
+def test_datasink_push_env_var_honours_a_falsy_value():
+    """DATASINK_PUSH_RTS=0 previously enabled pushing, with no way to turn it off.
+
+    It is the default of a --datasink_push_results_redistimeseries store_true flag, so once the
+    default reads True the command line cannot override it. Re-imports the module because the value
+    is computed at import time.
+    """
+    import importlib
+    import os
+
+    import redis_benchmarks_specification.__common__.env as env_mod
+
+    original = os.environ.get("DATASINK_PUSH_RTS")
+    try:
+        for raw, expected in (
+            ("0", False),
+            ("false", False),
+            ("no", False),
+            ("1", True),
+            ("true", True),
+        ):
+            os.environ["DATASINK_PUSH_RTS"] = raw
+            reloaded = importlib.reload(env_mod)
+            assert (
+                reloaded.DATASINK_RTS_PUSH is expected
+            ), f"DATASINK_PUSH_RTS={raw!r} read as {reloaded.DATASINK_RTS_PUSH!r}"
+        os.environ.pop("DATASINK_PUSH_RTS")
+        assert importlib.reload(env_mod).DATASINK_RTS_PUSH is False
+    finally:
+        os.environ.pop("DATASINK_PUSH_RTS", None)
+        if original is not None:
+            os.environ["DATASINK_PUSH_RTS"] = original
+        importlib.reload(env_mod)
