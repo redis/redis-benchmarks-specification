@@ -146,6 +146,11 @@ def create_app(conn, user, test_config=None):
                 ref_label = request_data["ref"]
                 sha = request_data["after"]
                 before_sha = request_data["before"]
+                # GitHub sends an all-zero "before" when a ref is created, and an all-zero
+                # "after" when one is deleted -- neither names a commit that can be built.
+                # Treat the sentinel as absent so no baseline entry is enqueued for it.
+                if before_sha is not None and set(before_sha) == {"0"}:
+                    before_sha = None
 
                 allowed_orgs = [
                     o.strip() for o in BENCHMARK_TRIGGER_ORGS.split(",") if o.strip()
@@ -196,7 +201,12 @@ def create_app(conn, user, test_config=None):
                 # against the full-suite baseline of the corresponding subset.
                 if before_sha is not None:
                     fields_before = {
-                        "git_hash": sha,
+                        # before_sha, not sha: this entry exists to benchmark the commit the
+                        # push moved *from*, so the scoped head run has something to compare
+                        # against. Sending sha here made it a duplicate of the head entry,
+                        # so the baseline commit was never benchmarked and every push
+                        # enqueued the same commit twice.
+                        "git_hash": before_sha,
                         "ref_label": ref_label,
                         "ref": ref,
                         "gh_repo": gh_repo,

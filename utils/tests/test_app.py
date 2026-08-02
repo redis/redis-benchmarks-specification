@@ -237,3 +237,91 @@ def test_pr_event_disabled_gate_skips_scoping():
     assert resp.status_code == 200
     assert "tests_groups_regexp" not in resp.json
     assert "tests_regexp" not in resp.json
+
+
+def _post_push_event(flask_app, auth_token, payload):
+    """POST a push-event payload, signing it the way the webhook requires."""
+    req_data = json.dumps(payload).encode()
+    sign = HMAC(key=auth_token.encode(), msg=req_data, digestmod=sha1).hexdigest()
+    with flask_app.test_client() as client:
+        return client.post(
+            "/api/gh/redis/redis/commits",
+            content_type="application/json",
+            data=req_data,
+            headers={
+                "Content-type": "application/json",
+                SIG_HEADER: "sha1={}".format(sign),
+            },
+        )
+
+
+def _push_payload(**overrides):
+    """Load the push fixture and make it pass the org/branch allowlists.
+
+    The fixture is a fork push to a scratch branch, which the trigger gates reject; the
+    gates are not what these tests are about, so normalise the payload rather than patching
+    module constants.
+    """
+    with open("./utils/tests/test_data/event_webhook_pushed_repo.json") as fh:
+        payload = json.load(fh)
+    payload["ref"] = "refs/heads/unstable"
+    payload["repository"]["html_url"] = "https://github.com/redis/redis"
+    payload.update(overrides)
+    return payload
+
+
+def test_push_event_baseline_entry_carries_before_sha_not_the_head_sha():
+    """The merge-base entry must name the commit the push moved FROM.
+
+    Both entries previously carried request_data["after"], so the "merge-base commit
+    benchmark" measured the head commit: the baseline commit was never benchmarked and
+    every push enqueued the same commit twice.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload()
+    before_sha, head_sha = payload["before"], payload["after"]
+    assert (
+        before_sha != head_sha
+    ), "fixture must have distinct before/after to be meaningful"
+
+    calls = []
+
+    def _record(fields, *args, **kwargs):
+        calls.append(dict(fields))
+        return True, dict(fields), None
+
+    with patch.object(app_module, "commit_schema_to_stream", side_effect=_record):
+        resp = _post_push_event(flask_app, auth_token, payload)
+
+    assert resp.status_code == 200
+    hashes = [c.get("git_hash") for c in calls]
+    assert len(calls) == 2, f"expected a baseline and a head entry, got {hashes}"
+    assert (
+        before_sha in hashes
+    ), f"no entry carries the baseline sha {before_sha}: {hashes}"
+    assert head_sha in hashes, f"no entry carries the head sha {head_sha}: {hashes}"
+    assert hashes[0] != hashes[1], f"both entries carry the same commit: {hashes}"
+
+
+def test_push_event_with_created_ref_sentinel_enqueues_only_the_head():
+    """A ref creation sends an all-zero "before", which names no commit.
+
+    Enqueuing it would ask the builder to fetch a nonexistent archive, so the sentinel
+    must be treated as "no baseline" rather than sent downstream.
+    """
+    flask_app, auth_token = _mock_app()
+    payload = _push_payload(before="0" * 40)
+
+    calls = []
+
+    def _record(fields, *args, **kwargs):
+        calls.append(dict(fields))
+        return True, dict(fields), None
+
+    with patch.object(app_module, "commit_schema_to_stream", side_effect=_record):
+        resp = _post_push_event(flask_app, auth_token, payload)
+
+    assert resp.status_code == 200
+    hashes = [c.get("git_hash") for c in calls]
+    assert "0" * 40 not in hashes, f"all-zero sentinel was enqueued: {hashes}"
+    assert hashes == [payload["after"]], f"expected only the head entry, got {hashes}"
