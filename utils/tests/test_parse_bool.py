@@ -94,8 +94,8 @@ def test_an_actual_bool_passes_through(value):
 def test_an_unrecognised_value_returns_the_default(value, default):
     """Returning the default beats guessing, which is what `bool()` already does.
 
-    Includes an undecodable byte string: the previous code called `.decode()` unguarded, so a
-    corrupt stream field raised UnicodeDecodeError from inside the consumer loop.
+    Includes an undecodable byte string, because the stream decode sites this is intended for call
+    `.decode()` unguarded today -- a corrupt field would raise from inside a consumer loop.
     """
     assert parse_bool(value, default=default) is default
 
@@ -154,9 +154,9 @@ def test_the_raised_message_names_every_accepted_spelling(text):
 def test_the_cli_no_longer_imports_distutils():
     """distutils was removed from the standard library in 3.12.
 
-    It resolves today only through a setuptools shim, so `from distutils.util import strtobool` at
-    module scope made the CLI fail at import time in any 3.12 environment without setuptools --
-    which is a hard failure of the entire command, not a degraded flag.
+    It resolves only through a setuptools shim. setuptools is an explicit runtime dependency here,
+    so this is hygiene -- dropping a dependency on a deprecated shim -- and not the "the CLI cannot
+    start" hazard an earlier version of this PR claimed.
     """
     import inspect
 
@@ -296,11 +296,11 @@ def test_numbers_are_rejected(value):
         parse_bool(value)
 
 
-def test_the_accepted_spellings_are_exactly_strtobool_s():
+def test_the_accepted_spellings_are_strtobool_s_plus_whitespace():
     """Pinned against strtobool itself, which this replaces.
 
-    The PR claims the spellings match; this is that claim as a test rather than as prose. Skipped
-    only where distutils is genuinely unavailable, which is the situation being fixed.
+    A superset, not an exact match: surrounding whitespace is tolerated where strtobool raises. Both
+    directions are asserted. Skipped where distutils is genuinely unavailable.
     """
     strtobool = pytest.importorskip("distutils.util").strtobool
     for text in EXPECTED_TRUE:
@@ -315,14 +315,21 @@ def test_the_accepted_spellings_are_exactly_strtobool_s():
             strtobool(text)
         with pytest.raises(argparse.ArgumentTypeError):
             parse_bool(text)
+    # the superset direction: whitespace is tolerated here and rejected there
+    for text in (" true ", "\tfalse\n"):
+        with pytest.raises(ValueError):
+            strtobool(text)
+        assert parse_bool(text) is (text.strip() == "true")
 
 
 def _all_parsers():
-    """Every argparse parser the package builds that can actually be imported.
+    """The parsers that can be built in-process.
 
-    __spec__/args.py is deliberately absent: the package contains a subpackage literally named
-    __spec__, which shadows the attribute CPython's import machinery reads, so importing anything
-    beneath it raises. See test_the_spec_subpackage_cannot_be_imported.
+    __spec__/args.py is covered separately, in a subprocess. It IS importable once a sibling has
+    populated sys.modules -- the cold-interpreter failure of issue #466 is an import-order artifact,
+    not an absolute -- but importing it binds the subpackage over the parent's ModuleSpec for the
+    rest of the process, and Flask reads `.origin` off that to find an app's root path. Doing it here
+    breaks test_app.py whenever the two files run in the same session, in that order.
     """
     import argparse
 
@@ -537,8 +544,8 @@ def test_the_other_boolean_environment_variables_use_the_same_decoder(
     assert _env_probe(script, **{name: raw}) == expected
 
 
-def test_the_spec_subpackage_cannot_be_imported():
-    """Documents why __spec__/args.py is not covered by introspection above.
+def test_the_spec_subpackage_cannot_be_imported_from_a_cold_interpreter():
+    """The shape of issue #466, which is why the console script cannot start.
 
     The package contains a subpackage named __spec__, which shadows the ModuleSpec CPython's import
     machinery puts on the parent package, so importing anything beneath it raises AttributeError.
@@ -549,8 +556,10 @@ def test_the_spec_subpackage_cannot_be_imported():
     submodule_search_locations, 3.12 reports _uninitialized_submodules. So the assertion matches the
     shadowed module rather than either internal name.
 
-    Pre-existing and out of scope here, but asserted so that fixing it fails this test and prompts
-    restoring the coverage that had to be dropped.
+    Order-dependent, not absolute: _all_parsers above imports a sibling first and then loads
+    __spec__/args.py without trouble. Only a cold interpreter -- which is what a console-script
+    entrypoint is -- hits it. Pre-existing and out of scope here; asserted so that fixing it fails
+    this test rather than passing unnoticed.
     """
     import subprocess
     import sys
@@ -560,9 +569,131 @@ def test_the_spec_subpackage_cannot_be_imported():
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0, (
-        "__spec__ is importable now -- restore it to _all_parsers() and re-enable the "
-        "trigger-unstable-commits cases for it"
-    )
+    assert result.returncode != 0, "issue #466 appears fixed -- drop this test"
     assert "AttributeError" in result.stderr, result.stderr
     assert "__spec__" in result.stderr, result.stderr
+
+
+def test_use_git_timestamp_with_an_empty_value():
+    """The one flag whose empty-value behaviour changed, pinned rather than left implicit.
+
+    It used strtobool, which raised on "", while the other eight read "" as False. Unified to False.
+    Moot in practice: the parsed value is discarded before it reaches the stream (issue #464), so
+    this cannot change what any run does today -- but it is a real difference from the base and
+    belongs under test rather than in a comment.
+    """
+    parser = _all_parsers()["cli"]
+    assert parser.parse_args(["--use-git-timestamp", ""]).use_git_timestamp is False
+    assert parser.parse_args(["--use-git-timestamp", "  "]).use_git_timestamp is False
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("2", "True"), ("-1", "True"), ("01", "True"), ("0", "False"), ("1", "True")],
+)
+def test_profile_preserves_the_any_non_zero_integer_reading(raw, expected):
+    """PROFILE was bool(int(...)), so every non-zero integer meant enabled.
+
+    Narrowing to the literal "1" would flip PROFILE=2 from on to off and silently stop profiling
+    artifacts being collected -- the same data-losing direction that DATASINK_PUSH_RTS is protected
+    against, so it gets the same policy rather than the opposite one.
+    """
+    script = (
+        "from redis_benchmarks_specification.__common__.env import PROFILERS_ENABLED;"
+        "print(PROFILERS_ENABLED)"
+    )
+    assert _env_probe(script, PROFILE=raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["false", "off", "no", ""])
+def test_profile_no_longer_aborts_the_process_on_a_word(raw):
+    """bool(int("false")) raises ValueError at import, taking down every entrypoint."""
+    script = (
+        "from redis_benchmarks_specification.__common__.env import PROFILERS_ENABLED;"
+        "print(PROFILERS_ENABLED)"
+    )
+    assert _env_probe(script, PROFILE=raw) == "False"
+
+
+@pytest.mark.parametrize("raw", ["maybe", "enabled", "2"])
+def test_pr_diff_scoping_leaves_an_unrecognised_value_disabled(raw):
+    """The safety invariant that was asserted only in a comment.
+
+    A True here skips nothing and runs the full suite on every labelled PR, which is the expensive
+    direction. The old hand-rolled check read anything outside its set as False, and that must not
+    invert -- flipping the default passed the entire suite before this test existed.
+    """
+    script = (
+        "from redis_benchmarks_specification.__common__.env import BENCHMARK_PR_DIFF_SCOPING;"
+        "print(BENCHMARK_PR_DIFF_SCOPING)"
+    )
+    assert _env_probe(script, BENCHMARK_PR_DIFF_SCOPING=raw) == "False"
+
+
+@pytest.mark.parametrize("value", [b"\xff\xfe", bytearray(b"\xff")])
+def test_an_undecodable_value_warns_and_keeps_the_offending_bytes(caplog, value):
+    """Blanking it to None erased the value from the message and from the warning.
+
+    An undecodable stream field then read identically to an absent one, which is the diagnostic the
+    reader most needs. The docstring promised a warning on every fallback; it was suppressed for
+    exactly the two inputs a stream reader can hit.
+    """
+    with caplog.at_level(logging.WARNING):
+        assert parse_bool(value, default=True) is True
+    messages = [
+        r.getMessage()
+        for r in caplog.records
+        if "Unrecognised boolean" in r.getMessage()
+    ]
+    assert messages, "no warning for an undecodable value"
+    assert "None" not in messages[0], f"offending bytes erased: {messages[0]}"
+
+
+def test_an_absent_value_does_not_warn(caplog):
+    """None means nothing was supplied, which is the normal case for an unset variable.
+
+    Warning about it would add two lines of noise to every import of this module and train readers
+    to ignore the warning that matters. Undecodable bytes are a different case -- something was
+    supplied and could not be read -- and those do warn.
+    """
+    with caplog.at_level(logging.WARNING):
+        assert parse_bool(None, default=True) is True
+        assert parse_bool(None, default=False) is False
+    assert not [
+        r for r in caplog.records if "Unrecognised boolean" in r.getMessage()
+    ], "warned about an absent value"
+
+
+@pytest.mark.parametrize(
+    "text,expected", [("false", "False"), ("0", "False"), ("true", "True")]
+)
+def test_the_spec_parser_also_honours_a_false_value(text, expected):
+    """Covers the second file this PR edits, in a subprocess and for two reasons.
+
+    It needs a sibling imported first, because importing __spec__ from a cold interpreter fails
+    (issue #466). And having imported it, the subpackage is bound over the parent's ModuleSpec for
+    the rest of the process, so Flask can no longer find an app's root path -- which breaks
+    test_app.py if this runs in the same session. A subprocess gets the coverage without the
+    side effect.
+    """
+    script = (
+        "import argparse;"
+        "import redis_benchmarks_specification.__common__.env;"
+        "from redis_benchmarks_specification.__spec__.args import spec_cli_args;"
+        "p=spec_cli_args(argparse.ArgumentParser());"
+        f"print(p.parse_args(['--trigger-unstable-commits','{text}']).trigger_unstable_commits)"
+    )
+    assert _env_probe(script) == expected
+
+
+def test_the_spec_parser_uses_the_canonical_decoder():
+    """Same file, the guard rather than the behaviour. Subprocess for the same reason."""
+    script = (
+        "import argparse;"
+        "import redis_benchmarks_specification.__common__.env as env;"
+        "from redis_benchmarks_specification.__spec__.args import spec_cli_args;"
+        "p=spec_cli_args(argparse.ArgumentParser());"
+        "print(all(a.type is not bool for a in p._actions) and any("
+        "a.type is env.parse_bool for a in p._actions))"
+    )
+    assert _env_probe(script) == "True"
