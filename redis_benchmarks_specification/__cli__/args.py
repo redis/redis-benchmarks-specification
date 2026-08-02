@@ -6,7 +6,7 @@
 import datetime
 import os
 from redis_benchmarks_specification.__common__.env import (
-    parse_bool_arg,
+    parse_bool,
     GH_REDIS_SERVER_HOST,
     GH_TOKEN,
     GH_REDIS_SERVER_PORT,
@@ -75,7 +75,7 @@ def spec_cli_args(parser):
     )
     parser.add_argument(
         "--use-git-timestamp",
-        type=parse_bool_arg,
+        type=parse_bool,
         default=True,
         help="Use git timestamp",
     )
@@ -158,7 +158,7 @@ def spec_cli_args(parser):
     )
     parser.add_argument("--id", type=str, default="dockerhub")
     parser.add_argument("--mnt_point", type=str, default="")
-    parser.add_argument("--trigger-unstable-commits", type=parse_bool_arg, default=True)
+    parser.add_argument("--trigger-unstable-commits", type=parse_bool, default=True)
     parser.add_argument(
         "--docker-dont-air-gap",
         default=False,

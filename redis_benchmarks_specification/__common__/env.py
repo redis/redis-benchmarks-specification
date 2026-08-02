@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 
@@ -87,74 +88,83 @@ REDIS_BINS_EXPIRE_SECS = int(
     os.getenv("REDIS_BINS_EXPIRE_SECS", "{}".format(24 * 7 * 60 * 60))
 )
 
-TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
-FALSE_STRINGS = ("0", "false", "f", "no", "n", "off", "")
+_TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
+_FALSE_STRINGS = ("0", "false", "f", "no", "n", "off")
 
 
-def parse_bool(value, default=False):
+def accepted_bool_spellings():
+    """The spellings parse_bool accepts, for error and warning messages."""
+    return _TRUE_STRINGS + _FALSE_STRINGS
+
+
+def parse_bool(value, default=...):
     """Decode a boolean that has been through a string round-trip.
 
-    Booleans reach us as strings: written to the commits/builds streams with str(), and read from
-    the environment. A bare bool() on that is wrong in the one direction that matters -- every
+    Booleans reach us as strings: written to the commits and builds streams with str(), and read
+    from the environment. A bare bool() on that is wrong in the one direction that matters -- every
     non-empty string is truthy, so "False", "0" and "no" all decode to True and the flag is stuck
     on. bytes are accepted because stream reads are not always decoded first.
 
-    An unrecognised string returns `default` rather than guessing, since guessing is what bool()
-    already does. Callers that need to distinguish "absent" from "unparseable" should check
-    membership before calling.
+    Ellipsis marks "no default given". A module-level object() sentinel would not survive an
+    importlib.reload: the signature default is captured at definition time while the identity test
+    reads the module global, so after a reload the two stop matching and the strict form silently
+    starts returning the sentinel instead of raising. Ellipsis is a builtin singleton, so it cannot
+    drift.
+
+    With no `default`, an unrecognised value raises -- which is why this is the correct callable for
+    argparse's `type=`, where a typo should be a usage error rather than a guess. Pass an explicit
+    `default` to get the value back instead, with a warning; that form is for values that arrive
+    from a stream or the environment, where raising would abort a consumer loop or an import.
+
+    Accepts the spellings distutils.util.strtobool did, plus surrounding whitespace. distutils was
+    removed from the standard library in 3.12 and resolves only via a setuptools shim.
+
+    Deliberately not accepting numbers: parse_bool(2) would have to be True while
+    parse_bool(str(2)) is not, which contradicts the round-trip property this exists to provide.
     """
     if isinstance(value, bool):
         return value
-    if value is None:
-        return default
     if isinstance(value, (bytes, bytearray)):
         try:
             value = value.decode()
         except UnicodeDecodeError:
-            return default
+            value = None
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in TRUE_STRINGS:
+        if normalized in _TRUE_STRINGS:
             return True
-        if normalized in FALSE_STRINGS:
+        if normalized in _FALSE_STRINGS:
             return False
+        if not normalized:
+            # Empty or whitespace-only. On the command line this is what an unset shell variable
+            # expands to -- `--verbose "$VERBOSE"` -- and bool("") was already False there, so the
+            # strict form keeps returning False rather than turning a common accident into a usage
+            # error. For a stream or environment value it means "not supplied", so it takes the
+            # caller's default; several of those flags default True and must not be flipped off by
+            # an absent field.
+            return False if default is ... else default
+        value = value.strip()
+
+    expected = ", ".join(accepted_bool_spellings())
+    if default is ...:
+        # ArgumentTypeError, not ValueError: argparse reproduces this message verbatim, whereas a
+        # ValueError is replaced with "invalid parse_bool value: ..." -- which names an internal
+        # function and drops the list of spellings the user needs.
+        raise argparse.ArgumentTypeError(
+            "invalid boolean {!r}; expected one of {}".format(value, expected)
+        )
+    if value is not None:
         # Warn rather than fall back quietly. The previous bool() read every non-empty string as
-        # True, so an unrecognised truthy-looking value like "2" or "enabled" silently flips to
-        # this default -- and where the flag gates recording benchmark results, that turns a
-        # misconfiguration into missing data rather than an error.
+        # True, so an unrecognised truthy-looking value like "2" silently flips to this default --
+        # and where the flag gates recording benchmark results, that turns a misconfiguration into
+        # missing data rather than an error.
         logging.warning(
             "Unrecognised boolean %r; expected one of %s. Using %r.",
             value,
-            ", ".join(TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f)),
+            expected,
             default,
         )
-        return default
-    if isinstance(value, (int, float)):
-        return bool(value)
     return default
-
-
-def parse_bool_arg(value):
-    """argparse `type=` for a boolean flag.
-
-    Same accepted spellings as parse_bool, but unrecognised input raises so argparse turns it into
-    a usage error instead of silently substituting a default -- on a command line, a typo should be
-    reported, not guessed at. The empty string is rejected for the same reason.
-
-    Accepts exactly the spellings distutils.util.strtobool did, which this replaces: distutils was
-    removed from the standard library in 3.12 and only resolves today via a setuptools shim, so
-    importing it made the CLI fail at import time in any environment without setuptools.
-    """
-    normalized = str(value).strip().lower()
-    if normalized in TRUE_STRINGS:
-        return True
-    if normalized and normalized in FALSE_STRINGS:
-        return False
-    raise ValueError(
-        "invalid boolean {!r}; expected one of {}".format(
-            value, ", ".join(TRUE_STRINGS + tuple(f for f in FALSE_STRINGS if f))
-        )
-    )
 
 
 # environment variables
@@ -164,7 +174,7 @@ PULL_REQUEST_TRIGGER_LABEL = os.getenv(
 # parse_bool, not bool(): this is the default of a --datasink_push_results_redistimeseries
 # store_true flag, so a stray truthy read cannot be overridden on the command line -- setting
 # DATASINK_PUSH_RTS=0 would enable pushing forever. Note the sibling PUSH_RTS in __compare__/args
-# already reads 0 correctly, via int().
+# already reads 0 correctly, though via int(), which raises on a word -- see issue #465.
 _DATASINK_PUSH_RTS_RAW = os.getenv("DATASINK_PUSH_RTS")
 # The default deliberately reproduces the old bool() reading -- any non-empty string is True -- so
 # an unrecognised value cannot flip this off. When the flag is False the datasink connection is
@@ -181,7 +191,9 @@ ALLOWED_PROFILERS = "perf:record,vtune"
 PROFILERS_DEFAULT = "perf:record"
 PROFILE_FREQ_DEFAULT = "99"
 PROFILERS_DSO = os.getenv("PROFILERS_DSO", None)
-PROFILERS_ENABLED = bool(int(os.getenv("PROFILE", 0)))
+# parse_bool, not bool(int(...)): the latter raises ValueError at import time on PROFILE=false
+# or off, which aborts every entrypoint. "0" and "1" still work.
+PROFILERS_ENABLED = parse_bool(os.getenv("PROFILE"), default=False)
 PROFILERS = os.getenv("PROFILERS", PROFILERS_DEFAULT)
 MAX_PROFILERS_PER_TYPE = int(os.getenv("MAX_PROFILERS", 1))
 PROFILE_FREQ = os.getenv("PROFILE_FREQ", PROFILE_FREQ_DEFAULT)
@@ -205,9 +217,12 @@ BENCHMARK_TRIGGER_ORGS = os.getenv("BENCHMARK_TRIGGER_ORGS", "redis")
 # which command groups its diff touches and scope the run instead of executing the full
 # suite. Set BENCHMARK_PR_DIFF_SCOPING to a falsey value (0/false/no/off) to restore
 # full-suite-on-label.
-BENCHMARK_PR_DIFF_SCOPING = os.getenv(
-    "BENCHMARK_PR_DIFF_SCOPING", "1"
-).strip().lower() in ("1", "true", "yes", "on")
+# Was a hand-rolled copy of parse_bool accepting a different set (no "t", no "y"). Kept at
+# default=False so an unrecognised value still disables scoping as before, rather than
+# enabling it.
+BENCHMARK_PR_DIFF_SCOPING = parse_bool(
+    os.getenv("BENCHMARK_PR_DIFF_SCOPING", "1"), default=False
+)
 # PRs changing more than this many files are treated as inherently broad -> full suite
 # (also bounds the synchronous GitHub pagination done inside the webhook request).
 try:
