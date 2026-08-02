@@ -197,28 +197,6 @@ def test_an_empty_string_does_not_count_toward_the_exclusion(caplog, side):
     assert expected in text, text
 
 
-def test_env_comparison_table_binds_the_hashes_to_the_sides_its_caller_intends():
-    """The positional hash arguments must not be transposed.
-
-    compute_env_comparison_table is called with every argument positional. Its signature
-    declared comparison_hash before baseline_hash while the caller passes baseline first, so
-    each hash bound to the opposite parameter and was forwarded to get_by_strings under the
-    swapped name -- transposing the two sides of any --compare-by-env comparison filtered by
-    hash. Asserted on the signature because that is where the contract lives; the call site is
-    a 40-argument positional list that cannot be exercised without a live datasink.
-    """
-    import inspect
-
-    from redis_benchmarks_specification.__compare__.compare import (
-        compute_env_comparison_table,
-    )
-
-    names = list(inspect.signature(compute_env_comparison_table).parameters)
-    assert names.index("baseline_hash") < names.index("comparison_hash")
-    # the pair the caller supplies immediately before them, to catch a drift in either list
-    assert names.index("comparison_target_version") + 1 == names.index("baseline_hash")
-
-
 def test_every_selector_names_a_flag_the_parser_actually_accepts():
     """_SELECTORS drives the error text, so a selector with no flag advertises a lie.
 
@@ -274,47 +252,9 @@ def test_hash_parameters_are_declared_baseline_first(func_name):
 
     names = list(inspect.signature(getattr(mod, func_name)).parameters)
     assert names.index("baseline_hash") < names.index("comparison_hash")
-
-
-def test_the_hashes_reach_get_by_strings_on_the_side_the_cli_supplied_them():
-    """End-to-end wiring check across both hops, read from the source.
-
-    The call sites are 47- and 48-argument positional lists that cannot run without a live
-    datasink, so the binding is resolved statically: caller local -> parameter -> forwarded
-    argument -> get_by_strings parameter. This is the check that would have caught the
-    transposition; a signature-order assertion alone would not, since the forward can move too.
-    """
-    import ast
-    import inspect
-
-    import redis_benchmarks_specification.__compare__.compare as mod
-
-    tree = ast.parse(inspect.getsource(mod))
-    funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
-
-    def positional_args(inside, callee):
-        for node in ast.walk(funcs[inside]):
-            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == callee:
-                assert not node.keywords, f"{inside} -> {callee} mixes keywords"
-                return [a.id if isinstance(a, ast.Name) else None for a in node.args]
-        raise AssertionError(f"no call to {callee} inside {inside}")
-
-    def params(name):
-        args = funcs[name].args
-        return [a.arg for a in args.posonlyargs + args.args]
-
-    gbs = params("get_by_strings")
-    for table in ("compute_env_comparison_table", "compute_regression_table"):
-        outer = dict(
-            zip(params(table), positional_args("compare_command_logic", table))
-        )
-        forwarded = dict(zip(gbs, positional_args(table, "get_by_strings")))
-        for side in SIDES:
-            local = forwarded[f"{side}_hash"]
-            assert outer[local] == f"{side}_hash", (
-                f"{table}: get_by_strings.{side}_hash resolves to the caller's "
-                f"{outer[local]}, not {side}_hash"
-            )
+    # adjacency too: the caller supplies these two immediately after the target-version pair, so
+    # a parameter inserted between them would shift every later slot by one
+    assert names.index("comparison_target_version") + 1 == names.index("baseline_hash")
 
 
 def test_rejection_raises_rather_than_exiting():
@@ -581,3 +521,57 @@ def test_the_default_baseline_branch_is_not_injected_over_an_explicit_selector()
         "the default-baseline-branch fallback is not gated on the absence of an explicit "
         "baseline selector, so it can manufacture a conflict the user did not create"
     )
+
+
+def test_get_by_strings_is_keyword_only():
+    """A transposition must be unwritable, not merely tested for.
+
+    Ten same-typed positional arguments where crossing two changes nothing observable -- not the
+    arity, not the types, not the shape of the result, only which two things get compared -- is
+    how the hash pair came to be crossed on one path. Keyword-only removes the class rather than
+    policing it, which also means the call sites can be read without counting slots.
+    """
+    with pytest.raises(TypeError):
+        get_by_strings("BASE", "CMP")
+
+
+def test_every_get_by_strings_call_site_passes_keywords():
+    """The keyword-only signature is only load-bearing if nothing tries to route around it.
+
+    A caller building a dict and splatting it would compile fine and reintroduce the ordering
+    question one level up.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    calls = [
+        node
+        for node in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "get_by_strings"
+    ]
+    assert len(calls) == 3, f"expected 3 call sites, found {len(calls)}"
+    for call in calls:
+        assert (
+            not call.args
+        ), f"line {call.lineno}: positional args to a keyword-only function"
+        assert all(
+            kw.arg is not None for kw in call.keywords
+        ), f"line {call.lineno}: **splat bypasses the keyword-only signature"
+        supplied = {kw.arg for kw in call.keywords}
+        expected = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+        assert (
+            supplied == expected
+        ), f"line {call.lineno}: passes {sorted(supplied ^ expected)}"
+        # Every keyword must be bound to the identically-named local. Keyword-only stops a slot
+        # being crossed accidentally, but `baseline_hash=comparison_hash` is still writable, and
+        # it is the same wrong-two-things outcome with none of the visual tell of a miscounted
+        # positional list.
+        crossed = [
+            (kw.arg, kw.value.id)
+            for kw in call.keywords
+            if isinstance(kw.value, ast.Name) and kw.value.id != kw.arg
+        ]
+        assert not crossed, f"line {call.lineno}: bound to the wrong local: {crossed}"

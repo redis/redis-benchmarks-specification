@@ -435,16 +435,16 @@ def compare_command_logic(args, project_name, project_version):
     # escaped that guard, killed the daemon and left the stream un-ACKed.
     try:
         get_by_strings(
-            baseline_branch,
-            comparison_branch,
-            baseline_tag,
-            comparison_tag,
-            baseline_target_version,
-            comparison_target_version,
-            baseline_hash,
-            comparison_hash,
-            baseline_target_branch,
-            comparison_target_branch,
+            baseline_branch=baseline_branch,
+            comparison_branch=comparison_branch,
+            baseline_tag=baseline_tag,
+            comparison_tag=comparison_tag,
+            baseline_target_version=baseline_target_version,
+            comparison_target_version=comparison_target_version,
+            baseline_hash=baseline_hash,
+            comparison_hash=comparison_hash,
+            baseline_target_branch=baseline_target_branch,
+            comparison_target_branch=comparison_target_branch,
         )
     except ValueError as selector_error:
         logging.error(str(selector_error))
@@ -1089,16 +1089,16 @@ def compute_env_comparison_table(
 
     # Build baseline and comparison strings
     baseline_str, by_str_baseline, comparison_str, by_str_comparison = get_by_strings(
-        baseline_branch,
-        comparison_branch,
-        baseline_tag,
-        comparison_tag,
-        baseline_target_version,
-        comparison_target_version,
-        baseline_hash,
-        comparison_hash,
-        baseline_target_branch,
-        comparison_target_branch,
+        baseline_branch=baseline_branch,
+        comparison_branch=comparison_branch,
+        baseline_tag=baseline_tag,
+        comparison_tag=comparison_tag,
+        baseline_target_version=baseline_target_version,
+        comparison_target_version=comparison_target_version,
+        baseline_hash=baseline_hash,
+        comparison_hash=comparison_hash,
+        baseline_target_branch=baseline_target_branch,
+        comparison_target_branch=comparison_target_branch,
     )
 
     test_filter = "test_name"
@@ -1368,16 +1368,16 @@ def compute_regression_table(
         "Using a time-delta from {} to {}".format(from_human_str, to_human_str)
     )
     baseline_str, by_str_baseline, comparison_str, by_str_comparison = get_by_strings(
-        baseline_branch,
-        comparison_branch,
-        baseline_tag,
-        comparison_tag,
-        baseline_target_version,
-        comparison_target_version,
-        baseline_hash,
-        comparison_hash,
-        baseline_target_branch,
-        comparison_target_branch,
+        baseline_branch=baseline_branch,
+        comparison_branch=comparison_branch,
+        baseline_tag=baseline_tag,
+        comparison_tag=comparison_tag,
+        baseline_target_version=baseline_target_version,
+        comparison_target_version=comparison_target_version,
+        baseline_hash=baseline_hash,
+        comparison_hash=comparison_hash,
+        baseline_target_branch=baseline_target_branch,
+        comparison_target_branch=comparison_target_branch,
     )
     logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
     logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
@@ -1737,10 +1737,11 @@ def _resolve_by(name, supplied):
 
 
 def get_by_strings(
-    baseline_branch,
-    comparison_branch,
-    baseline_tag,
-    comparison_tag,
+    *,
+    baseline_branch=None,
+    comparison_branch=None,
+    baseline_tag=None,
+    comparison_tag=None,
     baseline_target_version=None,
     comparison_target_version=None,
     baseline_hash=None,
@@ -1748,6 +1749,14 @@ def get_by_strings(
     baseline_target_branch=None,
     comparison_target_branch=None,
 ):
+    """Resolve how each side of the comparison is identified.
+
+    Keyword-only by design. Every caller previously passed ten bare positionals, and a
+    transposition there is invisible: it does not change the arity, the types, or the shape of
+    the result -- it just compares the wrong two things, or names the wrong side in an error.
+    That is precisely how the two hash arguments came to be crossed on one path. Keyword-only
+    makes the mistake unwritable rather than merely tested for.
+    """
     baseline_str, by_str_baseline = _resolve_by(
         "baseline",
         {
