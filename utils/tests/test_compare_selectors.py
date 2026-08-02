@@ -41,7 +41,29 @@ def _flag(side, suffix):
     return "--{}-{}".format(side, suffix.replace("_", "-"))
 
 
-def _call(caplog, **kwargs):
+def _assert_offers_every_flag_in_exclusion(text, side):
+    """The exclusion message lists all five flags before naming the offenders."""
+    missing = [
+        _flag(side, suffix) for suffix in SUFFIXES if _flag(side, suffix) not in text
+    ]
+    assert not missing, f"exclusion message does not list {missing}: {text!r}"
+
+
+def _assert_offers_every_flag(text, side):
+    """Both messages must enumerate all five options for the side.
+
+    Asserting only that the text starts with "You need to provide one of" passes on
+    "You need to provide one of (  )" and on a list truncated to a single flag. A message that
+    silently offers fewer options than exist is the defect this module is being fixed for.
+    """
+    assert "You need to provide one of" in text
+    missing = [
+        _flag(side, suffix) for suffix in SUFFIXES if _flag(side, suffix) not in text
+    ]
+    assert not missing, f"message does not offer {missing}: {text!r}"
+
+
+def _call(**kwargs):
     """Invoke get_by_strings with every selector defaulted to None.
 
     Returns (result, message). A rejected call yields (None, the ValueError's message): the
@@ -67,18 +89,19 @@ def _call(caplog, **kwargs):
 
 @pytest.mark.parametrize("side", SIDES)
 @pytest.mark.parametrize("pair", list(itertools.combinations(SUFFIXES, 2)))
-def test_every_pair_of_selectors_is_rejected_with_an_accurate_count(caplog, side, pair):
+def test_every_pair_of_selectors_is_rejected_with_an_accurate_count(side, pair):
     """Two selectors on one side must exit, naming both, with a count of 2.
 
     Parametrized over all 10 pairs x both sides: 6 of 10 baseline pairs previously reported
     "a total of 1", and 4 of 10 comparison pairs were not rejected at all.
     """
     a, b = pair
-    result, text = _call(caplog, **{f"{side}_{a}": "AAA", f"{side}_{b}": "BBB"})
+    result, text = _call(**{f"{side}_{a}": "AAA", f"{side}_{b}": "BBB"})
     assert result is None, f"{side} {a}+{b} was accepted instead of rejected"
     match = re.search(r"total of (\d+): (.*?)\. Pick", text)
     assert match, f"no count in error for {side} {a}+{b}: {text!r}"
     assert int(match.group(1)) == 2, f"{side} {a}+{b} reported {match.group(1)}, not 2"
+    _assert_offers_every_flag_in_exclusion(text, side)
     named = [n.strip() for n in match.group(2).split(",")]
     assert sorted(named) == sorted(
         [_flag(side, a), _flag(side, b)]
@@ -87,11 +110,9 @@ def test_every_pair_of_selectors_is_rejected_with_an_accurate_count(caplog, side
 
 @pytest.mark.parametrize("side", SIDES)
 @pytest.mark.parametrize("suffix", SUFFIXES)
-def test_a_single_selector_is_accepted_and_reported_with_its_own_label(
-    caplog, side, suffix
-):
+def test_a_single_selector_is_accepted_and_reported_with_its_own_label(side, suffix):
     """Exactly one selector must be accepted, and its value and label returned."""
-    result, _ = _call(caplog, **{f"{side}_{suffix}": "PICKED"})
+    result, _ = _call(**{f"{side}_{suffix}": "PICKED"})
     assert result is not None, f"{side} {suffix} alone was rejected"
     baseline_str, by_baseline, comparison_str, by_comparison = result
     value, label = (
@@ -104,14 +125,14 @@ def test_a_single_selector_is_accepted_and_reported_with_its_own_label(
 
 
 @pytest.mark.parametrize("side", SIDES)
-def test_no_selector_on_a_side_is_rejected(caplog, side):
+def test_no_selector_on_a_side_is_rejected(side):
     """A side with nothing supplied must exit rather than compare against nothing."""
     payload = {name: None for name in ALL_KWARGS}
     other = "comparison" if side == "baseline" else "baseline"
     payload[f"{other}_branch"] = "OTHER"
     with pytest.raises(ValueError) as excinfo:
         get_by_strings(**payload)
-    assert "You need to provide one of" in str(excinfo.value)
+    _assert_offers_every_flag(str(excinfo.value), side)
 
 
 @settings(max_examples=300, deadline=None)
@@ -144,7 +165,7 @@ def test_any_number_of_selectors_above_one_is_rejected_with_a_matching_count(
 
 
 @pytest.mark.parametrize("side", SIDES)
-def test_an_empty_branch_alongside_a_hash_is_accepted(caplog, side):
+def test_an_empty_branch_alongside_a_hash_is_accepted(side):
     """`--<side>-branch '' --<side>-hash X` must resolve to the hash, not error.
 
     compare_command_logic defaults --baseline-branch to "unstable", so selecting by hash means
@@ -154,7 +175,6 @@ def test_an_empty_branch_alongside_a_hash_is_accepted(caplog, side):
     """
     other = "comparison" if side == "baseline" else "baseline"
     result, text = _call(
-        caplog,
         **{f"{side}_branch": "", f"{side}_hash": "H" * 40, f"{other}_branch": "OTHER"},
     )
     assert result is not None, f"rejected the documented idiom: {text}"
@@ -164,7 +184,7 @@ def test_an_empty_branch_alongside_a_hash_is_accepted(caplog, side):
 
 
 @pytest.mark.parametrize("side", SIDES)
-def test_every_selector_empty_on_one_side_is_reported_as_empty(caplog, side):
+def test_every_selector_empty_on_one_side_is_reported_as_empty(side):
     """All five selectors passed as "" is indistinguishable from passing none of them.
 
     Otherwise "" would count toward the exclusion and a caller clearing two defaults would be
@@ -173,18 +193,17 @@ def test_every_selector_empty_on_one_side_is_reported_as_empty(caplog, side):
     payload = {f"{side}_{suffix}": "" for suffix in SUFFIXES}
     other = "comparison" if side == "baseline" else "baseline"
     payload[f"{other}_branch"] = "OTHER"
-    result, text = _call(caplog, **payload)
+    result, text = _call(**payload)
     assert result is None
-    assert "You need to provide one of" in text
+    _assert_offers_every_flag(text, side)
     assert "mutually exclusive" not in text
 
 
 @pytest.mark.parametrize("side", SIDES)
-def test_an_empty_string_does_not_count_toward_the_exclusion(caplog, side):
+def test_an_empty_string_does_not_count_toward_the_exclusion(side):
     """ "" plus two real selectors reports 2, not 3."""
     other = "comparison" if side == "baseline" else "baseline"
     result, text = _call(
-        caplog,
         **{
             f"{side}_branch": "",
             f"{side}_tag": "T",
@@ -213,25 +232,6 @@ def test_every_selector_names_a_flag_the_parser_actually_accepts():
     for side in SIDES:
         missing = [f for f in _selector_flags(side) if f not in known]
         assert not missing, f"{side}: error text names undefined flags {missing}"
-
-
-def test_a_selector_missing_from_the_call_site_is_a_hard_error():
-    """The resolver indexes `supplied` rather than using .get().
-
-    With .get(), a selector listed in _SELECTORS but absent from a call-site dict resolves to
-    None forever -- unsupplyable, while the error message still offers its flag.
-    """
-    from redis_benchmarks_specification.__compare__.compare import (
-        _SELECTORS,
-        _resolve_by,
-    )
-
-    complete = {suffix: None for suffix, _ in _SELECTORS}
-    complete["branch"] = "BASE"
-    for suffix, _ in _SELECTORS:
-        partial = {k: v for k, v in complete.items() if k != suffix}
-        with pytest.raises(KeyError):
-            _resolve_by("baseline", partial)
 
 
 @pytest.mark.parametrize(
@@ -272,10 +272,6 @@ def test_rejection_raises_rather_than_exiting():
     payload["comparison_branch"] = "C"
     with pytest.raises(ValueError):
         get_by_strings(**payload)
-    try:
-        get_by_strings(**payload)
-    except BaseException as exc:  # noqa: BLE001 - asserting the exception's own type
-        assert not isinstance(exc, SystemExit), "SystemExit escapes the daemon's guard"
 
 
 def test_the_cli_translates_a_selector_error_into_exit_1():

@@ -392,7 +392,7 @@ def compare_command_logic(args, project_name, project_version):
 
     if metric_name is None:
         logging.error(
-            "You need to provider either "
+            "You need to provide either "
             + " --metric_name or provide a defaults file via --defaults_filename that contains exporter.redistimeseries.comparison.metrics array. Exiting..."
         )
         sys.exit(1)
