@@ -1,0 +1,573 @@
+"""Property tests for baseline/comparison selector resolution in the compare tool.
+
+`get_by_strings` picks the single thing each side of a comparison is identified by. Two
+defects made it unreliable, and both were silent:
+
+* the error list was appended to only inside each selector's own failure branch, so whichever
+  selector was supplied first went unrecorded -- any pair not involving `--*-branch` reported
+  "a total of 1" and named the wrong flag;
+* the `--comparison-hash` exclusion check was commented out, so four comparison pairs were
+  accepted with no error at all and the hash quietly won by being last in the chain. A wrong
+  selector here silently compares the wrong two things, which is worse than refusing to run.
+
+Offline; no Redis, no Docker.
+"""
+
+import itertools
+import logging
+import re
+
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
+from redis_benchmarks_specification.__compare__.compare import get_by_strings
+
+SUFFIXES = ("branch", "tag", "target_version", "target_branch", "hash")
+SIDES = ("baseline", "comparison")
+ALL_KWARGS = tuple(f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES)
+# datasink label each suffix resolves to -- returned as by_str and used as a TSDB filter key
+LABELS = {
+    "branch": "branch",
+    "tag": "version",
+    "target_version": "target+version",
+    "target_branch": "target+branch",
+    "hash": "hash",
+}
+
+
+def _flag(side, suffix):
+    """The CLI flag for a selector -- what the error names, as opposed to its datasink label."""
+    return "--{}-{}".format(side, suffix.replace("_", "-"))
+
+
+def _assert_offers_every_flag_in_exclusion(text, side):
+    """The exclusion message lists all five flags before naming the offenders."""
+    missing = [
+        _flag(side, suffix) for suffix in SUFFIXES if _flag(side, suffix) not in text
+    ]
+    assert not missing, f"exclusion message does not list {missing}: {text!r}"
+
+
+def _assert_offers_every_flag(text, side):
+    """Both messages must enumerate all five options for the side.
+
+    Asserting only that the text starts with "You need to provide one of" passes on
+    "You need to provide one of (  )" and on a list truncated to a single flag. A message that
+    silently offers fewer options than exist is the defect this module is being fixed for.
+    """
+    assert "You need to provide one of" in text
+    missing = [
+        _flag(side, suffix) for suffix in SUFFIXES if _flag(side, suffix) not in text
+    ]
+    assert not missing, f"message does not offer {missing}: {text!r}"
+
+
+def _call(**kwargs):
+    """Invoke get_by_strings with every selector defaulted to None.
+
+    Returns (result, message). A rejected call yields (None, the ValueError's message): the
+    resolver raises rather than exiting, so that the coordinator daemon -- which calls into this
+    module inside an `except Exception` it documents as best-effort -- can log and continue. A
+    SystemExit would not be caught by that guard.
+    """
+    payload = {name: None for name in ALL_KWARGS}
+    payload.update(kwargs)
+    # Each side needs one selector or it exits for being empty, which is a different test.
+    # Gated on `is not None`, not truthiness: "" is a value a caller really passes (to clear
+    # the defaulted --baseline-branch), so a truthiness gate would silently overwrite it and
+    # make the empty-string semantics untestable.
+    if all(payload[k] is None for k in ALL_KWARGS if k.startswith("baseline")):
+        payload["baseline_branch"] = "BASE"
+    if all(payload[k] is None for k in ALL_KWARGS if k.startswith("comparison")):
+        payload["comparison_branch"] = "CMP"
+    try:
+        return get_by_strings(**payload), ""
+    except ValueError as exc:
+        return None, str(exc)
+
+
+@pytest.mark.parametrize("side", SIDES)
+@pytest.mark.parametrize("pair", list(itertools.combinations(SUFFIXES, 2)))
+def test_every_pair_of_selectors_is_rejected_with_an_accurate_count(side, pair):
+    """Two selectors on one side must exit, naming both, with a count of 2.
+
+    Parametrized over all 10 pairs x both sides: 6 of 10 baseline pairs previously reported
+    "a total of 1", and 4 of 10 comparison pairs were not rejected at all.
+    """
+    a, b = pair
+    result, text = _call(**{f"{side}_{a}": "AAA", f"{side}_{b}": "BBB"})
+    assert result is None, f"{side} {a}+{b} was accepted instead of rejected"
+    match = re.search(r"total of (\d+): (.*?)\. Pick", text)
+    assert match, f"no count in error for {side} {a}+{b}: {text!r}"
+    assert int(match.group(1)) == 2, f"{side} {a}+{b} reported {match.group(1)}, not 2"
+    _assert_offers_every_flag_in_exclusion(text, side)
+    named = [n.strip() for n in match.group(2).split(",")]
+    assert sorted(named) == sorted(
+        [_flag(side, a), _flag(side, b)]
+    ), f"{side} {a}+{b} named {named}"
+
+
+@pytest.mark.parametrize("side", SIDES)
+@pytest.mark.parametrize("suffix", SUFFIXES)
+def test_a_single_selector_is_accepted_and_reported_with_its_own_label(side, suffix):
+    """Exactly one selector must be accepted, and its value and label returned."""
+    result, _ = _call(**{f"{side}_{suffix}": "PICKED"})
+    assert result is not None, f"{side} {suffix} alone was rejected"
+    baseline_str, by_baseline, comparison_str, by_comparison = result
+    value, label = (
+        (baseline_str, by_baseline)
+        if side == "baseline"
+        else (comparison_str, by_comparison)
+    )
+    assert value == "PICKED"
+    assert label == LABELS[suffix]
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_no_selector_on_a_side_is_rejected(side):
+    """A side with nothing supplied must exit rather than compare against nothing."""
+    payload = {name: None for name in ALL_KWARGS}
+    other = "comparison" if side == "baseline" else "baseline"
+    payload[f"{other}_branch"] = "OTHER"
+    with pytest.raises(ValueError) as excinfo:
+        get_by_strings(**payload)
+    _assert_offers_every_flag(str(excinfo.value), side)
+
+
+@settings(max_examples=300, deadline=None)
+@given(
+    chosen=st.lists(st.sampled_from(SUFFIXES), min_size=1, max_size=5, unique=True),
+    side=st.sampled_from(SIDES),
+)
+def test_any_number_of_selectors_above_one_is_rejected_with_a_matching_count(
+    chosen, side
+):
+    """For any subset of selectors, accept exactly when the subset has size 1.
+
+    Generated rather than enumerated because the count must equal the number supplied for
+    every subset size, not only for pairs.
+    """
+    payload = {name: None for name in ALL_KWARGS}
+    other = "comparison" if side == "baseline" else "baseline"
+    payload[f"{other}_branch"] = "OTHER"
+    for suffix in chosen:
+        payload[f"{side}_{suffix}"] = "V"
+    if len(chosen) == 1:
+        assert get_by_strings(**payload) is not None
+        return
+    with pytest.raises(ValueError) as excinfo:
+        get_by_strings(**payload)
+    match = re.search(r"total of (\d+):", str(excinfo.value))
+    assert match and int(match.group(1)) == len(
+        chosen
+    ), f"{len(chosen)} selectors reported as {match.group(1) if match else None}"
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_an_empty_branch_alongside_a_hash_is_accepted(side):
+    """`--<side>-branch '' --<side>-hash X` must resolve to the hash, not error.
+
+    compare_command_logic defaults --baseline-branch to "unstable", so selecting by hash means
+    clearing it with ''. The documented fleet invocations pass that form on both sides, and only
+    the baseline was normalized to None before reaching here -- so enforcing the exclusion on a
+    bare `is not None` rejected the comparison form that every caller uses.
+    """
+    other = "comparison" if side == "baseline" else "baseline"
+    result, text = _call(
+        **{f"{side}_branch": "", f"{side}_hash": "H" * 40, f"{other}_branch": "OTHER"},
+    )
+    assert result is not None, f"rejected the documented idiom: {text}"
+    by_str = result[1] if side == "baseline" else result[3]
+    value = result[0] if side == "baseline" else result[2]
+    assert (value, by_str) == ("H" * 40, "hash")
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_every_selector_empty_on_one_side_is_reported_as_empty(side):
+    """All five selectors passed as "" is indistinguishable from passing none of them.
+
+    Otherwise "" would count toward the exclusion and a caller clearing two defaults would be
+    told they selected two things.
+    """
+    payload = {f"{side}_{suffix}": "" for suffix in SUFFIXES}
+    other = "comparison" if side == "baseline" else "baseline"
+    payload[f"{other}_branch"] = "OTHER"
+    result, text = _call(**payload)
+    assert result is None
+    _assert_offers_every_flag(text, side)
+    assert "mutually exclusive" not in text
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_an_empty_string_does_not_count_toward_the_exclusion(side):
+    """ "" plus two real selectors reports 2, not 3."""
+    other = "comparison" if side == "baseline" else "baseline"
+    result, text = _call(
+        **{
+            f"{side}_branch": "",
+            f"{side}_tag": "T",
+            f"{side}_hash": "H" * 40,
+            f"{other}_branch": "OTHER",
+        },
+    )
+    assert result is None
+    expected = "a total of 2: {},{}".format(_flag(side, "tag"), _flag(side, "hash"))
+    assert expected in text, text
+
+
+def test_every_selector_names_a_flag_the_parser_actually_accepts():
+    """_SELECTORS drives the error text, so a selector with no flag advertises a lie.
+
+    Nothing else links the two lists: adding a selector here would name a flag argparse does not
+    define, sending the user to a nonexistent option.
+    """
+    import argparse
+
+    from redis_benchmarks_specification.__compare__.args import create_compare_arguments
+    from redis_benchmarks_specification.__compare__.compare import _selector_flags
+
+    parser = create_compare_arguments(argparse.ArgumentParser())
+    known = {opt for action in parser._actions for opt in action.option_strings}
+    for side in SIDES:
+        missing = [f for f in _selector_flags(side) if f not in known]
+        assert not missing, f"{side}: error text names undefined flags {missing}"
+
+
+@pytest.mark.parametrize(
+    "func_name", ("compute_env_comparison_table", "compute_regression_table")
+)
+def test_hash_parameters_are_declared_baseline_first(func_name):
+    """Both tables are called with every argument positional, so declaration order is the wiring.
+
+    Each previously declared comparison_hash before baseline_hash. compute_env_comparison_table
+    forwarded them baseline-first, so its two sides were transposed outright;
+    compute_regression_table forwarded them comparison-first, so the inversions cancelled and it
+    was correct by accident -- but a keyword caller, or an edit to either list alone, silently
+    swapped the sides. Canonical order in both means neither can drift on its own.
+    """
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    names = list(inspect.signature(getattr(mod, func_name)).parameters)
+    assert names.index("baseline_hash") < names.index("comparison_hash")
+    # adjacency too: the caller supplies these two immediately after the target-version pair, so
+    # a parameter inserted between them would shift every later slot by one
+    assert names.index("comparison_target_version") + 1 == names.index("baseline_hash")
+
+
+def test_rejection_raises_rather_than_exiting():
+    """SystemExit here would kill the coordinator daemon.
+
+    compute_regression_table reaches this resolver, and the coordinator calls it inside an
+    `except Exception` whose comment states the regression comment is best-effort so a data-shape
+    problem cannot abort the per-test loop. SystemExit does not derive from Exception, so it
+    escaped that guard, took the daemon down and left the stream un-ACKed. The CLI still exits 1;
+    compare_command_logic translates this.
+    """
+    payload = {name: None for name in ALL_KWARGS}
+    payload["baseline_branch"] = "B"
+    payload["baseline_hash"] = "H" * 40
+    payload["comparison_branch"] = "C"
+    with pytest.raises(ValueError):
+        get_by_strings(**payload)
+
+
+def test_the_cli_translates_a_selector_error_into_exit_1():
+    """compare_command_logic must keep the CLI's exit code despite the resolver only raising."""
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    tree = ast.parse(inspect.getsource(mod))
+    fn = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    guards = [
+        node
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Try)
+        and any(getattr(h.type, "id", None) == "ValueError" for h in node.handlers)
+    ]
+    assert len(guards) == 1, "expected exactly one selector-validation guard"
+    # The guard must wrap the validation call itself. Asserting only that some handler exists
+    # would still pass with the call moved out of the try, which is the regression this prevents:
+    # the tables would then raise uncaught and the user would get a traceback.
+    guarded = [
+        c
+        for c in ast.walk(guards[0])
+        if isinstance(c, ast.Call) and getattr(c.func, "id", None) == "get_by_strings"
+    ]
+    assert guarded, "the ValueError guard does not wrap a get_by_strings call"
+    codes = [
+        c.args[0].value
+        for h in guards[0].handlers
+        if getattr(h.type, "id", None) == "ValueError"
+        for c in ast.walk(h)
+        if isinstance(c, ast.Call)
+        and getattr(getattr(c.func, "value", None), "id", None) == "sys"
+        and getattr(c.func, "attr", None) == "exit"
+        and c.args
+        and isinstance(c.args[0], ast.Constant)
+    ]
+    assert codes, "the ValueError handler does not call sys.exit"
+    # the code itself, not just that it exits: `set -e` and every CI step branch on it, so
+    # exiting 0 while printing an error is indistinguishable from a successful comparison
+    assert all(code == 1 for code in codes), f"selector errors exit with {codes}, not 1"
+
+
+def test_no_selector_is_reassigned_between_validation_and_the_table_calls():
+    """The up-front validation is only meaningful if it inspects the values the tables receive.
+
+    compare_command_logic validates the selectors once, then calls one of the two table functions
+    much later. A reassignment in between would leave the validation checking stale values, and a
+    conflict reaching the resolver at runtime would surface as an uncaught ValueError -- a
+    traceback rather than the clean exit 1 the validation exists to produce.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    guards = [
+        n
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Try)
+        and any(getattr(h.type, "id", None) == "ValueError" for h in n.handlers)
+    ]
+    assert len(guards) == 1, "expected exactly one selector-validation guard"
+    validated_at = guards[0].end_lineno
+    last_table_call = max(
+        n.lineno
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", "")
+        in ("compute_env_comparison_table", "compute_regression_table")
+    )
+    selectors = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+    reassigned = [
+        (node.lineno, target.id)
+        for node in ast.walk(fn)
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+        and target.id in selectors
+        and validated_at < node.lineno < last_table_call
+    ]
+    assert not reassigned, f"selectors reassigned after validation: {reassigned}"
+
+
+def test_the_by_str_labels_match_what_the_ingest_side_writes():
+    """These labels are TimeSeries label names, not display strings.
+
+    by_str is interpolated straight into a query filter, so renaming one makes every query for
+    that selector return zero series -- indistinguishable from "this version was never
+    benchmarked". Asserting them against LABELS above would be tautological: LABELS is a copy of
+    _SELECTORS, so the natural single edit renames both and ships green. This checks the other
+    side of the wire instead.
+
+    `hash` is excluded deliberately: it is written by redisbench-admin, not by this repo, so
+    there is nothing local to compare it against.
+    """
+    import inspect
+
+    import redis_benchmarks_specification.__common__.timeseries as ts_mod
+    from redis_benchmarks_specification.__compare__.compare import _SELECTORS
+
+    ingest = inspect.getsource(ts_mod)
+    labels = {label for _, label in _SELECTORS}
+
+    for plain in ("version", "branch"):
+        assert plain in labels, f"_SELECTORS no longer resolves anything to '{plain}'"
+        assert (
+            f'labels["{plain}"]' in ingest or f'["labels"]["{plain}"]' in ingest
+        ), f"the ingest side no longer writes a '{plain}' label"
+
+    # target+<key> is built by joining, so match the construction rather than a literal
+    assert '"{}+{}".format("target", break_by_key)' in ingest, (
+        "the ingest side no longer builds target+<key> labels; the two target selectors "
+        "would query a label that is never written"
+    )
+    for composed in ("target+version", "target+branch"):
+        assert (
+            composed in labels
+        ), f"_SELECTORS no longer resolves anything to '{composed}'"
+        prefix, _, key = composed.partition("+")
+        assert prefix == "target" and key in (
+            "version",
+            "branch",
+        ), f"'{composed}' is not a target+<key> pair the ingest side can produce"
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", None),
+        (None, None),
+        ("unstable", "unstable"),
+        (" ", " "),
+        ("0", "0"),
+    ],
+)
+def test_absent_if_empty(value, expected):
+    """Only the empty string becomes absent.
+
+    A space is not "absent" -- silently trimming it would be a new untruth of the same kind this
+    module is being fixed for -- and "0" is a legitimate value.
+    """
+    from redis_benchmarks_specification.__compare__.compare import absent_if_empty
+
+    assert absent_if_empty(value) is expected or absent_if_empty(value) == expected
+
+
+def test_every_selector_is_normalized_before_use():
+    """All ten selectors must go through absent_if_empty, not just the two branches.
+
+    Downstream code tests `is not None` in places the resolver never sees -- the grafana link
+    built into the PR comment, and the pull-request zset write -- so normalizing only the
+    branches left an empty tag looking supplied. That combination was previously refused outright
+    and became reachable once the resolver started treating "" as absent, which is exactly the
+    kind of second-order effect a partial normalization produces.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    normalized = {
+        target.id
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", None) == "absent_if_empty"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    expected = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+    assert not expected - normalized, f"not normalized: {sorted(expected - normalized)}"
+
+
+def test_the_grafana_link_never_carries_an_empty_selector():
+    """An empty tag used to add a bare var-version and a second "?" to a link posted on the PR."""
+    import inspect
+
+    from redis_benchmarks_specification.__compare__.compare import (
+        prepare_regression_comment,
+    )
+
+    src = inspect.getsource(prepare_regression_comment)
+    assert "if baseline_tag and comparison_tag:" in src, (
+        "the tag pair is gated on `is not None`, so an empty tag contributes an empty "
+        "var-version parameter to the link"
+    )
+    assert "if baseline_branch and comparison_branch:" in src, (
+        "the branch pair is gated on `is not None`, so an empty branch contributes an empty "
+        "var-branch parameter to the link"
+    )
+
+
+def test_the_default_baseline_branch_is_not_injected_over_an_explicit_selector():
+    """A default must not manufacture a conflict with a flag the user never typed.
+
+    compare_command_logic falls back to a configured default baseline branch. Applying it
+    unconditionally meant `--baseline-hash X` alone resolved to branch+hash and was rejected for
+    conflicting with a --baseline-branch that appeared nowhere on the command line. That is why
+    clearing the branch with '' was needed to select by hash at all.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(n, ast.FunctionDef) and n.name == "compare_command_logic"
+    )
+    guarded = [
+        node
+        for node in ast.walk(fn)
+        if isinstance(node, ast.If)
+        and any(
+            isinstance(c, ast.Name) and c.id == "explicit_baseline_selectors"
+            for c in ast.walk(node.test)
+        )
+        and any(
+            isinstance(t, ast.Name) and t.id == "baseline_branch"
+            for b in node.body
+            if isinstance(b, ast.Assign)
+            for t in b.targets
+        )
+    ]
+    assert guarded, (
+        "the default-baseline-branch fallback is not gated on the absence of an explicit "
+        "baseline selector, so it can manufacture a conflict the user did not create"
+    )
+
+
+def test_get_by_strings_is_keyword_only():
+    """A transposition must be unwritable, not merely tested for.
+
+    Ten same-typed positional arguments where crossing two changes nothing observable -- not the
+    arity, not the types, not the shape of the result, only which two things get compared -- is
+    how the hash pair came to be crossed on one path. Keyword-only removes the class rather than
+    policing it, which also means the call sites can be read without counting slots.
+    """
+    with pytest.raises(TypeError):
+        get_by_strings("BASE", "CMP")
+
+
+def test_every_get_by_strings_call_site_passes_keywords():
+    """The keyword-only signature is only load-bearing if nothing tries to route around it.
+
+    A caller building a dict and splatting it would compile fine and reintroduce the ordering
+    question one level up.
+    """
+    import ast
+    import inspect
+
+    import redis_benchmarks_specification.__compare__.compare as mod
+
+    calls = [
+        node
+        for node in ast.walk(ast.parse(inspect.getsource(mod)))
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "get_by_strings"
+    ]
+    assert len(calls) == 3, f"expected 3 call sites, found {len(calls)}"
+    for call in calls:
+        assert (
+            not call.args
+        ), f"line {call.lineno}: positional args to a keyword-only function"
+        assert all(
+            kw.arg is not None for kw in call.keywords
+        ), f"line {call.lineno}: **splat bypasses the keyword-only signature"
+        supplied = {kw.arg for kw in call.keywords}
+        expected = {f"{side}_{suffix}" for side in SIDES for suffix in SUFFIXES}
+        assert (
+            supplied == expected
+        ), f"line {call.lineno}: passes {sorted(supplied ^ expected)}"
+        # Every keyword must be bound to the identically-named local. Keyword-only stops a slot
+        # being crossed accidentally, but `baseline_hash=comparison_hash` is still writable, and
+        # it is the same wrong-two-things outcome with none of the visual tell of a miscounted
+        # positional list.
+        crossed = [
+            (kw.arg, kw.value.id)
+            for kw in call.keywords
+            if isinstance(kw.value, ast.Name) and kw.value.id != kw.arg
+        ]
+        assert not crossed, f"line {call.lineno}: bound to the wrong local: {crossed}"

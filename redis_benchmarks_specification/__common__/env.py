@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import re
 
 # default specification paths
 import psutil
@@ -270,3 +271,28 @@ if BENCHMARK_PR_DIFF_SCOPING and not GH_TOKEN:
         "BENCHMARK_PR_DIFF_SCOPING is on but GH_TOKEN is unset; PR diff lookups will hit "
         "the 60/hr unauthenticated GitHub limit and degrade to full-suite runs"
     )
+
+
+# Shas that name no commit. GitHub sends an all-zero sha for the absent end of a ref
+# creation or deletion. The same tuple is applied in __runner__/runner.py:1222 and
+# __runner__/remote_profiling.py:113 -- keep the three in step. str() first so a non-string
+# payload value is rejected rather than raising.
+NON_BUILDABLE_SHAS = ("", "0", "00000000")
+
+_FULL_SHA_RE = re.compile(r"[0-9a-fA-F]{40}\Z")
+
+
+def is_buildable_sha(value):
+    """True when `value` is a full hex sha that is not an all-zero sentinel.
+
+    Validates the shape rather than only blacklisting sentinels: the webhook is the only
+    place a malformed hash can be rejected before it becomes a `git_hash` on the stream, and
+    a shape check subsumes the sentinel cases. Deliberately non-throwing -- a non-string
+    payload value must be rejected, not raise, since that would 500 the delivery.
+    """
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    if not _FULL_SHA_RE.match(value):
+        return False
+    return value not in NON_BUILDABLE_SHAS and set(value) != {"0"}
