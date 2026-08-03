@@ -19,7 +19,7 @@ jobs:
       USING_COVERAGE_OS: "ubuntu-latest"
       TOX_DOCKER_GATEWAY: localhost
 
-    runs-on: "ubuntu-latest"
+    runs-on: ${{ matrix.os }}
     name: os ${{ matrix.os }} python ${{ matrix.python-version }} Linting, testing, and compliance
     steps:
     - uses: actions/checkout@v6

@@ -254,6 +254,17 @@ def list_available_deployments(rts, args):
     print()
 
 
+def absent_if_empty(value):
+    """An empty selector means "not supplied".
+
+    Selecting a side by hash requires clearing the branch that defaults to unstable, and "" is
+    how callers do it. Several downstream checks test `is not None`, so leaving "" in place makes
+    an unsupplied selector look supplied: it reaches the resolver as a conflict, and it reaches
+    the grafana link builder as an empty query parameter.
+    """
+    return None if value == "" else value
+
+
 def compare_command_logic(args, project_name, project_version):
 
     logger = logging.getLogger()
@@ -324,22 +335,40 @@ def compare_command_logic(args, project_name, project_version):
     from_date = args.from_date
     to_date = args.to_date
     baseline_branch = args.baseline_branch
-    if baseline_branch is None and default_baseline_branch is not None:
+    # Only fall back to the configured default when the user identified the baseline no other
+    # way. Injecting it unconditionally manufactured a second selector, so `--baseline-hash X`
+    # was rejected for conflicting with a `--baseline-branch` the user never typed -- the same
+    # kind of untruth about someone's own command line that this resolver is being fixed for. It
+    # is also why clearing the branch with '' was needed to select by hash; that still works, but
+    # is no longer required.
+    explicit_baseline_selectors = [
+        absent_if_empty(value)
+        for value in (
+            args.baseline_tag,
+            args.baseline_hash,
+            args.baseline_target_version,
+            args.baseline_target_branch,
+        )
+    ]
+    if (
+        baseline_branch is None
+        and default_baseline_branch is not None
+        and all(value is None for value in explicit_baseline_selectors)
+    ):
         logging.info(
             "Given --baseline-branch was null using the default baseline branch {}".format(
                 default_baseline_branch
             )
         )
         baseline_branch = default_baseline_branch
-    if baseline_branch == "":
-        baseline_branch = None
-    comparison_branch = args.comparison_branch
+    baseline_branch = absent_if_empty(baseline_branch)
+    comparison_branch = absent_if_empty(args.comparison_branch)
     simplify_table = args.simple_table
     print_regressions_only = args.print_regressions_only
     print_improvements_only = args.print_improvements_only
     skip_unstable = args.skip_unstable
-    baseline_tag = args.baseline_tag
-    comparison_tag = args.comparison_tag
+    baseline_tag = absent_if_empty(args.baseline_tag)
+    comparison_tag = absent_if_empty(args.comparison_tag)
     last_n_baseline = args.last_n
     last_n_comparison = args.last_n
     if last_n_baseline < 0:
@@ -363,10 +392,10 @@ def compare_command_logic(args, project_name, project_version):
 
     if metric_name is None:
         logging.error(
-            "You need to provider either "
+            "You need to provide either "
             + " --metric_name or provide a defaults file via --defaults_filename that contains exporter.redistimeseries.comparison.metrics array. Exiting..."
         )
-        exit(1)
+        sys.exit(1)
     else:
         logging.info("Using metric {}".format(metric_name))
 
@@ -388,16 +417,38 @@ def compare_command_logic(args, project_name, project_version):
     triggering_env_baseline = args.triggering_env_baseline or args.triggering_env
     triggering_env_comparison = args.triggering_env_comparison or args.triggering_env
 
-    baseline_target_version = args.baseline_target_version
-    comparison_target_version = args.comparison_target_version
-    baseline_target_branch = args.baseline_target_branch
-    comparison_target_branch = args.comparison_target_branch
+    baseline_target_version = absent_if_empty(args.baseline_target_version)
+    comparison_target_version = absent_if_empty(args.comparison_target_version)
+    baseline_target_branch = absent_if_empty(args.baseline_target_branch)
+    comparison_target_branch = absent_if_empty(args.comparison_target_branch)
     baseline_github_repo = args.baseline_github_repo
     comparison_github_repo = args.comparison_github_repo
     baseline_github_org = args.baseline_github_org
     comparison_github_org = args.comparison_github_org
-    baseline_hash = args.baseline_hash
-    comparison_hash = args.comparison_hash
+    baseline_hash = absent_if_empty(args.baseline_hash)
+    comparison_hash = absent_if_empty(args.comparison_hash)
+
+    # Validate the selectors here so the CLI still exits 1 with an accurate message, while the
+    # resolver itself only raises. get_by_strings is also reached from compute_regression_table,
+    # which the coordinator daemon calls inside an `except Exception` it documents as
+    # best-effort observability -- and SystemExit is not an Exception, so exiting down there
+    # escaped that guard, killed the daemon and left the stream un-ACKed.
+    try:
+        get_by_strings(
+            baseline_branch=baseline_branch,
+            comparison_branch=comparison_branch,
+            baseline_tag=baseline_tag,
+            comparison_tag=comparison_tag,
+            baseline_target_version=baseline_target_version,
+            comparison_target_version=comparison_target_version,
+            baseline_hash=baseline_hash,
+            comparison_hash=comparison_hash,
+            baseline_target_branch=baseline_target_branch,
+            comparison_target_branch=comparison_target_branch,
+        )
+    except ValueError as selector_error:
+        logging.error(str(selector_error))
+        sys.exit(1)
 
     # Log platform and environment information
     if running_platform_baseline == running_platform_comparison:
@@ -837,11 +888,13 @@ def prepare_regression_comment(
 
         if grafana_link_base is not None:
             grafana_link = "{}/".format(grafana_link_base)
-            if baseline_tag is not None and comparison_tag is not None:
+            # Truthiness, not `is not None`: an empty tag would otherwise contribute an
+            # empty var-version parameter and a second "?" to the link posted on the PR.
+            if baseline_tag and comparison_tag:
                 grafana_link += "?var-version={}&var-version={}".format(
                     baseline_tag, comparison_tag
                 )
-            if baseline_branch is not None and comparison_branch is not None:
+            if baseline_branch and comparison_branch:
                 grafana_link += "?var-branch={}&var-branch={}".format(
                     baseline_branch, comparison_branch
                 )
@@ -968,8 +1021,13 @@ def compute_env_comparison_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    comparison_hash=None,
+    # Declared baseline-first to match the in-module caller, which passes all of these
+    # positionally. The previous order was comparison_hash then baseline_hash, so the caller's
+    # --baseline-hash bound to comparison_hash and vice versa; the values were then forwarded
+    # to get_by_strings under the swapped local names, transposing the two sides of every
+    # --compare-by-env comparison filtered by hash.
     baseline_hash=None,
+    comparison_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_target_branch=None,
@@ -1031,16 +1089,16 @@ def compute_env_comparison_table(
 
     # Build baseline and comparison strings
     baseline_str, by_str_baseline, comparison_str, by_str_comparison = get_by_strings(
-        baseline_branch,
-        comparison_branch,
-        baseline_tag,
-        comparison_tag,
-        baseline_target_version,
-        comparison_target_version,
-        baseline_hash,
-        comparison_hash,
-        baseline_target_branch,
-        comparison_target_branch,
+        baseline_branch=baseline_branch,
+        comparison_branch=comparison_branch,
+        baseline_tag=baseline_tag,
+        comparison_tag=comparison_tag,
+        baseline_target_version=baseline_target_version,
+        comparison_target_version=comparison_target_version,
+        baseline_hash=baseline_hash,
+        comparison_hash=comparison_hash,
+        baseline_target_branch=baseline_target_branch,
+        comparison_target_branch=comparison_target_branch,
     )
 
     test_filter = "test_name"
@@ -1269,8 +1327,14 @@ def compute_regression_table(
     running_platform_comparison=None,
     baseline_target_version=None,
     comparison_target_version=None,
-    comparison_hash=None,
+    # Baseline-first, matching the in-module caller, which passes positionally. (The
+    # coordinator also calls this, but by keyword, so it is unaffected either way.) The
+    # previous order was comparison-first while the forward to get_by_strings below was ALSO
+    # comparison-first, so the two inversions cancelled and positional callers were correct --
+    # but any keyword caller, or any refactor of either list alone, silently transposed the two
+    # sides of the comparison. Both are now canonical so neither can drift alone.
     baseline_hash=None,
+    comparison_hash=None,
     baseline_github_repo="redis",
     comparison_github_repo="redis",
     baseline_target_branch=None,
@@ -1304,16 +1368,16 @@ def compute_regression_table(
         "Using a time-delta from {} to {}".format(from_human_str, to_human_str)
     )
     baseline_str, by_str_baseline, comparison_str, by_str_comparison = get_by_strings(
-        baseline_branch,
-        comparison_branch,
-        baseline_tag,
-        comparison_tag,
-        baseline_target_version,
-        comparison_target_version,
-        comparison_hash,
-        baseline_hash,
-        baseline_target_branch,
-        comparison_target_branch,
+        baseline_branch=baseline_branch,
+        comparison_branch=comparison_branch,
+        baseline_tag=baseline_tag,
+        comparison_tag=comparison_tag,
+        baseline_target_version=baseline_target_version,
+        comparison_target_version=comparison_target_version,
+        baseline_hash=baseline_hash,
+        comparison_hash=comparison_hash,
+        baseline_target_branch=baseline_target_branch,
+        comparison_target_branch=comparison_target_branch,
     )
     logging.info(f"Using baseline filter {by_str_baseline}={baseline_str}")
     logging.info(f"Using comparison filter {by_str_comparison}={comparison_str}")
@@ -1600,16 +1664,84 @@ def compute_regression_table(
     )
 
 
-def get_by_error(name, by_str_arr):
-    by_string = ",".join(by_str_arr)
-    return f"--{name}-branch, --{name}-tag, --{name}-target-branch, --{name}-hash, and --{name}-target-version are mutually exclusive. You selected a total of {len(by_str_arr)}: {by_string}. Pick one..."
+# (flag suffix, label reported as by_str). Order fixes which selector is named first in an
+# error and is otherwise immaterial, since at most one may be supplied.
+_SELECTORS = (
+    ("branch", "branch"),
+    ("tag", "version"),
+    ("target_version", "target+version"),
+    ("target_branch", "target+branch"),
+    ("hash", "hash"),
+)
+
+
+def _selector_flags(name):
+    """The CLI flag for every selector, derived from _SELECTORS so there is a single ordering."""
+    return [
+        "--{}-{}".format(name, suffix.replace("_", "-")) for suffix, _ in _SELECTORS
+    ]
+
+
+def get_by_error(name, suffixes):
+    """Name the offenders by their CLI flag.
+
+    The by_str labels are datasink label names ("version" for --<name>-tag, "target+version"
+    for --<name>-target-version) and were previously reported verbatim, so a user who passed
+    --baseline-tag was told they had selected "version" -- a word absent from their command
+    line. The labels cannot be renamed; they are the filter keys used downstream.
+    """
+    by_string = ",".join("--{}-{}".format(name, s.replace("_", "-")) for s in suffixes)
+    flags = _selector_flags(name)
+    flag_list = ", ".join(flags[:-1]) + ", and " + flags[-1]
+    return f"{flag_list} are mutually exclusive. You selected a total of {len(suffixes)}: {by_string}. Pick one..."
+
+
+def _resolve_by(name, supplied):
+    """Pick the single selector for one side, or exit with an accurate error.
+
+    `supplied` maps every selector suffix in _SELECTORS to its value, using None -- or "" -- for
+    "not supplied". Returns (value, by_str) for the one selector supplied, where by_str is the
+    datasink label that value filters on. Raises ValueError if none or more than one is supplied,
+    and KeyError if `supplied` omits a selector _SELECTORS lists -- that is a call-site bug, not
+    user input, so it is deliberately not folded into the user-facing error.
+
+    Both defects this replaces were silent: the per-selector chain recorded an offender only
+    inside its own failure branch, so any pair not involving --*-branch reported "a total of 1"
+    and named the wrong flag; and the --*-hash arm's exclusion check had been commented out in
+    d62497b (WIP boxplot work later squashed into #312, unrelated to selector semantics), so on
+    the comparison side four pairs were accepted silently and the hash won by being last.
+    """
+    # Indexed, not .get(): a selector present in _SELECTORS but absent from a call-site dict is
+    # a programming error, and .get() would turn it into a selector that can never be supplied
+    # while the error message still advertised its flag.
+    chosen = [(suffix, label, supplied[suffix]) for suffix, label in _SELECTORS]
+    # An empty string means "not supplied". compare_command_logic defaults --baseline-branch to
+    # "unstable", so filtering the baseline by hash requires passing --baseline-branch '' to
+    # clear it; that is a documented idiom and the same is done on the comparison side. Only
+    # the baseline was normalized (compare_command_logic), so enforcing the exclusion on a bare
+    # `is not None` would reject the comparison form that callers actually use, and would report
+    # a count of 2 for the one selector they passed.
+    chosen = [
+        (suffix, label, value)
+        for suffix, label, value in chosen
+        if value is not None and value != ""
+    ]
+    if len(chosen) > 1:
+        raise ValueError(get_by_error(name, [suffix for suffix, _, _ in chosen]))
+    if not chosen:
+        raise ValueError(
+            "You need to provide one of ( {} )".format(", ".join(_selector_flags(name)))
+        )
+    _, label, value = chosen[0]
+    return value, label
 
 
 def get_by_strings(
-    baseline_branch,
-    comparison_branch,
-    baseline_tag,
-    comparison_tag,
+    *,
+    baseline_branch=None,
+    comparison_branch=None,
+    baseline_tag=None,
+    comparison_tag=None,
     baseline_target_version=None,
     comparison_target_version=None,
     baseline_hash=None,
@@ -1617,120 +1749,34 @@ def get_by_strings(
     baseline_target_branch=None,
     comparison_target_branch=None,
 ):
-    baseline_covered = False
-    comparison_covered = False
-    by_str_baseline = ""
-    by_str_comparison = ""
-    baseline_str = ""
-    comparison_str = ""
-    baseline_by_arr = []
-    comparison_by_arr = []
+    """Resolve how each side of the comparison is identified.
 
-    ################# BASELINE BY ....
-
-    if baseline_branch is not None:
-        by_str_baseline = "branch"
-        baseline_covered = True
-        baseline_str = baseline_branch
-        baseline_by_arr.append(by_str_baseline)
-
-    if baseline_tag is not None:
-        by_str_baseline = "version"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_tag
-
-    if baseline_target_version is not None:
-        by_str_baseline = "target+version"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_target_version
-
-    if baseline_hash is not None:
-        by_str_baseline = "hash"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_hash
-    if baseline_target_branch is not None:
-        by_str_baseline = "target+branch"
-        if baseline_covered:
-            baseline_by_arr.append(by_str_baseline)
-            logging.error(get_by_error("baseline", baseline_by_arr))
-            exit(1)
-        baseline_covered = True
-        baseline_str = baseline_target_branch
-
-    ################# COMPARISON BY ....
-
-    if comparison_branch is not None:
-        by_str_comparison = "branch"
-        comparison_covered = True
-        comparison_str = comparison_branch
-
-    if comparison_tag is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch and --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "version"
-        comparison_str = comparison_tag
-    if comparison_target_version is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "target+version"
-        comparison_str = comparison_target_version
-
-    if comparison_target_branch is not None:
-        # check if we had already covered comparison
-        if comparison_covered:
-            logging.error(
-                "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-            )
-            exit(1)
-        comparison_covered = True
-        by_str_comparison = "target+branch"
-        comparison_str = comparison_target_branch
-
-    if comparison_hash is not None:
-        # check if we had already covered comparison
-        # if comparison_covered:
-        #     logging.error(
-        #         "--comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch, and --comparison-target-table are mutually exclusive. Pick one..."
-        #     )
-        #     exit(1)
-        comparison_covered = True
-        by_str_comparison = "hash"
-        comparison_str = comparison_hash
-
-    if baseline_covered is False:
-        logging.error(
-            "You need to provider either "
-            + "( --baseline-branch, --baseline-tag, --baseline-hash, --baseline-target-branch or --baseline-target-version ) "
-        )
-        exit(1)
-    if comparison_covered is False:
-        logging.error(
-            "You need to provider either "
-            + "( --comparison-branch, --comparison-tag, --comparison-hash, --comparison-target-branch or --comparison-target-version ) "
-        )
-        exit(1)
+    Keyword-only by design. Every caller previously passed ten bare positionals, and a
+    transposition there is invisible: it does not change the arity, the types, or the shape of
+    the result -- it just compares the wrong two things, or names the wrong side in an error.
+    That is precisely how the two hash arguments came to be crossed on one path. Keyword-only
+    makes the mistake unwritable rather than merely tested for.
+    """
+    baseline_str, by_str_baseline = _resolve_by(
+        "baseline",
+        {
+            "branch": baseline_branch,
+            "tag": baseline_tag,
+            "target_version": baseline_target_version,
+            "target_branch": baseline_target_branch,
+            "hash": baseline_hash,
+        },
+    )
+    comparison_str, by_str_comparison = _resolve_by(
+        "comparison",
+        {
+            "branch": comparison_branch,
+            "tag": comparison_tag,
+            "target_version": comparison_target_version,
+            "target_branch": comparison_target_branch,
+            "hash": comparison_hash,
+        },
+    )
     return baseline_str, by_str_baseline, comparison_str, by_str_comparison
 
 
