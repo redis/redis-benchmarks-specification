@@ -7,6 +7,7 @@ import datetime
 
 
 from redis_benchmarks_specification.__common__.env import (
+    parse_bool,
     GH_REDIS_SERVER_HOST,
     GH_TOKEN,
     GH_REDIS_SERVER_PORT,
@@ -38,7 +39,7 @@ def spec_cli_args(parser):
         default=START_TIME_NOW_UTC,
     )
     parser.add_argument("--redis_repo", type=str, default=None)
-    parser.add_argument("--trigger-unstable-commits", type=bool, default=True)
+    parser.add_argument("--trigger-unstable-commits", type=parse_bool, default=True)
     parser.add_argument(
         "--use-tags",
         default=False,
