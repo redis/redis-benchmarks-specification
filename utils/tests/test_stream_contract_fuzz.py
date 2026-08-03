@@ -14,7 +14,9 @@ import os
 
 import pytest
 
-hypothesis = pytest.importorskip("hypothesis", reason="hypothesis is required for fuzz tests")
+hypothesis = pytest.importorskip(
+    "hypothesis", reason="hypothesis is required for fuzz tests"
+)
 from hypothesis import HealthCheck, given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
@@ -44,9 +46,26 @@ CONFUSABLE = st.sampled_from(
 # Values a producer could realistically put on a stream, including hostile ones.
 VALUES = st.one_of(
     st.integers(min_value=-(2**63), max_value=2**63).map(lambda i: str(i).encode()),
-    st.sampled_from([b"", b" ", b"0", b"00", b"-0", b"+1", b" 7 ", b"1_000", b"abc", b"1.5", b"None", b"True"]),
+    st.sampled_from(
+        [
+            b"",
+            b" ",
+            b"0",
+            b"00",
+            b"-0",
+            b"+1",
+            b" 7 ",
+            b"1_000",
+            b"abc",
+            b"1.5",
+            b"None",
+            b"True",
+        ]
+    ),
     st.binary(min_size=0, max_size=24),
-    st.text(min_size=0, max_size=24).map(lambda s: s.encode("utf-8", "surrogatepass") if s.isprintable() else b""),
+    st.text(min_size=0, max_size=24).map(
+        lambda s: s.encode("utf-8", "surrogatepass") if s.isprintable() else b""
+    ),
 )
 
 
@@ -85,7 +104,9 @@ def test_matched_name_is_always_present_in_the_payload(payload):
     canonical_value=st.integers(0, 10**6),
     alias_value=st.integers(0, 10**6),
 )
-def test_canonical_wins_over_alias_deterministically(name, canonical_value, alias_value):
+def test_canonical_wins_over_alias_deterministically(
+    name, canonical_value, alias_value
+):
     """When both spellings are present, the canonical one must win — every time.
 
     Ambiguous precedence here would make behaviour depend on dict ordering, which is exactly the
@@ -117,7 +138,9 @@ def test_int_round_trip(name, value):
 @given(
     name=st.sampled_from(DECLARED),
     default=st.one_of(st.none(), st.integers(), st.text(max_size=8)),
-    other=st.dictionaries(st.sampled_from(DECLARED).map(str.encode), VALUES, max_size=6),
+    other=st.dictionaries(
+        st.sampled_from(DECLARED).map(str.encode), VALUES, max_size=6
+    ),
 )
 def test_absent_field_yields_the_default_and_no_match(name, default, other):
     """Absence must be reported as absence, never as a value.
@@ -145,3 +168,65 @@ def test_unrelated_payloads_never_produce_a_match(payload):
         else:
             _, matched = read_stream_field(payload, name)
             assert matched is None
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED), value=VALUES)
+def test_the_cast_path_is_total_too(name, value):
+    """The shape both production call sites actually use, which nothing exercised.
+
+    Every caller in the package passes ``cast=int``, and the hostile ``VALUES`` above was only ever
+    combined with the no-cast path -- so the one property that mattered at the only two real callers
+    was the one not stated. A raising cast is worse than a wrong value here: the enclosing handler
+    logs CRITICAL and the caller then ACKs unconditionally, so the whole benchmark run is discarded
+    and never retried.
+    """
+    got, matched = read_stream_field({name.encode(): value}, name, cast=int)
+    if matched is not None:
+        assert isinstance(got, int)
+    else:
+        # reported as absent, which is how a caller's `is not None` check degrades to its default
+        assert got is None
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED), value=VALUES, default=st.integers())
+def test_a_failing_cast_yields_the_callers_default(name, value, default):
+    """A malformed value must be indistinguishable from a missing one, by design.
+
+    That is what lets the coordinator keep its own configured limit instead of dropping the run.
+    """
+    got, matched = read_stream_field(
+        {name.encode(): value}, name, default=default, cast=int
+    )
+    assert matched is not None or got == default
+
+
+@FUZZ
+@given(
+    name=st.sampled_from(
+        sorted(set(FIELD_ALIASES) | {"nonsense", "priority_upper_limit"})
+    )
+)
+def test_an_undeclared_name_is_rejected_rather_than_silently_never_matching(name):
+    """Reading by a name no producer writes is a programming error, not a miss.
+
+    A source-text guard cannot cover this -- a single-quoted literal, a keyword argument, a module
+    constant, an f-string and a subscripted first argument all defeat any regex while still
+    compiling, and each one reinstates the original inert read with CI green. Enforced at runtime
+    instead, where the spelling used at the call site cannot hide it.
+    """
+    import pytest as _pytest
+
+    from redis_benchmarks_specification.__common__.stream_contract import (
+        BUILDS_STREAM_FIELDS as _B,
+    )
+    from redis_benchmarks_specification.__common__.stream_contract import (
+        COMMITS_STREAM_FIELDS as _C,
+    )
+
+    if name in _C or name in _B:
+        read_stream_field({}, name)  # declared: must not raise
+    else:
+        with _pytest.raises(KeyError):
+            read_stream_field({}, name)

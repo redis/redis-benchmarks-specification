@@ -201,11 +201,53 @@ def test_str_keyed_entries_are_supported():
     assert (value, matched) == (5, "tests_priority_upper_limit")
 
 
-def test_builder_writes_the_declared_priority_field():
-    """Pin the producer side too, so a rename there fails here rather than in production."""
-    builder = (PKG / "__builder__" / "builder.py").read_text(encoding="utf-8")
-    assert '"tests_priority_upper_limit": tests_priority_upper_limit' in builder
-    assert '"tests_priority_lower_limit": tests_priority_lower_limit' in builder
+def _build_stream_payload(**overrides):
+    """Build a builds-stream payload and return it.
+
+    Asserted behaviourally rather than by matching source text: the previous version of this test
+    pinned the literal `"tests_priority_upper_limit": tests_priority_upper_limit`, which broke the
+    moment the write became conditional -- and a source match cannot tell whether the field is
+    written unconditionally, which is the property that actually matters here.
+    """
+    from unittest.mock import MagicMock
+
+    from redis_benchmarks_specification.__builder__.builder import (
+        generate_benchmark_stream_request,
+    )
+
+    kwargs = {
+        "id": "probe",
+        "conn": MagicMock(),
+        "run_image": "redis:latest",
+        "build_arch": "amd64",
+        "testDetails": {},
+        "build_os": "ubuntu",
+    }
+    kwargs.update(overrides)
+    payload, _ = generate_benchmark_stream_request(**kwargs)
+    return payload
+
+
+def test_the_builder_omits_the_priority_fields_when_the_operator_did_not_set_them():
+    """Absence must stay absence across the hop, or the producer's default wins silently.
+
+    The builder forwards these onto the builds stream. Writing its own default there is
+    indistinguishable from an operator having asked for it, so the coordinator -- which now honours
+    the field -- would have its own --tests-priority-* flags overridden on every single run. That is
+    the same silently-ignored-setting failure this module exists to remove, pointing the other way.
+    """
+    payload = _build_stream_payload()
+    assert "tests_priority_upper_limit" not in payload
+    assert "tests_priority_lower_limit" not in payload
+
+
+def test_the_builder_forwards_the_priority_fields_when_they_are_set():
+    """And when the operator did ask, the value has to survive the hop."""
+    payload = _build_stream_payload(
+        tests_priority_upper_limit=3, tests_priority_lower_limit=2
+    )
+    assert payload["tests_priority_upper_limit"] == 3
+    assert payload["tests_priority_lower_limit"] == 2
 
 
 READ_CALL_RE = re.compile(
@@ -279,3 +321,60 @@ def test_an_undecodable_value_is_read_lossily_and_logged(caplog):
     assert any(
         "arch" in m and "\\x80" in m.replace("\\\\", "\\") for m in messages
     ), f"warning does not name the field and the offending bytes: {messages}"
+
+
+def test_every_producer_passes_the_priority_arguments_rather_than_literals():
+    """The dockerhub producer discarded the flags entirely, and had no test.
+
+    ``spec_cli_args`` is one parser shared by every subcommand, so ``--tests-priority-upper-limit``
+    was accepted on the dockerhub trigger and silently dropped -- the same silently-ignored-setting
+    failure this module exists to remove, on the producer the dockerhub and GA-tag baseline triggers
+    actually use.
+
+    Resolved through the syntax tree because these are 31-argument positional calls: the slot a
+    literal lands in is invisible at the call site, and a source-text search cannot tell which
+    parameter a bare ``0`` is feeding.
+    """
+    import ast
+
+    builder_src = (PKG / "__builder__" / "builder.py").read_text(encoding="utf-8")
+    signature = next(
+        node
+        for node in ast.walk(ast.parse(builder_src))
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "generate_benchmark_stream_request"
+    )
+    parameters = [a.arg for a in signature.args.posonlyargs + signature.args.args]
+    guarded = {
+        "tests_priority_upper_limit",
+        "tests_priority_lower_limit",
+        "tests_groups_regexp",
+    }
+
+    offenders = []
+    for module in ("__cli__/cli.py", "__spec__/cli.py"):
+        path = PKG / module
+        if not path.exists():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", None) != "generate_benchmark_stream_request":
+                continue
+            for parameter, argument in zip(parameters, node.args):
+                if parameter in guarded and isinstance(argument, ast.Constant):
+                    offenders.append(
+                        f"{module}:{node.lineno} passes the literal "
+                        f"{argument.value!r} for {parameter}"
+                    )
+            for keyword in node.keywords:
+                if keyword.arg in guarded and isinstance(keyword.value, ast.Constant):
+                    offenders.append(
+                        f"{module}:{node.lineno} passes the literal "
+                        f"{keyword.value.value!r} for {keyword.arg}"
+                    )
+    assert not offenders, (
+        "a producer hardcodes a value the operator can set on the command line: "
+        f"{offenders}"
+    )

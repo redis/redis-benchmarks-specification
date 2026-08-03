@@ -26,7 +26,16 @@ Adding a field
 2. write it in the producer,
 3. read it in the consumer via :func:`read_stream_field`.
 
-Skipping step 1 makes the contract test fail, which is the point.
+Skipping step 1 makes :func:`read_stream_field` raise on the *read*, which is the point -- an
+undeclared name cannot be read at all, so the silent never-matches failure is unreachable.
+
+What is NOT enforced: producers are not held to the declared set. A field can be written to a
+stream without being declared here, and nothing fails -- ``ref``, ``gh_org``, ``gh_repo``, ``os``
+and ``archived_zip`` were all in exactly that state when this module was written, and are declared
+below now. Holding producers to the set needs a check that survives an f-string and a keyword
+argument, which the read-side guard gets for free by being a runtime assertion and a source scan
+does not. Until that exists, a new field is only guaranteed to be caught the first time someone
+reads it.
 """
 
 import logging
@@ -41,6 +50,15 @@ COMMITS_STREAM_FIELDS = frozenset(
         "commit_summary",
         "commit_datetime",
         "ref_label",
+        # Written by producers but undeclared until now, so a consumer reading any of them via
+        # read_stream_field would have raised: "ref" (__api__/app.py), "gh_org" / "gh_repo"
+        # (__api__/app.py -- note the consumers read github_org/github_repo, issue #453),
+        # "os" (__builder__/builder.py) and "archived_zip" (__common__/builder_schema.py).
+        "ref",
+        "gh_org",
+        "gh_repo",
+        "os",
+        "archived_zip",
         "github_org",
         "github_repo",
         "tests_regexp",
@@ -125,11 +143,31 @@ def read_stream_field(stream_fields, name, default=None, cast=None):
     :param name: canonical field name, as declared in one of the ``*_STREAM_FIELDS`` sets
     :param default: returned when neither the canonical name nor any alias is present
     :param cast: optional callable applied to the decoded value (e.g. ``int``)
+    Total: it never raises on producer input, on either path. A failing ``cast`` is reported as
+    absence, because the only callers are consumer loops whose enclosing handler logs and then ACKs
+    unconditionally -- so an exception here does not surface the bad field, it discards the whole
+    benchmark run and never retries it. Degrading to the default is strictly better than that, and
+    the warning is what keeps the degradation from being silent.
+
     :returns: ``(value, matched_name)`` — ``matched_name`` is ``None`` when the default was used,
         otherwise the field name actually found. Returning the matched name lets callers log
         *which* spelling arrived, which is what makes an alias hit visible in the logs instead of
         silently equivalent.
     """
+    if name not in COMMITS_STREAM_FIELDS and name not in BUILDS_STREAM_FIELDS:
+        # Raised, unlike everything else here, because this is a programming error rather than
+        # producer input: no payload makes an undeclared name meaningful, and the failure it
+        # otherwise produces is the exact bug this module exists to prevent -- a read that silently
+        # never matches. A source-text guard cannot cover this: a single-quoted literal, a keyword
+        # argument, a module constant, an f-string and a subscripted first argument all defeat any
+        # regex while still compiling.
+        raise KeyError(
+            "{!r} is not a declared stream field. Add it to COMMITS_STREAM_FIELDS or "
+            "BUILDS_STREAM_FIELDS, or pass the canonical name rather than an alias.".format(
+                name
+            )
+        )
+
     for candidate in (name,) + tuple(FIELD_ALIASES.get(name, ())):
         for key in (candidate.encode(), candidate):
             if key in stream_fields:
@@ -154,5 +192,22 @@ def read_stream_field(stream_fields, name, default=None, cast=None):
                             bytes(raw),
                         )
                         raw = bytes(raw).decode(errors="replace")
-                return (cast(raw) if cast is not None else raw), candidate
+                if cast is None:
+                    return raw, candidate
+                try:
+                    return cast(raw), candidate
+                except (TypeError, ValueError) as cast_error:
+                    # Reported as absence rather than raised: see the totality note above. Both
+                    # live callers pass cast=int and test the result against None, so this degrades
+                    # to the caller's own default exactly as a missing field would -- and says so.
+                    logging.getLogger(__name__).warning(
+                        "Stream field %r carried %r, which %s could not convert (%s); "
+                        "treating it as absent and using the default %r.",
+                        candidate,
+                        raw,
+                        getattr(cast, "__name__", cast),
+                        cast_error,
+                        default,
+                    )
+                    return default, None
     return default, None
