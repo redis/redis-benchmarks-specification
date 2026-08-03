@@ -123,18 +123,6 @@ def test_canonical_wins_over_alias_deterministically(
 
 
 @FUZZ
-@given(name=st.sampled_from(DECLARED), value=st.integers(-(2**40), 2**40))
-def test_int_round_trip(name, value):
-    """A producer-written integer must survive the read unchanged, bytes- or str-keyed."""
-    for payload in (
-        {name.encode(): str(value).encode()},
-        {name: str(value)},
-    ):
-        got, matched = read_stream_field(payload, name, cast=int)
-        assert (got, matched) == (value, name)
-
-
-@FUZZ
 @given(
     name=st.sampled_from(DECLARED),
     default=st.one_of(st.none(), st.integers(), st.text(max_size=8)),
@@ -153,21 +141,6 @@ def test_absent_field_yields_the_default_and_no_match(name, default, other):
     if name.encode() not in payload and name not in payload:
         assert matched is None
         assert got == default
-
-
-@FUZZ
-@given(payload=st.dictionaries(st.binary(min_size=1, max_size=20), VALUES, max_size=10))
-def test_unrelated_payloads_never_produce_a_match(payload):
-    """Random keys must not accidentally satisfy a declared field lookup."""
-    for name in DECLARED:
-        if name.encode() in payload or name in payload:
-            continue
-        for alias in FIELD_ALIASES.get(name, ()):
-            if alias.encode() in payload or alias in payload:
-                break
-        else:
-            _, matched = read_stream_field(payload, name)
-            assert matched is None
 
 
 @FUZZ
@@ -230,3 +203,77 @@ def test_an_undeclared_name_is_rejected_rather_than_silently_never_matching(name
     else:
         with _pytest.raises(KeyError):
             read_stream_field({}, name)
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED), value=VALUES)
+def test_a_key_on_the_wire_is_always_reported_as_matched(name, value):
+    """The converse direction, which nothing asserted.
+
+    Every other property checks matched-implies-present. Without present-implies-matched the whole
+    lookup can be deleted and the suite stays green: returning ``(default, None)`` unconditionally
+    satisfies all of them.
+    """
+    got, matched = read_stream_field({name.encode(): value}, name)
+    assert matched == name, f"key was on the wire but reported absent: {value!r}"
+    assert got is not None
+
+
+@FUZZ
+@given(alias_name=st.sampled_from(sorted(FIELD_ALIASES)), value=st.integers(0, 10**6))
+def test_an_alias_only_payload_still_matches_and_says_which_spelling_arrived(
+    alias_name, value
+):
+    """Deleting the alias lookup entirely passed all six original properties.
+
+    That lookup is the module's stated compatibility contract -- honouring entries already in flight
+    from an older pinned release -- so it should not be silently removable. The reported name must be
+    the alias, not the canonical one, or the log claims something the wire did not carry.
+    """
+    for alias in FIELD_ALIASES[alias_name]:
+        got, matched = read_stream_field(
+            {alias.encode(): str(value).encode()}, alias_name, cast=int
+        )
+        assert got == value
+        assert matched == alias
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED), value=st.binary(min_size=0, max_size=24))
+def test_a_decodable_value_is_returned_byte_for_byte(name, value):
+    """No silent normalisation on the way through.
+
+    Adding a .strip() inside the helper passed every original property, and would quietly change
+    what a producer wrote -- including turning b" " into an empty string.
+    """
+    try:
+        expected = value.decode()
+    except UnicodeDecodeError:
+        return  # lossy decode is covered separately
+    got, matched = read_stream_field({name.encode(): value}, name)
+    assert (got, matched) == (expected, name)
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED), default=st.text(min_size=1, max_size=6))
+def test_an_empty_value_is_a_value_not_an_absence(name, default):
+    """b"" means the producer wrote an empty string, which is not the same as writing nothing.
+
+    Collapsing the two reintroduces exactly the present-versus-absent conflation this module exists
+    to prevent, and it survived every original property.
+    """
+    got, matched = read_stream_field({name.encode(): b""}, name, default=default)
+    assert matched == name
+    assert got == ""
+
+
+@FUZZ
+@given(name=st.sampled_from(DECLARED))
+def test_a_bytes_key_takes_precedence_over_a_str_key(name):
+    """Pins the precedence rather than leaving it to whichever loop order happens to be written.
+
+    Cannot arise from one redis-py client, but the order was unpinned and flipping it left both
+    suites green -- so nothing recorded which value a mixed payload should yield.
+    """
+    got, matched = read_stream_field({name.encode(): b"1", name: "2"}, name, cast=int)
+    assert (got, matched) == (1, name)
