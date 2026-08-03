@@ -251,3 +251,31 @@ def test_read_stream_field_callers_use_canonical_names():
     assert (
         not offenders
     ), f"read_stream_field() called with non-canonical names: {offenders}"
+
+
+def test_an_undecodable_value_is_read_lossily_and_logged(caplog):
+    """A non-UTF-8 stream value must not raise, and must not be silent either.
+
+    read_stream_field is documented as total on the no-cast path, and it is read inside consumer
+    loops that ACK unconditionally -- so raising would drop the work and never retry it. Decoded
+    lossily rather than reported absent, because a corrupt value is not a missing one and folding
+    the two together erases the distinction the matched-name return exists to preserve.
+
+    The warning is the part that keeps this from being a silent data corruption: without it the
+    caller sees a mangled string and nothing anywhere says why.
+    """
+    import logging
+
+    payload = {b"arch": b"\x80arm64"}
+    with caplog.at_level(logging.WARNING):
+        value, matched = read_stream_field(payload, "arch")
+
+    assert matched == "arch", "a corrupt value must still report as present"
+    assert isinstance(value, str) and "arm64" in value
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "undecodable" in m for m in messages
+    ), f"lossy decode was not logged: {messages}"
+    assert any(
+        "arch" in m and "\\x80" in m.replace("\\\\", "\\") for m in messages
+    ), f"warning does not name the field and the offending bytes: {messages}"

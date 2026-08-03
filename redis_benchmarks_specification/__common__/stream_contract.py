@@ -29,6 +29,8 @@ Adding a field
 Skipping step 1 makes the contract test fail, which is the point.
 """
 
+import logging
+
 # Fields the trigger CLI writes onto the commits stream (consumed by the builder).
 COMMITS_STREAM_FIELDS = frozenset(
     {
@@ -132,7 +134,25 @@ def read_stream_field(stream_fields, name, default=None, cast=None):
         for key in (candidate.encode(), candidate):
             if key in stream_fields:
                 raw = stream_fields[key]
-                if isinstance(raw, bytes):
-                    raw = raw.decode()
+                if isinstance(raw, (bytes, bytearray)):
+                    try:
+                        raw = raw.decode()
+                    except UnicodeDecodeError:
+                        # Total on the no-cast path, as the docstring promises. This helper is read
+                        # inside consumer loops that ACK unconditionally, so raising here would drop
+                        # the work silently and never retry it -- strictly worse than a mangled
+                        # value the caller can see.
+                        #
+                        # Decoded lossily rather than treated as absent: a corrupt value is not the
+                        # same as a missing one, and folding them together erases exactly the
+                        # distinction the matched-name return exists to preserve. Logged so the
+                        # corruption is greppable instead of silent.
+                        logging.getLogger(__name__).warning(
+                            "Stream field %r carried undecodable bytes %r; decoding lossily. "
+                            "The producer wrote a non-UTF-8 value.",
+                            candidate,
+                            bytes(raw),
+                        )
+                        raw = bytes(raw).decode(errors="replace")
                 return (cast(raw) if cast is not None else raw), candidate
     return default, None
