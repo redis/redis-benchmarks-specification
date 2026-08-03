@@ -19,6 +19,9 @@ from redis_benchmarks_specification.__builder__.schema import (
 from redis_benchmarks_specification.__common__.builder_schema import (
     get_branch_version_from_test_details,
 )
+from redis_benchmarks_specification.__common__.stream_contract import (
+    read_stream_field,
+)
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
     GH_REDIS_SERVER_HOST,
@@ -417,16 +420,16 @@ def builder_process_stream(
             tests_regexp = ".*"
             if b"tests_regexp" in testDetails:
                 tests_regexp = testDetails[b"tests_regexp"].decode()
-            tests_priority_upper_limit = 10000
-            if b"tests_priority_upper_limit" in testDetails:
-                tests_priority_upper_limit = int(
-                    testDetails[b"tests_priority_upper_limit"].decode()
-                )
-            tests_priority_lower_limit = 0
-            if b"tests_priority_lower_limit" in testDetails:
-                tests_priority_lower_limit = int(
-                    testDetails[b"tests_priority_lower_limit"].decode()
-                )
+            # None, not a default: these are forwarded onto the builds stream, and writing a
+            # default there is indistinguishable from an operator having asked for it -- which
+            # would let this producer silently override the coordinator's own
+            # --tests-priority-* flags on every run. Absence has to stay absence.
+            tests_priority_upper_limit, _ = read_stream_field(
+                testDetails, "tests_priority_upper_limit", cast=int
+            )
+            tests_priority_lower_limit, _ = read_stream_field(
+                testDetails, "tests_priority_lower_limit", cast=int
+            )
             tests_groups_regexp = ".*"
             if b"tests_groups_regexp" in testDetails:
                 tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
@@ -945,8 +948,8 @@ def generate_benchmark_stream_request(
     pull_request=None,
     redis_temporary_dir=None,
     tests_groups_regexp=".*",
-    tests_priority_lower_limit=0,
-    tests_priority_upper_limit=10000,
+    tests_priority_lower_limit=None,
+    tests_priority_upper_limit=None,
     tests_regexp=".*",
     command_regexp=".*",
     use_git_timestamp=False,
@@ -965,14 +968,19 @@ def generate_benchmark_stream_request(
         "arch": build_arch,
         "build_artifacts": ",".join(build_artifacts),
         "tests_regexp": tests_regexp,
-        "tests_priority_upper_limit": tests_priority_upper_limit,
-        "tests_priority_lower_limit": tests_priority_lower_limit,
         "tests_groups_regexp": tests_groups_regexp,
         "command_regexp": command_regexp,
         "server_name": server_name,
         "github_org": github_org,
         "github_repo": github_repo,
     }
+    # Omitted when absent, following the optional-field pattern below. Writing a default here
+    # would be indistinguishable from an operator request and would override the coordinator's own
+    # --tests-priority-* flags on every run.
+    if tests_priority_upper_limit is not None:
+        build_stream_fields["tests_priority_upper_limit"] = tests_priority_upper_limit
+    if tests_priority_lower_limit is not None:
+        build_stream_fields["tests_priority_lower_limit"] = tests_priority_lower_limit
     if deployment_name_regexp != ".*":
         build_stream_fields["deployment_name_regexp"] = deployment_name_regexp
     if override_deployment_regexp != "":

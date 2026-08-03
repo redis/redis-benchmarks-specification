@@ -50,6 +50,9 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
     populate_with_poetry_data,
 )
+from redis_benchmarks_specification.__common__.stream_contract import (
+    read_stream_field,
+)
 from redis_benchmarks_specification.__common__.runner import (
     extract_testsuites,
     reset_commandstats,
@@ -1282,21 +1285,27 @@ def process_self_contained_coordinator_stream(
                     f"detected a docker air gap config {test_docker_air_gap} overriding the default of {default_docker_air_gap} just for this test"
                 )
 
-            if b"priority_upper_limit" in testDetails:
-                stream_priority_upper_limit = int(
-                    testDetails[b"priority_upper_limit"].decode()
-                )
+            # Read via the declared stream contract rather than a bare literal. The builder
+            # writes "tests_priority_upper_limit" (see __builder__/builder.py build_stream_fields);
+            # this site previously read the un-prefixed "priority_upper_limit", so the names never
+            # matched and the per-run cap was always silently the coordinator's own default.
+            # read_stream_field() accepts both spellings, so in-flight entries and older producers
+            # keep working.
+            stream_priority_upper_limit, matched = read_stream_field(
+                testDetails, "tests_priority_upper_limit", cast=int
+            )
+            if stream_priority_upper_limit is not None:
                 logging.info(
-                    f"detected a priority_upper_limit definition on the streamdata {stream_priority_upper_limit}. will replace the default upper limit of {priority_upper_limit}"
+                    f"detected a {matched} definition on the streamdata {stream_priority_upper_limit}. will replace the default upper limit of {priority_upper_limit}"
                 )
                 priority_upper_limit = stream_priority_upper_limit
 
-            if b"priority_lower_limit" in testDetails:
-                stream_priority_lower_limit = int(
-                    testDetails[b"priority_lower_limit"].decode()
-                )
+            stream_priority_lower_limit, matched = read_stream_field(
+                testDetails, "tests_priority_lower_limit", cast=int
+            )
+            if stream_priority_lower_limit is not None:
                 logging.info(
-                    f"detected a priority_lower_limit definition on the streamdata {stream_priority_lower_limit}. will replace the default lower limit of {priority_lower_limit}"
+                    f"detected a {matched} definition on the streamdata {stream_priority_lower_limit}. will replace the default lower limit of {priority_lower_limit}"
                 )
                 priority_lower_limit = stream_priority_lower_limit
 
