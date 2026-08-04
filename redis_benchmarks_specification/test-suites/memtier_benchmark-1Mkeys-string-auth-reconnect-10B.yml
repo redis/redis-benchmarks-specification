@@ -29,7 +29,6 @@ tested-commands:
 - get
 tested-groups:
 - string
-- connection
 redis-topologies:
 - oss-standalone
 build-variants:
