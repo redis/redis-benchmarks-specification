@@ -77,6 +77,8 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_images,
 )
 from redis_benchmarks_specification.__common__.multi_tool import (
+    allow_client_output_writes,
+    make_client_output_dir,
     prepare_client_run_specs,
     run_client_configs,
     remove_started_containers,
@@ -1447,12 +1449,12 @@ def process_self_contained_coordinator_stream(
                 full_result_path = None
                 try:
                     current_cpu_pos = args.cpuset_start_pos
-                    temporary_dir_client = tempfile.mkdtemp(dir=home)
-                    # See the matching note in the self-contained coordinator: mkdtemp()
-                    # is 0700, and client images that do not run as root (e.g.
-                    # pubsub-sub-bench, uid 1001) cannot write their --json-out-file into
-                    # it. They fail only at the very end, after the benchmark has run.
-                    os.chmod(temporary_dir_client, 0o777)
+                    # Created private. It is widened further below, once TLS is known to
+                    # be off -- `--uri` can still flip tls_enabled on after this point,
+                    # and under TLS this same dir receives the cert/key copies.
+                    temporary_dir_client = make_client_output_dir(
+                        home, world_writable=False
+                    )
 
                     # These will be updated after auto-detection
                     tf_github_org = args.github_org
@@ -1795,6 +1797,13 @@ def process_self_contained_coordinator_stream(
                             _, test_tls_key = cp_to_workdir(
                                 temporary_dir_client, tls_key
                             )
+                    else:
+                        # tls_enabled is final here (args plus any --uri override), and no
+                        # cert/key material was copied in, so it is safe to let a non-root
+                        # client image (e.g. pubsub-sub-bench, uid 1001) create its
+                        # --json-out-file. Without this such a client completes the whole
+                        # benchmark and then dies on "permission denied".
+                        allow_client_output_writes(temporary_dir_client)
                     priority = None
                     if "priority" in benchmark_config:
                         priority = benchmark_config["priority"]

@@ -463,37 +463,72 @@ def test_run_client_configs_pins_disjoint_cpusets(tmp_path):
     assert cpusets == ["4,5,6,7", "8,9,10,11"]  # disjoint, not the shared "4-11"
 
 
-def test_client_output_dir_is_writable_by_non_root_client_images():
-    """A client image that does not run as root must still be able to write its
-    --json-out-file into the bind-mounted client dir.
+def test_make_client_output_dir_is_writable_by_non_root_client_images(tmp_path):
+    """The production helper must leave the client dir writable by a foreign uid.
 
-    tempfile.mkdtemp() creates 0700 owned by whoever runs the coordinator/runner.
-    memtier_benchmark's image runs as root and never noticed, but
-    pubsub-sub-bench's runs as uid 1001, so every pubsub-mixed suite completed its
-    full benchmark and then died with
+    Client containers bind-mount this dir to write their --json-out-file. mkdtemp()
+    is 0700 owned by the coordinator's user, and pubsub-sub-bench's image runs as uid
+    1001, so before this every pubsub-mixed suite ran to completion and then died with
+    "open benchmark_output_1.json: permission denied", exit 1.
 
-        open benchmark_output_1.json: permission denied
-
-    exiting 1 and failing the whole test. Both creation sites therefore widen the
-    client dir to 0777. This asserts the mode a foreign uid needs, so the
-    regression cannot come back silently.
+    This calls the real helper both call sites use, so deleting the chmod from it fails
+    here.
     """
     import os
     import stat
-    import tempfile
 
-    temporary_dir_client = tempfile.mkdtemp()
-    try:
-        # Reproduce the default that caused the bug.
-        assert stat.S_IMODE(os.stat(temporary_dir_client).st_mode) == 0o700
+    from redis_benchmarks_specification.__common__.multi_tool import (
+        make_client_output_dir,
+    )
 
-        # Reproduce what both call sites now do.
-        os.chmod(temporary_dir_client, 0o777)
+    client_dir = make_client_output_dir(str(tmp_path))
+    mode = stat.S_IMODE(os.stat(client_dir).st_mode)
 
-        mode = stat.S_IMODE(os.stat(temporary_dir_client).st_mode)
-        assert mode == 0o777, f"expected 0o777, got {oct(mode)}"
-        # The bits an arbitrary container uid actually needs: write + traverse.
-        assert mode & stat.S_IWOTH, "other-write is required for a non-root client uid"
-        assert mode & stat.S_IXOTH, "other-execute is required to traverse into the dir"
-    finally:
-        os.rmdir(temporary_dir_client)
+    assert mode == 0o777, f"expected 0o777, got {oct(mode)}"
+    # The bits an arbitrary container uid actually needs.
+    assert mode & stat.S_IWOTH, "other-write is required to create the output file"
+    assert mode & stat.S_IXOTH, "other-execute is required to traverse into the dir"
+
+
+def test_make_client_output_dir_stays_private_when_it_will_hold_tls_material(tmp_path):
+    """Under TLS the same dir receives copies of the cert/key, so it must NOT be widened.
+
+    The standalone runner calls cp_to_workdir(temporary_dir_client, tls_key); making that
+    directory world-writable/traversable would let any local user read the private key.
+    """
+    import os
+    import stat
+
+    from redis_benchmarks_specification.__common__.multi_tool import (
+        make_client_output_dir,
+    )
+
+    client_dir = make_client_output_dir(str(tmp_path), world_writable=False)
+    mode = stat.S_IMODE(os.stat(client_dir).st_mode)
+
+    assert mode == 0o700, f"expected mkdtemp default 0o700, got {oct(mode)}"
+    assert not mode & stat.S_IROTH, "TLS material must not be world-readable"
+    assert not mode & stat.S_IWOTH, "TLS material dir must not be world-writable"
+
+
+def test_allow_client_output_writes_widens_an_existing_private_dir(tmp_path):
+    """The runner creates the dir private and widens it only once TLS is ruled out.
+
+    `--uri` can flip tls_enabled on after the directory already exists, so the decision
+    cannot be made at creation time; this is the deferred step.
+    """
+    import os
+    import stat
+
+    from redis_benchmarks_specification.__common__.multi_tool import (
+        allow_client_output_writes,
+        make_client_output_dir,
+    )
+
+    client_dir = make_client_output_dir(str(tmp_path), world_writable=False)
+    assert stat.S_IMODE(os.stat(client_dir).st_mode) == 0o700
+
+    allow_client_output_writes(client_dir)
+    mode = stat.S_IMODE(os.stat(client_dir).st_mode)
+    assert mode == 0o777, f"expected 0o777, got {oct(mode)}"
+    assert mode & stat.S_IWOTH and mode & stat.S_IXOTH

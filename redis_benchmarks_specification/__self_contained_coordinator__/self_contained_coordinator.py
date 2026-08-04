@@ -73,6 +73,7 @@ from redis_benchmarks_specification.__runner__.runner import (
     validate_benchmark_metrics,
 )
 from redis_benchmarks_specification.__common__.multi_tool import (
+    make_client_output_dir,
     prepare_client_run_specs,
     run_client_configs,
 )
@@ -1758,15 +1759,12 @@ def process_self_contained_coordinator_stream(
                                     )
                                 )
                                 temporary_dir = tempfile.mkdtemp(dir=home)
-                                temporary_dir_client = tempfile.mkdtemp(dir=home)
-                                # mkdtemp() is 0700 and owned by whoever runs the
-                                # coordinator. Client containers are bind-mounted here to
-                                # write their --json-out-file, and not every client image
-                                # runs as root (pubsub-sub-bench runs as uid 1001), so a
-                                # non-root client would finish its whole run and then die
-                                # with "permission denied" on the results file. Widen it so
-                                # any client uid can write.
-                                os.chmod(temporary_dir_client, 0o777)
+                                # World-writable so non-root client images (e.g.
+                                # pubsub-sub-bench, uid 1001) can write their
+                                # --json-out-file. This path never copies TLS material
+                                # into the client dir (test_tls_cert/key are passed as
+                                # None below), so widening it exposes nothing.
+                                temporary_dir_client = make_client_output_dir(home)
                                 logging.info(
                                     "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                         temporary_dir
