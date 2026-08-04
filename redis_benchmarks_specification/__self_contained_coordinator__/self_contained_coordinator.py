@@ -1759,6 +1759,14 @@ def process_self_contained_coordinator_stream(
                                 )
                                 temporary_dir = tempfile.mkdtemp(dir=home)
                                 temporary_dir_client = tempfile.mkdtemp(dir=home)
+                                # mkdtemp() is 0700 and owned by whoever runs the
+                                # coordinator. Client containers are bind-mounted here to
+                                # write their --json-out-file, and not every client image
+                                # runs as root (pubsub-sub-bench runs as uid 1001), so a
+                                # non-root client would finish its whole run and then die
+                                # with "permission denied" on the results file. Widen it so
+                                # any client uid can write.
+                                os.chmod(temporary_dir_client, 0o777)
                                 logging.info(
                                     "Using local temporary dir to persist redis build artifacts. Path: {}".format(
                                         temporary_dir

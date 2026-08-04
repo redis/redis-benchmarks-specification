@@ -461,3 +461,39 @@ def test_run_client_configs_pins_disjoint_cpusets(tmp_path):
     calls = docker_client.containers.run.call_args_list
     cpusets = [c.kwargs.get("cpuset_cpus") for c in calls]
     assert cpusets == ["4,5,6,7", "8,9,10,11"]  # disjoint, not the shared "4-11"
+
+
+def test_client_output_dir_is_writable_by_non_root_client_images():
+    """A client image that does not run as root must still be able to write its
+    --json-out-file into the bind-mounted client dir.
+
+    tempfile.mkdtemp() creates 0700 owned by whoever runs the coordinator/runner.
+    memtier_benchmark's image runs as root and never noticed, but
+    pubsub-sub-bench's runs as uid 1001, so every pubsub-mixed suite completed its
+    full benchmark and then died with
+
+        open benchmark_output_1.json: permission denied
+
+    exiting 1 and failing the whole test. Both creation sites therefore widen the
+    client dir to 0777. This asserts the mode a foreign uid needs, so the
+    regression cannot come back silently.
+    """
+    import os
+    import stat
+    import tempfile
+
+    temporary_dir_client = tempfile.mkdtemp()
+    try:
+        # Reproduce the default that caused the bug.
+        assert stat.S_IMODE(os.stat(temporary_dir_client).st_mode) == 0o700
+
+        # Reproduce what both call sites now do.
+        os.chmod(temporary_dir_client, 0o777)
+
+        mode = stat.S_IMODE(os.stat(temporary_dir_client).st_mode)
+        assert mode == 0o777, f"expected 0o777, got {oct(mode)}"
+        # The bits an arbitrary container uid actually needs: write + traverse.
+        assert mode & stat.S_IWOTH, "other-write is required for a non-root client uid"
+        assert mode & stat.S_IXOTH, "other-execute is required to traverse into the dir"
+    finally:
+        os.rmdir(temporary_dir_client)

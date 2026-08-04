@@ -1448,6 +1448,11 @@ def process_self_contained_coordinator_stream(
                 try:
                     current_cpu_pos = args.cpuset_start_pos
                     temporary_dir_client = tempfile.mkdtemp(dir=home)
+                    # See the matching note in the self-contained coordinator: mkdtemp()
+                    # is 0700, and client images that do not run as root (e.g.
+                    # pubsub-sub-bench, uid 1001) cannot write their --json-out-file into
+                    # it. They fail only at the very end, after the benchmark has run.
+                    os.chmod(temporary_dir_client, 0o777)
 
                     # These will be updated after auto-detection
                     tf_github_org = args.github_org
