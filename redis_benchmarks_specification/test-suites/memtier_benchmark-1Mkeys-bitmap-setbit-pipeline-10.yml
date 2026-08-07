@@ -1,0 +1,59 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-bitmap-setbit-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 1M small bitmap keys
+  focusing on SETBIT write performance. Each key is a raw-encoded 64-byte (512-bit)
+  bitmap, preloaded by setting bit 511 so the addressed byte always already exists.
+  The measured workload alternates "SETBIT key 256 1" and "SETBIT key 256 0" at a
+  fixed in-range offset, so sdsgrowzero() is a no-op and this spec isolates the
+  in-place bitmap write - the write lookup, the single byte read-modify-write, and the
+  keyModified/notifyKeyspaceEvent/server.dirty accounting that follows it. Note that
+  dbUnshareStringValue() is only a cheap check here rather than real work, since a
+  SETBIT-created value is already raw-encoded with a refcount of 1; the copy-on-write
+  branch it guards needs a shared or int-encoded value and is not covered by this spec. The alternation is deliberate - SETBIT skips all of
+  that accounting when the bit already holds the requested value, so a single-value
+  workload would settle onto the unchanged fast path and stop measuring the write
+  path entirely. Alternating set/clear over a uniform keyspace holds the modify rate
+  at a stationary ~50% for the whole run rather than letting it decay. Metric of
+  interest is Ops/sec at pipeline 10.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 1000000 -n 10000
+      --command "SETBIT __key__ 511 1" --command-key-pattern "P" --pipeline 50 -c 50
+      -t 2
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1Mkeys-bitmap-512bits-setbit
+  dataset_description: This dataset contains 1M raw-encoded bitmap keys, each 64 bytes
+    (512 bits), with bit 511 set. Writes at any offset below 512 land inside the
+    existing allocation, so the bitmap never grows and the measured cost is the
+    in-place SETBIT path.
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "SETBIT __key__ 256 1" --command-key-pattern "R"
+    --command "SETBIT __key__ 256 0" --command-key-pattern "R" --key-minimum 1
+    --key-maximum 1000000 --distinct-client-seed -c 50 -t 2 --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

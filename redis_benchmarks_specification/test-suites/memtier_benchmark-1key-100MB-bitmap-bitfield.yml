@@ -1,0 +1,59 @@
+version: 0.4
+name: memtier_benchmark-1key-100MB-bitmap-bitfield
+description: Runs memtier_benchmark, for a keyspace length of 1 key focusing on
+  BITFIELD performance. The key is a single raw-encoded 100MB (800M-bit) string
+  preloaded with incompressible random bytes, which is the shape BITFIELD exists for
+  - packing many small signed/unsigned integers into one large bitmap. Each call
+  performs "INCRBY i5 / GET u4 / SET i8" in a single command, so one execution walks
+  the mixed read-modify-write path in bitfieldGeneric() - the per-operation parse and
+  ops-array build, getSignedBitfield/getUnsignedBitfield, the WRAP overflow checks,
+  and setSignedBitfield/setUnsignedBitfield - plus a single shared
+  lookupStringForBitCommand() and one keyModified/notifyKeyspaceEvent for the whole
+  command. Note that each __key__ token consumes the next value from the key
+  iterator, so the three subcommands address three independent uniformly-random bit
+  offsets rather than one shared offset; that is intentional here, since --key-prefix
+  is empty and __key__ is being used as a bit offset rather than a key name. Offsets
+  are capped at 799999900 so that even the widest field (i8) stays below the 800M-bit
+  string length and sdsgrowzero() never extends the value - this spec deliberately
+  measures the no-growth path, and spans the full range so each call touches cold
+  cachelines across the whole 100MB. Metric of interest is Ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram -R --data-size 100000000 -n 1 -c 1 -t 1 --command
+      "SET bitfield-target __data__"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+  dataset_name: 1key-bitmap-800Mbits-100MB-size
+  dataset_description: This dataset contains 1 bitmap key of 100MB (800M bits) filled
+    with incompressible random bytes, used as a densely packed array of small
+    integers addressed by BITFIELD.
+tested-commands:
+- bitfield
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BITFIELD bitfield-target INCRBY i5 __key__ 1 GET u4 __key__
+    SET i8 __key__ 1" --command-key-pattern "R" --key-prefix "" --key-minimum 1
+    --key-maximum 799999900 --distinct-client-seed -c 50 -t 2 --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

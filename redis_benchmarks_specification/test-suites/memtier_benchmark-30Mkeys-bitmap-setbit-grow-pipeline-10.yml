@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-30Mkeys-bitmap-setbit-grow-pipeline-10
+description: Runs memtier_benchmark, for a keyspace length of 30M bitmap keys focusing
+  on the SETBIT allocation-growth path. Every key is preloaded as a 1-byte raw-encoded
+  bitmap, and the measured phase writes bit 511 of each key exactly once, so every
+  single operation extends the value from 1 to 64 bytes - lookupStringForBitCommand()
+  unshares the value and calls sdsgrowzero(), which reallocates and zero-fills the new
+  tail, followed by keyModified/notifyKeyspaceEvent/server.dirty and the keysizes
+  histogram update. Exactly-once coverage comes from --command-key-pattern P plus
+  "-n 300000" - each of the 100 connections owns a disjoint 300000-wide subrange and
+  walks it once - and was verified by observing rdb_changes_since_last_save advance by
+  exactly one per key, i.e. 100% of operations take the grow path with none falling
+  onto the unchanged fast path. This spec deliberately uses a fixed request count
+  instead of --test-time - a bitmap only ever grows, so a key that has been extended
+  can never be re-grown and the path cannot be held hot in steady state; fixed work
+  also makes both sides of an A/B traverse an identical state trajectory, so the
+  Ops/sec delta is pure speed rather than a different mix of grown and already-grown
+  keys. Without --test-time the harness applies its 300s default container timeout,
+  which 30M operations fit inside comfortably at any plausible rate. Note the sweep
+  visits ids sequentially within each subrange, so allocator locality is more
+  favourable than a random-order grow would be. Footprint was measured at 8.6GB once
+  fully grown, which is ~307 bytes per key rather than the ~216 a small-scale
+  extrapolation gives, because the keyspace dictionary itself grows with the key count.
+  Metric of interest is Ops/sec at pipeline 10.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 30000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 30000000 -n 300000
+      --command "SETBIT __key__ 0 1" --command-key-pattern "P" --pipeline 50 -c 50
+      -t 2
+  resources:
+    requests:
+      cpus: '2'
+      memory: 12g
+  dataset_name: 30Mkeys-bitmap-1byte-growable
+  dataset_description: This dataset contains 30M raw-encoded bitmap keys, each a
+    single byte with bit 0 set. Any write at an offset of 8 or above must extend the
+    allocation, which is what makes this dataset a probe for the SETBIT growth path.
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "SETBIT __key__ 511 1" --command-key-pattern "P"
+    --key-minimum 1 --key-maximum 30000000 -n 300000 -c 50 -t 2 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19
