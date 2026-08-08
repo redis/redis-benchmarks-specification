@@ -7,10 +7,16 @@ description: >-
   random bytes. Each call performs "INCRBY i5 / GET u4 / SET u8" in one command, which
   covers the signed write branch, the read-only GET branch and the unsigned write branch
   of bitfieldGeneric(), so both checkSignedBitfieldOverflow() and
-  checkUnsignedBitfieldOverflow() are reached under the default WRAP. One shared
-  lookupStringForBitCommand() and one notifyKeyspaceEvent() serve the whole command, while
-  server.dirty advances by the number of changed ops (2 here). Metric of interest is
-  Ops/sec at pipeline 10.
+  checkUnsignedBitfieldOverflow() are called. Note the asymmetry: SET u8 of the value 1 can
+  never overflow 8 bits, so the unsigned check is only ever reached on its non-overflow
+  return and its WRAP handling stays dark; WRAP semantics are exercised solely by INCRBY i5,
+  on roughly 1 in 32 operations over random data. One shared
+  lookupStringForBitCommand(), one keyModified() and one notifyKeyspaceEvent() serve the
+  whole command, while server.dirty advances by the number of changed ops. That count is
+  measured at ~1.99 rather than exactly 2 because the increment is guarded by
+  `strGrowSize || (oldval != newval)`, so a SET into a field that already holds the same
+  value does not count; INCRBY always changes, so the changes>0 tail runs on every command.
+  Metric of interest is Ops/sec at pipeline 10.
 
   Each __key__ token consumes the next value from the key iterator, so the three
   subcommands address three independent uniformly-random bit offsets rather than one shared
@@ -28,10 +34,15 @@ description: >-
   they are queueing latencies against one hot key, not BITFIELD command cost.
 
   Scope limits worth knowing. The i5/u4/u8 widths cost 30 iterations of the bit-at-a-time
-  get/set loops per command, against 192 for an i64 triple, so the widest-field cost of
-  those loops is not covered here. The "#<offset>" multiplied addressing form is not
-  covered. And because SET u8 progressively overwrites the value with a constant, the
-  incompressible-bytes property of the dataset decays slowly over a long run.
+  get/set loops per command (5+5 for INCRBY i5, 4 for GET u4, 8+8 for SET u8), against 320
+  for the same-shaped i64 triple, so roughly a tenth of the widest-field loop cost is
+  covered here. The "#<offset>" multiplied addressing form is not covered. And SET u8
+  progressively overwrites the value with a constant, so the incompressible-bytes property
+  does not survive a whole run - on the order of half the value is rewritten over 120s, and
+  the fraction scales with throughput, so the two arms of an A/B do not traverse identical
+  dataset states. The metric impact is nonetheless negligible, because both bit loops
+  iterate once per bit regardless of the data; only the wrap frequency and the changes count
+  move, measured at under 3% even at 100x this spec's write density.
 dbconfig:
   configuration-parameters:
     save: '""'

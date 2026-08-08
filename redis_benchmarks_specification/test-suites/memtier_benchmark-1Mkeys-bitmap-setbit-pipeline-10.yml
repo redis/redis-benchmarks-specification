@@ -10,20 +10,25 @@ description: >-
   Two equally weighted --command streams write bit 256 to 1 and to 0. They draw
   independent key ids, so this interleaves set and clear across the keyspace rather than
   alternating on any single key, and the resulting modify rate is a steady-state property
-  of the keyspace - measured at 0.500, stationary across six consecutive windows. The
-  interleave is deliberate: SETBIT skips the byte store and all of the accounting that
-  follows when the addressed bit already holds the requested value (bitops.c:881), so a
-  single-value workload settles onto that unchanged fast path and stops measuring the
-  write path at all (measured: zero dirty increments once every key has been touched
-  once).
+  of the keyspace - measured at 0.500 and stationary across consecutive windows. The
+  interleave is deliberate: the `strGrowSize || (!!bitval != on)` guard in setbitCommand()
+  skips the byte store and everything after it when the addressed bit already holds the
+  requested value, so a single-value workload settles onto that unchanged fast path and
+  stops measuring the write path at all (measured: zero dirty increments once every key
+  has been touched once).
 
   Read the headline accordingly. About 50% of operations execute the byte
-  read-modify-write plus signalModifiedKey and server.dirty, and about 50% take the
-  unchanged fast path, so a change isolated to the write path shows up at roughly half
-  its true magnitude. 50% is the structural ceiling for a binary bit under random writes,
-  not a tunable. Two paths named here are deliberately out of scope: notifyKeyspaceEvent()
-  is an early-return no-op under the default notify-keyspace-events "", and
-  dbUnshareStringValue() is only a refcount/encoding check for these values - its copy
+  read-modify-write plus keyModified() and server.dirty, and about 50% take the unchanged
+  fast path, so a change isolated to the write path shows up at roughly half its true
+  magnitude. Under independent random draws 50% is the structural ceiling for a binary bit, so
+  it is a property of the workload shape rather than a knob. Note the preload's coverage also
+  rests on -n times t*c equalling the key range (10000 x 100 = 1000000): changing -c or -t
+  without changing -n leaves keyspacelen passing while the keyspace is only partly built.
+
+  Two related costs are smaller than they look: notifyKeyspaceEvent() still asserts and calls
+  moduleNotifyKeyspaceEvent() before its config-mask test, but under the default
+  notify-keyspace-events "" it builds no channel and publishes nothing; and
+  dbUnshareStringValue() is only a refcount/encoding check for these values, since its copy
   branch needs a shared, embstr- or int-encoded value.
 dbconfig:
   configuration-parameters:

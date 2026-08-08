@@ -1,0 +1,93 @@
+version: 0.4
+name: memtier_benchmark-4Mkeys-bitmap-setbit-grow-pipeline-10
+description: >-
+  Runs memtier_benchmark against 4M bitmap keys to measure the SETBIT allocation-growth
+  path. Every key is preloaded as a 1-byte raw-encoded bitmap and the measured phase writes
+  bit 511 of each key exactly once, so every operation extends the value from 1 to 64
+  bytes: lookupStringForBitCommand() calls sdsgrowzero(), which reallocates and zero-fills
+  the new tail, followed by keyModified(), server.dirty and the keysizes histogram update.
+  Measured grow fraction is exactly 1.000 - the dirty counter advances by exactly one per
+  key, with no operation on the unchanged fast path. Metric of interest is Ops/sec at
+  pipeline 10.
+
+  Exactly-once coverage rests on a three-way coupling that a future edit can break
+  silently: a SINGLE --command stream, and -n equal to the key range divided by t*c
+  (4000000 / 100 = 40000). Each --command stream owns its own key iterator, so adding a
+  second stream halves the ids covered per connection, and changing -c or -t without
+  changing -n leaves keyspacelen passing while coverage quietly drops. Do not use
+  --override-test-runs > 1 with this spec either: it appends --run-count, multiplying the
+  fixed work while the container timeout below stays fixed.
+
+  The fixed request count replaces --test-time on purpose - a bitmap only ever grows, so an
+  extended key can never be re-grown and this path cannot be held hot in steady state, and
+  fixed work makes both sides of a comparison traverse an identical state trajectory so the
+  delta is speed rather than a differing mix of grown and already-grown keys. Existing
+  practice does the same: 1key-set-2M-elements-sadd-increasing, the
+  1Mkeys-list-lpop-rpop-* family and playbook-feature-store-hash-ingest-10M-entities-50-features
+  all use a fixed count in the measured phase.
+
+  Operationally, with no --test-time the harness applies a HARD 300s default container
+  timeout, and exceeding it raises rather than truncating, so the result is a failed test
+  and zero datapoints. 4M operations need a sustained 13.3k ops/s. Measured with these
+  arguments: 27s at 148k ops/s (11x margin), and 120s (2.4x margin) at the slowest rate
+  observed anywhere during review - 33k ops/s on a box at load average 103, far worse than
+  any dedicated runner. The size was chosen for that margin because the failure mode is
+  correlated with the regression this spec exists to detect: a build that slows the grow
+  path pushes the run toward the cap, so an under-margined spec goes silent on exactly the
+  commits it should flag. All of these figures are x86; the arm64 and dockerhub variants
+  are not yet measured. Note --test-time cannot be added as a guard (mutually exclusive
+  with a request count) and --override-memtier-test-time cannot shorten this spec (it only
+  rewrites an existing --test-time). Because there is no --test-time, the TMA collector
+  uses its flat 30s window, which samples the early, low-fragmentation part of the sweep
+  rather than a representative slice.
+
+  Two paths this spec does not reach. sdsgrowzero() grows greedily, so a 64-byte target
+  allocates 128 bytes plus header (a 160-byte size class) and the value crosses SDS_TYPE_5
+  to SDS_TYPE_8 - so _sdsMakeRoomFor() takes its malloc/memcpy/free path and never its
+  in-place s_realloc_usable() branch. Measured footprint once fully grown is 214 bytes per
+  key of used_memory (0.79GiB at 4M keys). Sweep order is sequential by id within each
+  subrange, so allocator locality is more favourable than a random-order grow.
+
+  priority is deliberately above the bitmap family's usual 19 so a
+  --tests-priority-upper-limit window can admit the cheap bitmap specs and exclude this
+  one; it is not a coverage signal. 105 is also the value commands-priority.json carries
+  for setbit.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 4000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 4000000 -n 40000
+      --command "SETBIT __key__ 0 1" --command-key-pattern "P" --pipeline 50 -c 50
+      -t 2
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+  dataset_name: 4Mkeys-bitmap-8bits-growable
+  dataset_description: This dataset contains 4M raw-encoded bitmap keys, each a single
+    byte with bit 0 set. Any write at an offset of 8 or above must extend the allocation,
+    which is what makes this dataset a probe for the SETBIT growth path.
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "SETBIT __key__ 511 1" --command-key-pattern "P"
+    --key-minimum 1 --key-maximum 4000000 -n 40000 -c 50 -t 2 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 105
