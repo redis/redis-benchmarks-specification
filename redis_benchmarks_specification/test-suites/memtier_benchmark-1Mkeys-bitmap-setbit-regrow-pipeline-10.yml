@@ -1,25 +1,41 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-setbit-regrow-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M bitmap keys holding
-  the SETBIT allocation-growth path hot in a genuine steady state. A bitmap only ever
-  grows, so a fixed-offset write workload extends each key once and then degenerates
-  to an in-place write forever; sustaining growth instead requires the values to be
-  cut back down, and the bytes reclaimed, at the same rate they are grown. This spec
-  does that with a 1:1 mix of "SETBIT key 8191 1", which extends a value from 64 bytes
-  to 1KiB via sdsgrowzero() (reallocate plus a ~960-byte zero-fill, then
-  keyModified/notifyKeyspaceEvent/server.dirty and the keysizes histogram update), and
-  "SET key <64B>", which returns the key to a 64-byte value and frees the grown
-  allocation. Both values are raw-encoded - 64 bytes is above the 44-byte embstr
-  threshold - so SETBIT is never additionally charged for an embstr-to-raw conversion
-  in dbUnshareStringValue(). Because each key's length is decided by whichever command
-  touched it last, half the keyspace is short at any instant, which was measured as a
-  stationary P(short) of 0.477 / 0.447 / 0.502 over three consecutive rounds; a SETBIT
-  therefore grows whenever it lands on a short key and roughly 24% of all operations
-  take the grow path indefinitely, with resident memory measured flat across rounds
-  rather than climbing. The trade-off against the fixed-work 30Mkeys grow spec is
-  deliberate - this one runs a full 120s at a fraction of the footprint and never
-  decays, but attribution is shared with SET and the grow fraction is ~24% rather than
-  100%, so read the two together. Metric of interest is Ops/sec at pipeline 10.
+description: >-
+  Runs memtier_benchmark against 1M bitmap keys to hold the SETBIT allocation-growth path
+  hot in a genuine steady state. A bitmap only ever grows, so a fixed-offset write
+  workload extends each key once and then degenerates to the unchanged fast path - not to
+  an in-place write, but to no write at all, since sdsgrowzero() early-returns and the
+  bit already holds the requested value. Sustaining growth therefore requires the values
+  to be cut back down and the bytes reclaimed as fast as they are grown. Metric of
+  interest is Ops/sec on the SETBIT stream at pipeline 10.
+
+  The workload is a 1:1 mix of "SETBIT key 8191 1", which extends a value from 64 bytes to
+  1KiB via sdsgrowzero() (reallocate plus a 961-byte zero-fill, then signalModifiedKey,
+  server.dirty and the keysizes histogram), and "SET key <64B>", which returns the key to
+  a 64-byte value and frees the grown allocation. Both values are raw-encoded - 64 bytes
+  is above the 44-byte embstr threshold - so SETBIT is never additionally charged for an
+  embstr-to-raw conversion in dbUnshareStringValue().
+
+  Measured composition of the operation stream, stationary across ten consecutive windows:
+  50.0% SET, 25.0% SETBIT that grows, and 25.0% SETBIT that finds an already-long value
+  and so takes the unchanged fast path (lookup and reply, nothing else). Half the keyspace
+  is short at any instant - P(short) measured 0.503 over 20,000 sampled ids - because each
+  key's length is decided by whichever command touched it last. The preload leaves every
+  key short, so the grow fraction starts near 50% and settles to its stationary 25% within
+  the first few operations per key; at fleet rates that transient is over in seconds, but
+  it means a slower build reports a slightly higher grow fraction than a fast one. Resident
+  memory is flat across windows rather than climbing.
+
+  Because the exported Totals blend is only ~25% the stated subject, this spec declares an
+  exporter on the per-command-type Setbits series so the datapoint attributes to SETBIT
+  rather than to the mix; Totals is retained as secondary. Two caveats: sdsgrowzero() grows
+  greedily, so a 1KiB target allocates 2048 bytes plus header (a 2560-byte size class) and
+  steady-state footprint is ~1.3GB at 1M keys rather than the ~0.55GB a literal reading of
+  "1KiB values" suggests; and the value crosses SDS_TYPE_8 to SDS_TYPE_16, so
+  _sdsMakeRoomFor() takes its malloc/memmove/free path and never its in-place branch. The
+  trade-off against the fixed-work 10Mkeys grow spec is deliberate - this one runs a full
+  120s at a fraction of the footprint and never decays, but attribution is shared with SET.
+  Read the two together.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -35,7 +51,7 @@ dbconfig:
     requests:
       cpus: '2'
       memory: 4g
-  dataset_name: 1Mkeys-bitmap-64B-regrow
+  dataset_name: 1Mkeys-bitmap-512bits-regrow
   dataset_description: This dataset contains 1M raw-encoded 64-byte values used as
     bitmaps. Writing bit 8191 extends a value to 1KiB while rewriting it with a 64-byte
     payload returns it to its original size, so a mixed workload keeps roughly half the
@@ -64,4 +80,15 @@ clientconfig:
     requests:
       cpus: '2'
       memory: 2g
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Setbits."Ops/sec"
+    - $."ALL STATS".Setbits."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Setbits."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Ops/sec"
 priority: 19

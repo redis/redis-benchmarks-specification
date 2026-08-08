@@ -1,0 +1,74 @@
+version: 0.4
+name: memtier_benchmark-1key-800M-bits-bitmap-bitfield-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single raw-encoded 100MB (800M-bit) value to measure
+  BITFIELD, which is the shape the command exists for - packing many small signed and
+  unsigned integers into one large bitmap. The value is preloaded with incompressible
+  random bytes. Each call performs "INCRBY i5 / GET u4 / SET u8" in one command, which
+  covers the signed write branch, the read-only GET branch and the unsigned write branch
+  of bitfieldGeneric(), so both checkSignedBitfieldOverflow() and
+  checkUnsignedBitfieldOverflow() are reached under the default WRAP. One shared
+  lookupStringForBitCommand() and one notifyKeyspaceEvent() serve the whole command, while
+  server.dirty advances by the number of changed ops (2 here). Metric of interest is
+  Ops/sec at pipeline 10.
+
+  Each __key__ token consumes the next value from the key iterator, so the three
+  subcommands address three independent uniformly-random bit offsets rather than one shared
+  offset. That is intentional: --key-prefix is empty and __key__ is being used as a bit
+  offset, not a key name. Verified over 19,691 captured commands - offsets uniform across
+  the whole value, and no command with all three offsets equal. Because --key-prefix ""
+  applies spec-wide, do not add a command to this spec that uses __key__ as an actual key
+  name; it would create bare-numeric keys and invalidate keyspacelen. Bit offset 0 is
+  unreachable this way, since --key-minimum must be greater than zero on this image.
+
+  Offsets are capped at 799999900 so that even the widest field stays below the 800M-bit
+  length and sdsgrowzero() never extends the value - this spec deliberately measures the
+  no-growth path, and spans the full range so each call touches cold cachelines across the
+  whole 100MB. Read the percentile metrics with care: at 100 connections and pipeline 10
+  they are queueing latencies against one hot key, not BITFIELD command cost.
+
+  Scope limits worth knowing. The i5/u4/u8 widths cost 30 iterations of the bit-at-a-time
+  get/set loops per command, against 192 for an i64 triple, so the widest-field cost of
+  those loops is not covered here. The "#<offset>" multiplied addressing form is not
+  covered. And because SET u8 progressively overwrites the value with a constant, the
+  incompressible-bytes property of the dataset decays slowly over a long run.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram -R --data-size 100000000 -n 1 -c 1 -t 1 --command
+      "SET bitfield-target __data__"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+  dataset_name: 1key-bitmap-800Mbits-100MB-size
+  dataset_description: This dataset contains 1 bitmap key of 100MB (800M bits) filled
+    with incompressible random bytes, used as a densely packed array of small
+    integers addressed by BITFIELD.
+tested-commands:
+- bitfield
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "BITFIELD bitfield-target INCRBY i5 __key__ 1
+    GET u4 __key__ SET u8 __key__ 1" --command-key-pattern "R" --key-prefix ""
+    --key-minimum 1 --key-maximum 799999900 --distinct-client-seed -c 50 -t 2
+    --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

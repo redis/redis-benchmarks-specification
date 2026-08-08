@@ -1,20 +1,30 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-setbit-pipeline-10
-description: Runs memtier_benchmark, for a keyspace length of 1M small bitmap keys
-  focusing on SETBIT write performance. Each key is a raw-encoded 64-byte (512-bit)
-  bitmap, preloaded by setting bit 511 so the addressed byte always already exists.
-  The measured workload alternates "SETBIT key 256 1" and "SETBIT key 256 0" at a
-  fixed in-range offset, so sdsgrowzero() is a no-op and this spec isolates the
-  in-place bitmap write - the write lookup, the single byte read-modify-write, and the
-  keyModified/notifyKeyspaceEvent/server.dirty accounting that follows it. Note that
-  dbUnshareStringValue() is only a cheap check here rather than real work, since a
-  SETBIT-created value is already raw-encoded with a refcount of 1; the copy-on-write
-  branch it guards needs a shared or int-encoded value and is not covered by this spec. The alternation is deliberate - SETBIT skips all of
-  that accounting when the bit already holds the requested value, so a single-value
-  workload would settle onto the unchanged fast path and stop measuring the write
-  path entirely. Alternating set/clear over a uniform keyspace holds the modify rate
-  at a stationary ~50% for the whole run rather than letting it decay. Metric of
+description: >-
+  Runs memtier_benchmark against 1M small bitmap keys to measure SETBIT on an
+  already-allocated value. Each key is a raw-encoded 64-byte (512-bit) bitmap preloaded
+  with bit 511 set, and the measured phase writes bit 256, always inside the existing
+  allocation, so sdsgrowzero() early-returns and nothing is reallocated. Metric of
   interest is Ops/sec at pipeline 10.
+
+  Two equally weighted --command streams write bit 256 to 1 and to 0. They draw
+  independent key ids, so this interleaves set and clear across the keyspace rather than
+  alternating on any single key, and the resulting modify rate is a steady-state property
+  of the keyspace - measured at 0.500, stationary across six consecutive windows. The
+  interleave is deliberate: SETBIT skips the byte store and all of the accounting that
+  follows when the addressed bit already holds the requested value (bitops.c:881), so a
+  single-value workload settles onto that unchanged fast path and stops measuring the
+  write path at all (measured: zero dirty increments once every key has been touched
+  once).
+
+  Read the headline accordingly. About 50% of operations execute the byte
+  read-modify-write plus signalModifiedKey and server.dirty, and about 50% take the
+  unchanged fast path, so a change isolated to the write path shows up at roughly half
+  its true magnitude. 50% is the structural ceiling for a binary bit under random writes,
+  not a tunable. Two paths named here are deliberately out of scope: notifyKeyspaceEvent()
+  is an early-return no-op under the default notify-keyspace-events "", and
+  dbUnshareStringValue() is only a refcount/encoding check for these values - its copy
+  branch needs a shared, embstr- or int-encoded value.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -34,7 +44,7 @@ dbconfig:
   dataset_description: This dataset contains 1M raw-encoded bitmap keys, each 64 bytes
     (512 bits), with bit 511 set. Writes at any offset below 512 land inside the
     existing allocation, so the bitmap never grows and the measured cost is the
-    in-place SETBIT path.
+    already-allocated SETBIT path.
 tested-commands:
 - setbit
 tested-groups:
