@@ -29,9 +29,11 @@ description: >-
   Operationally, with no --test-time the harness applies a HARD 300s default container
   timeout, and exceeding it raises rather than truncating, so the result is a failed test
   and zero datapoints. 4M operations need a sustained 13.3k ops/s. Measured with these
-  arguments: 27s at 148k ops/s (11x margin), and 120s (2.4x margin) at the slowest rate
-  observed anywhere during review - 33k ops/s on a box at load average 103, far worse than
-  any dedicated runner. The size was chosen for that margin because the failure mode is
+  arguments across many runs on a contended 14-core box: 48-88k ops/s, i.e. 48-86s and a
+  3.5x to 6.3x margin, with 27s at 148k ops/s when the box was idle. The worst rate observed
+  anywhere during review, 33k ops/s on a box at load average 103 with swap exhausted, gives
+  120s and a 2.4x margin. Reaching the cap from the worst of those needs a 3.5x grow-path
+  regression, far beyond the scale this spec exists to detect. The size was chosen for that margin because the failure mode is
   correlated with the regression this spec exists to detect: a build that slows the grow
   path pushes the run toward the cap, so an under-margined spec goes silent on exactly the
   commits it should flag. All of these figures are x86; the arm64 and dockerhub variants
