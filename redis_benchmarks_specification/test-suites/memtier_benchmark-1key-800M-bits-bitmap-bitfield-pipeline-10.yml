@@ -38,11 +38,11 @@ description: >-
   for the same-shaped i64 triple, so roughly a tenth of the widest-field loop cost is
   covered here. The "#<offset>" multiplied addressing form is not covered. And SET u8
   progressively overwrites the value with a constant, so the incompressible-bytes property
-  does not survive a whole run - on the order of half the value is rewritten over 120s, and
-  the fraction scales with throughput, so the two arms of an A/B do not traverse identical
+  does not survive a whole run - at fleet rates near 400k ops/s on the order of half the value
+  is rewritten over 120s, and the fraction scales with throughput, so the two arms of an A/B do not traverse identical
   dataset states. The metric impact is nonetheless negligible, because both bit loops
   iterate once per bit regardless of the data; only the wrap frequency and the changes count
-  move, measured at under 3% even at 100x this spec's write density.
+  move, and the Ops/sec impact is under 3% even at 100x this spec's write density.
 dbconfig:
   configuration-parameters:
     save: '""'

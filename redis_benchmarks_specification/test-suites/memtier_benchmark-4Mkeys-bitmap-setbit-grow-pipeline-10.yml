@@ -11,8 +11,8 @@ description: >-
   pipeline 10.
 
   Exactly-once coverage rests on a three-way coupling that a future edit can break
-  silently: a SINGLE --command stream, and -n equal to the key range divided by t*c
-  (4000000 / 100 = 40000). Each --command stream owns its own key iterator, so adding a
+  silently: a SINGLE --command stream, t*c = 100 connections, and -n equal to the key range
+  divided by t*c (4000000 / 100 = 40000). Each --command stream owns its own key iterator, so adding a
   second stream halves the ids covered per connection, and changing -c or -t without
   changing -n leaves keyspacelen passing while coverage quietly drops. Do not use
   --override-test-runs > 1 with this spec either: it appends --run-count, multiplying the
@@ -41,12 +41,14 @@ description: >-
   uses its flat 30s window, which samples the early, low-fragmentation part of the sweep
   rather than a representative slice.
 
-  Two paths this spec does not reach. sdsgrowzero() grows greedily, so a 64-byte target
+  Two things worth knowing about allocation. sdsgrowzero() grows greedily, so a 64-byte target
   allocates 128 bytes plus header (a 160-byte size class) and the value crosses SDS_TYPE_5
   to SDS_TYPE_8 - so _sdsMakeRoomFor() takes its malloc/memcpy/free path and never its
   in-place s_realloc_usable() branch. Measured footprint once fully grown is 214 bytes per
   key of used_memory (0.79GiB at 4M keys). Sweep order is sequential by id within each
-  subrange, so allocator locality is more favourable than a random-order grow.
+  subrange, so allocator locality is more favourable than a random-order grow. The
+  steady-state companion to this spec is 1Mkeys-bitmap-setbit-regrow-pipeline-10, which
+  holds the same path hot indefinitely at a lower grow fraction; read the two together.
 
   priority is deliberately above the bitmap family's usual 19 so a
   --tests-priority-upper-limit window can admit the cheap bitmap specs and exclude this

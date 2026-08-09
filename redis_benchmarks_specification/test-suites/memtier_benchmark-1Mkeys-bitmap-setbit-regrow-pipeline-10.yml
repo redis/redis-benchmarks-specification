@@ -22,7 +22,7 @@ description: >-
   The preload leaves every key short, so the grow fraction starts near 50% and converges to
   its stationary 25% after roughly 3.5 operations per key (about 4s at 1M ops/s, about 12s of
   a 120s run at 300k ops/s); resident memory is flat only once stationary, climbing from
-  ~0.5GB to ~1.3GB during that transient. The residual rate-dependence is conservative
+  ~0.13GB to ~1.3GB during that transient. The residual rate-dependence is conservative
   rather than misleading: a slower build spends more of its fixed 120s in the higher-work
   transient, which amplifies a grow-path regression rather than masking it.
 
@@ -34,7 +34,9 @@ description: >-
   ALL_STATS.Totals.Ops/sec, so use --metric_name "ALL_STATS.Setbits.Ops/sec". Even then the
   grow path is only half of that series, so a 10% grow-path change moves Setbits about 5% and
   the default Totals about 2.5%; the 4Mkeys grow spec is the 100%-attributed instrument and
-  these two should be read together.
+  these two should be read together. The p50/p99 that defaults.yml exports for this spec are
+  Totals percentiles at pipeline 10 across 100 connections, so they are queueing latencies over
+  a 1:1 SETBIT/SET mix rather than SETBIT command cost.
 
   Two caveats on allocation. sdsgrowzero() grows greedily, so a 1KiB target allocates 2048
   bytes plus header (a 2560-byte size class) and the steady-state footprint is ~1.3GB at 1M
