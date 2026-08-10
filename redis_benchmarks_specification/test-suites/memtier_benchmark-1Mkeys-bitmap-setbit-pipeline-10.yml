@@ -1,0 +1,74 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-bitmap-setbit-pipeline-10
+description: >-
+  Runs memtier_benchmark against 1M small bitmap keys to measure SETBIT on an
+  already-allocated value. Each key is a raw-encoded 64-byte (512-bit) bitmap preloaded
+  with bit 511 set, and the measured phase writes bit 256, always inside the existing
+  allocation, so sdsgrowzero() early-returns and nothing is reallocated. Metric of
+  interest is Ops/sec at pipeline 10.
+
+  Two equally weighted --command streams write bit 256 to 1 and to 0. They draw
+  independent key ids, so this interleaves set and clear across the keyspace rather than
+  alternating on any single key, and the resulting modify rate is a steady-state property
+  of the keyspace - measured at 0.500 and stationary across consecutive windows. The
+  interleave is deliberate: the `strGrowSize || (!!bitval != on)` guard in setbitCommand()
+  skips the byte store and everything after it when the addressed bit already holds the
+  requested value, so a single-value workload settles onto that unchanged fast path and
+  stops measuring the write path at all (measured: zero dirty increments once every key
+  has been touched once).
+
+  Read the headline accordingly. About 50% of operations execute the byte
+  read-modify-write plus keyModified() and server.dirty, and about 50% take the unchanged
+  fast path, so a change isolated to the write path shows up at roughly half its true
+  magnitude. Under independent random draws 50% is the structural ceiling for a binary bit, so
+  it is a property of the workload shape rather than a knob. Note the preload's coverage also
+  rests on -n times t*c equalling the key range (10000 x 100 = 1000000): changing -c or -t
+  without changing -n leaves keyspacelen passing while the keyspace is only partly built.
+
+  Two related costs are smaller than they look: notifyKeyspaceEvent() still asserts and calls
+  moduleNotifyKeyspaceEvent() before its config-mask test, but under the default
+  notify-keyspace-events "" it builds no channel and publishes nothing; and
+  dbUnshareStringValue() is only a refcount/encoding check for these values, since its copy
+  branch needs a shared, embstr- or int-encoded value.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 1000000 -n 10000
+      --command "SETBIT __key__ 511 1" --command-key-pattern "P" --pipeline 50 -c 50
+      -t 2
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1Mkeys-bitmap-512bits-setbit
+  dataset_description: This dataset contains 1M raw-encoded bitmap keys, each 64 bytes
+    (512 bits), with bit 511 set. Writes at any offset below 512 land inside the
+    existing allocation, so the bitmap never grows and the measured cost is the
+    already-allocated SETBIT path.
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "SETBIT __key__ 256 1" --command-key-pattern "R"
+    --command "SETBIT __key__ 256 0" --command-key-pattern "R" --key-minimum 1
+    --key-maximum 1000000 --distinct-client-seed -c 50 -t 2 --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19
