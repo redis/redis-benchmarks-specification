@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-1key-list-1K-elements-sort-numeric
+description: >-
+  Runs memtier_benchmark against a single LIST key with 1000 numeric elements, measuring
+  the throughput of the default (non-ALPHA, non-BY) SORT variant. Each SORT call
+  materializes the full 1000-element list into an internal `redisSortObject` vector,
+  parses every element as a double (`getDoubleFromObject()`), sorts with `sortCompare()`
+  in numeric mode, and writes back a bulk-string reply of 1000 elements.
+
+  This is the baseline shape of SORT that issue #469 identifies as completely unmeasured
+  today: the whole-list vector build + numeric compare + full-reply path, with no BY/GET
+  external lookups and no ALPHA `strcoll()` compare. Pipeline 10 lets the vector build
+  dominate wall-clock over reply parsing on the client side.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --command "RPUSH sort:list:1K:num __key__" --key-maximum
+      1000 --key-minimum 1 -n allkeys --key-prefix "" --command-key-pattern S -c 1
+      -t 1 --pipeline 50
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-list-1K-elements-numeric
+  dataset_description: >-
+    1 LIST key `sort:list:1K:num` with 1000 numeric elements 1..1000. Encoding is
+    quicklist (1000 elements, spans multiple listpack nodes under
+    list-max-listpack-size -2).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:list:1K:num" --hide-histogram --test-time
+    120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

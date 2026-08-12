@@ -1,0 +1,53 @@
+version: 0.4
+name: memtier_benchmark-1key-list-1K-elements-sort-by-get-external
+description: >-
+  Runs memtier_benchmark against a single LIST key with 1000 element ids, measuring
+  the throughput of `SORT ... BY weight_* GET # GET data_*` — the external-lookup shape
+  of the command that today has zero coverage in the suite.
+
+  For each of the 1000 elements per call, `sortCommandGeneric()` invokes
+  `lookupKeyByPattern()` once for the BY weight and once per GET pattern (here: two
+  GETs, one of which is `#` and returns the element itself with no lookup). So a
+  single SORT expands to ~1000 keyspace lookups on `weight_*` and ~1000 lookups on
+  `data_*`, plus 1000 object allocations for the sort vector — the per-element
+  lookup driven from inside one command is exactly the path issue #469 flags as
+  missing from the suite today.
+
+  Preload uses one EVAL that (a) RPUSHes ids 1..1000 into the list and (b) SETs
+  `weight_<i>` (deterministic pseudo-random double, so the sort is non-trivial and
+  the compare path stays warm) and `data_<i>` = `data-<i>` for every id. This keeps
+  the workload self-contained (single-shard) and reproducible.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2001
+  init_commands:
+    - EVAL "math.randomseed(20260812); for i=1,1000 do redis.call('RPUSH', KEYS[1], tostring(i)); redis.call('SET', 'weight_' .. i, tostring(math.random() * 1000)); redis.call('SET', 'data_' .. i, 'data-' .. i) end; return 'OK'" 1 sort:list:1K:byget
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-list-1K-elements-byget-external
+  dataset_description: 1 LIST key `sort:list:1K:byget` with 1000 element ids 1..1000,
+    plus 1000 `weight_<i>` string keys with pseudo-random double values and 1000
+    `data_<i>` string keys — 2001 keys total. The extra 2000 keys back the BY and
+    GET pattern lookups per element per SORT call.
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--pipeline 10 --command="SORT sort:list:1K:byget BY weight_* GET # GET data_*" --hide-histogram --test-time 120'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
