@@ -76,26 +76,46 @@ STREAM_GH_NEW_BUILD_RUNNERS_CG = os.getenv(
 # host used to store the streams of events
 GH_TOKEN = os.getenv("GH_TOKEN", None)
 GH_REDIS_SERVER_HOST = os.getenv("GH_REDIS_SERVER_HOST", "localhost")
-GH_REDIS_SERVER_PORT = int(os.getenv("GH_REDIS_SERVER_PORT", "6379"))
-GH_REDIS_SERVER_AUTH = os.getenv("GH_REDIS_SERVER_AUTH", None)
-GH_REDIS_SERVER_USER = os.getenv("GH_REDIS_SERVER_USER", None)
-
-# DB used to authenticate ( read-only/non-dangerous access only )
-REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
-REDIS_AUTH_SERVER_PORT = int(os.getenv("REDIS_AUTH_SERVER_PORT", "6379"))
-REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "15"))
-REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "300"))
-REDIS_BINS_EXPIRE_SECS = int(
-    os.getenv("REDIS_BINS_EXPIRE_SECS", "{}".format(24 * 7 * 60 * 60))
-)
-
-_TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
-_FALSE_STRINGS = ("0", "false", "f", "no", "n", "off")
 
 
-def accepted_bool_spellings():
-    """The spellings parse_bool accepts, for error and warning messages."""
-    return _TRUE_STRINGS + _FALSE_STRINGS
+def parse_int(value, default, name=None):
+    """Decode an integer that arrived as a string, without aborting the process.
+
+    Every one of these is read at import time, so a bare ``int()`` on a malformed value raises
+    before any entrypoint has a chance to run -- the coordinator, the builder, the runner and the
+    CLI all fail to start, with a traceback pointing at an import statement rather than at the
+    variable that was wrong. A supervisor reads that as a crash loop.
+
+    Falls back to ``default`` and warns instead, naming the variable, which is what the one
+    already-guarded site in this module does. Deliberately no accept-anything coercion: a value
+    that is not an integer is a misconfiguration, and the warning is the point.
+
+    Note ``int()`` is more permissive than operators expect and that is preserved here, since
+    tightening it would reject values that work today: ``"1_000"`` is 1000 and Arabic-Indic
+    ``"\u0663"`` is 3.
+    """
+    if isinstance(value, bool):
+        # bool is an int subclass; almost certainly not what a caller meant here.
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode()
+        except UnicodeDecodeError:
+            value = repr(value)
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        logging.getLogger(__name__).warning(
+            "%s is %r, which is not an integer; using %r instead.",
+            name or "value",
+            value,
+            default,
+        )
+        return default
 
 
 def parse_bool(value, default=...):
@@ -182,6 +202,36 @@ def parse_bool(value, default=...):
     return default
 
 
+GH_REDIS_SERVER_PORT = parse_int(
+    os.getenv("GH_REDIS_SERVER_PORT"), 6379, "GH_REDIS_SERVER_PORT"
+)
+GH_REDIS_SERVER_AUTH = os.getenv("GH_REDIS_SERVER_AUTH", None)
+GH_REDIS_SERVER_USER = os.getenv("GH_REDIS_SERVER_USER", None)
+
+# DB used to authenticate ( read-only/non-dangerous access only )
+REDIS_AUTH_SERVER_HOST = os.getenv("REDIS_AUTH_SERVER_HOST", "localhost")
+REDIS_AUTH_SERVER_PORT = parse_int(
+    os.getenv("REDIS_AUTH_SERVER_PORT"), 6379, "REDIS_AUTH_SERVER_PORT"
+)
+REDIS_HEALTH_CHECK_INTERVAL = parse_int(
+    os.getenv("REDIS_HEALTH_CHECK_INTERVAL"), 15, "REDIS_HEALTH_CHECK_INTERVAL"
+)
+REDIS_SOCKET_TIMEOUT = parse_int(
+    os.getenv("REDIS_SOCKET_TIMEOUT"), 300, "REDIS_SOCKET_TIMEOUT"
+)
+REDIS_BINS_EXPIRE_SECS = parse_int(
+    os.getenv("REDIS_BINS_EXPIRE_SECS"), 24 * 7 * 60 * 60, "REDIS_BINS_EXPIRE_SECS"
+)
+
+_TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
+_FALSE_STRINGS = ("0", "false", "f", "no", "n", "off")
+
+
+def accepted_bool_spellings():
+    """The spellings parse_bool accepts, for error and warning messages."""
+    return _TRUE_STRINGS + _FALSE_STRINGS
+
+
 # environment variables
 PULL_REQUEST_TRIGGER_LABEL = os.getenv(
     "PULL_REQUEST_TRIGGER_LABEL", "action:run-benchmark"
@@ -201,7 +251,7 @@ DATASINK_RTS_PUSH = parse_bool(
 DATASINK_RTS_AUTH = os.getenv("DATASINK_RTS_AUTH", None)
 DATASINK_RTS_USER = os.getenv("DATASINK_RTS_USER", None)
 DATASINK_RTS_HOST = os.getenv("DATASINK_RTS_HOST", "localhost")
-DATASINK_RTS_PORT = int(os.getenv("DATASINK_RTS_PORT", "6379"))
+DATASINK_RTS_PORT = parse_int(os.getenv("DATASINK_RTS_PORT"), 6379, "DATASINK_RTS_PORT")
 ALLOWED_PROFILERS = "perf:record,vtune"
 PROFILERS_DEFAULT = "perf:record"
 PROFILE_FREQ_DEFAULT = "99"
@@ -225,7 +275,7 @@ def _profile_was_enabled(raw):
 
 PROFILERS_ENABLED = parse_bool(_PROFILE_RAW, default=_profile_was_enabled(_PROFILE_RAW))
 PROFILERS = os.getenv("PROFILERS", PROFILERS_DEFAULT)
-MAX_PROFILERS_PER_TYPE = int(os.getenv("MAX_PROFILERS", 1))
+MAX_PROFILERS_PER_TYPE = parse_int(os.getenv("MAX_PROFILERS"), 1, "MAX_PROFILERS")
 PROFILE_FREQ = os.getenv("PROFILE_FREQ", PROFILE_FREQ_DEFAULT)
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "redis.benchmarks.spec")
 # logging related
@@ -255,13 +305,15 @@ BENCHMARK_PR_DIFF_SCOPING = parse_bool(
 )
 # PRs changing more than this many files are treated as inherently broad -> full suite
 # (also bounds the synchronous GitHub pagination done inside the webhook request).
-try:
-    BENCHMARK_PR_MAX_FILES = int(os.getenv("BENCHMARK_PR_MAX_FILES", "100"))
-    if BENCHMARK_PR_MAX_FILES <= 0:
-        raise ValueError("must be > 0")
-except ValueError:
-    logging.warning(
-        "invalid BENCHMARK_PR_MAX_FILES (must be a positive int); using 100"
+BENCHMARK_PR_MAX_FILES = parse_int(
+    os.getenv("BENCHMARK_PR_MAX_FILES"), 100, "BENCHMARK_PR_MAX_FILES"
+)
+if BENCHMARK_PR_MAX_FILES <= 0:
+    # Bounds the synchronous GitHub pagination inside the webhook request, so a non-positive value
+    # would make every labelled PR fall back to a full suite silently.
+    logging.getLogger(__name__).warning(
+        "BENCHMARK_PR_MAX_FILES is %r, which is not positive; using 100 instead.",
+        BENCHMARK_PR_MAX_FILES,
     )
     BENCHMARK_PR_MAX_FILES = 100
 # Diff-scoping needs to read PR files from the GitHub API. Without a token it runs
