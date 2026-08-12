@@ -31,12 +31,12 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 180 --key-prefix "" -c 50 -t 4 --command "ZADD __key__ 0.3479570710789212 n4mST4 0.1269842722113171 1zmQGj7 0.7361287822649483 axpOHLr4 0.49967623571850184 hMq6ApPeC 0.12911917880602142 b2OI9vcs9B 0.6721155451015176 4xbl6DLBgTh 0.3228822230933617 c7bcAV6IMOx3 0.17765798614251332 ACJdDg0xcUFoq 0.8334002894504928 dxdBdPrbPZcOJZ 0.5262324435292894 tpesg0ALZOzbgTM" --random-data 
+  arguments: --test-time 180 --key-prefix "" -c 25 -t 8 --command "ZADD __key__ 0.3479570710789212 n4mST4 0.1269842722113171 1zmQGj7 0.7361287822649483 axpOHLr4 0.49967623571850184 hMq6ApPeC 0.12911917880602142 b2OI9vcs9B 0.6721155451015176 4xbl6DLBgTh 0.3228822230933617 c7bcAV6IMOx3 0.17765798614251332 ACJdDg0xcUFoq 0.8334002894504928 dxdBdPrbPZcOJZ 0.5262324435292894 tpesg0ALZOzbgTM" --random-data 
     --command-key-pattern="R" --command-ratio 60 --command "ZREVRANGE __key__ 0 1 WITHSCORES" --command-key-pattern="R" --command-ratio 40
     --key-minimum=1 --key-maximum 10000 --hide-histogram
   resources:
     requests:
-      cpus: '4'
+      cpus: '8'
       memory: 4g
 tested-groups:
 - sorted-set

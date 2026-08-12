@@ -75,10 +75,10 @@ clientconfig:
     --command="HKEYS __key__"
     --command-key-pattern=R
     --hide-histogram
-    -c 50 -t 4
+    -c 25 -t 8
   resources:
     requests:
-      cpus: '4'
+      cpus: '8'
       memory: 2g
 
 priority: 150

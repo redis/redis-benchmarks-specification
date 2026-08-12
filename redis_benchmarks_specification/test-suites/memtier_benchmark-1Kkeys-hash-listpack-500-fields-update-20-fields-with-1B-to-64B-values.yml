@@ -134,6 +134,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >
+    -c 25 -t 8
     --key-prefix "test_hash:"
     --key-minimum 1
     --key-maximum 1000
@@ -144,7 +145,7 @@ clientconfig:
     --hide-histogram
   resources:
     requests:
-      cpus: '4'
+      cpus: '8'
       memory: 2g
 
 priority: 150
