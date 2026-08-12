@@ -22,8 +22,11 @@ description: |
       Content is randomized at the right size — for HGETALL/HSET cost the value SIZE is what matters,
       not the exact bytes — so the per-op serving cost is equivalent to typed scalars.
 
-  Encoding: HASHTABLE (DEFAULT config, NOT overridden). 301 fields > hash-max-listpack-entries (128),
-  so every entity hash converts from listpack to hashtable at load time. HGETALL therefore walks a
+  Encoding: HASHTABLE. This build's compiled default for hash-max-listpack-entries is 512 (not the
+  classic 128), which 301 fields does not exceed, so the config is explicitly overridden below to 128
+  to force the transition at a realistic feature-count scale. 301 fields > hash-max-listpack-entries
+  (128, overridden), so every entity hash converts from listpack to hashtable at load time. HGETALL
+  therefore walks a
   dict rather than a compact listpack: N dict iterations, one dictEntry -> SDS field / SDS value
   chase per field, and the emitted reply is 2*301 bulk strings. This is the SAME wire shape the
   50-features playbook produces at listpack scale, so the pair (50-features listpack, 300-features
@@ -80,6 +83,7 @@ dbconfig:
   dataset_name: 1Mkeys-feature-store-hash-300-features-entity-major
   configuration-parameters:
     save: '""'
+    hash-max-listpack-entries: '128'
   check:
     keyspacelen: 1000000
   # NOTE: the preload below uses --key-maximum=1000001 (N+1), not 1000000.
