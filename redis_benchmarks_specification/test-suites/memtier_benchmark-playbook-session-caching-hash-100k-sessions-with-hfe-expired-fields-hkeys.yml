@@ -25,36 +25,26 @@ description: |
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 100000
   resources:
     requests:
       memory: 2g
-  init_lua: |
-    local seed = 12345
-    math.randomseed(seed)
-
-    local total_keys = 100000
-    local total_fields = 50
-    local expire_fields = 45
-    local ttl_ms = 1000
-
-    for i = 1, total_keys do
-      local key = 'session:' .. i
-
-      local hset_args = {key}
-      for f = 1, total_fields do
-        hset_args[#hset_args+1] = 'field:' .. f
-        hset_args[#hset_args+1] = 'v' .. f
-      end
-      redis.call('HSET', unpack(hset_args))
-
-      local hexp_args = {key, ttl_ms, 'FIELDS', expire_fields}
-      for f = 1, expire_fields do
-        hexp_args[#hexp_args+1] = 'field:' .. f
-      end
-      redis.call('HPEXPIRE', unpack(hexp_args))
-    end
-
-    return 'OK'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix ""
+      --command "HSET session:__key__ field:1 v1 field:2 v2 field:3 v3 field:4 v4 field:5 v5 field:6 v6 field:7 v7 field:8 v8 field:9 v9 field:10 v10 field:11 v11 field:12 v12 field:13 v13 field:14 v14 field:15 v15 field:16 v16 field:17 v17 field:18 v18 field:19 v19 field:20 v20 field:21 v21 field:22 v22 field:23 v23 field:24 v24 field:25 v25 field:26 v26 field:27 v27 field:28 v28 field:29 v29 field:30 v30 field:31 v31 field:32 v32 field:33 v33 field:34 v34 field:35 v35 field:36 v36 field:37 v37 field:38 v38 field:39 v39 field:40 v40 field:41 v41 field:42 v42 field:43 v43 field:44 v44 field:45 v45 field:46 v46 field:47 v47 field:48 v48 field:49 v49 field:50 v50"
+      --command-key-pattern="P"
+      --command "HPEXPIRE session:__key__ 1000 FIELDS 45 field:1 field:2 field:3 field:4 field:5 field:6 field:7 field:8 field:9 field:10 field:11 field:12 field:13 field:14 field:15 field:16 field:17 field:18 field:19 field:20 field:21 field:22 field:23 field:24 field:25 field:26 field:27 field:28 field:29 field:30 field:31 field:32 field:33 field:34 field:35 field:36 field:37 field:38 field:39 field:40 field:41 field:42 field:43 field:44 field:45"
+      --command-key-pattern="P"
+      --key-minimum=1
+      --key-maximum=100001
+      -n 200000
+      -c 1 -t 1
+      --hide-histogram
+      --pipeline 50
 
 tested-groups:
 - hash

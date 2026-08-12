@@ -13,29 +13,107 @@ description: 'Runs memtier_benchmark to measure update performance on large Redi
 dbconfig:
   configuration-parameters:
     save: '""'
+  check:
+    keyspacelen: 1000
   resources:
     requests:
       memory: 1g
-  init_lua: |
-    local total_keys = 1000
-    local total_fields = 500
-    local batch_size = 100  -- number of arguments per HSET call (field + value count)
-    for k = 1, total_keys do
-      local key = "test_hash:" .. k
-      redis.call("DEL", key)
-      local field_num = 1
-      while field_num <= total_fields do
-        local args = {key}
-        for j = 1, batch_size, 2 do
-          if field_num > total_fields then break end
-          table.insert(args, "f" .. field_num)
-          table.insert(args, "v" .. field_num)
-          field_num = field_num + 1
-        end
-        redis.call("HSET", unpack(args))
-      end
-    end
-    return "OK"
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix "test_hash:" --command "HSET __key__ f1 __data__ f2
+      __data__ f3 __data__ f4 __data__ f5 __data__ f6 __data__ f7 __data__ f8
+      __data__ f9 __data__ f10 __data__ f11 __data__ f12 __data__ f13 __data__ f14
+      __data__ f15 __data__ f16 __data__ f17 __data__ f18 __data__ f19 __data__ f20
+      __data__ f21 __data__ f22 __data__ f23 __data__ f24 __data__ f25 __data__ f26
+      __data__ f27 __data__ f28 __data__ f29 __data__ f30 __data__ f31 __data__ f32
+      __data__ f33 __data__ f34 __data__ f35 __data__ f36 __data__ f37 __data__ f38
+      __data__ f39 __data__ f40 __data__ f41 __data__ f42 __data__ f43 __data__ f44
+      __data__ f45 __data__ f46 __data__ f47 __data__ f48 __data__ f49 __data__ f50
+      __data__ f51 __data__ f52 __data__ f53 __data__ f54 __data__ f55 __data__ f56
+      __data__ f57 __data__ f58 __data__ f59 __data__ f60 __data__ f61 __data__ f62
+      __data__ f63 __data__ f64 __data__ f65 __data__ f66 __data__ f67 __data__ f68
+      __data__ f69 __data__ f70 __data__ f71 __data__ f72 __data__ f73 __data__ f74
+      __data__ f75 __data__ f76 __data__ f77 __data__ f78 __data__ f79 __data__ f80
+      __data__ f81 __data__ f82 __data__ f83 __data__ f84 __data__ f85 __data__ f86
+      __data__ f87 __data__ f88 __data__ f89 __data__ f90 __data__ f91 __data__ f92
+      __data__ f93 __data__ f94 __data__ f95 __data__ f96 __data__ f97 __data__ f98
+      __data__ f99 __data__ f100 __data__ f101 __data__ f102 __data__ f103 __data__
+      f104 __data__ f105 __data__ f106 __data__ f107 __data__ f108 __data__ f109
+      __data__ f110 __data__ f111 __data__ f112 __data__ f113 __data__ f114 __data__
+      f115 __data__ f116 __data__ f117 __data__ f118 __data__ f119 __data__ f120
+      __data__ f121 __data__ f122 __data__ f123 __data__ f124 __data__ f125 __data__
+      f126 __data__ f127 __data__ f128 __data__ f129 __data__ f130 __data__ f131
+      __data__ f132 __data__ f133 __data__ f134 __data__ f135 __data__ f136 __data__
+      f137 __data__ f138 __data__ f139 __data__ f140 __data__ f141 __data__ f142
+      __data__ f143 __data__ f144 __data__ f145 __data__ f146 __data__ f147 __data__
+      f148 __data__ f149 __data__ f150 __data__ f151 __data__ f152 __data__ f153
+      __data__ f154 __data__ f155 __data__ f156 __data__ f157 __data__ f158 __data__
+      f159 __data__ f160 __data__ f161 __data__ f162 __data__ f163 __data__ f164
+      __data__ f165 __data__ f166 __data__ f167 __data__ f168 __data__ f169 __data__
+      f170 __data__ f171 __data__ f172 __data__ f173 __data__ f174 __data__ f175
+      __data__ f176 __data__ f177 __data__ f178 __data__ f179 __data__ f180 __data__
+      f181 __data__ f182 __data__ f183 __data__ f184 __data__ f185 __data__ f186
+      __data__ f187 __data__ f188 __data__ f189 __data__ f190 __data__ f191 __data__
+      f192 __data__ f193 __data__ f194 __data__ f195 __data__ f196 __data__ f197
+      __data__ f198 __data__ f199 __data__ f200 __data__ f201 __data__ f202 __data__
+      f203 __data__ f204 __data__ f205 __data__ f206 __data__ f207 __data__ f208
+      __data__ f209 __data__ f210 __data__ f211 __data__ f212 __data__ f213 __data__
+      f214 __data__ f215 __data__ f216 __data__ f217 __data__ f218 __data__ f219
+      __data__ f220 __data__ f221 __data__ f222 __data__ f223 __data__ f224 __data__
+      f225 __data__ f226 __data__ f227 __data__ f228 __data__ f229 __data__ f230
+      __data__ f231 __data__ f232 __data__ f233 __data__ f234 __data__ f235 __data__
+      f236 __data__ f237 __data__ f238 __data__ f239 __data__ f240 __data__ f241
+      __data__ f242 __data__ f243 __data__ f244 __data__ f245 __data__ f246 __data__
+      f247 __data__ f248 __data__ f249 __data__ f250 __data__ f251 __data__ f252
+      __data__ f253 __data__ f254 __data__ f255 __data__ f256 __data__ f257 __data__
+      f258 __data__ f259 __data__ f260 __data__ f261 __data__ f262 __data__ f263
+      __data__ f264 __data__ f265 __data__ f266 __data__ f267 __data__ f268 __data__
+      f269 __data__ f270 __data__ f271 __data__ f272 __data__ f273 __data__ f274
+      __data__ f275 __data__ f276 __data__ f277 __data__ f278 __data__ f279 __data__
+      f280 __data__ f281 __data__ f282 __data__ f283 __data__ f284 __data__ f285
+      __data__ f286 __data__ f287 __data__ f288 __data__ f289 __data__ f290 __data__
+      f291 __data__ f292 __data__ f293 __data__ f294 __data__ f295 __data__ f296
+      __data__ f297 __data__ f298 __data__ f299 __data__ f300 __data__ f301 __data__
+      f302 __data__ f303 __data__ f304 __data__ f305 __data__ f306 __data__ f307
+      __data__ f308 __data__ f309 __data__ f310 __data__ f311 __data__ f312 __data__
+      f313 __data__ f314 __data__ f315 __data__ f316 __data__ f317 __data__ f318
+      __data__ f319 __data__ f320 __data__ f321 __data__ f322 __data__ f323 __data__
+      f324 __data__ f325 __data__ f326 __data__ f327 __data__ f328 __data__ f329
+      __data__ f330 __data__ f331 __data__ f332 __data__ f333 __data__ f334 __data__
+      f335 __data__ f336 __data__ f337 __data__ f338 __data__ f339 __data__ f340
+      __data__ f341 __data__ f342 __data__ f343 __data__ f344 __data__ f345 __data__
+      f346 __data__ f347 __data__ f348 __data__ f349 __data__ f350 __data__ f351
+      __data__ f352 __data__ f353 __data__ f354 __data__ f355 __data__ f356 __data__
+      f357 __data__ f358 __data__ f359 __data__ f360 __data__ f361 __data__ f362
+      __data__ f363 __data__ f364 __data__ f365 __data__ f366 __data__ f367 __data__
+      f368 __data__ f369 __data__ f370 __data__ f371 __data__ f372 __data__ f373
+      __data__ f374 __data__ f375 __data__ f376 __data__ f377 __data__ f378 __data__
+      f379 __data__ f380 __data__ f381 __data__ f382 __data__ f383 __data__ f384
+      __data__ f385 __data__ f386 __data__ f387 __data__ f388 __data__ f389 __data__
+      f390 __data__ f391 __data__ f392 __data__ f393 __data__ f394 __data__ f395
+      __data__ f396 __data__ f397 __data__ f398 __data__ f399 __data__ f400 __data__
+      f401 __data__ f402 __data__ f403 __data__ f404 __data__ f405 __data__ f406
+      __data__ f407 __data__ f408 __data__ f409 __data__ f410 __data__ f411 __data__
+      f412 __data__ f413 __data__ f414 __data__ f415 __data__ f416 __data__ f417
+      __data__ f418 __data__ f419 __data__ f420 __data__ f421 __data__ f422 __data__
+      f423 __data__ f424 __data__ f425 __data__ f426 __data__ f427 __data__ f428
+      __data__ f429 __data__ f430 __data__ f431 __data__ f432 __data__ f433 __data__
+      f434 __data__ f435 __data__ f436 __data__ f437 __data__ f438 __data__ f439
+      __data__ f440 __data__ f441 __data__ f442 __data__ f443 __data__ f444 __data__
+      f445 __data__ f446 __data__ f447 __data__ f448 __data__ f449 __data__ f450
+      __data__ f451 __data__ f452 __data__ f453 __data__ f454 __data__ f455 __data__
+      f456 __data__ f457 __data__ f458 __data__ f459 __data__ f460 __data__ f461
+      __data__ f462 __data__ f463 __data__ f464 __data__ f465 __data__ f466 __data__
+      f467 __data__ f468 __data__ f469 __data__ f470 __data__ f471 __data__ f472
+      __data__ f473 __data__ f474 __data__ f475 __data__ f476 __data__ f477 __data__
+      f478 __data__ f479 __data__ f480 __data__ f481 __data__ f482 __data__ f483
+      __data__ f484 __data__ f485 __data__ f486 __data__ f487 __data__ f488 __data__
+      f489 __data__ f490 __data__ f491 __data__ f492 __data__ f493 __data__ f494
+      __data__ f495 __data__ f496 __data__ f497 __data__ f498 __data__ f499 __data__
+      f500 __data__" --command-key-pattern="P" --random-data --data-size-range=1-64
+      --key-minimum=1 --key-maximum=1001 -n allkeys -c 1 -t 1 --hide-histogram
+      --pipeline 50'
 
 
 tested-groups:
