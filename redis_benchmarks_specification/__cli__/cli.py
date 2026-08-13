@@ -245,9 +245,14 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         None,
         None,
         None,
-        ".*",
-        0,
-        10000,
+        # tests_groups_regexp / priority limits: taken from the arguments rather than hardcoded.
+        # spec_cli_args is shared by every subcommand, so --tests-groups-regexp and
+        # --tests-priority-* were accepted here and silently discarded, which is the same
+        # silently-ignored-setting failure this change set exists to remove -- on the producer the
+        # dockerhub and GA-tag baseline triggers actually use.
+        getattr(args, "tests_groups_regexp", ".*"),
+        args.tests_priority_lower_limit,
+        args.tests_priority_upper_limit,
         args.tests_regexp,
         args.command_regex if hasattr(args, "command_regex") else ".*",
         False,  # use_git_timestamp

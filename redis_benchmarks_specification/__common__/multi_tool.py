@@ -18,6 +18,7 @@ import math
 import os
 import re
 from dataclasses import dataclass, field
+import tempfile
 from typing import List, Optional
 
 import docker
@@ -65,6 +66,38 @@ def remove_started_containers(containers):
                 f"Error removing partially-started client "
                 f"{started.get('client_index')}: {cleanup_error}"
             )
+
+
+def make_client_output_dir(home, world_writable=True):
+    """Create the temp dir that client containers bind-mount for their output.
+
+    ``tempfile.mkdtemp`` returns 0700 owned by whoever runs the coordinator/runner.
+    Client containers write their ``--json-out-file`` in here, and not every client
+    image runs as root -- ``pubsub-sub-bench`` runs as uid 1001 -- so a non-root
+    client would complete its entire benchmark and only then die with
+    ``open benchmark_output_N.json: permission denied``, exit 1, and take the whole
+    test down with it.
+
+    Pass ``world_writable=False`` when the caller also copies secrets (TLS cert/key
+    material) into this directory: widening it would let any local user traverse in
+    and read them. Non-root client images cannot be combined with that case, which
+    is fine today because no TLS-capable client tool runs as non-root.
+    """
+    client_dir = tempfile.mkdtemp(dir=home)
+    if world_writable:
+        allow_client_output_writes(client_dir)
+    return client_dir
+
+
+def allow_client_output_writes(client_dir):
+    """Widen ``client_dir`` so any client container uid can create its output file.
+
+    Split out from :func:`make_client_output_dir` because the standalone runner cannot
+    decide at creation time: ``--uri`` may flip TLS on *after* the directory exists, and
+    under TLS this directory also receives the cert/key copies. The runner therefore
+    creates it private and calls this only once TLS is known to be off.
+    """
+    os.chmod(client_dir, 0o777)
 
 
 def stop_background_helper(container_info):

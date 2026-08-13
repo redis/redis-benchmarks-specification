@@ -147,21 +147,96 @@ def extract_testsuites(args):
     return testsuite_spec_files
 
 
+# Metric suffixes Redis emits for these two INFO sections, longest first so that
+# "usec_per_call" is matched before "usec". commandstats: see redis src/server.c where the
+# cmdstat_ line is built; latencystats emits percentile keys ("p50", "p99", "p99.9", ...),
+# matched separately by _PERCENTILE_METRIC_RE since the set is configurable.
+KNOWN_METRIC_SUFFIXES = (
+    "usec_per_call",
+    "rejected_calls",
+    "failed_calls",
+    "calls",
+    "usec",
+)
+_PERCENTILE_METRIC_RE = re.compile(r"^p\d+(?:\.\d+)?$")
+
+
 def commandstats_latencystats_process_name(
     metric_name, prefix, setup_name, variant_labels_dict
 ):
-    if prefix in metric_name:
-        command_and_metric_and_shard = metric_name[len(prefix) :]
-        command = (
-            command_and_metric_and_shard[0]
-            + command_and_metric_and_shard[1:].split("_", 1)[0]
-        )
-        metric_and_shard = command_and_metric_and_shard[1:].split("_", 1)[1]
-        metric = metric_and_shard
+    # The caller binds one variant_labels_dict per variant and reuses it for every metric,
+    # so bailing out must also drop any labels a previous metric derived -- otherwise this
+    # metric is exported under the previous command's tags.
+    def _drop_derived():
+        for _key in (
+            "command",
+            "command_and_metric",
+            "command_and_metric_and_setup",
+            "command_and_setup",
+            "metric_and_shard",
+            "shard",
+        ):
+            variant_labels_dict.pop(_key, None)
+
+    # startswith, not `in`: the slice below is only correct with the prefix at offset 0.
+    if metric_name.startswith(prefix):
+        remainder = metric_name[len(prefix) :]
+        if not remainder:
+            _drop_derived()
+            return
+        # Split the shard suffix off first: it is appended last by the producer
+        # (collect_redis_metrics builds "<key>_<inner_key>" then "+= _shard_<n>"), so it is
+        # always the trailing component.
+        command_and_metric = remainder
         shard = "1"
-        if "_shard_" in metric_and_shard:
-            metric = metric_and_shard.split("_shard_")[0]
-            shard = metric_and_shard.split("_shard_")[1]
+        if "_shard_" in remainder:
+            head, _, tail = remainder.rpartition("_shard_")
+            # Only a numeric tail is a shard index: the producer emits "_shard_<conn_n+1>".
+            # Requiring digits keeps a command or metric that merely contains the literal
+            # "_shard_" (e.g. a command named "shard") from being mistaken for one.
+            if head and tail.isdigit():
+                command_and_metric, shard = head, tail
+
+        # Split command from metric on the KNOWN metric vocabulary, matched from the right.
+        # Splitting on the first "_" instead attributes any command whose own name contains
+        # "_" to a different, existing command: "sort_ro_calls" became command="sort" with
+        # metric="ro_calls", folding SORT_RO's traffic into SORT's series. Seven core
+        # commands are affected (SORT_RO, EVAL_RO, EVALSHA_RO, FCALL_RO, BITFIELD_RO,
+        # GEORADIUS_RO, GEORADIUSBYMEMBER_RO), and Redis also rewrites "#", ":", CR and LF
+        # in a command name to "_" when emitting these stats, so module commands can hit it
+        # too. Longest suffix first, so "usec_per_call" wins over "usec".
+        command = metric = ""
+        for candidate in KNOWN_METRIC_SUFFIXES:
+            if command_and_metric.endswith("_" + candidate):
+                command = command_and_metric[: -(len(candidate) + 1)]
+                metric = candidate
+                break
+        else:
+            head, sep, tail = command_and_metric.rpartition("_")
+            if sep and _PERCENTILE_METRIC_RE.match(tail):
+                command, metric = head, tail
+        if not command:
+            # Unknown suffix: fall back to the historical split, which takes the first "_"
+            # *after* the leading character so a command beginning with "_" keeps it.
+            head, sep, tail = command_and_metric[1:].partition("_")
+            if not sep or not tail:
+                _drop_derived()
+                return
+            command = command_and_metric[0] + head
+            metric = tail
+
+        # Preserved for the label of the same name: the metric as it appeared on the wire,
+        # shard suffix included.
+        metric_and_shard = (
+            metric if shard == "1" else "{}_shard_{}".format(metric, shard)
+        )
+        # All-or-nothing, and no empty values: this is on the results-export path, where
+        # every label below is copied verbatim into a datapoint's tags. A partial or
+        # empty-valued label misfiles the datapoint, which is harder to notice than the
+        # IndexError this replaces.
+        if not metric or not shard:
+            _drop_derived()
+            return
         variant_labels_dict["metric"] = metric
         variant_labels_dict["command"] = command
         variant_labels_dict["command_and_metric"] = "{} - {}".format(command, metric)

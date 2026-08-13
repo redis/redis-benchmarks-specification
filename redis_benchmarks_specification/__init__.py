@@ -19,5 +19,9 @@ except (ImportError, PackageNotFoundError):
 
         PKG_NAME = "redis-benchmarks-specification"
         __version__ = pkg_resources.get_distribution(PKG_NAME).version
-    except (ImportError, pkg_resources.DistributionNotFound, AttributeError):
+    # Bare Exception deliberately: naming pkg_resources.DistributionNotFound here dereferences
+    # pkg_resources, which is exactly the name that just failed to import -- so the intended
+    # 99.99.99 fallback raised NameError instead of being reached. setuptools 83 no longer ships
+    # pkg_resources at all, so this is now the common path rather than the legacy one.
+    except Exception:
         __version__ = "99.99.99"  # like redis

@@ -1,0 +1,72 @@
+name: Stream contract
+
+# Guards the Redis Stream field contract between the trigger CLI, the builder, and the
+# coordinator. These components talk only through stream field names written as bare string
+# literals on both sides, so a rename or typo does not fail — the consumer's
+# `if b"name" in testDetails` check is simply False and it silently falls back to a default.
+#
+# That is not hypothetical: the builder writes `tests_priority_upper_limit` while the coordinator
+# read `priority_upper_limit`, so `--tests-priority-upper-limit` had no effect on any run and the
+# "detected a priority_upper_limit definition on the streamdata" log line never fired.
+#
+# Deliberately cheap and dependency-free: no Redis, no Docker, no benchmark fleet. It runs in
+# seconds on every PR so this class of silent breakage cannot reach the fleet, where it would
+# only ever surface as a setting that quietly stopped working.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stream-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Stream field contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # `pip install -e .` rather than a bare interpreter: importing the package runs
+      # __init__.py, whose version lookup needs a distribution to be installed. Without one it
+      # took a fallback branch that raised NameError, so the job failed at collection before
+      # running a test. Versions pinned so a hypothesis release cannot silently change which
+      # inputs this job explores.
+      - name: Install
+        run: |
+          pip install -e .
+          pip install 'pytest==8.2.2' 'hypothesis==6.108.5'
+
+      - name: Run stream contract tests
+        env:
+          # 500, and on every PR rather than 20000 nightly across 8 shards. Branch coverage of the
+          # module saturates at 200 and the mutation score is identical at 200 and 20000, so the
+          # extra examples bought nothing measurable -- and a nightly cannot block the PR that
+          # introduces the regression, which is the only moment this class of bug is cheap to fix.
+          HYPOTHESIS_MAX_EXAMPLES: '500'
+        run: |
+          python -m pytest utils/tests/test_stream_contract.py \
+            utils/tests/test_stream_contract_fuzz.py -v -ra
+
+      # A skipped fuzz file is the failure mode this whole job exists to prevent: the properties
+      # importorskip on hypothesis, and in a multi-file session a skip still exits 0 -- so the
+      # build goes green with every property silently absent.
+      - name: Fail if any test was skipped
+        run: |
+          python -m pytest utils/tests/test_stream_contract.py \
+            utils/tests/test_stream_contract_fuzz.py -q -ra 2>&1 | tee /tmp/out.txt
+          if grep -qE "skipped|SKIPPED" /tmp/out.txt; then
+            echo "::error::a stream-contract test was skipped; the properties must always run"
+            exit 1
+          fi

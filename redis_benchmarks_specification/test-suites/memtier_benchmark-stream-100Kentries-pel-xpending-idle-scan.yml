@@ -1,0 +1,65 @@
+version: 0.4
+name: memtier_benchmark-stream-100Kentries-pel-xpending-idle-scan
+description: >
+  Measures the PEL-size-proportional forward-scan cost of the XPENDING IDLE range
+  form. Pre-loads 100K stream entries with deterministic IDs (1-0..100000-0) via
+  XADD, creates one consumer group, and delivers all 100K entries to a single
+  consumer via XREADGROUP (no ACK), so the group PEL holds 100K pending entries.
+  The benchmark runs `XPENDING stream-key g1 IDLE 3600000 - + 1000`. The IDLE
+  threshold (3,600,000 ms = 1 h) is set far above any idle-time reachable within
+  the run (entries are at most ~a few minutes idle), so the predicate matches
+  NOTHING and every call must walk the entire 100K-entry group PEL from `-` to
+  `+` before returning empty. This isolates the pure forward-scan cost of the PEL
+  rax and makes it proportional to PEL size (unlike a low-IDLE call, which
+  collects `count` matches and stops after O(count) work). Verified locally to be
+  ~80x slower than the count-bounded IDLE 0 form on a 50K PEL. Primary metric is
+  Ops/sec (lower = more expensive scan). Entries are never acked or claimed, so
+  the PEL stays fully populated and the full scan runs on every call. Underlying
+  structure exercised: full forward iteration of the group `pel` rax with the
+  streamNACK idle-time predicate.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key __key__-0 field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=100000 --key-prefix="" -n 100000 -c 1 -t 1 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key g1 0 MKSTREAM
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-det-ids-pel-100k-1group-1consumer
+  dataset_description: A stream with 100K deterministic-ID entries (1-0..100000-0) and one consumer group whose single consumer holds all 100K entries in its PEL (unacked). Designed to measure the XPENDING IDLE full-PEL forward scan against a large populated PEL.
+tested-commands:
+  - xpending
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XPENDING stream-key g1 IDLE 3600000 - + 1000" --command-key-pattern="P"
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95

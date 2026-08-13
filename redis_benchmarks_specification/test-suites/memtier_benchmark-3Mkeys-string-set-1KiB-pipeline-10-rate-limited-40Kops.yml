@@ -1,0 +1,91 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-set-1KiB-pipeline-10-rate-limited-40Kops
+description: |
+  100%-writes fixed-offered-load benchmark: uniform-random SET overwrites of a
+  fully preloaded 3M-key keyspace of RAW-encoded strings (1024B incompressible
+  values, ~3 GB resident dataset) at a rate-limited aggregate offered load of
+  40K ops/s (200 connections x 200 ops/s each), 600s steady state. Metrics of
+  interest are p50/p99 latency at fixed load (Ops/sec must equal the offered
+  40K — a shortfall means the cell saturated and the datapoint is invalid).
+  Open-loop rate limiting avoids coordinated omission: when the server stalls
+  (fork, fsync, rewrite), the queued requests record the stall in the tail
+  percentiles instead of silently not being sent. Because the offered load —
+  and therefore the persistence byte-rate — is identical across server
+  versions, per-cell version deltas in latency isolate write-path cost
+  cleanly; this is the sensitive companion to the free-running saturation
+  sibling spec (same workload without --rate-limiting).
+
+  Persistence policy is pinned per setup, not by this spec: the spec resets
+  snapshotting (save "" — note redis save semantics: first save directive
+  resets, later ones append) and each setup in redis-topologies re-enables its
+  own policy via topology redis_arguments, which the coordinator appends after
+  the spec parameters. Cells: oss-standalone-01-replicas (persistence-free
+  baseline), oss-standalone-01-replicas-rdb (single 10s/1000-changes save
+  point; near-continuous ~3 GB bgsaves), and
+  oss-standalone-01-replicas-aof-everysec (AOF with everysec fsync and default
+  auto-rewrite thresholds; at 40K ops/s the AOF ingest is ~44 MB/s per
+  instance — primary plus replica stay under the runner disk ceiling, unlike a
+  free-running AOF workload, so latency reflects Redis rather than a saturated
+  volume; rewrites still trigger periodically and their forks are part of the
+  measured behavior). All cells use identical cpu allocations (primary 1 core,
+  replica 1 core; fork children share the primary core by design).
+  rdbcompression is pinned off (values are incompressible). Replica disconnect
+  cascades are pinned away (client-output-buffer-limit replica 2GB,
+  repl-backlog-size 256mb) so a replica stall cannot force a mid-run full
+  resync; any datapoint with a nonzero mid-bench full-sync count should be
+  discarded in analysis. Values use -R (random bytes) so RDB/AOF/replication
+  payload sizes are realistic, with the default constant seed for A/B
+  reproducibility and --distinct-client-seed to avoid lockstep clients. NOTE:
+  the server data dir is a bind mount on the runner root volume — persistence
+  I/O (including everysec fsync) hits the real disk.
+dbconfig:
+  # Preload BEFORE replicas spin up so the dataset transfers via one initial
+  # full sync and the measured phase is pure steady-state write traffic.
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    rdbcompression: 'no'
+    repl-backlog-size: 256mb
+    client-output-buffer-limit: 'replica 2048mb 2048mb 120'
+  check:
+    keyspacelen: 3000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 6g
+  dataset_name: 3Mkeys-string-1KiB-size-randomdata
+  dataset_description: |
+    3 million string keys, each with a 1024-byte random (incompressible)
+    value (~3 GB dataset). Sized so a bgsave child lives for tens of seconds
+    on the runner disks while 100%-writes traffic dirties pages under it —
+    large enough for meaningful fork/CoW cost, small enough that a 600s
+    window averages many fork cycles and primary + replica + CoW headroom
+    stay small relative to runner memory.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas
+- oss-standalone-01-replicas-rdb
+- oss-standalone-01-replicas-aof-everysec
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" -R --command "SET __key__ __data__" --command-key-pattern
+    R --key-minimum 1 --key-maximum 3000000 --distinct-client-seed --pipeline 10
+    --rate-limiting 200 -c 25 -t 8 --test-time 600 --hide-histogram'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 1g
+tested-groups:
+- string
+priority: 17
