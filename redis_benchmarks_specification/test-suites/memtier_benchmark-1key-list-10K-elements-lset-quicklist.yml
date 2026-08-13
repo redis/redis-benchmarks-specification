@@ -1,11 +1,17 @@
 version: 0.4
 name: memtier_benchmark-1key-list-10K-elements-lset-quicklist
-description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 10000
+description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST contains 9999
   string elements in it (quicklist encoded, spanning multiple listpack nodes under
-  list-max-listpack-size -2) and we replace an element in the middle using LSET with a small value.
-  This exercises the SHRINKING branch of the per-call encoding-conversion check
-  (listTypeTryConversionRaw in t_list.c): on a quicklist the shrink-check runs on every LSET even
-  though the list stays quicklist. Encoding: quicklist (10,000 elements).'
+  list-max-listpack-size -2) and we replace an element in the middle (index 5000) using LSET with a
+  small value. This exercises the SHRINKING branch of the per-call encoding-conversion check
+  (listTypeTryConversionRaw in t_list.c) - on a quicklist the shrink-check runs on every LSET even
+  though the list stays quicklist. Encoding: quicklist (9999 elements). The preload arguments are
+  the ones shared by the whole memtier_benchmark-1key-list-10K-elements-* family (dataset
+  1key-list-10K-elements-string), and with -n allkeys memtier issues key-maximum minus key-minimum
+  requests, so the list holds elements hello1..hello9999 - 9999 rather than a literal 10000. The
+  10K in the test name is the family/dataset label; the element count is kept identical to the
+  sibling LINDEX / LPOS / LINSERT-LREM specs so they all describe the same dataset, and 9999 is
+  far above the quicklist conversion threshold either way.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -22,7 +28,7 @@ dbconfig:
       cpus: '2'
       memory: 1g
   dataset_name: 1key-list-10K-elements-string
-  dataset_description: This dataset contains 1 list key with 10,000 string elements.
+  dataset_description: This dataset contains 1 list key with 9999 string elements (hello1..hello9999).
 tested-groups:
 - list
 tested-commands:

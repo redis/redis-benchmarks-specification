@@ -32,8 +32,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="LSET growlist:10 5 __data__" --data-size 9000 --command-key-pattern
-    R  --hide-histogram --test-time 180
+  arguments: --command="LSET growlist:10 5 __data__" --data-size 9000 --hide-histogram
+    --test-time 180
   resources:
     requests:
       cpus: '4'
