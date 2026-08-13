@@ -581,8 +581,18 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     conn.ping()
     for rep in range(0, 1):
         for cdict in filtered_hash_commits:
-            # Pass local repository path if using local repo
-            local_repo_path = redisDirPath if args.redis_repo is not None else None
+            # Pass local repository path if using local repo, OR if --recurse_submodules
+            # was requested and we own the clone (cleanUp==True, our own disposable temp
+            # dir from get_repo()) — recurse_submodules needs a real local checkout to
+            # `git submodule update` into, since GitHub's archive endpoint (the no-local-
+            # repo-path fallback) can never include submodule content. If the user passed
+            # both --redis_repo and --recurse_submodules, that directory is used (and
+            # checked out into) too — they opted into the mutation explicitly.
+            local_repo_path = (
+                redisDirPath
+                if (args.redis_repo is not None or (args.recurse_submodules and cleanUp))
+                else None
+            )
 
             (
                 result,
@@ -600,6 +610,7 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 args.gh_token,
                 None,  # gh_branch
                 local_repo_path,
+                args.recurse_submodules,
             )
             if args.platform:
                 commit_dict["platform"] = args.platform
@@ -630,6 +641,15 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
                 logging.info(f"Targeting specific runner: {args.target_platform}")
             if args.deployment_name_regexp != ".*":
                 commit_dict["deployment_name_regexp"] = args.deployment_name_regexp
+            if getattr(args, "override_deployment_regexp", ""):
+                commit_dict["override_deployment_regexp"] = (
+                    args.override_deployment_regexp
+                )
+                logging.info(
+                    "Overriding deployment topology to: {}".format(
+                        args.override_deployment_regexp
+                    )
+                )
             if args.command_regex != ".*":
                 commit_dict["command_regexp"] = args.command_regex
             if pull_request is not None:
