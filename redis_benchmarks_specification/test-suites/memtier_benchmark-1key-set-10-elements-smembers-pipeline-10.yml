@@ -29,10 +29,10 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time
+  arguments: -c 25 -t 8 --pipeline 10 --command="SMEMBERS set:10"  --hide-histogram --test-time
     180
   resources:
     requests:
-      cpus: '4'
+      cpus: '8'
       memory: 2g
 priority: 23
