@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-1key-list-1K-elements-sort-alpha-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single LIST key with 1000 short alphabetic string
+  elements, measuring the throughput of `SORT ... ALPHA`. ALPHA swaps the numeric
+  compare in `sortCompare()` for `compareStringObjectsWithOrder()`, which resolves to
+  `strcoll()`/`strcmp()` — a per-element cost profile with different cache behavior
+  than the numeric path, plus locale sensitivity from `strcoll()`.
+
+  Preload writes deterministic 8-byte lowercase strings via a single EVAL; the elements
+  defeat integer-encoding fast paths, and list-max-listpack-size is overridden to 128
+  (an entry-count cap) to force genuine multi-node quicklist storage, since 1000
+  elements at 8 bytes each never approach the default 8KB per-node size cap on their
+  own. Pipeline 10 keeps the vector build + string compares as the dominant cost.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    list-max-listpack-size: '128'
+  check:
+    keyspacelen: 1
+  init_commands:
+    - EVAL "math.randomseed(20260812); local chars = 'abcdefghijklmnopqrstuvwxyz'; for i=1,1000 do local s = ''; for j=1,8 do local idx = math.random(1,26); s = s .. string.sub(chars, idx, idx) end; redis.call('RPUSH', KEYS[1], s) end; return 'OK'" 1 sort:list:1K:alpha
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-list-1K-elements-alpha
+  dataset_description: >-
+    1 LIST key `sort:list:1K:alpha` with 1000 deterministic 8-byte lowercase-letter
+    strings. Encoding is quicklist (1000 elements, spans multiple listpack nodes
+    under list-max-listpack-size -2).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:list:1K:alpha ALPHA" --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

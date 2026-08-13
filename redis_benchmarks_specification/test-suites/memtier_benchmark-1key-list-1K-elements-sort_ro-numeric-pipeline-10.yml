@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-1key-list-1K-elements-sort_ro-numeric-pipeline-10
+description: >-
+  Mirrors the plain numeric-SORT baseline for `SORT_RO`, so the read-only variant
+  stays covered as it diverges from `SORT`. `SORT_RO` shares `sortCommandGeneric()`
+  with `SORT` but sets `readonly=1`, disallowing STORE and (as of PRs that touch the
+  encoding path) keeping source encoding intact. Same 1000-element numeric list, same
+  pipeline 10, same client shape as the SORT baseline — a delta between the two
+  specs isolates changes that affect only one of the two entry points. Measures
+  throughput (Ops/sec).
+
+  Encoding: quicklist (list-max-listpack-size overridden to 128 to force multi-node
+  storage — see the SORT numeric baseline spec for why the default 8KB size cap never
+  triggers it at this element size).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    list-max-listpack-size: '128'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --command "RPUSH sort_ro:list:1K:num __key__" --key-maximum
+      1001 --key-minimum 1 -n allkeys --key-prefix "" --command-key-pattern S -c 1
+      -t 1 --pipeline 50
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-list-1K-elements-numeric-ro
+  dataset_description: 1 LIST key `sort_ro:list:1K:num` with 1000 numeric elements 1..1000.
+    Same shape as the SORT numeric baseline, distinct key name to keep the two
+    workloads independent.
+tested-groups:
+- generic
+tested-commands:
+- sort_ro
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT_RO sort_ro:list:1K:num" --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
