@@ -9,10 +9,10 @@ description: 'Throughput counterpart of 1key-zincrby-1M-elements-score-collision
   run for the whole 180s window. The skiplist orders by (score, member) and only falls back
   to member-string sdscmp when scores are EQUAL (zslCompareWithNode -> sdscmp in t_zset.c),
   so each update walk does O(log run_length) member-string compares instead of the cheap
-  early-terminating score compares of the distinct-score sibling — i.e. essentially every
-  ZINCRBY hits the equal-neighbor skiplist path (~99.8% fast-path firing; only a ~0.2-1%
-  leading-edge tail — members pushed to a brand-new maximum score with no equal-score
-  neighbor yet — takes the ordinary path). Members are numeric-string SDS; the skiplist
+  early-terminating score compares of the distinct-score sibling — i.e. the large majority
+  of ZINCRBY calls hit the equal-neighbor skiplist path, with only a small leading-edge
+  tail (members pushed to a brand-new maximum score with no equal-score neighbor yet)
+  taking the ordinary path. Members are numeric-string SDS; the skiplist
   stores members as sds and compares them via sdscmp regardless of numeric form. Unlike the
   -c 1 -t 1 --pipeline 1
   latency-probe sibling (whose Ops/sec is capped by the per-op kernel write() syscall, masking
