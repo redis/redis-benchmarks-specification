@@ -1,0 +1,58 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-small-members-100K-elements-zscore-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 100K elements, each member a short 24-byte alphanumeric string, and we query it
+  using ZSCORE (all hits, pipeline 10). This is the short-member point-lookup half of the
+  short-vs-large-member ZSCORE cost tradeoff identified by competitive analysis of
+  ongoing large-zset representation work -- the compact-index / prefix-tree cost tradeoff is
+  most visible at member counts and sizes below any external-allocation threshold. Its
+  large-member counterpart is memtier_benchmark-1key-zset-large-members-30Kx4K-elements-zrank
+  (same corpus, ZRANK) -- a shared mixed-size-in-one-key ZSCORE spec was evaluated and
+  rejected: memtier''s --command-ratio blending of multiple --command templates against a
+  shared key range does not reproduce the same key-id assignment across separate memtier
+  invocations (verified empirically), so a client-side query built to reconstruct a specific
+  preloaded member by name cannot be guaranteed to hit. Splitting by size class keeps every
+  query a guaranteed hit -- the preload also uses a single `__key__` occurrence (score is a
+  literal 0, not a second `__key__`), so every id in the range is written exactly once as a
+  member with no off-by-one gap at the range boundary (an earlier two-`__key__` draft left
+  the key-maximum id unwritten, causing a real, reproducible miss on that one id -- fixed by
+  making the score a constant). Measures Ops/sec. Encoding: skiplist+hashtable (100,000
+  elements, exceeds zset-max-listpack-entries 128).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-prefix "" --command "ZADD zsetsmall 0 sxxxxxxxxxxxxxxxxx__key__"
+      --command-key-pattern P -n allkeys -c 1 -t 1 --hide-histogram --key-minimum 100000
+      --key-maximum 200000 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-100K-elements-small-members
+  dataset_description: This dataset contains 1 sorted set key with 100,000 elements,
+    each member a 24-byte alphanumeric string and every score a constant 0.
+tested-groups:
+- sorted-set
+tested-commands:
+- zscore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --key-prefix "" --command "ZSCORE zsetsmall sxxxxxxxxxxxxxxxxx__key__"
+    --command-key-pattern P --key-minimum 100000 --key-maximum 200000 --hide-histogram
+    --test-time 120 --pipeline 10
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 18
