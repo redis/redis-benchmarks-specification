@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1key-list-1K-elements-sort-by-get-external
+name: memtier_benchmark-1key-list-1K-elements-sort-by-get-external-pipeline-10
 description: >-
   Runs memtier_benchmark against a single LIST key with 1000 element ids, measuring
   the throughput of `SORT ... BY weight_* GET # GET data_*` — the external-lookup shape
@@ -17,6 +17,11 @@ description: >-
   `weight_<i>` (deterministic pseudo-random double, so the sort is non-trivial and
   the compare path stays warm) and `data_<i>` = `data-<i>` for every id. This keeps
   the workload self-contained (single-shard) and reproducible.
+
+  Encoding: listpack (the list holds only short numeric-string ids, ~3-4 bytes each,
+  well under any conversion threshold — encoding is incidental here since the subject
+  is the per-element BY/GET lookup cost, not the list's own storage layout). Measures
+  throughput (Ops/sec).
 dbconfig:
   configuration-parameters:
     save: '""'

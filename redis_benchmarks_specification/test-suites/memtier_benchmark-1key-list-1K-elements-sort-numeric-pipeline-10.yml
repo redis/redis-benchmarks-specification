@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1key-list-1K-elements-sort-numeric
+name: memtier_benchmark-1key-list-1K-elements-sort-numeric-pipeline-10
 description: >-
   Runs memtier_benchmark against a single LIST key with 1000 numeric elements, measuring
   the throughput of the default (non-ALPHA, non-BY) SORT variant. Each SORT call
@@ -11,16 +11,22 @@ description: >-
   today: the whole-list vector build + numeric compare + full-reply path, with no BY/GET
   external lookups and no ALPHA `strcoll()` compare. Pipeline 10 lets the vector build
   dominate wall-clock over reply parsing on the client side.
+
+  Encoding: quicklist. 1000 short numeric elements stay listpack-encoded under the
+  default list-max-listpack-size (-2, an 8KB size cap the elements never approach), so
+  list-max-listpack-size is overridden to 128 (an entry-count cap) to force genuine
+  multi-node quicklist storage — the shape the SORT vector-build path is meant to stress.
 dbconfig:
   configuration-parameters:
     save: '""'
+    list-max-listpack-size: '128'
   check:
     keyspacelen: 1
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --hide-histogram --command "RPUSH sort:list:1K:num __key__" --key-maximum
-      1000 --key-minimum 1 -n allkeys --key-prefix "" --command-key-pattern S -c 1
+      1001 --key-minimum 1 -n allkeys --key-prefix "" --command-key-pattern S -c 1
       -t 1 --pipeline 50
   resources:
     requests:
