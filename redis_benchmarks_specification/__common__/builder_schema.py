@@ -26,6 +26,7 @@ def commit_schema_to_stream(
     gh_repo,
     gh_token=None,
     local_repo_path=None,
+    recurse_submodules=False,
 ):
     """uses to the provided JSON dict of fields and pushes that info to the corresponding stream"""
     fields = fields
@@ -54,6 +55,7 @@ def commit_schema_to_stream(
             gh_token,
             None,  # gh_branch
             local_repo_path,
+            recurse_submodules,
         )
         reply_fields["use_git_timestamp"] = fields["use_git_timestamp"]
         if "git_timestamp_ms" in fields:
@@ -69,13 +71,70 @@ def commit_schema_to_stream(
     return result, reply_fields, error_msg
 
 
-def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path=None):
+def get_archive_zip_from_hash(
+    gh_org, gh_repo, git_hash, fields, local_repo_path=None, recurse_submodules=False
+):
     error_msg = None
     result = False
     binary_value = None
     bin_key = "zipped:source:{}/{}/archive/{}.zip".format(gh_org, gh_repo, git_hash)
 
-    if local_repo_path is not None:
+    if local_repo_path is not None and recurse_submodules:
+        # Submodule-aware path (opt-in, default OFF): `git archive` — and GitHub's own
+        # /archive/{ref}.zip endpoint — both exclude submodule content by design, so a
+        # repo like dragonflydb/dragonfly (helio/ as a submodule) can never build from
+        # the plain archive path below. Instead check out the exact commit in the local
+        # clone, materialize submodules there, and zip the *worktree* file list
+        # (`git ls-files --recurse-submodules`, which walks into every submodule in one
+        # call) rather than using `git archive`. This mutates local_repo_path (checkout +
+        # submodule update) — callers must only pass a disposable/dedicated clone here,
+        # never a developer's own working directory with uncommitted changes.
+        try:
+            logging.info(
+                "Creating submodule-aware ZIP archive from local repository: {} "
+                "(commit {})".format(local_repo_path, git_hash)
+            )
+            repo = git.Repo(local_repo_path)
+            repo.git.checkout("--force", git_hash)
+            repo.git.submodule("update", "--init", "--recursive")
+
+            archive_prefix = "{}-{}/".format(gh_repo, git_hash)
+            tracked_files = repo.git.ls_files("--recurse-submodules").splitlines()
+
+            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            temp_zip.close()
+            with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zf:
+                for rel_path in tracked_files:
+                    abs_path = os.path.join(local_repo_path, rel_path)
+                    if not os.path.isfile(abs_path):
+                        # submodule gitlink entries / symlinks with no regular file
+                        # target are not archivable content; skip rather than abort.
+                        continue
+                    zf.write(abs_path, arcname=archive_prefix + rel_path)
+
+            with open(temp_zip.name, "rb") as zip_file:
+                binary_value = zip_file.read()
+            os.unlink(temp_zip.name)
+
+            fields["zip_archive_key"] = bin_key
+            fields["zip_archive_len"] = len(binary_value)
+            result = True
+            logging.info(
+                "Successfully created submodule-aware ZIP archive ({} files). "
+                "Size: {} bytes ({:.2f} MB)".format(
+                    len(tracked_files),
+                    len(binary_value),
+                    len(binary_value) / (1024 * 1024),
+                )
+            )
+        except Exception as e:
+            error_msg = (
+                "Error creating submodule-aware ZIP archive from local repository "
+                "{}: {}".format(local_repo_path, str(e))
+            )
+            logging.error(error_msg)
+            result = False
+    elif local_repo_path is not None:
         # Create ZIP archive from local repository
         try:
             logging.info(
@@ -154,6 +213,7 @@ def get_commit_dict_from_sha(
     gh_token=None,
     gh_branch=None,
     local_repo_path=None,
+    recurse_submodules=False,
 ):
     commit = None
     # using an access token - but only if we're not using a local repository
@@ -190,6 +250,7 @@ def get_commit_dict_from_sha(
         git_hash,
         commit_dict,
         local_repo_path,
+        recurse_submodules,
     )
     return result, error_msg, commit_dict, commit, binary_key, binary_value
 

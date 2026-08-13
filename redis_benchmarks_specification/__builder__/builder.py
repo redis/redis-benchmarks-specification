@@ -441,6 +441,15 @@ def builder_process_stream(
                     f"detected deployment_name_regexp on build stream: {deployment_name_regexp}"
                 )
 
+            override_deployment_regexp = ""
+            if b"override_deployment_regexp" in testDetails:
+                override_deployment_regexp = testDetails[
+                    b"override_deployment_regexp"
+                ].decode()
+                logging.info(
+                    f"detected override_deployment_regexp on build stream: {override_deployment_regexp}"
+                )
+
             command_regexp = ".*"
             if b"command_regexp" in testDetails:
                 command_regexp = testDetails[b"command_regexp"].decode()
@@ -650,7 +659,7 @@ def builder_process_stream(
                         github_repo,
                         artifact_keys,  # Pass existing artifact keys
                         deployment_name_regexp,
-                        "",  # override_deployment_regexp - not used for reuse case
+                        override_deployment_regexp,
                     )
                     # Add to benchmark stream even when reusing artifacts
                     if result is True:
@@ -810,7 +819,7 @@ def builder_process_stream(
                     github_repo,
                     None,  # existing_artifact_keys - None for new builds
                     deployment_name_regexp,
-                    "",  # override_deployment_regexp - not available at builder level
+                    override_deployment_regexp,
                 )
                 if result is True:
                     arch_specific_stream = get_arch_specific_stream_name(build_arch)
