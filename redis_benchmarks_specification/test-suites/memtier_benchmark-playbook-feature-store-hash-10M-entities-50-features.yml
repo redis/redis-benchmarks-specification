@@ -130,8 +130,8 @@ clientconfig:
     --pipeline=1
     --print-percentiles=50,99
     --test-time=120
-    -c 50
-    -t 4
+    -c 25
+    -t 8
     --key-minimum=1
     --key-maximum=10000000
     --command='HGETALL __key__'
@@ -143,7 +143,7 @@ clientconfig:
     --hide-histogram
   resources:
     requests:
-      cpus: '4'
+      cpus: '8'
       memory: 2g
 
 priority: 38
