@@ -1,0 +1,158 @@
+version: 0.4
+name: memtier_benchmark-playbook-feature-store-hash-1M-entities-300-features
+description: |
+  Runs memtier_benchmark to simulate ONE specific online machine-learning feature-store layout on
+  Redis: ENTITY-MAJOR storage where each entity is a single hash holding all of that entity's feature
+  values, and single-entity online serving fetches the whole entity in one round-trip with HGETALL.
+  This is a "wide-entity" variant of the 50-features feature-store playbook, sized so the hash tips
+  out of listpack encoding into a full hashtable — it measures HGETALL / HSET on the hashtable-encoded
+  path.
+
+    - Each entity is ONE Redis hash, keyed `<prefix><entity-id>`, whose FIELDS are the feature
+      columns and whose VALUES are the serialized feature values, plus an `event_ts` metadata
+      timestamp field.
+    - Materialization writes the whole row at once: `HSET <key> f1 v1 ... fN vN event_ts <ts>`.
+    - Single-entity online serving reads the whole entity in ONE round-trip: `HGETALL <key>`.
+
+  Data shape:
+    - 1,000,000 entity hashes, key `feature_store:user_features:entity:<id>`.
+    - Each hash holds 300 feature fields (`feature_1`..`feature_300`) + `event_ts` = 301 fields.
+    - Values are realistic short scalar sizes (8..24 bytes) — the stringified scalars a feature store
+      serves (float scores, integer counts, booleans, RFC3339 timestamps, short categoricals).
+      Content is randomized at the right size — for HGETALL/HSET cost the value SIZE is what matters,
+      not the exact bytes — so the per-op serving cost is equivalent to typed scalars.
+
+  Encoding: HASHTABLE. This build's compiled default for hash-max-listpack-entries is 512 (not the
+  classic 128), which 301 fields does not exceed, so the config is explicitly overridden below to 128
+  to force the transition at a realistic feature-count scale. 301 fields > hash-max-listpack-entries
+  (128, overridden), so every entity hash converts from listpack to hashtable at load time. HGETALL
+  therefore walks a
+  dict rather than a compact listpack: N dict iterations, one dictEntry -> SDS field / SDS value
+  chase per field, and the emitted reply is 2*301 bulk strings. This is the SAME wire shape the
+  50-features playbook produces at listpack scale, so the pair (50-features listpack, 300-features
+  hashtable) isolates the encoding-transition cost of the exact same command on the exact same layout.
+
+  Expected footprint: ~20-25 GB resident at 1M entities x 301 hashtable fields. Hashtable entries
+  are ~24B dictEntry + short SDS field name + short SDS value per field, plus the bucket table
+  (>= 512 slots per hash), so per-entity cost is ~20-25 KB — an order of magnitude larger than the
+  ~1.7 KB/entity listpack case at equivalent field-count / value-size scale. Feature-name strings
+  are repeated per hash (Redis does not dedup field names) and account for a large share of the
+  delta; what makes the encoding transition costly at query time is dict iteration + pointer chasing
+  replacing a cache-friendly contiguous listpack walk.
+
+  Command mix (read-dominated online serving, ~95:5):
+    - Whole-entity serving read (`HGETALL`): ratio 19
+    - Whole-row feature materialization write (`HSET` all 301 fields): ratio 1
+
+  Not modeled (intentional scope limits, NOT claims about all feature stores):
+    - HMGET-subset serving: layouts that fetch only a named subset of features per inference (a single
+      `HMGET key f1..fK` of K of the 300 fields) — a common alternative serving pattern — are out of
+      scope; this spec measures whole-entity HGETALL only.
+    - Per-feature-view freshness / TTL: the single `event_ts` stands in for what may be several
+      per-view timestamps, and no key TTL / active-expiry pressure is exercised (`save ""`, no expiry).
+    - Pipelined batch scoring (many entities per round-trip), cluster topology, and cold-start MISS
+      traffic (the keyspace is fully preloaded, so Misses/sec ~ 0) are not modeled.
+
+exporter:
+  redistimeseries:
+    break_by:
+    - version
+    - commit
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."BEST RUN RESULTS".Hgetalls."Ops/sec"
+    - $."BEST RUN RESULTS".Hsets."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Ops/sec"
+    - $."BEST RUN RESULTS".Totals."Latency"
+    - $."BEST RUN RESULTS".Totals."Misses/sec"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p50.00"
+    - $."BEST RUN RESULTS".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hgetalls."Ops/sec"
+    - $."ALL STATS".Hsets."Ops/sec"
+    - $."ALL STATS".Hgetalls."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hgetalls."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Hsets."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Latency"
+    - $."ALL STATS".Totals."Misses/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+
+dbconfig:
+  dataset_name: 1Mkeys-feature-store-hash-300-features-entity-major
+  configuration-parameters:
+    save: '""'
+    hash-max-listpack-entries: '128'
+  check:
+    keyspacelen: 1000000
+  # NOTE: the preload below uses --key-maximum=1000001 (N+1), not 1000000.
+  # memtier_benchmark `-n allkeys` issues (key-maximum - key-minimum) writes per
+  # connection; with a single connection (-c 1 -t 1) and key-minimum=1 a
+  # key-maximum of 1000000 loads only 999,999 keys and fails the keyspacelen
+  # check above. key-maximum=N+1 populates exactly N=1,000,000 keys (1..1M).
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --data-size-range=8-24
+      --random-data
+      --key-prefix "feature_store:user_features:entity:"
+      --command='HSET __key__ feature_1 __data__ feature_2 __data__ feature_3 __data__ feature_4 __data__ feature_5 __data__ feature_6 __data__ feature_7 __data__ feature_8 __data__ feature_9 __data__ feature_10 __data__ feature_11 __data__ feature_12 __data__ feature_13 __data__ feature_14 __data__ feature_15 __data__ feature_16 __data__ feature_17 __data__ feature_18 __data__ feature_19 __data__ feature_20 __data__ feature_21 __data__ feature_22 __data__ feature_23 __data__ feature_24 __data__ feature_25 __data__ feature_26 __data__ feature_27 __data__ feature_28 __data__ feature_29 __data__ feature_30 __data__ feature_31 __data__ feature_32 __data__ feature_33 __data__ feature_34 __data__ feature_35 __data__ feature_36 __data__ feature_37 __data__ feature_38 __data__ feature_39 __data__ feature_40 __data__ feature_41 __data__ feature_42 __data__ feature_43 __data__ feature_44 __data__ feature_45 __data__ feature_46 __data__ feature_47 __data__ feature_48 __data__ feature_49 __data__ feature_50 __data__ feature_51 __data__ feature_52 __data__ feature_53 __data__ feature_54 __data__ feature_55 __data__ feature_56 __data__ feature_57 __data__ feature_58 __data__ feature_59 __data__ feature_60 __data__ feature_61 __data__ feature_62 __data__ feature_63 __data__ feature_64 __data__ feature_65 __data__ feature_66 __data__ feature_67 __data__ feature_68 __data__ feature_69 __data__ feature_70 __data__ feature_71 __data__ feature_72 __data__ feature_73 __data__ feature_74 __data__ feature_75 __data__ feature_76 __data__ feature_77 __data__ feature_78 __data__ feature_79 __data__ feature_80 __data__ feature_81 __data__ feature_82 __data__ feature_83 __data__ feature_84 __data__ feature_85 __data__ feature_86 __data__ feature_87 __data__ feature_88 __data__ feature_89 __data__ feature_90 __data__ feature_91 __data__ feature_92 __data__ feature_93 __data__ feature_94 __data__ feature_95 __data__ feature_96 __data__ feature_97 __data__ feature_98 __data__ feature_99 __data__ feature_100 __data__ feature_101 __data__ feature_102 __data__ feature_103 __data__ feature_104 __data__ feature_105 __data__ feature_106 __data__ feature_107 __data__ feature_108 __data__ feature_109 __data__ feature_110 __data__ feature_111 __data__ feature_112 __data__ feature_113 __data__ feature_114 __data__ feature_115 __data__ feature_116 __data__ feature_117 __data__ feature_118 __data__ feature_119 __data__ feature_120 __data__ feature_121 __data__ feature_122 __data__ feature_123 __data__ feature_124 __data__ feature_125 __data__ feature_126 __data__ feature_127 __data__ feature_128 __data__ feature_129 __data__ feature_130 __data__ feature_131 __data__ feature_132 __data__ feature_133 __data__ feature_134 __data__ feature_135 __data__ feature_136 __data__ feature_137 __data__ feature_138 __data__ feature_139 __data__ feature_140 __data__ feature_141 __data__ feature_142 __data__ feature_143 __data__ feature_144 __data__ feature_145 __data__ feature_146 __data__ feature_147 __data__ feature_148 __data__ feature_149 __data__ feature_150 __data__ feature_151 __data__ feature_152 __data__ feature_153 __data__ feature_154 __data__ feature_155 __data__ feature_156 __data__ feature_157 __data__ feature_158 __data__ feature_159 __data__ feature_160 __data__ feature_161 __data__ feature_162 __data__ feature_163 __data__ feature_164 __data__ feature_165 __data__ feature_166 __data__ feature_167 __data__ feature_168 __data__ feature_169 __data__ feature_170 __data__ feature_171 __data__ feature_172 __data__ feature_173 __data__ feature_174 __data__ feature_175 __data__ feature_176 __data__ feature_177 __data__ feature_178 __data__ feature_179 __data__ feature_180 __data__ feature_181 __data__ feature_182 __data__ feature_183 __data__ feature_184 __data__ feature_185 __data__ feature_186 __data__ feature_187 __data__ feature_188 __data__ feature_189 __data__ feature_190 __data__ feature_191 __data__ feature_192 __data__ feature_193 __data__ feature_194 __data__ feature_195 __data__ feature_196 __data__ feature_197 __data__ feature_198 __data__ feature_199 __data__ feature_200 __data__ feature_201 __data__ feature_202 __data__ feature_203 __data__ feature_204 __data__ feature_205 __data__ feature_206 __data__ feature_207 __data__ feature_208 __data__ feature_209 __data__ feature_210 __data__ feature_211 __data__ feature_212 __data__ feature_213 __data__ feature_214 __data__ feature_215 __data__ feature_216 __data__ feature_217 __data__ feature_218 __data__ feature_219 __data__ feature_220 __data__ feature_221 __data__ feature_222 __data__ feature_223 __data__ feature_224 __data__ feature_225 __data__ feature_226 __data__ feature_227 __data__ feature_228 __data__ feature_229 __data__ feature_230 __data__ feature_231 __data__ feature_232 __data__ feature_233 __data__ feature_234 __data__ feature_235 __data__ feature_236 __data__ feature_237 __data__ feature_238 __data__ feature_239 __data__ feature_240 __data__ feature_241 __data__ feature_242 __data__ feature_243 __data__ feature_244 __data__ feature_245 __data__ feature_246 __data__ feature_247 __data__ feature_248 __data__ feature_249 __data__ feature_250 __data__ feature_251 __data__ feature_252 __data__ feature_253 __data__ feature_254 __data__ feature_255 __data__ feature_256 __data__ feature_257 __data__ feature_258 __data__ feature_259 __data__ feature_260 __data__ feature_261 __data__ feature_262 __data__ feature_263 __data__ feature_264 __data__ feature_265 __data__ feature_266 __data__ feature_267 __data__ feature_268 __data__ feature_269 __data__ feature_270 __data__ feature_271 __data__ feature_272 __data__ feature_273 __data__ feature_274 __data__ feature_275 __data__ feature_276 __data__ feature_277 __data__ feature_278 __data__ feature_279 __data__ feature_280 __data__ feature_281 __data__ feature_282 __data__ feature_283 __data__ feature_284 __data__ feature_285 __data__ feature_286 __data__ feature_287 __data__ feature_288 __data__ feature_289 __data__ feature_290 __data__ feature_291 __data__ feature_292 __data__ feature_293 __data__ feature_294 __data__ feature_295 __data__ feature_296 __data__ feature_297 __data__ feature_298 __data__ feature_299 __data__ feature_300 __data__ event_ts __data__'
+      --command-key-pattern=P
+      --key-minimum=1
+      --key-maximum=1000001
+      -n allkeys
+      -c 1
+      -t 1
+      --pipeline 50
+      --hide-histogram
+  resources:
+    requests:
+      memory: 32g
+  dataset_description: 1 million entity hashes (one hash per entity, entity-major), each with 300
+    feature fields + an event_ts timestamp field (301 fields), values 8-24 bytes, hashtable-encoded
+    (fields > hash-max-listpack-entries).
+
+tested-groups:
+- hash
+tested-commands:
+- hgetall
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size-range=8-24
+    --random-data
+    --key-prefix "feature_store:user_features:entity:"
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,99
+    --test-time=120
+    -c 50
+    -t 4
+    --key-minimum=1
+    --key-maximum=1000000
+    --command='HGETALL __key__'
+    --command-key-pattern=Z
+    --command-ratio=19
+    --command='HSET __key__ feature_1 __data__ feature_2 __data__ feature_3 __data__ feature_4 __data__ feature_5 __data__ feature_6 __data__ feature_7 __data__ feature_8 __data__ feature_9 __data__ feature_10 __data__ feature_11 __data__ feature_12 __data__ feature_13 __data__ feature_14 __data__ feature_15 __data__ feature_16 __data__ feature_17 __data__ feature_18 __data__ feature_19 __data__ feature_20 __data__ feature_21 __data__ feature_22 __data__ feature_23 __data__ feature_24 __data__ feature_25 __data__ feature_26 __data__ feature_27 __data__ feature_28 __data__ feature_29 __data__ feature_30 __data__ feature_31 __data__ feature_32 __data__ feature_33 __data__ feature_34 __data__ feature_35 __data__ feature_36 __data__ feature_37 __data__ feature_38 __data__ feature_39 __data__ feature_40 __data__ feature_41 __data__ feature_42 __data__ feature_43 __data__ feature_44 __data__ feature_45 __data__ feature_46 __data__ feature_47 __data__ feature_48 __data__ feature_49 __data__ feature_50 __data__ feature_51 __data__ feature_52 __data__ feature_53 __data__ feature_54 __data__ feature_55 __data__ feature_56 __data__ feature_57 __data__ feature_58 __data__ feature_59 __data__ feature_60 __data__ feature_61 __data__ feature_62 __data__ feature_63 __data__ feature_64 __data__ feature_65 __data__ feature_66 __data__ feature_67 __data__ feature_68 __data__ feature_69 __data__ feature_70 __data__ feature_71 __data__ feature_72 __data__ feature_73 __data__ feature_74 __data__ feature_75 __data__ feature_76 __data__ feature_77 __data__ feature_78 __data__ feature_79 __data__ feature_80 __data__ feature_81 __data__ feature_82 __data__ feature_83 __data__ feature_84 __data__ feature_85 __data__ feature_86 __data__ feature_87 __data__ feature_88 __data__ feature_89 __data__ feature_90 __data__ feature_91 __data__ feature_92 __data__ feature_93 __data__ feature_94 __data__ feature_95 __data__ feature_96 __data__ feature_97 __data__ feature_98 __data__ feature_99 __data__ feature_100 __data__ feature_101 __data__ feature_102 __data__ feature_103 __data__ feature_104 __data__ feature_105 __data__ feature_106 __data__ feature_107 __data__ feature_108 __data__ feature_109 __data__ feature_110 __data__ feature_111 __data__ feature_112 __data__ feature_113 __data__ feature_114 __data__ feature_115 __data__ feature_116 __data__ feature_117 __data__ feature_118 __data__ feature_119 __data__ feature_120 __data__ feature_121 __data__ feature_122 __data__ feature_123 __data__ feature_124 __data__ feature_125 __data__ feature_126 __data__ feature_127 __data__ feature_128 __data__ feature_129 __data__ feature_130 __data__ feature_131 __data__ feature_132 __data__ feature_133 __data__ feature_134 __data__ feature_135 __data__ feature_136 __data__ feature_137 __data__ feature_138 __data__ feature_139 __data__ feature_140 __data__ feature_141 __data__ feature_142 __data__ feature_143 __data__ feature_144 __data__ feature_145 __data__ feature_146 __data__ feature_147 __data__ feature_148 __data__ feature_149 __data__ feature_150 __data__ feature_151 __data__ feature_152 __data__ feature_153 __data__ feature_154 __data__ feature_155 __data__ feature_156 __data__ feature_157 __data__ feature_158 __data__ feature_159 __data__ feature_160 __data__ feature_161 __data__ feature_162 __data__ feature_163 __data__ feature_164 __data__ feature_165 __data__ feature_166 __data__ feature_167 __data__ feature_168 __data__ feature_169 __data__ feature_170 __data__ feature_171 __data__ feature_172 __data__ feature_173 __data__ feature_174 __data__ feature_175 __data__ feature_176 __data__ feature_177 __data__ feature_178 __data__ feature_179 __data__ feature_180 __data__ feature_181 __data__ feature_182 __data__ feature_183 __data__ feature_184 __data__ feature_185 __data__ feature_186 __data__ feature_187 __data__ feature_188 __data__ feature_189 __data__ feature_190 __data__ feature_191 __data__ feature_192 __data__ feature_193 __data__ feature_194 __data__ feature_195 __data__ feature_196 __data__ feature_197 __data__ feature_198 __data__ feature_199 __data__ feature_200 __data__ feature_201 __data__ feature_202 __data__ feature_203 __data__ feature_204 __data__ feature_205 __data__ feature_206 __data__ feature_207 __data__ feature_208 __data__ feature_209 __data__ feature_210 __data__ feature_211 __data__ feature_212 __data__ feature_213 __data__ feature_214 __data__ feature_215 __data__ feature_216 __data__ feature_217 __data__ feature_218 __data__ feature_219 __data__ feature_220 __data__ feature_221 __data__ feature_222 __data__ feature_223 __data__ feature_224 __data__ feature_225 __data__ feature_226 __data__ feature_227 __data__ feature_228 __data__ feature_229 __data__ feature_230 __data__ feature_231 __data__ feature_232 __data__ feature_233 __data__ feature_234 __data__ feature_235 __data__ feature_236 __data__ feature_237 __data__ feature_238 __data__ feature_239 __data__ feature_240 __data__ feature_241 __data__ feature_242 __data__ feature_243 __data__ feature_244 __data__ feature_245 __data__ feature_246 __data__ feature_247 __data__ feature_248 __data__ feature_249 __data__ feature_250 __data__ feature_251 __data__ feature_252 __data__ feature_253 __data__ feature_254 __data__ feature_255 __data__ feature_256 __data__ feature_257 __data__ feature_258 __data__ feature_259 __data__ feature_260 __data__ feature_261 __data__ feature_262 __data__ feature_263 __data__ feature_264 __data__ feature_265 __data__ feature_266 __data__ feature_267 __data__ feature_268 __data__ feature_269 __data__ feature_270 __data__ feature_271 __data__ feature_272 __data__ feature_273 __data__ feature_274 __data__ feature_275 __data__ feature_276 __data__ feature_277 __data__ feature_278 __data__ feature_279 __data__ feature_280 __data__ feature_281 __data__ feature_282 __data__ feature_283 __data__ feature_284 __data__ feature_285 __data__ feature_286 __data__ feature_287 __data__ feature_288 __data__ feature_289 __data__ feature_290 __data__ feature_291 __data__ feature_292 __data__ feature_293 __data__ feature_294 __data__ feature_295 __data__ feature_296 __data__ feature_297 __data__ feature_298 __data__ feature_299 __data__ feature_300 __data__ event_ts __data__'
+    --command-key-pattern=Z
+    --command-ratio=1
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 38

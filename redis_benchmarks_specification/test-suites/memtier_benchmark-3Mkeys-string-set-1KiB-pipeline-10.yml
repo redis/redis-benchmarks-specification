@@ -1,0 +1,86 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-set-1KiB-pipeline-10
+description: |
+  100%-writes saturation benchmark: uniform-random SET overwrites of a fully
+  preloaded 3M-key keyspace of RAW-encoded strings (1024B incompressible
+  values, ~3 GB resident dataset), 600s steady state. Metric of interest is
+  Ops/sec — the workload continuously dirties pages across the whole dataset,
+  which is what makes the write path sensitive to background persistence
+  (fork + copy-on-write during RDB snapshot) and to the replication stream
+  fan-out. Closed-loop pipelined load; per-command latency percentiles are
+  batch latencies here, not the headline (use the rate-limited sibling spec
+  for tail-latency-under-fixed-load).
+
+  Persistence policy is pinned per setup, not by this spec: the spec resets
+  snapshotting (save "" — note redis save semantics: first save directive
+  resets, later ones append) and each setup in redis-topologies re-enables its
+  own policy via topology redis_arguments, which the coordinator appends after
+  the spec parameters. On oss-standalone-01-replicas-rdb the effective config
+  is a single 10s/1000-changes save point: with a ~3 GB dataset the bgsave
+  child runs for tens of seconds on the runner disks, so snapshots are
+  effectively near-continuous (cadence = child duration + 10s; a 600s window
+  averages ~10+ fork/CoW cycles, amortizing the variable first-fork offset —
+  bgsaves also fire during preload, so a setup-phase child may still be
+  running when measurement starts). The plain oss-standalone-01-replicas cell
+  is the persistence-free baseline; both cells use identical cpu allocations
+  (primary 1 core, replica 1 core; the fork child shares the primary core by
+  design). rdbcompression is pinned off (values are incompressible; LZF would
+  only add version-dependent child CPU). Replica disconnect cascades are
+  pinned away (client-output-buffer-limit replica 2GB, repl-backlog-size
+  256mb) so a replica stall cannot force a mid-run full resync; any datapoint
+  with a nonzero mid-bench full-sync count should be discarded in analysis.
+  Values use -R (random bytes) so RDB/replication payload sizes are realistic,
+  with the default constant seed for A/B reproducibility and
+  --distinct-client-seed to avoid lockstep clients. NOTE: the server data dir
+  is a bind mount on the runner root volume — persistence I/O hits the real
+  disk.
+dbconfig:
+  # Preload BEFORE replicas spin up so the dataset transfers via one initial
+  # full sync and the measured phase is pure steady-state write traffic.
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    rdbcompression: 'no'
+    repl-backlog-size: 256mb
+    client-output-buffer-limit: 'replica 2048mb 2048mb 120'
+  check:
+    keyspacelen: 3000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 6g
+  dataset_name: 3Mkeys-string-1KiB-size-randomdata
+  dataset_description: |
+    3 million string keys, each with a 1024-byte random (incompressible)
+    value (~3 GB dataset). Sized so a bgsave child lives for tens of seconds
+    on the runner disks while 100%-writes traffic dirties pages under it —
+    large enough for meaningful fork/CoW cost, small enough that a 600s
+    window averages many fork cycles and primary + replica + CoW headroom
+    stay small relative to runner memory.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone-01-replicas
+- oss-standalone-01-replicas-rdb
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" -R --command "SET __key__ __data__" --command-key-pattern
+    R --key-minimum 1 --key-maximum 3000000 --distinct-client-seed --pipeline 10
+    -c 25 -t 8 --test-time 600 --hide-histogram'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 1g
+tested-groups:
+- string
+priority: 17

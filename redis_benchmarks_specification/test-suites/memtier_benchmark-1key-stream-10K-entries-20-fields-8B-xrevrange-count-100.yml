@@ -1,0 +1,38 @@
+version: 0.4
+name: memtier_benchmark-1key-stream-10K-entries-20-fields-8B-xrevrange-count-100
+description: 'Runs memtier_benchmark, pre-loading a single stream key with 10K entries via XADD, each with 20 fields of 8B values, then testing XREVRANGE COUNT 100 for 60 seconds. XREVRANGE + - is stateless (re-reads the newest 100 entries every call), so the stream never drains. Node packing is pinned (stream-node-max-entries 100, stream-node-max-bytes 0) so the field-count sweep (5/20/50) varies only the fields-per-entry that the reverse iterator seeks back over. Streams have a single encoding (radix tree of listpack macronodes). Metric: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    stream-node-max-entries: '100'
+    stream-node-max-bytes: '0'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "8" --command "XADD stream-key * field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__ field __data__" -n 50 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1key-stream-10K-entries-20-fields-8B
+  dataset_description: 1 stream key with 10K entries, each with 20 fields holding 8 bytes of data.
+tested-commands:
+- xrevrange
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="XREVRANGE stream-key + - COUNT 100" --hide-histogram --test-time 60 -c 25 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- stream
+priority: 95

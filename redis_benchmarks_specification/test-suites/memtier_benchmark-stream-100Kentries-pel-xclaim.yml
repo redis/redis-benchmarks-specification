@@ -1,0 +1,64 @@
+version: 0.4
+name: memtier_benchmark-stream-100Kentries-pel-xclaim
+description: >
+  Measures the XCLAIM (claim/transfer) hot path over a large, pre-populated
+  consumer-group PEL. Pre-loads 100K stream entries with deterministic IDs
+  (1-0..100000-0) via XADD, creates one consumer group, and delivers all 100K
+  entries to consumer1 via XREADGROUP (no ACK), so the group PEL starts fully
+  populated. The benchmark runs
+  `XCLAIM stream-key g1 consumer2 0 <id>` with the target ID drawn uniformly at
+  random from [1,100000] via the __key__-0 pattern. min-idle-time 0 always
+  matches, so each call performs the full streamNACK lookup + owner move
+  (consumer1/consumer2 PEL update) + delivery-count/idle refresh. XCLAIM does NOT
+  remove entries from the group PEL, so this workload is NON-depleting: the PEL
+  stays at 100K for the entire run and every call hits a live pending entry
+  (re-claiming an entry already owned by consumer2 still does the full lookup +
+  update path). This is the first benchmark coverage of the XCLAIM path. Primary
+  metric is Ops/sec. Underlying structure exercised: streamNACK lookup in the
+  group `pel` rax, per-consumer `pel` rax move, and consumer create/lookup.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key __key__-0 field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=100000 --key-prefix="" -n 100000 -c 1 -t 1 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key g1 0 MKSTREAM
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-det-ids-pel-100k-1group-1consumer
+  dataset_description: A stream with 100K deterministic-ID entries (1-0..100000-0) and one consumer group whose single consumer holds all 100K entries in its PEL (unacked). Designed to measure the XCLAIM claim/transfer path against a large populated PEL.
+tested-commands:
+  - xclaim
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XCLAIM stream-key g1 consumer2 0 __key__-0" --command-key-pattern="R" --key-minimum=1 --key-maximum=100000 --key-prefix=""
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95

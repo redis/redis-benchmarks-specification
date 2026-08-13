@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-stream-100Kentries-pel-xpending-summary
+description: >
+  Baseline reference for the XPENDING summary form over a large, pre-populated
+  consumer-group PEL. Pre-loads 100K stream entries with deterministic IDs
+  (1-0..100000-0) via XADD, creates one consumer group, and delivers all 100K
+  entries to a single consumer via XREADGROUP (no ACK), so the group PEL holds
+  100K pending entries for the whole run. The benchmark runs the summary form
+  `XPENDING stream-key g1`, which returns the total pending count, the min/max
+  pending IDs and the per-consumer breakdown. This form is O(1) on the group
+  (it reads the PEL rax size + first/last IDs and iterates the small consumer
+  set), so at pipeline=1 it is round-trip-bound and serves as the cheap baseline
+  against which the PEL-size-proportional IDLE scan (companion
+  `...-pel-xpending-idle-scan` spec) is contrasted; primary metric is Ops/sec.
+  No entries are acked or claimed, so the PEL stays fully populated. Underlying
+  structure exercised: the group `pel` rax (size + endpoints) and per-consumer
+  aggregation.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key __key__-0 field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=100000 --key-prefix="" -n 100000 -c 1 -t 1 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key g1 0 MKSTREAM
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+    - XREADGROUP GROUP g1 consumer1 COUNT 20000 STREAMS stream-key >
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: stream-100k-det-ids-pel-100k-1group-1consumer
+  dataset_description: A stream with 100K deterministic-ID entries (1-0..100000-0) and one consumer group whose single consumer holds all 100K entries in its PEL (unacked). Designed to measure XPENDING against a large populated PEL.
+tested-commands:
+  - xpending
+tested-groups:
+  - stream
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --data-size 100
+    --command="XPENDING stream-key g1" --command-key-pattern="P"
+    --hide-histogram
+    --test-time 120
+    -c 50
+    -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+priority: 95

@@ -19,10 +19,12 @@ dbconfig:
   resources:
     requests:
       memory: 1g
-# tested-commands/groups reflect the CLIENT LIST prober, the exported (last) clientconfig
-# and the command this spec measures; the PING keepalive client only holds the connections.
+# tested-commands lists every verb the workload sends (validator-enforced): the
+# CLIENT LIST prober is the measured/exported command; the PING keepalive client
+# only holds the ~2000 connections open but its pings are still sent traffic.
 tested-commands:
 - client|list
+- ping
 tested-groups:
 - connection
 redis-topologies:

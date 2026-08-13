@@ -9,6 +9,7 @@ import datetime
 import os
 
 from redis_benchmarks_specification.__common__.env import (
+    parse_bool,
     SPECS_PATH_TEST_SUITES,
 )
 
@@ -24,7 +25,22 @@ def get_start_time_vars(start_time=None):
 
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
-PERFORMANCE_RTS_PUSH = bool(int(os.getenv("PUSH_RTS", "0")))
+# parse_bool, not bool(int(...)): the latter raises ValueError at import time on PUSH_RTS=false,
+# which aborts every command that imports this module. The default preserves the old integer
+# reading so no non-zero value flips to disabled.
+_PUSH_RTS_RAW = os.getenv("PUSH_RTS", "0")
+
+
+def _push_rts_was_enabled(raw):
+    try:
+        return bool(int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return False
+
+
+PERFORMANCE_RTS_PUSH = parse_bool(
+    _PUSH_RTS_RAW, default=_push_rts_was_enabled(_PUSH_RTS_RAW)
+)
 
 
 _, NOW_UTC, _ = get_start_time_vars()
@@ -172,12 +188,12 @@ def create_compare_arguments(parser):
     parser.add_argument(
         "--comparison-target-branch", type=str, default=None, required=False
     )
-    parser.add_argument("--print-regressions-only", type=bool, default=False)
-    parser.add_argument("--print-improvements-only", type=bool, default=False)
-    parser.add_argument("--skip-unstable", type=bool, default=False)
-    parser.add_argument("--verbose", type=bool, default=False)
-    parser.add_argument("--simple-table", type=bool, default=False)
-    parser.add_argument("--use_metric_context_path", type=bool, default=False)
+    parser.add_argument("--print-regressions-only", type=parse_bool, default=False)
+    parser.add_argument("--print-improvements-only", type=parse_bool, default=False)
+    parser.add_argument("--skip-unstable", type=parse_bool, default=False)
+    parser.add_argument("--verbose", type=parse_bool, default=False)
+    parser.add_argument("--simple-table", type=parse_bool, default=False)
+    parser.add_argument("--use_metric_context_path", type=parse_bool, default=False)
     parser.add_argument("--testname_regex", type=str, default=".*", required=False)
     parser.add_argument(
         "--command-group-regex",

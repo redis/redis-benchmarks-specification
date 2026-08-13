@@ -184,6 +184,24 @@ redis-benchmarks-compare \
     --running_platform arm-aws-m8g.metal-24xl
 ```
 
+### Identifying each side of a comparison
+
+Each side must be identified exactly one way. The five selectors per side are mutually
+exclusive, and supplying two is an error naming both:
+
+| Selector | Identifies the side by |
+|----------|-----------------------|
+| `--<side>-branch` | git branch |
+| `--<side>-tag` | released version |
+| `--<side>-hash` | commit hash |
+| `--<side>-target-version` | version target |
+| `--<side>-target-branch` | branch target |
+
+`--baseline-branch` falls back to a configured default when no other baseline selector is
+given, so `--baseline-hash <hash>` on its own is enough. Passing a selector as an empty
+string means "not supplied", so `--baseline-branch ''` is also accepted as a way to clear
+the default explicitly.
+
 ### New flags
 
 | Flag | Description |
