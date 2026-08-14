@@ -223,6 +223,34 @@ REDIS_BINS_EXPIRE_SECS = parse_int(
     os.getenv("REDIS_BINS_EXPIRE_SECS"), 24 * 7 * 60 * 60, "REDIS_BINS_EXPIRE_SECS"
 )
 
+
+def redis_long_blocking_read_keepalive_options():
+    """TCP keepalive tuning for redis connections that issue a long/indefinitely
+    blocking read (e.g. XREADGROUP ... BLOCK 0). `socket_keepalive=True` alone
+    only enables the OS's default keepalive timers -- on Linux that means no
+    probe is sent for 2 hours (`net.ipv4.tcp_keepalive_time`), which is far
+    longer than many cloud NAT/security-group/LB idle-connection reap windows
+    (commonly single-digit minutes). Without an earlier probe, the connection
+    can be silently killed by an intermediate hop while genuinely idle inside
+    the blocking wait, surfacing as `ConnectionError: Connection closed by
+    server` on the *next* read attempt with no warning beforehand. Returns {}
+    on platforms without the Linux-specific TCP_KEEPIDLE/KEEPINTVL/KEEPCNT
+    socket options (e.g. local dev on macOS) -- redis-py accepts an empty
+    dict, so callers can pass this straight through unconditionally.
+    """
+    import socket
+
+    if not all(
+        hasattr(socket, attr) for attr in ("TCP_KEEPIDLE", "TCP_KEEPINTVL", "TCP_KEEPCNT")
+    ):
+        return {}
+    return {
+        socket.TCP_KEEPIDLE: 30,  # start probing after 30s idle
+        socket.TCP_KEEPINTVL: 10,  # then every 10s
+        socket.TCP_KEEPCNT: 6,  # give up (and let redis-py surface the error) after 6 misses
+    }
+
+
 _TRUE_STRINGS = ("1", "true", "t", "yes", "y", "on")
 _FALSE_STRINGS = ("0", "false", "f", "no", "n", "off")
 
