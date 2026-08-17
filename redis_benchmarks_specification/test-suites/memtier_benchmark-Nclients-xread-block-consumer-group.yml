@@ -9,12 +9,19 @@ description: >
   memtier_benchmark spec covers. One producer (a single connection) issues XADD
   onto a single stream (bounded with MAXLEN ~ 10000 so memory stays flat) while
   N=100 consumer connections (-c 25 -t 4) each run
-  XREADGROUP GROUP g c1 BLOCK 0 COUNT 1 STREAMS stream:1 > with pipeline 1.
-  Because the consumers vastly outnumber the single producer, there is rarely a
-  backlog of new entries, so almost every XREADGROUP registers as blocked-on-key
-  and is later served by an XADD -- driving traffic through the stream unblock
-  path on essentially every op and growing the processUnblockedClients queue that
-  beforeSleep() drains each tick. The exported Totals are the consumer group's
+  XREADGROUP GROUP test-group c1 BLOCK 0 COUNT 1 NOACK STREAMS stream:1 > with
+  pipeline 1. NOACK is required: without it, every delivered entry sits in c1's
+  PEL for the rest of the run (Redis never auto-ACKs), and since MAXLEN trims the
+  stream out from under the PEL, that turns into unbounded dangling-PEL growth
+  over a long run -- a confound on the very unblock-latency numbers this spec
+  measures, unrelated to the blocked/unblocked code path being exercised. NOACK
+  delivers the entry without the PEL insert, leaving the blocking/unblocking path
+  itself untouched. Because the consumers vastly outnumber the single producer,
+  there is rarely a backlog of new entries, so almost every XREADGROUP registers
+  as blocked-on-key and is later served by an XADD -- driving traffic through the
+  stream unblock path on essentially every op and growing the
+  processUnblockedClients queue that beforeSleep() drains each tick. The exported
+  Totals are the consumer group's
   (last clientconfig): Ops/sec is the unblock rate and p50/p99 are the unblock
   latency. MULTI-CLIENT SUITE: runs only on a runner with
   BENCHMARK_MULTITOOL_ENABLED=1 (the coordinator skips it otherwise).
@@ -28,7 +35,14 @@ description: >
   new entries that nobody reads (they age out of the MAXLEN ~ 10000 window and pile
   up as unread group lag, capped by MAXLEN). Do NOT run this suite with a single
   uniform --override-memtier-test-time (it would stop the producer at the same
-  instant and could leave a blocked consumer hanging). MEMORY CEILING: the stream
+  instant and could leave a blocked consumer hanging). This 5s margin is a soft
+  guard, not a hard guarantee -- under scheduler contention a straggler could
+  still miss its final XADD. The hard backstop is the coordinator's own
+  per-client container timeout (test-time + 60s buffer, i.e. ~180s for this
+  consumer group's --test-time 120; see multi_tool.py's container_timeout),
+  which force-kills any container still running past that point regardless of
+  client behavior -- so a lost race here means, at worst, this one run gets
+  killed and needs a re-trigger, not a fleet-wide hang. MEMORY CEILING: the stream
   is capped with MAXLEN ~ 10000 so its size stays flat regardless of the run
   length; the ~5s solo-producer tail only lets group lag climb toward that same
   ~10000 ceiling, so there is no memory balloon here (unlike the BLPOP/BZPOPMIN
@@ -96,7 +110,7 @@ clientconfigs:
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: >-
-    --command "XREADGROUP GROUP test-group c1 COUNT 1 BLOCK 0 STREAMS stream:1 >"
+    --command "XREADGROUP GROUP test-group c1 COUNT 1 BLOCK 0 NOACK STREAMS stream:1 >"
     -c 25 -t 4 --pipeline 1
     --test-time 120 --print-percentiles 50,99 --hide-histogram
   resources:

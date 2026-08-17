@@ -23,7 +23,14 @@ description: >
   "drain the backlog": once the consumers stop, the small ~5s producer tail simply
   LPUSHes onto an idle list that nobody is popping. Do NOT run this suite with a
   single uniform --override-memtier-test-time (it would stop the producer at the
-  same instant and could leave a blocked consumer hanging). MEMORY CEILING: while
+  same instant and could leave a blocked consumer hanging). This 5s margin is a
+  soft guard, not a hard guarantee -- under scheduler contention a straggler could
+  still miss its final LPUSH. The hard backstop is the coordinator's own
+  per-client container timeout (test-time + 60s buffer, i.e. ~180s for this
+  consumer group's --test-time 120; see multi_tool.py's container_timeout), which
+  force-kills any container still running past that point regardless of client
+  behavior -- so a lost race here means, at worst, this one run gets killed and
+  needs a re-trigger, not a fleet-wide hang. MEMORY CEILING: while
   the consumers run they drain essentially every op, so the list stays ~empty
   during the measured window; only the ~5s solo-producer tail after the consumers
   stop grows it (~17K LPUSH/s => <100K 32B elements, a few MB), which is why the
