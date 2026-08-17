@@ -78,7 +78,7 @@ def test_array_file_is_mapped():
 
 def test_blocked_file_is_mapped():
     assert scope_fields_from_changed_files(["src/blocked.c"], F2G, CORE) == {
-        "tests_groups_regexp": "^(?:blocking)$"
+        "tests_groups_regexp": "^(?:list|sorted\\-set|stream)$"
     }
 
 

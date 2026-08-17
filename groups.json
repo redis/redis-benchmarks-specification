@@ -7,10 +7,6 @@
     "description": "Operations on the Bitmap data type",
     "display": "Bitmap"
   },
-  "blocking": {
-    "description": "Commands that block a client until a key becomes available (BLPOP, BZPOPMIN, XREADGROUP BLOCK, ...)",
-    "display": "Blocking Commands"
-  },
   "cluster": {
     "description": "Redis Cluster management",
     "display": "Cluster"

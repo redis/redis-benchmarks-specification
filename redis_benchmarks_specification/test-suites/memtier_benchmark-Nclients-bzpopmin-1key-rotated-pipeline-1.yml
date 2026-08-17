@@ -63,7 +63,6 @@ tested-commands:
 - bzpopmin
 tested-groups:
 - sorted-set
-- blocking
 redis-topologies:
 - oss-standalone
 build-variants:

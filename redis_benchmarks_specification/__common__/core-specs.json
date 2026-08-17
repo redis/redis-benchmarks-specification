@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated 'core' benchmark set: one representative spec per command group, used as the webhook's fallback when a labeled PR touches a broad/infra/unmapped source file (so it runs a small cross-group smoke set instead of the full ~394 suite). The webhook emits these as an anchored tests_regexp. Each entry is a test-suite FILENAME STEM (no .yml) — it must exist in test-suites/ (a CI test enforces this) and collectively these must cover every group that has specs (another CI test enforces this). Tune freely; keep one per group. cluster/sentinel have no specs in this repo and are intentionally absent. CAVEAT: memtier_benchmark-Nclients-blpop-1key-rotated-pipeline-1 (the 'blocking' group's representative) is a multi-clientconfig suite gated on BENCHMARK_MULTITOOL_ENABLED=1 -- unlike every other entry here, the coordinator silently reports it as passed without running it on a non-multitool runner, so this group's core-set safety net is best-effort, not guaranteed, depending on which runner picks up the job.",
+  "_comment": "Curated 'core' benchmark set: one representative spec per command group, used as the webhook's fallback when a labeled PR touches a broad/infra/unmapped source file (so it runs a small cross-group smoke set instead of the full ~394 suite). The webhook emits these as an anchored tests_regexp. Each entry is a test-suite FILENAME STEM (no .yml) — it must exist in test-suites/ (a CI test enforces this) and collectively these must cover every group that has specs (another CI test enforces this). Tune freely; keep one per group. cluster/sentinel have no specs in this repo and are intentionally absent.",
   "core_specs": [
     "memtier_benchmark-1Mkeys-string-get-10B",
     "memtier_benchmark-1Mkeys-hash-hmget-5-fields-with-100B-values-pipeline-10",
@@ -17,7 +17,6 @@
     "memtier_benchmark-connection-hello",
     "memtier_benchmark-nokeys-server-time-pipeline-10",
     "memtier_benchmark-playbook-session-caching-json-100k-sessions",
-    "memtier_benchmark-array-arget-1K-random",
-    "memtier_benchmark-Nclients-blpop-1key-rotated-pipeline-1"
+    "memtier_benchmark-array-arget-1K-random"
   ]
 }
