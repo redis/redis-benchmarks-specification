@@ -267,13 +267,12 @@ def test_recurse_submodules_reused_clone_cleans_inside_submodule_too(
     )
     assert result2[0] is True
 
-    names2 = zipfile.ZipFile(io.BytesIO(result2[2])).namelist()
-    assert not any(n.endswith("stale_leftover.txt") for n in names2), (
-        "untracked content left inside an already-initialized submodule leaked "
-        "into a later archive from the same reused clone -- git clean at the "
-        "parent level alone does not reach into submodule working "
-        "directories: {}".format(names2)
-    )
+    # Note: the zip itself is built from `git ls-files --recurse-submodules` (tracked
+    # paths only), so an untracked file can never appear in it regardless of whether
+    # the clean fix works -- the real assertion is that the fix actually removes the
+    # stale file from disk, checked below. (An earlier version of this test also
+    # asserted the file was absent from the zip namelist; that assertion was always
+    # true and never exercised the fix, so it's been dropped as misleading.)
     assert not os.path.exists(
         stale_path
     ), "stale file inside the submodule was not actually removed from disk"

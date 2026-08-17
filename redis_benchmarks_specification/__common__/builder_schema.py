@@ -108,13 +108,21 @@ def get_archive_zip_from_hash(
                 # inside every currently-materialized submodule too, so leftovers
                 # from a tree transition one level down (e.g. inside a nested
                 # submodule like Dragonfly's helio/) can't leak into a later
-                # commit's archive either. Errors if no submodule is initialized
-                # yet (first run on a fresh clone) -- harmless, nothing to clean.
+                # commit's archive either. `foreach` aborts the WHOLE recursive
+                # walk on the first submodule it can't clean (does not continue
+                # to healthy siblings) -- log rather than silently swallow that,
+                # since a swallowed failure here means unlogged stale content can
+                # survive in whichever submodule(s) came after the failing one.
                 repo.git.clean("-ffdx")
                 try:
                     repo.git.submodule("foreach", "--recursive", "git clean -ffdx")
-                except git.GitCommandError:
-                    pass
+                except git.GitCommandError as e:
+                    logging.warning(
+                        "submodule foreach --recursive git clean -ffdx failed "
+                        "(%s); some submodule working directories may not have "
+                        "been cleaned",
+                        e,
+                    )
 
             _clean_worktree_including_submodules()
             repo.git.checkout("--force", git_hash)
