@@ -13,11 +13,12 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   invocations (verified empirically), so a client-side query built to reconstruct a specific
   preloaded member by name cannot be guaranteed to hit. Splitting by size class keeps every
   query a guaranteed hit -- the preload also uses a single `__key__` occurrence (score is a
-  literal 0, not a second `__key__`), so every id in the range is written exactly once as a
-  member with no off-by-one gap at the range boundary (an earlier two-`__key__` draft left
-  the key-maximum id unwritten, causing a real, reproducible miss on that one id -- fixed by
-  making the score a constant). Measures Ops/sec. Encoding: skiplist+hashtable (100,000
-  elements, exceeds zset-max-listpack-entries 128).'
+  literal 0, not a second `__key__`), fixing an earlier two-`__key__` draft''s score/member
+  desync. Separately, the P key-pattern with -n allkeys writes ids [key-minimum, key-maximum)
+  -- key-maximum itself is never populated -- so the client''s query range uses key-maximum
+  minus 1 to keep every lookup a guaranteed hit; reusing the preload''s own key-maximum here
+  would reintroduce a steady-state miss on that one id every cycle. Measures Ops/sec. Encoding:
+  skiplist+hashtable (100,000 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -49,7 +50,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --key-prefix "" --command "ZSCORE zsetsmall sxxxxxxxxxxxxxxxxx__key__"
-    --command-key-pattern P --key-minimum 100000 --key-maximum 200000 --hide-histogram
+    --command-key-pattern P --key-minimum 100000 --key-maximum 199999 --hide-histogram
     --test-time 120 --pipeline 10
   resources:
     requests:

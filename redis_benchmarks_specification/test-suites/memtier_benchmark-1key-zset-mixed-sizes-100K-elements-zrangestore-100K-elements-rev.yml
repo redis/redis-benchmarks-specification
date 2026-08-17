@@ -49,7 +49,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --test-time 120 -c 1 -t 1 --command "ZRANGESTORE zsetmix1 zsetmix 0 100000 REV"
-    --command-key-pattern="P" --key-minimum=1 --key-maximum 1 --hide-histogram
+    --hide-histogram
   resources:
     requests:
       cpus: '4'
