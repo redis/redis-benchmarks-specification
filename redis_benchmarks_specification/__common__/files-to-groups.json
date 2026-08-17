@@ -8,6 +8,7 @@
     "t_set.c": ["set"],
     "t_stream.c": ["stream"],
     "t_array.c": ["array"],
+    "blocked.c": ["list", "sorted-set", "stream"],
     "geo.c": ["geo", "sorted-set"],
     "hyperloglog.c": ["hyperloglog"],
     "bitops.c": ["bitmap"],
