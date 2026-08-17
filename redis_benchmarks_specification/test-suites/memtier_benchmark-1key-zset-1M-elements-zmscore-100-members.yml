@@ -1,0 +1,57 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-zmscore-100-members
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 1M elements (integer scores 1..1,000,000) and we query it using ZMSCORE with 100
+  independent random members per call -- well above the dict-prefetch batching chunk size (64), so
+  every call exercises at least one full batched-prefetch chunk plus a partial one. Encoding:
+  skiplist (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec. The existing memtier_benchmark-1Mkeys-zset-128-members-zmscore-50-members spec is
+  listpack-encoded and targets a different (listpack single-pass) code path entirely -- it never
+  touches the zset companion dict this spec is designed to stress at scale, closer to the
+  dependent-cache-miss regime a large single zset produces.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
+      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
+tested-groups:
+- sorted-set
+tested-commands:
+- zmscore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__
+    __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
+    --key-minimum 1 --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram
+    --test-time 180 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73
