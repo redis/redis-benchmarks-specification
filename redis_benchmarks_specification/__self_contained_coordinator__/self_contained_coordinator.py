@@ -71,6 +71,8 @@ from redis_benchmarks_specification.__compare__.compare import (
 from redis_benchmarks_specification.__runner__.runner import (
     print_results_table_stdout,
     prepare_memtier_benchmark_parameters,
+    prepare_job_queue_bench_parameters,
+    JOB_QUEUE_BENCH_TOOLS,
     validate_benchmark_metrics,
 )
 from redis_benchmarks_specification.__common__.multi_tool import (
@@ -2238,6 +2240,30 @@ def process_self_contained_coordinator_stream(
                                             None,
                                             client_mnt_point,
                                         )
+                                    elif any(
+                                        t in benchmark_tool
+                                        for t in JOB_QUEUE_BENCH_TOOLS
+                                    ):
+                                        (
+                                            _,
+                                            benchmark_command_str,
+                                            arbitrary_command,
+                                        ) = prepare_job_queue_bench_parameters(
+                                            benchmark_config["clientconfig"],
+                                            full_benchmark_path,
+                                            redis_proc_start_port,
+                                            "localhost",
+                                            redis_password,
+                                            local_benchmark_output_filename,
+                                            setup_type == "oss-cluster",
+                                            False,
+                                            False,
+                                            None,
+                                            None,
+                                            None,
+                                            None,
+                                            override_test_time,
+                                        )
                                     else:
                                         (
                                             benchmark_command,
@@ -2325,6 +2351,30 @@ def process_self_contained_coordinator_stream(
                                         logging.info(
                                             f"Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
                                         )
+                                    elif "--jobs" in benchmark_command_str:
+                                        # Job-queue benchmarks (sidekiq/celery/bullmq/resque-bench)
+                                        # are bounded by a work count, not --test-time -- scale off
+                                        # a pessimistic per-job floor so a large --jobs run doesn't
+                                        # get killed as a false-positive hang against the flat
+                                        # 300s default.
+                                        jobs_match = re.search(
+                                            r"--jobs[=\s]+(\d+)", benchmark_command_str
+                                        )
+                                        if jobs_match:
+                                            jobs = int(jobs_match.group(1))
+                                            min_jobs_per_sec = 200
+                                            container_timeout = max(
+                                                container_timeout,
+                                                int(jobs / min_jobs_per_sec)
+                                                + buffer_timeout,
+                                            )
+                                            logging.info(
+                                                f"Set container timeout to {container_timeout}s (--jobs: {jobs} @ {min_jobs_per_sec}/s floor + {buffer_timeout}s buffer)"
+                                            )
+                                        else:
+                                            logging.info(
+                                                f"Using default container timeout: {container_timeout}s"
+                                            )
                                     else:
                                         logging.info(
                                             f"Using default container timeout: {container_timeout}s"
@@ -2595,7 +2645,10 @@ def process_self_contained_coordinator_stream(
                                         None,
                                     )
                                     full_result_path = local_benchmark_output_filename
-                                    if "memtier_benchmark" in benchmark_tool:
+                                    if "memtier_benchmark" in benchmark_tool or any(
+                                        t in benchmark_tool
+                                        for t in JOB_QUEUE_BENCH_TOOLS
+                                    ):
                                         full_result_path = "{}/{}".format(
                                             temporary_dir_client,
                                             local_benchmark_output_filename,

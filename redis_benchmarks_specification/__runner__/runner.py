@@ -386,6 +386,24 @@ def calculate_process_timeout(command_str, buffer_timeout):
             )
             return timeout
 
+    if "--jobs" in command_str:
+        # Job-queue benchmarks (sidekiq/celery/bullmq/resque-bench) are bounded by a
+        # work count, not --test-time, so they'd otherwise silently fall through to
+        # the flat 300s default regardless of --jobs size. Scale conservatively off a
+        # pessimistic per-job floor (real client-library throughput is normally far
+        # higher) so a large --jobs run doesn't get killed as a false-positive hang.
+        jobs_match = re.search(r"--jobs[=\s]+(\d+)", command_str)
+        if jobs_match:
+            jobs = int(jobs_match.group(1))
+            min_jobs_per_sec = 200
+            timeout = max(
+                default_timeout, int(jobs / min_jobs_per_sec) + buffer_timeout
+            )
+            logging.info(
+                f"Set process timeout to {timeout}s (--jobs: {jobs} @ {min_jobs_per_sec}/s floor + {buffer_timeout}s buffer)"
+            )
+            return timeout
+
     logging.info(f"Using default process timeout: {default_timeout}s")
     return default_timeout
 
@@ -1117,6 +1135,98 @@ def prepare_pubsub_sub_bench_parameters(
         logging.info(f"Applied test-time override: {override_test_time}s")
 
     # Add cleaned user arguments
+    if user_arguments.strip():
+        benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
+
+    return benchmark_command, benchmark_command_str, arbitrary_command
+
+
+# Job-queue protocol benchmarks. Each speaks one library's real dequeue protocol, which is the only
+# way to exercise the *blocked client being woken* path: no memtier invocation can hold a connection
+# blocked on BRPOP while another connection pushes to it, so this command family has had no coverage
+# at all. They share one CLI, hence one prepare function for all four.
+JOB_QUEUE_BENCH_TOOLS = (
+    "sidekiq-bench",
+    "celery-bench",
+    "bullmq-bench",
+    "resque-bench",
+)
+
+
+def prepare_job_queue_bench_parameters(
+    clientconfig,
+    full_benchmark_path,
+    port,
+    server,
+    password,
+    local_benchmark_output_filename,
+    oss_cluster_api_enabled=False,
+    tls_enabled=False,
+    tls_skip_verify=False,
+    tls_cert=None,
+    tls_key=None,
+    tls_cacert=None,
+    resp_version=None,
+    override_test_time=0,
+    unix_socket="",
+    username=None,
+):
+    """
+    Prepare command parameters for the job-queue protocol benchmarks
+    (sidekiq-bench / celery-bench / bullmq-bench / resque-bench).
+    """
+    arbitrary_command = False
+
+    benchmark_command = [
+        "--output",
+        local_benchmark_output_filename,
+        "--host",
+        server,
+        "--port",
+        str(port),
+        # These tools default to db 13, matching Ruby sidekiqload's safety default. dbconfig
+        # preload/check operate on db 0, so leaving the default would point the workload at a
+        # different database than the suite set up -- and the resulting "0 keys" would look like a
+        # server problem rather than a client one.
+        "--db",
+        "0",
+    ]
+
+    if unix_socket != "":
+        logging.warning(
+            "job-queue benchmarks do not support unix sockets, using host/port"
+        )
+
+    if password:
+        benchmark_command.extend(["--password", password])
+    if username:
+        logging.warning(
+            "job-queue benchmarks do not support ACL usernames; using password only"
+        )
+
+    if tls_enabled:
+        benchmark_command.append("--tls")
+        if tls_cert or tls_key or tls_cacert:
+            logging.warning(
+                "job-queue benchmarks do not accept client certificates; using --tls only"
+            )
+
+    if oss_cluster_api_enabled:
+        logging.warning(
+            "job-queue benchmarks have no cluster-api mode; running against the given endpoint"
+        )
+
+    logging.info(f"Preparing job-queue benchmark parameters: {benchmark_command}")
+    benchmark_command_str = " ".join(benchmark_command)
+
+    user_arguments = clientconfig.get("arguments", "")
+    if override_test_time and override_test_time > 0:
+        # These tools are bounded by --jobs (a work count), not by a wall-clock test time, so there
+        # is no equivalent knob to override. Say so rather than silently ignoring the request.
+        logging.warning(
+            "test-time override (%ss) ignored: job-queue benchmarks are bounded by --jobs, not time",
+            override_test_time,
+        )
     if user_arguments.strip():
         benchmark_command_str = benchmark_command_str + " " + user_arguments.strip()
 
@@ -2426,6 +2536,29 @@ def process_self_contained_coordinator_stream(
                                 unix_socket,
                                 None,  # username
                             )
+                        elif any(t in benchmark_tool for t in JOB_QUEUE_BENCH_TOOLS):
+                            (
+                                _,
+                                benchmark_command_str,
+                                arbitrary_command,
+                            ) = prepare_job_queue_bench_parameters(
+                                benchmark_config["clientconfig"],
+                                full_benchmark_path,
+                                port,
+                                host,
+                                password,
+                                local_benchmark_output_filename,
+                                oss_cluster_api_enabled,
+                                tls_enabled,
+                                tls_skip_verify,
+                                test_tls_cert,
+                                test_tls_key,
+                                test_tls_cacert,
+                                resp_version,
+                                override_memtier_test_time,
+                                unix_socket,
+                                None,  # username
+                            )
                         else:
                             # prepare the benchmark command for other tools
                             (
@@ -2788,6 +2921,14 @@ def process_self_contained_coordinator_stream(
                                 temporary_dir_client, local_benchmark_output_filename
                             )
                         elif "pubsub-sub-bench" in benchmark_tool:
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
+                        elif any(t in benchmark_tool for t in JOB_QUEUE_BENCH_TOOLS):
+                            # prepare_job_queue_bench_parameters() writes --output as a
+                            # bare basename into the container's working dir, which is
+                            # mounted at temporary_dir_client on the host -- same join
+                            # as memtier_benchmark/pubsub-sub-bench above.
                             full_result_path = "{}/{}".format(
                                 temporary_dir_client, local_benchmark_output_filename
                             )

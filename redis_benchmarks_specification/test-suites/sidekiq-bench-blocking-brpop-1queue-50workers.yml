@@ -1,0 +1,33 @@
+version: 0.4
+name: sidekiq-bench-blocking-brpop-1queue-50workers
+description: 'Sidekiq job-queue protocol: 50 workers blocked on BRPOP over a single
+  queue while jobs are enqueued with LPUSH. Exercises the blocked-client wake path
+  (blockForKeys / signalKeyAsReady / handleClientsBlockedOnKeys), which no memtier
+  suite can reach: memtier cannot hold a connection blocked on BRPOP while another
+  connection pushes to it. Matches OSS Sidekiq BasicFetch (lib/sidekiq/fetch.rb).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- list
+tested-commands:
+- brpop
+- lpush
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redis/sidekiq-benchmark:0.1.0
+  tool: sidekiq-bench
+  arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 1 --quiet
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+priority: 24
