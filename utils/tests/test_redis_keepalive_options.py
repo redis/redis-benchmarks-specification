@@ -122,6 +122,20 @@ def _assert_blocking_connection_has_keepalive(by_target, var_name, where):
         "intermediate NAT/LB hop. Other redis.StrictRedis(...) connections in {} "
         "having it is not sufficient.".format(where, var_name, where)
     )
+    # redis-py only applies socket_keepalive_options when socket_keepalive is
+    # truthy (Connection._connect: `if self.socket_keepalive: ... for k, v in
+    # self.socket_keepalive_options.items(): ...`) -- socket_keepalive_options
+    # alone is a silent no-op. A refactor that drops the bare
+    # `socket_keepalive=True` kwarg while leaving socket_keepalive_options in
+    # place would pass the assertion above yet fully disable the feature.
+    assert "socket_keepalive" in by_target[var_name], (
+        "{}'s `{}` sets socket_keepalive_options but not socket_keepalive=True -- "
+        "redis-py only applies socket_keepalive_options when socket_keepalive is "
+        "truthy (see redis.connection.Connection._connect), so this combination "
+        "silently disables keepalive entirely rather than tuning it.".format(
+            where, var_name
+        )
+    )
 
 
 def test_builder_main_wires_keepalive_options_into_blocking_connection():
