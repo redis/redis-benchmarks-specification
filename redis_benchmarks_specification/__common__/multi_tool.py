@@ -221,6 +221,7 @@ def prepare_client_run_specs(
         prepare_job_queue_bench_parameters,
         prepare_pubsub_sub_bench_parameters,
         prepare_vector_db_benchmark_parameters,
+        JOB_QUEUE_BENCH_TOOLS,
     )
 
     client_configs = extract_client_configs(benchmark_config)
@@ -338,10 +339,7 @@ def prepare_client_run_specs(
                 unix_socket,
                 None,  # username
             )
-        elif any(
-            t in client_tool
-            for t in ("sidekiq-bench", "celery-bench", "bullmq-bench", "resque-bench")
-        ):
+        elif any(t in client_tool for t in JOB_QUEUE_BENCH_TOOLS):
             (
                 _,
                 benchmark_command_str,

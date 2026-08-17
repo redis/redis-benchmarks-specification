@@ -386,6 +386,22 @@ def calculate_process_timeout(command_str, buffer_timeout):
             )
             return timeout
 
+    if "--jobs" in command_str:
+        # Job-queue benchmarks (sidekiq/celery/bullmq/resque-bench) are bounded by a
+        # work count, not --test-time, so they'd otherwise silently fall through to
+        # the flat 300s default regardless of --jobs size. Scale conservatively off a
+        # pessimistic per-job floor (real client-library throughput is normally far
+        # higher) so a large --jobs run doesn't get killed as a false-positive hang.
+        jobs_match = re.search(r"--jobs[=\s]+(\d+)", command_str)
+        if jobs_match:
+            jobs = int(jobs_match.group(1))
+            min_jobs_per_sec = 200
+            timeout = max(default_timeout, int(jobs / min_jobs_per_sec) + buffer_timeout)
+            logging.info(
+                f"Set process timeout to {timeout}s (--jobs: {jobs} @ {min_jobs_per_sec}/s floor + {buffer_timeout}s buffer)"
+            )
+            return timeout
+
     logging.info(f"Using default process timeout: {default_timeout}s")
     return default_timeout
 

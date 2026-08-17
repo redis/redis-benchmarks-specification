@@ -2351,6 +2351,30 @@ def process_self_contained_coordinator_stream(
                                         logging.info(
                                             f"Set container timeout to {container_timeout}s (test-time: {test_time}s + {buffer_timeout}s buffer)"
                                         )
+                                    elif "--jobs" in benchmark_command_str:
+                                        # Job-queue benchmarks (sidekiq/celery/bullmq/resque-bench)
+                                        # are bounded by a work count, not --test-time -- scale off
+                                        # a pessimistic per-job floor so a large --jobs run doesn't
+                                        # get killed as a false-positive hang against the flat
+                                        # 300s default.
+                                        jobs_match = re.search(
+                                            r"--jobs[=\s]+(\d+)", benchmark_command_str
+                                        )
+                                        if jobs_match:
+                                            jobs = int(jobs_match.group(1))
+                                            min_jobs_per_sec = 200
+                                            container_timeout = max(
+                                                container_timeout,
+                                                int(jobs / min_jobs_per_sec)
+                                                + buffer_timeout,
+                                            )
+                                            logging.info(
+                                                f"Set container timeout to {container_timeout}s (--jobs: {jobs} @ {min_jobs_per_sec}/s floor + {buffer_timeout}s buffer)"
+                                            )
+                                        else:
+                                            logging.info(
+                                                f"Using default container timeout: {container_timeout}s"
+                                            )
                                     else:
                                         logging.info(
                                             f"Using default container timeout: {container_timeout}s"

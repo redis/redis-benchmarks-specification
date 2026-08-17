@@ -21,6 +21,8 @@ from redis_benchmarks_specification.__runner__.runner import (
     parse_size,
     run_multiple_clients,
     prepare_pubsub_sub_bench_parameters,
+    prepare_job_queue_bench_parameters,
+    JOB_QUEUE_BENCH_TOOLS,
 )
 
 
@@ -1007,6 +1009,247 @@ def test_prepare_pubsub_sub_bench_parameters_override_test_time():
     assert "-test-time 60" not in benchmark_command_str  # User's time should be removed
     assert "-clients 10" in benchmark_command_str  # Other args should remain
     assert "-verbose" in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters():
+    """Test job-queue bench (sidekiq/celery/bullmq/resque) parameter preparation"""
+    client_config = {
+        "tool": "sidekiq-bench",
+        "arguments": "--workers 50 --jobs 200000 --queues default",
+        "run_image": "redis/sidekiq-benchmark:latest",
+        "resources": {"requests": {"cpus": "4", "memory": "1g"}},
+    }
+
+    (_, benchmark_command_str, arbitrary_command) = prepare_job_queue_bench_parameters(
+        client_config,
+        "sidekiq-bench",
+        6379,
+        "localhost",
+        None,  # password
+        "test_output.json",
+        False,  # oss_cluster_api_enabled
+        False,  # tls_enabled
+        False,  # tls_skip_verify
+        None,
+        None,
+        None,  # TLS certs
+        "2",  # resp_version (job-queue tools have no --resp knob; must be ignored)
+        0,  # override_test_time
+        "",  # unix_socket
+        None,  # username
+    )
+
+    assert arbitrary_command is False
+    assert "--output test_output.json" in benchmark_command_str
+    assert "--host localhost" in benchmark_command_str
+    assert "--port 6379" in benchmark_command_str
+    assert "--db 0" in benchmark_command_str
+
+    # User arguments are appended verbatim
+    assert "--workers 50" in benchmark_command_str
+    assert "--jobs 200000" in benchmark_command_str
+    assert "--queues default" in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters_with_auth():
+    """Test job-queue bench with password auth (no ACL username support)"""
+    client_config = {
+        "tool": "celery-bench",
+        "arguments": "--workers 50",
+        "run_image": "redis/celery-benchmark:latest",
+    }
+
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "celery-bench",
+        6379,
+        "redis.example.com",
+        "mypassword",
+        "output.json",
+        False,
+        False,
+        False,
+        None,
+        None,
+        None,
+        None,
+        0,
+        "",
+        None,
+    )
+
+    assert "--host redis.example.com" in benchmark_command_str
+    assert "--password mypassword" in benchmark_command_str
+
+    # ACL username has no equivalent flag -- must not be silently dropped into
+    # the command as if it were accepted (only --password should appear).
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "celery-bench",
+        6379,
+        "redis.example.com",
+        "mypassword",
+        "output.json",
+        False,
+        False,
+        False,
+        None,
+        None,
+        None,
+        None,
+        0,
+        "",
+        "myuser",  # username
+    )
+    assert "--password mypassword" in benchmark_command_str
+    assert "myuser" not in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters_tls():
+    """Test job-queue bench with TLS (client certs unsupported, --tls only)"""
+    client_config = {
+        "tool": "bullmq-bench",
+        "arguments": "--workers 50",
+        "run_image": "redis/bullmq-benchmark:latest",
+    }
+
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "bullmq-bench",
+        6379,
+        "localhost",
+        None,
+        "output.json",
+        False,
+        True,  # tls_enabled
+        False,
+        "/path/cert.pem",
+        "/path/key.pem",
+        "/path/ca.pem",
+        None,
+        0,
+        "",
+        None,
+    )
+
+    assert "--tls" in benchmark_command_str
+    # No flag for client certs exists on these tools -- must not appear in the command.
+    assert "/path/cert.pem" not in benchmark_command_str
+    assert "/path/key.pem" not in benchmark_command_str
+    assert "/path/ca.pem" not in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters_cluster_mode_ignored():
+    """Test job-queue bench with oss-cluster-api enabled (no cluster mode exists;
+    must still target the given host/port rather than erroring or mutating the command)."""
+    client_config = {
+        "tool": "resque-bench",
+        "arguments": "--workers 10",
+        "run_image": "redis/resque-benchmark:latest",
+    }
+
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "resque-bench",
+        6379,
+        "cluster.redis.com",
+        None,
+        "output.json",
+        True,  # oss_cluster_api_enabled
+        False,
+        False,
+        None,
+        None,
+        None,
+        None,
+        0,
+        "",
+        None,
+    )
+
+    assert "--host cluster.redis.com" in benchmark_command_str
+    assert "--port 6379" in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters_unix_socket_ignored():
+    """Test job-queue bench with unix socket (unsupported; must fall back to host/port)"""
+    client_config = {
+        "tool": "sidekiq-bench",
+        "arguments": "--workers 50",
+        "run_image": "redis/sidekiq-benchmark:latest",
+    }
+
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "sidekiq-bench",
+        6379,
+        "localhost",
+        None,
+        "output.json",
+        False,
+        False,
+        False,
+        None,
+        None,
+        None,
+        None,
+        0,
+        "/tmp/redis.sock",  # unix_socket
+        None,
+    )
+
+    assert "--host localhost" in benchmark_command_str
+    assert "--port 6379" in benchmark_command_str
+    assert "/tmp/redis.sock" not in benchmark_command_str
+
+
+def test_prepare_job_queue_bench_parameters_override_test_time_ignored():
+    """Test job-queue bench with a test-time override -- these tools are bounded by
+    --jobs, not wall-clock time, so the override has no equivalent flag and must be a
+    no-op on the command string (just logged), unlike memtier/pubsub-sub-bench where
+    the override replaces --test-time in place."""
+    client_config = {
+        "tool": "sidekiq-bench",
+        "arguments": "--workers 50 --jobs 200000",
+        "run_image": "redis/sidekiq-benchmark:latest",
+    }
+
+    (_, benchmark_command_str, _) = prepare_job_queue_bench_parameters(
+        client_config,
+        "sidekiq-bench",
+        6379,
+        "localhost",
+        None,
+        "output.json",
+        False,
+        False,
+        False,
+        None,
+        None,
+        None,
+        None,
+        30,  # override_test_time -- no equivalent knob on this tool family
+        "",
+        None,
+    )
+
+    assert "--jobs 200000" in benchmark_command_str
+    assert "--test-time" not in benchmark_command_str
+
+
+def test_job_queue_bench_tools_dispatch_membership():
+    """Regression guard for the dispatch-branch wiring bug fixed in runner.py,
+    self_contained_coordinator.py and multi_tool.py: all four job-queue tool names
+    must be recognized by the shared JOB_QUEUE_BENCH_TOOLS constant every dispatch
+    site keys off of, or a tool silently falls through to the generic
+    prepare_benchmark_parameters() path instead of prepare_job_queue_bench_parameters()."""
+    for tool in (
+        "sidekiq-bench",
+        "celery-bench",
+        "bullmq-bench",
+        "resque-bench",
+    ):
+        assert any(t in tool for t in JOB_QUEUE_BENCH_TOOLS), tool
 
 
 def test_create_client_runner_args_timeout_buffer():

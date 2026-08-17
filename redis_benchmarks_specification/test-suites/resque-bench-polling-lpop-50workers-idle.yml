@@ -23,7 +23,7 @@ build-variants:
 - gcc:15.2.0-arm64-debian-bookworm-default
 - dockerhub
 clientconfig:
-  run_image: redis/resque-benchmark:latest
+  run_image: redis/resque-benchmark:sha-c30e8ec
   tool: resque-bench
   arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 1 --poll-interval-ms
     10 --idle-poll-duration-s 30 --quiet
