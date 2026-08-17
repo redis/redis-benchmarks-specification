@@ -324,6 +324,92 @@ def test_recurse_submodules_broken_submodule_fails_loudly(tmp_path, monkeypatch)
     assert binary_value is None
 
 
+def test_recurse_submodules_foreach_clean_failure_is_logged_not_swallowed(
+    tmp_path, monkeypatch, caplog
+):
+    """`git submodule foreach --recursive` aborts its whole walk (and can leave
+    healthy siblings uncleaned) on the first submodule it can't reach -- that
+    failure must be logged, not silently swallowed by a bare except/pass. Corrupt
+    `.gitmodules` between two calls on the same reused clone so the pre-checkout
+    clean's `foreach` genuinely fails, and assert the warning fires."""
+    import logging
+
+    parent_dir, head = _make_fixture(tmp_path)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+
+    # First call materializes the submodule normally.
+    result1 = get_archive_zip_from_hash(
+        "testorg",
+        "testrepo",
+        head,
+        {},
+        local_repo_path=parent_dir,
+        recurse_submodules=True,
+    )
+    assert result1[0] is True
+
+    # Corrupt the tracked .gitmodules file's on-disk content (not committed) so
+    # `submodule foreach` fails to even parse it on the next call's pre-checkout
+    # clean. `git clean -ffdx` (untracked-only) won't touch this, since .gitmodules
+    # is a tracked file being locally modified, not an untracked leftover.
+    gitmodules_path = os.path.join(parent_dir, ".gitmodules")
+    with open(gitmodules_path, "a") as f:
+        f.write("this is not valid git-config syntax [[[\n")
+
+    with caplog.at_level(logging.WARNING):
+        result2 = get_archive_zip_from_hash(
+            "testorg",
+            "testrepo",
+            head,
+            {},
+            local_repo_path=parent_dir,
+            recurse_submodules=True,
+        )
+
+    assert any(
+        "submodule foreach" in rec.message and "failed" in rec.message
+        for rec in caplog.records
+    ), "expected a logged warning naming the failed `submodule foreach` clean, got: {}".format(
+        [rec.message for rec in caplog.records]
+    )
+    # The subsequent `checkout --force` restores .gitmodules from the committed
+    # blob, so the call still completes successfully despite the mid-way warning --
+    # this is a diagnostic log, not a fatal error.
+    assert result2[0] is True
+
+
+def test_recurse_submodules_missing_tracked_content_fails_loudly(tmp_path, monkeypatch):
+    """A tracked path that `git ls-files` claims exists but has no file/symlink
+    content on disk after checkout + submodule update must fail the whole call
+    loudly (result=False, error_msg naming the path) rather than silently produce
+    an incomplete archive while still reporting success."""
+    parent_dir, head = _make_fixture(tmp_path)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+
+    real_isfile = os.path.isfile
+
+    def fake_isfile(path):
+        if isinstance(path, str) and path.endswith("top_file.txt"):
+            return False
+        return real_isfile(path)
+
+    monkeypatch.setattr("os.path.isfile", fake_isfile)
+
+    result, bin_key, binary_value, error_msg = get_archive_zip_from_hash(
+        "testorg",
+        "testrepo",
+        head,
+        {},
+        local_repo_path=parent_dir,
+        recurse_submodules=True,
+    )
+
+    assert result is False
+    assert error_msg is not None
+    assert "top_file.txt" in error_msg
+    assert binary_value is None
+
+
 def test_recurse_submodules_tracked_symlink_preserved(tmp_path, monkeypatch):
     """A tracked symlink must round-trip through the zip as a symlink (git-style
     encoding: content = link target, external_attr carries S_IFLNK) -- not be silently
