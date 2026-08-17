@@ -1,14 +1,23 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zcount-random-position
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements (integer scores 1..1,000,000) and we query it using ZCOUNT starting from a
-  uniformly random score within that range up to +inf -- so every call seeks a fresh, arbitrary
-  position rather than counting the whole structure. Encoding: skiplist (1,000,000 elements,
-  exceeds zset-max-listpack-entries 128). Metric of interest: Ops/sec. ZCOUNT had zero benchmark
-  coverage before this spec. Mirrors the seek-cost-representative design of the existing
-  zrangebyscore-random-position spec (random start, unbounded tail) rather than a full -inf +inf
-  traversal, since ZCOUNT''s two-endpoint-seek cost -- not a full scan -- is the code path under
-  study.'
+  contains ~1M elements (999,996 verified via ZCARD) and we query it using ZCOUNT starting from a
+  uniformly random score within the populated range up to +inf -- so every call seeks a fresh,
+  arbitrary position rather than counting the whole structure. PRELOAD DOMAIN: the ZADD lb __key__
+  __key__ preload command has TWO __key__ occurrences, and memtier''s P key-pattern draws a fresh
+  sequential integer per occurrence (not one shared value) -- so each ZADD call consumes 2 domain
+  positions (one becomes the score, the next becomes the member), and --key-maximum is set to
+  2,000,000 (double the ~1M element target) so 10 connections x 100,000 calls each can consume
+  their full domain share without overrunning into a neighboring connection''s range (which, at
+  key-maximum 1,000,000, caused a measured cardinality shortfall to 949,996 via cross-connection
+  collisions). Member and score values both come from the 1..2,000,000 domain (member = score + 1
+  for every element), not a clean 1..1,000,000 range -- verified via ZRANGE sampling; the client
+  phase''s random-start draw below is scoped to the real score domain (0..1,999,999) accordingly.
+  Encoding: skiplist (999,996 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec. ZCOUNT had zero benchmark coverage before this spec. Mirrors the seek-cost-representative
+  design of the existing zrangebyscore-random-position spec (random start, unbounded tail) rather
+  than a full -inf +inf traversal, since ZCOUNT''s two-endpoint-seek cost -- not a full scan -- is
+  the code path under study.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -18,13 +27,15 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
-      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+      --key-maximum 2000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 999,996 elements (verified
+    via ZCARD), each with an integer score. Member and score values span the 1..2,000,000
+    domain (score = member - 1) rather than 1..1,000,000, due to the preload's dual __key__
+    draw per ZADD call -- see the workload description for detail.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -39,7 +50,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command="ZCOUNT lb __key__ +inf" --key-minimum 1
-    --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram
+    --key-maximum 1999999 --command-key-pattern=R --key-prefix "" --hide-histogram
     --test-time 180 --pipeline 1 -c 1 -t 1
   resources:
     requests:

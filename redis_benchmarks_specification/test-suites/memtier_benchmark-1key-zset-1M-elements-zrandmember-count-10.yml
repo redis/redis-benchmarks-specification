@@ -1,15 +1,23 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zrandmember-count-10
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements (integer scores 1..1,000,000) and we query it using ZRANDMEMBER key 10 --
+  contains ~1M elements (999,996 verified via ZCARD) and we query it using ZRANDMEMBER key 10 --
   a small positive count, well under the ZRANDMEMBER_SUB_STRATEGY_MUL large-fraction threshold, so
   zrandmemberWithCountCommand takes its cheap CASE 1/2 strategy (repeated single-member random
   picks), not the allocation-heavy CASE 3 auxiliary-dict-build path. This is the common
   "fetch a handful of random members" usage pattern, distinct from the existing 10K-element spec
   (memtier_benchmark-1key-zset-10K-elements-skiplist-zrandmember-count-5K.yml), which deliberately
   exercises the opposite, large-fraction CASE 3 path. Before this spec, nothing above 1M members
-  ran for any zset read command in this suite. Encoding: skiplist (1,000,000 elements, exceeds
-  zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
+  ran for any zset read command in this suite. PRELOAD DOMAIN: the ZADD lb __key__ __key__ preload
+  has TWO __key__ occurrences, and memtier''s P key-pattern draws a fresh sequential integer per
+  occurrence -- so each ZADD call consumes 2 domain positions (one becomes the score, the next the
+  member) -- --key-maximum is set to 2,000,000 (double the ~1M target) so the 10 connections x
+  100,000 calls each can consume their full domain share without overrunning into a neighbor''s
+  range (which, at key-maximum 1,000,000, caused a measured shortfall to 949,996 via
+  cross-connection collisions). Member values span the 1..2,000,000 domain rather than
+  1..1,000,000 (irrelevant to ZRANDMEMBER, which does not reference key ranges). Encoding:
+  skiplist (999,996 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -19,13 +27,15 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
-      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+      --key-maximum 2000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 999,996 elements (verified
+    via ZCARD), each with an integer score. Member and score values span the 1..2,000,000
+    domain (score = member - 1) rather than 1..1,000,000, due to the preload's dual __key__
+    draw per ZADD call -- see the workload description for detail.
 tested-groups:
 - sorted-set
 tested-commands:
