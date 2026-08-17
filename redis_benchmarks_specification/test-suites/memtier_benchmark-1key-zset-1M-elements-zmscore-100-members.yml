@@ -1,8 +1,8 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zmscore-100-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains ~1M elements (integer members 0..1,000,000, all with a constant score of 1) and we
-  query it using ZMSCORE with 100 independent random members per call -- well above the
+  contains 1,000,000 elements (integer members 1..1,000,000, all with a constant score of 1) and
+  we query it using ZMSCORE with 100 independent random members per call -- well above the
   dict-prefetch batching chunk size (64), so every call exercises at least one full
   batched-prefetch chunk plus a partial one. FIX: the preload was originally "ZADD lb __key__
   __key__" (two __key__ occurrences: a score-slot draw and a member-slot draw), but memtier''s P
@@ -11,10 +11,12 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   members landed on odd integers only). A client-side ZMSCORE lookup drawing uniformly from the
   full domain then missed on every even value it drew -- confirmed empirically via a live run:
   memtier itself flagged "ZMSCORE miss rate 50.07% above target 1.00%". Changed the preload to a
-  single __key__ occurrence with a constant score ("ZADD lb 1 __key__") so every domain value in
-  range is a real, queryable member; re-verified empirically with a live run of the actual client
-  command: hit rate ~100% (3 misses/sec against ~289K hits/sec, no miss-rate warning). Encoding:
-  skiplist (~1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  single __key__ occurrence with a constant score ("ZADD lb 1 __key__") and aligned
+  --key-minimum to 1 on both preload and client (the preload previously defaulted to 0, one value
+  outside the client''s [1,1000000] read range, causing a residual ~0.001% miss rate); re-verified
+  empirically with a live run: ZCARD is exactly 1,000,000 and the actual client ZMSCORE command
+  shows a 100% hit rate (0 misses/sec). Encoding:
+  skiplist (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
   Ops/sec. The existing memtier_benchmark-1Mkeys-zset-128-members-zmscore-50-members spec is
   listpack-encoded and targets a different (listpack single-pass) code path entirely -- it never
   touches the zset companion dict this spec is designed to stress at scale, closer to the
@@ -31,13 +33,13 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --pipeline 50 --command="ZADD lb 1 __key__" --command-key-pattern=P
-      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+      --key-minimum 1 --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-const-score
-  dataset_description: This dataset contains 1 sorted set key with ~1 million elements
-    (integer members, verified via live ZCARD), each with a constant score of 1.
+  dataset_description: This dataset contains 1 sorted set key with 1,000,000 elements
+    (integer members 1..1,000,000, verified via live ZCARD), each with a constant score of 1.
 tested-groups:
 - sorted-set
 tested-commands:
