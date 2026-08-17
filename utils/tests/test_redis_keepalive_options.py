@@ -13,7 +13,10 @@ hop silently kill a genuinely-idle blocking-read connection.
 import ast
 import inspect
 import socket
+import sys
+import types
 
+import redis_benchmarks_specification.__common__.env as env_module
 from redis_benchmarks_specification.__common__.env import (
     redis_long_blocking_read_keepalive_options,
 )
@@ -45,26 +48,32 @@ def test_keepalive_options_returns_dict_type():
     assert isinstance(redis_long_blocking_read_keepalive_options(), dict)
 
 
-def test_keepalive_options_empty_on_platforms_missing_the_socket_constants():
+def test_keepalive_options_empty_on_platforms_missing_the_socket_constants(
+    monkeypatch,
+):
     """The Linux-only fallback branch (e.g. macOS local dev) isn't reachable on this
     CI's Linux runners without forcing it -- delete one of the three required attrs
-    from a throwaway `socket`-like object via monkeypatch and confirm {} comes back
-    rather than a KeyError/AttributeError from a partially-built options dict."""
-    import types
-
-    import redis_benchmarks_specification.__common__.env as env_module
-
+    from a throwaway `socket`-like object and confirm {} comes back rather than a
+    KeyError/AttributeError from a partially-built options dict."""
     fake_socket = types.SimpleNamespace(TCP_KEEPIDLE=1, TCP_KEEPINTVL=2)
     # TCP_KEEPCNT deliberately absent, mirroring a non-Linux platform.
+    monkeypatch.setitem(sys.modules, "socket", fake_socket)
+    assert env_module.redis_long_blocking_read_keepalive_options() == {}
 
-    import sys
 
-    real_socket = sys.modules["socket"]
-    sys.modules["socket"] = fake_socket
-    try:
-        assert env_module.redis_long_blocking_read_keepalive_options() == {}
-    finally:
-        sys.modules["socket"] = real_socket
+def test_keepalive_options_populated_when_all_socket_constants_present(monkeypatch):
+    """The populated-dict branch is otherwise only exercised incidentally (this CI's
+    runners happen to be Linux) -- force it explicitly, mirroring the test above, so
+    it's deterministic regardless of the host OS running the suite."""
+    fake_socket = types.SimpleNamespace(
+        TCP_KEEPIDLE="idle", TCP_KEEPINTVL="intvl", TCP_KEEPCNT="cnt"
+    )
+    monkeypatch.setitem(sys.modules, "socket", fake_socket)
+    assert env_module.redis_long_blocking_read_keepalive_options() == {
+        "idle": 30,
+        "intvl": 10,
+        "cnt": 6,
+    }
 
 
 def _redis_strictredis_kwargs_by_target_in(func):
