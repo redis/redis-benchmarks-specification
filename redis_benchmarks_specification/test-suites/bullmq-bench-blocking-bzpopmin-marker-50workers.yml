@@ -12,7 +12,7 @@ dbconfig:
     requests:
       memory: 2g
 tested-groups:
-- sorted_set
+- sorted-set
 tested-commands:
 - bzpopmin
 - zadd
