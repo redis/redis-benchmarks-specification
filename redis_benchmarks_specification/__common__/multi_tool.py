@@ -218,6 +218,7 @@ def prepare_client_run_specs(
         prepare_benchmark_parameters,
         prepare_bcast_listener_parameters,
         prepare_memtier_benchmark_parameters,
+        prepare_job_queue_bench_parameters,
         prepare_pubsub_sub_bench_parameters,
         prepare_vector_db_benchmark_parameters,
     )
@@ -320,6 +321,32 @@ def prepare_client_run_specs(
                 arbitrary_command,
                 client_env_vars,
             ) = prepare_vector_db_benchmark_parameters(
+                client_config,
+                client_tool,
+                port,
+                host,
+                password,
+                local_benchmark_output_filename,
+                oss_cluster_api_enabled,
+                tls_enabled,
+                tls_skip_verify,
+                test_tls_cert,
+                test_tls_key,
+                test_tls_cacert,
+                resp_version,
+                override_memtier_test_time,
+                unix_socket,
+                None,  # username
+            )
+        elif any(
+            t in client_tool
+            for t in ("sidekiq-bench", "celery-bench", "bullmq-bench", "resque-bench")
+        ):
+            (
+                _,
+                benchmark_command_str,
+                arbitrary_command,
+            ) = prepare_job_queue_bench_parameters(
                 client_config,
                 client_tool,
                 port,

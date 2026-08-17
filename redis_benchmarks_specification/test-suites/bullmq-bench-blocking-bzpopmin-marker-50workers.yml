@@ -1,0 +1,33 @@
+version: 0.4
+name: bullmq-bench-blocking-bzpopmin-marker-50workers
+description: 'BullMQ worker protocol: 50 workers blocked on BZPOPMIN against a single
+  shared marker sorted set. This is the inverse of the Sidekiq shape -- many clients
+  blocked on ONE hot key rather than few clients across many keys -- so it measures
+  wake-up fairness and ZADD-to-wake latency under contention. BullMQ has never used
+  BRPOP or BLMOVE; it moved BRPOPLPUSH -> BZPOPMIN at v5.0.0.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- sorted_set
+tested-commands:
+- bzpopmin
+- zadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redis/bullmq-benchmark:0.1.0
+  tool: bullmq-bench
+  arguments: --workers 50 --jobs 100000 --warmup-jobs 2000 --num-queues 1 --quiet
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+priority: 24

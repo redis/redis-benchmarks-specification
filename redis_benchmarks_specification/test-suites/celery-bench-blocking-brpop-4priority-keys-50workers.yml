@@ -1,0 +1,37 @@
+version: 0.4
+name: celery-bench-blocking-brpop-4priority-keys-50workers
+description: 'Celery/kombu broker protocol. kombu expands every logical queue across
+  4 priority steps (PRIORITY_STEPS = [0, 3, 6, 9]), so a single-queue Celery worker
+  issues a 4-key BRPOP -- the non-obvious shape that dominates real deployments
+  (kombu/transport/redis.py, _brpop_start). Also reproduces kombu ack emulation
+  (ZADD/HSET on delivery, ZREM/HDEL on ack), so the per-task command count is
+  realistic rather than one pop.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- list
+tested-commands:
+- brpop
+- lpush
+- zadd
+- hset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redis/celery-benchmark:0.1.0
+  tool: celery-bench
+  arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 1 --priorities
+    4 --brpop-timeout-secs 1 --quiet
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+priority: 24
