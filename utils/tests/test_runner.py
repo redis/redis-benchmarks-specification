@@ -1141,7 +1141,8 @@ def test_prepare_job_queue_bench_parameters_tls():
 
 def test_prepare_job_queue_bench_parameters_cluster_mode_ignored():
     """Test job-queue bench with oss-cluster-api enabled (no cluster mode exists;
-    must still target the given host/port rather than erroring or mutating the command)."""
+    must still target the given host/port rather than erroring or mutating the command).
+    """
     client_config = {
         "tool": "resque-bench",
         "arguments": "--workers 10",
@@ -1238,11 +1239,10 @@ def test_prepare_job_queue_bench_parameters_override_test_time_ignored():
 
 
 def test_job_queue_bench_tools_dispatch_membership():
-    """Regression guard for the dispatch-branch wiring bug fixed in runner.py,
-    self_contained_coordinator.py and multi_tool.py: all four job-queue tool names
-    must be recognized by the shared JOB_QUEUE_BENCH_TOOLS constant every dispatch
-    site keys off of, or a tool silently falls through to the generic
-    prepare_benchmark_parameters() path instead of prepare_job_queue_bench_parameters()."""
+    """All four job-queue tool names must be recognized by the shared
+    JOB_QUEUE_BENCH_TOOLS constant every dispatch site keys off of, so a future
+    5th tool added to test-suites can't be added to one dispatch site's copy of
+    the list and missed on another."""
     for tool in (
         "sidekiq-bench",
         "celery-bench",
@@ -1250,6 +1250,63 @@ def test_job_queue_bench_tools_dispatch_membership():
         "resque-bench",
     ):
         assert any(t in tool for t in JOB_QUEUE_BENCH_TOOLS), tool
+
+
+def test_prepare_client_run_specs_dispatches_job_queue_tool_correctly():
+    """Regression guard for the actual historical bug: multi_tool.py's
+    prepare_client_run_specs() had no elif branch for job-queue tool names, so a
+    sidekiq-bench/celery-bench/bullmq-bench/resque-bench clientconfig silently fell
+    through to the generic prepare_benchmark_parameters() path (which just runs the
+    user's `arguments` verbatim) instead of prepare_job_queue_bench_parameters()
+    (which injects --output/--host/--port/--db 0 and applies the auth/TLS/warning
+    logic specific to these tools). Unlike test_job_queue_bench_tools_dispatch_membership
+    above (which only checks the shared constant's contents), this test calls the
+    real dispatch function end-to-end and would fail if the elif branch were ever
+    deleted or misordered -- the generic fallback never emits "--db 0", so its
+    presence in the resulting command is a direct signal that the job-queue-specific
+    branch, not the fallback, actually ran."""
+    from redis_benchmarks_specification.__common__.multi_tool import (
+        prepare_client_run_specs,
+    )
+
+    benchmark_config = {
+        "clientconfig": {
+            "tool": "sidekiq-bench",
+            "run_image": "redis/sidekiq-benchmark:latest",
+            "arguments": "--workers 50 --jobs 200000",
+            "resources": {"requests": {"cpus": "4", "memory": "1g"}},
+        }
+    }
+
+    run_specs = prepare_client_run_specs(
+        benchmark_config,
+        host="localhost",
+        port=6379,
+        password=None,
+        oss_cluster_api_enabled=False,
+        tls_enabled=False,
+        tls_skip_verify=False,
+        test_tls_cert=None,
+        test_tls_key=None,
+        test_tls_cacert=None,
+        resp_version=None,
+        override_memtier_test_time=0,
+        override_test_runs=0,
+        unix_socket="",
+        benchmark_tool_workdir="/tmp",
+    )
+
+    assert len(run_specs) == 1
+    spec = run_specs[0]
+    assert spec.client_tool == "sidekiq-bench"
+    # Only prepare_job_queue_bench_parameters() emits --db 0; the generic
+    # prepare_benchmark_parameters() fallback would not, since it just passes
+    # clientconfig["arguments"] through verbatim.
+    assert "--db 0" in spec.command_str
+    assert "--host localhost" in spec.command_str
+    assert "--port 6379" in spec.command_str
+    assert "--workers 50" in spec.command_str
+    assert "--jobs 200000" in spec.command_str
 
 
 def test_create_client_runner_args_timeout_buffer():

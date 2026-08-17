@@ -396,7 +396,9 @@ def calculate_process_timeout(command_str, buffer_timeout):
         if jobs_match:
             jobs = int(jobs_match.group(1))
             min_jobs_per_sec = 200
-            timeout = max(default_timeout, int(jobs / min_jobs_per_sec) + buffer_timeout)
+            timeout = max(
+                default_timeout, int(jobs / min_jobs_per_sec) + buffer_timeout
+            )
             logging.info(
                 f"Set process timeout to {timeout}s (--jobs: {jobs} @ {min_jobs_per_sec}/s floor + {buffer_timeout}s buffer)"
             )
