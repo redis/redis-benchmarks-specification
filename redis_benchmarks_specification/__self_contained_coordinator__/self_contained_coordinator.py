@@ -37,6 +37,7 @@ from redis_benchmarks_specification.__common__.env import (
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
     REDIS_BINS_EXPIRE_SECS,
+    redis_long_blocking_read_keepalive_options,
 )
 from redis_benchmarks_specification.__common__.github import (
     check_github_available_and_actionable,
@@ -746,6 +747,7 @@ def main():
             health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
             socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             socket_keepalive=True,
+            socket_keepalive_options=redis_long_blocking_read_keepalive_options(),
         )
         gh_event_conn.ping()
     except redis.exceptions.ConnectionError as e:
