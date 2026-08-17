@@ -1,15 +1,23 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-250-elements-zadd-new-random-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 250 elements (integer scores 1..250) and we insert NEW members at uniformly random
-  score positions within that SAME 1..250 range using ZADD (the range must match the preloaded
-  range, matching the sibling zrangebyscore-random-position spec -- drawing from a wider range
-  would land almost every insert past the existing max score instead of at a random position).
-  Encoding: skiplist+hashtable / B+tree (250 elements, exceeds
-  zset-max-listpack-entries 128, but small enough that the resulting tree has only a handful of
-  leaves and a root inner node with a small child count -- the size band just above the
-  listpack->B+tree conversion threshold, complementing the 1M-element zadd-new-random-members spec
-  which only covers a large, many-level tree). Metric of interest: Ops/sec.'
+  contains 250 elements (integer scores 1..250) and we ZADD members named newmember__key__ with a
+  score, where the member-name suffix and the score are each drawn independently and uniformly at
+  random from that SAME 1..250 range -- memtier evaluates every __key__ occurrence in a command as
+  its own independent draw, not one shared value, so the score is not simply "the member''s number"
+  (the range must match the preloaded range, matching the sibling zrangebyscore-random-position
+  spec -- drawing from a wider range would land almost every insert past the existing max score
+  instead of at a random position). With only 250 possible member-name values, an unbounded
+  duration-based run saturates within a handful of ops and mostly repositions already-used member
+  names to fresh random scores rather than growing the zset with genuinely new members as the name
+  states (both operations exercise the same top-down insert-position lookup, but only the latter is
+  a true new-member insert). The run is bounded to -n 60 (24% of the domain, ~90% collision-free)
+  so it stays representative of what the name claims. Encoding: skiplist+hashtable
+  / B+tree (250 elements, exceeds zset-max-listpack-entries 128, but small enough that the
+  resulting tree has only a handful of leaves and a root inner node with a small child count -- the
+  size band just above the listpack->B+tree conversion threshold, complementing the 1M-element
+  zadd-new-random-members spec which only covers a large, many-level tree). Metric of interest:
+  Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -41,7 +49,7 @@ clientconfig:
   tool: memtier_benchmark
   arguments: --command="ZADD lb __key__ newmember__key__" --key-minimum 1
     --key-maximum 250 --command-key-pattern=R --key-prefix "" --hide-histogram
-    --test-time 180 --pipeline 1 -c 1 -t 1
+    -n 60 --pipeline 1 -c 1 -t 1
   resources:
     requests:
       cpus: '4'

@@ -1,15 +1,23 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zadd-new-random-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  is pre-loaded with 1M elements (integer scores 1..1,000,000) then we ZADD brand-new members with
-  random scores/names drawn from that SAME 1..1,000,000 range, so each insert lands at a random
-  position inside the existing structure rather than past its current max (the range must match
-  the preloaded range -- drawing from a wider range would land almost every insert past the max
-  score, exercising the tail-append/rightmost path instead of random-position navigation). Encoding:
-  skiplist+hashtable / B+tree (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of
-  interest: Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-position
-  lookup, unlike the existing zincrby/zrank specs whose update-in-place and hash-indexed-lookup paths
-  bypass it.'
+  is pre-loaded with 1M elements (integer scores 1..1,000,000) then we ZADD members named
+  newmember__key__ with a score, where the member-name suffix and the score are each drawn
+  independently and uniformly at random from that SAME 1..1,000,000 range -- memtier evaluates
+  every __key__ occurrence in a command as its own independent draw, not one shared value, so the
+  score is not simply "the member''s number" (the range must match the preloaded range -- drawing
+  from a wider range would land almost every insert past the max score, exercising the
+  tail-append/rightmost path instead of random-position navigation). Because there are only
+  1,000,000 possible member-name values, sustained random draws eventually revisit an already-used
+  name (birthday paradox), which repositions that existing member to a fresh random score rather
+  than growing the zset with a genuinely new one -- both operations exercise the same top-down
+  insert-position lookup, but only the former is a true "new member" insert as the name states. The
+  run is bounded to -n 300000 (30% of the domain, ~85-90% collision-free) so revisits stay
+  infrequent rather than accumulating over an unbounded --test-time run. Encoding:
+  skiplist+hashtable / B+tree (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric
+  of interest: Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-
+  position lookup, unlike the existing zincrby/zrank specs whose update-in-place and
+  hash-indexed-lookup paths bypass it.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -40,7 +48,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command="ZADD lb __key__ newmember__key__" --key-minimum 1 --key-maximum
-    1000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180
+    1000000 --command-key-pattern=R --key-prefix "" --hide-histogram -n 300000
     --pipeline 1 -c 1 -t 1
   resources:
     requests:
