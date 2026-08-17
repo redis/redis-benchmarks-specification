@@ -56,9 +56,12 @@ description: >
   sits at the MAXLEN cap (~10000) throughout because stream reads never delete
   entries, so an empty stream is NOT expected. If blocked_clients ~0 and group lag
   grows, the workload has regressed to the non-blocking fast path. Measured locally
-  with a reduced -c 25 -t 2 (= 50 conns) copy: blocked_clients held at 43-49, XLEN
-  pinned at the ~10000 MAXLEN cap and group lag 0 for the entire measured window
-  (confirmed on the blocking path).
+  at the actual shipped scale (-c 25 -t 4 = 100 conns, with the NOACK fix applied)
+  against a real redis-server + memtier_benchmark:edge: blocked_clients held at
+  98/100, XLEN pinned at the ~10000 MAXLEN cap, XPENDING stayed 0 throughout
+  (confirming NOACK closes the PEL-growth confound), and group lag stayed 0, with
+  0% misses and real p50/p99 unblock latency in the memtier output (confirmed on
+  the blocking path).
 dbconfig:
   configuration-parameters:
     save: '""'

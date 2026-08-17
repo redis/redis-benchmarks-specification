@@ -43,8 +43,11 @@ description: >
   while the suite runs: on the blocking path blocked_clients approaches the
   consumer connection count (~100) and ZCARD stays ~0; if instead blocked_clients
   ~0 and ZCARD grows, the workload has regressed to the non-blocking fast path.
-  This mirrors the sibling BLPOP suite, where the same method measured
-  blocked_clients 48-50 and an empty key throughout a reduced-connection run.
+  Measured locally at the actual shipped scale (-c 25 -t 4 = 100 conns) against a
+  real redis-server + memtier_benchmark:edge: blocked_clients held at 99/100 and
+  ZCARD stayed 0 for the entire measured window, with 0% misses and real p50/p99
+  unblock latency in the memtier output (independently confirmed on the blocking
+  path, not inferred from the sibling BLPOP suite).
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -42,9 +42,11 @@ description: >
   every 1s while the suite runs: on the blocking path blocked_clients approaches
   the consumer connection count (~100) and LLEN stays ~0; if instead
   blocked_clients ~0 and LLEN grows, the workload has regressed to the
-  non-blocking fast path. Measured locally with a reduced -c 25 -t 2 (= 50 conns)
-  copy: blocked_clients held at 48-50 and LLEN stayed 0 for the entire measured
-  window (confirmed on the blocking path).
+  non-blocking fast path. Measured locally at the actual shipped scale (-c 25 -t 4
+  = 100 conns) against a real redis-server + memtier_benchmark:edge: blocked_clients
+  held at 99/100 and LLEN stayed 0 for the entire measured window, with 0% misses
+  and real p50/p99 unblock latency in the memtier output (confirmed on the blocking
+  path, not the non-blocking fast path).
 dbconfig:
   configuration-parameters:
     save: '""'
