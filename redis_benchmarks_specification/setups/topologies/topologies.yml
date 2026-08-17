@@ -112,9 +112,7 @@ spec:
   # `oss-standalone` entry below the io-threads ladder. It is therefore the one strict,
   # ungenerous floor/control rung in this ladder, not part of the N+1 pattern used by every
   # other rung — use it to sanity-check the rest of the ladder for systematic bias.
-  # Requires --server_name dragonfly at trigger time; see
-  # competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md for what still blocks an actual
-  # fleet build (INTERNAL — never reference in public output).
+  # Requires --server_name dragonfly at trigger time.
   - name: dragonfly-01-proactor-threads
     type: oss-standalone
     redis_topology:
