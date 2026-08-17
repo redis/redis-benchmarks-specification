@@ -45,6 +45,28 @@ def test_keepalive_options_returns_dict_type():
     assert isinstance(redis_long_blocking_read_keepalive_options(), dict)
 
 
+def test_keepalive_options_empty_on_platforms_missing_the_socket_constants():
+    """The Linux-only fallback branch (e.g. macOS local dev) isn't reachable on this
+    CI's Linux runners without forcing it -- delete one of the three required attrs
+    from a throwaway `socket`-like object via monkeypatch and confirm {} comes back
+    rather than a KeyError/AttributeError from a partially-built options dict."""
+    import types
+
+    import redis_benchmarks_specification.__common__.env as env_module
+
+    fake_socket = types.SimpleNamespace(TCP_KEEPIDLE=1, TCP_KEEPINTVL=2)
+    # TCP_KEEPCNT deliberately absent, mirroring a non-Linux platform.
+
+    import sys
+
+    real_socket = sys.modules["socket"]
+    sys.modules["socket"] = fake_socket
+    try:
+        assert env_module.redis_long_blocking_read_keepalive_options() == {}
+    finally:
+        sys.modules["socket"] = real_socket
+
+
 def _redis_strictredis_kwargs_by_target_in(func):
     """Parse `func`'s source and return {assigned-variable-name: kwarg-names} for every
     top-level `<var> = redis.StrictRedis(...)` assignment inside it -- an execution-free
