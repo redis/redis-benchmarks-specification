@@ -96,9 +96,7 @@ def test_resolve_local_repo_path_dry_run_never_returns_a_path():
         )
         is None
     )
-    assert (
-        resolve_local_repo_path(None, True, True, dry_run, "/tmp/clone") is None
-    )
+    assert resolve_local_repo_path(None, True, True, dry_run, "/tmp/clone") is None
     assert resolve_local_repo_path(None, False, False, dry_run, "/tmp/clone") is None
 
 
@@ -106,7 +104,9 @@ def test_resolve_local_repo_path_non_dry_run_matches_prior_behavior():
     dry_run = False
     # --redis_repo alone -> local path used
     assert (
-        resolve_local_repo_path("/some/redis/repo", False, False, dry_run, "/some/redis/repo")
+        resolve_local_repo_path(
+            "/some/redis/repo", False, False, dry_run, "/some/redis/repo"
+        )
         == "/some/redis/repo"
     )
     # --recurse_submodules with our own disposable clone (clean_up=True) -> local path used
