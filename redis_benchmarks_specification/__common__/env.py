@@ -241,7 +241,8 @@ def redis_long_blocking_read_keepalive_options():
     import socket
 
     if not all(
-        hasattr(socket, attr) for attr in ("TCP_KEEPIDLE", "TCP_KEEPINTVL", "TCP_KEEPCNT")
+        hasattr(socket, attr)
+        for attr in ("TCP_KEEPIDLE", "TCP_KEEPINTVL", "TCP_KEEPCNT")
     ):
         return {}
     return {
