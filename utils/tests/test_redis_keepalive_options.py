@@ -45,39 +45,61 @@ def test_keepalive_options_returns_dict_type():
     assert isinstance(redis_long_blocking_read_keepalive_options(), dict)
 
 
-def _redis_strictredis_kwargs_in(func):
-    """Parse `func`'s source and return the keyword-argument names passed to every
-    top-level `redis.StrictRedis(...)` call inside it -- an execution-free regression
-    guard. `main()` itself isn't practically unit-testable (argparse, an infinite
-    consumer loop, Docker), so this catches "the kwarg got dropped from the call
-    site" at the source level instead of only in production."""
+def _redis_strictredis_kwargs_by_target_in(func):
+    """Parse `func`'s source and return {assigned-variable-name: kwarg-names} for every
+    top-level `<var> = redis.StrictRedis(...)` assignment inside it -- an execution-free
+    regression guard. `main()` itself isn't practically unit-testable (argparse, an
+    infinite consumer loop, Docker), so this catches "the kwarg got dropped from the
+    call site" at the source level instead of only in production.
+
+    Keyed by assignment target rather than collapsed into "any call passes it": both
+    builder.main() and self_contained_coordinator.main() construct MORE than one
+    redis.StrictRedis client (a blocking event-stream/benchmark-stream consumer, plus
+    e.g. a datasink connection) -- an `any(...)` check across every call in the function
+    would still pass if the kwarg landed on the wrong one, missing exactly the drop this
+    guard exists to catch on the connection it's actually meant to protect."""
     tree = ast.parse(inspect.getsource(func))
-    return [
-        {kw.arg for kw in node.keywords if kw.arg is not None}
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "StrictRedis"
-    ]
+    by_target = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and node.value.func.attr == "StrictRedis"
+        ):
+            by_target[node.targets[0].id] = {
+                kw.arg for kw in node.value.keywords if kw.arg is not None
+            }
+    return by_target
 
 
-def test_builder_main_wires_keepalive_options_into_blocking_connection():
-    calls = _redis_strictredis_kwargs_in(builder_module.main)
-    assert calls, "no redis.StrictRedis(...) call found in builder.main()"
-    assert any("socket_keepalive_options" in kwargs for kwargs in calls), (
-        "builder.main()'s event-stream connection must pass "
+def _assert_blocking_connection_has_keepalive(by_target, var_name, where):
+    assert (
+        by_target
+    ), "no `<var> = redis.StrictRedis(...)` assignment found in {}".format(where)
+    assert var_name in by_target, (
+        "{} no longer assigns its blocking connection to `{}` (found: {}) -- update "
+        "this test to the new variable name, and verify the kwarg is still present "
+        "before doing so".format(where, var_name, sorted(by_target))
+    )
+    assert "socket_keepalive_options" in by_target[var_name], (
+        "{}'s `{}` (the long-blocking-read connection) must pass "
         "socket_keepalive_options=redis_long_blocking_read_keepalive_options() -- "
         "without it, a genuinely idle BLOCK 0 read can be silently killed by an "
-        "intermediate NAT/LB hop"
+        "intermediate NAT/LB hop. Other redis.StrictRedis(...) connections in {} "
+        "having it is not sufficient.".format(where, var_name, where)
     )
 
 
+def test_builder_main_wires_keepalive_options_into_blocking_connection():
+    by_target = _redis_strictredis_kwargs_by_target_in(builder_module.main)
+    _assert_blocking_connection_has_keepalive(by_target, "conn", "builder.main()")
+
+
 def test_coordinator_main_wires_keepalive_options_into_blocking_connection():
-    calls = _redis_strictredis_kwargs_in(coordinator_module.main)
-    assert (
-        calls
-    ), "no redis.StrictRedis(...) call found in self_contained_coordinator.main()"
-    assert any("socket_keepalive_options" in kwargs for kwargs in calls), (
-        "self_contained_coordinator.main()'s benchmark-stream connection must pass "
-        "socket_keepalive_options=redis_long_blocking_read_keepalive_options()"
+    by_target = _redis_strictredis_kwargs_by_target_in(coordinator_module.main)
+    _assert_blocking_connection_has_keepalive(
+        by_target, "gh_event_conn", "self_contained_coordinator.main()"
     )
