@@ -1,14 +1,16 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zrangebyscore-random-position
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements (integer scores 1..1,000,000) and we query it using ZRANGEBYSCORE starting
-  from a uniformly random score within that range up to +inf, LIMIT 0 10 -- so every call seeks a
+  contains a nominal 1M elements (integer scores drawn from the 1..1,000,000 range -- the actual
+  populated count and score distribution evenness are somewhat affected by a separate, pre-existing
+  preload quirk tracked in #508) and we query it using ZRANGEBYSCORE starting from a score drawn
+  uniformly at random from that same nominal range up to +inf, LIMIT 0 10 -- so every call seeks a
   fresh, arbitrary position rather than always starting from an edge. Encoding: skiplist+hashtable
-  / B+tree (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest: Ops/sec.
-  Designed to stress the score-ordered structure''s top-down seek-to-position path, complementing
-  the existing zrangebyscore-all-elements specs (which only cover a 100-element listpack-encoded
-  set) and the zrangestore specs (which copy a contiguous range and mostly hit an edge/monotonic-
-  append fast path, not a genuine arbitrary seek).'
+  / B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec. Designed to stress the score-ordered structure''s top-down seek-to-position path,
+  complementing the existing zrangebyscore-all-elements specs (which only cover a 100-element
+  listpack-encoded set) and the zrangestore specs (which copy a contiguous range and mostly hit an
+  edge/monotonic-append fast path, not a genuine arbitrary seek).'
 dbconfig:
   configuration-parameters:
     save: '""'

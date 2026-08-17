@@ -1,12 +1,14 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-250-elements-zrangebyscore-random-position
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 250 elements (integer scores 1..250) and we query it using ZRANGEBYSCORE starting from
-  a uniformly random score within that range up to +inf, LIMIT 0 10 -- so every call seeks a fresh,
-  arbitrary position rather than always starting from an edge. Encoding: skiplist+hashtable /
-  B+tree (250 elements, exceeds zset-max-listpack-entries 128, but small enough that the resulting
-  tree has only a handful of leaves and a root inner node with a small child count). Metric of
-  interest: Ops/sec. Cache-resident-tree counterpart to the 1M-element
+  contains a nominal 250 elements (integer scores drawn from the 1..250 range -- the actual
+  populated count and score distribution evenness are somewhat affected by a separate, pre-existing
+  preload quirk tracked in #508) and we query it using ZRANGEBYSCORE starting from a score drawn
+  uniformly at random from that same nominal range up to +inf, LIMIT 0 10 -- so every call seeks a
+  fresh, arbitrary position rather than always starting from an edge. Encoding: skiplist+hashtable /
+  B+tree (nominal 250 elements, exceeds zset-max-listpack-entries 128, but small enough that the
+  resulting tree has only a handful of leaves and a root inner node with a small child count).
+  Metric of interest: Ops/sec. Cache-resident-tree counterpart to the 1M-element
   zrangebyscore-random-position spec, which only exercises a large, many-level, DRAM-bound tree --
   together the pair covers both regimes for the B+tree inner-node routing path.'
 dbconfig:
