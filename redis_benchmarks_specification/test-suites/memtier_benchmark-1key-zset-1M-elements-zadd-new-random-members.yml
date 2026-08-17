@@ -2,11 +2,14 @@ version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zadd-new-random-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
   is pre-loaded with 1M elements (integer scores 1..1,000,000) then we ZADD brand-new members with
-  random scores/names across a 100M-wide range, so each insert lands at a random position rather
-  than the sorted end. Encoding: skiplist+hashtable / B+tree (1,000,000 elements, exceeds
-  zset-max-listpack-entries 128). Metric of interest: Ops/sec. Designed to stress the score-ordered
-  structure''s top-down descent/insert-position lookup, unlike the existing zincrby/zrank specs
-  whose update-in-place and hash-indexed-lookup paths bypass it.'
+  random scores/names drawn from that SAME 1..1,000,000 range, so each insert lands at a random
+  position inside the existing structure rather than past its current max (the range must match
+  the preloaded range -- drawing from a wider range would land almost every insert past the max
+  score, exercising the tail-append/rightmost path instead of random-position navigation). Encoding:
+  skiplist+hashtable / B+tree (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of
+  interest: Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-position
+  lookup, unlike the existing zincrby/zrank specs whose update-in-place and hash-indexed-lookup paths
+  bypass it.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -37,7 +40,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command="ZADD lb __key__ newmember__key__" --key-minimum 1 --key-maximum
-    100000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180
+    1000000 --command-key-pattern=R --key-prefix "" --hide-histogram --test-time 180
     --pipeline 1 -c 1 -t 1
   resources:
     requests:

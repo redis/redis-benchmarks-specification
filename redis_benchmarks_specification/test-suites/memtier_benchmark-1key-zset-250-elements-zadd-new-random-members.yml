@@ -2,7 +2,10 @@ version: 0.4
 name: memtier_benchmark-1key-zset-250-elements-zadd-new-random-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
   contains 250 elements (integer scores 1..250) and we insert NEW members at uniformly random
-  score positions using ZADD. Encoding: skiplist+hashtable / B+tree (250 elements, exceeds
+  score positions within that SAME 1..250 range using ZADD (the range must match the preloaded
+  range, matching the sibling zrangebyscore-random-position spec -- drawing from a wider range
+  would land almost every insert past the existing max score instead of at a random position).
+  Encoding: skiplist+hashtable / B+tree (250 elements, exceeds
   zset-max-listpack-entries 128, but small enough that the resulting tree has only a handful of
   leaves and a root inner node with a small child count -- the size band just above the
   listpack->B+tree conversion threshold, complementing the 1M-element zadd-new-random-members spec
@@ -37,7 +40,7 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --command="ZADD lb __key__ newmember__key__" --key-minimum 1
-    --key-maximum 100000000 --command-key-pattern=R --key-prefix "" --hide-histogram
+    --key-maximum 250 --command-key-pattern=R --key-prefix "" --hide-histogram
     --test-time 180 --pipeline 1 -c 1 -t 1
   resources:
     requests:
