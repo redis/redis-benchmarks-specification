@@ -13,8 +13,8 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   invocations (verified empirically), so a client-side query built to reconstruct a specific
   preloaded member by name cannot be guaranteed to hit. Splitting by size class keeps every
   query a guaranteed hit -- the preload also uses a single `__key__` occurrence (score is a
-  literal 0, not a second `__key__`), fixing an earlier two-`__key__` draft''s score/member
-  desync. Separately, the P key-pattern with -n allkeys writes ids [key-minimum, key-maximum)
+  literal 0, not a second `__key__`), so score and member always derive from the same id.
+  Separately, the P key-pattern with -n allkeys writes ids [key-minimum, key-maximum)
   -- key-maximum itself is never populated -- so the client''s query range uses key-maximum
   minus 1 to keep every lookup a guaranteed hit; reusing the preload''s own key-maximum here
   would reintroduce a steady-state miss on that one id every cycle. Measures Ops/sec. Encoding:
