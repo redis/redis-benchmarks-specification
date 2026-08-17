@@ -3,6 +3,7 @@ import datetime
 import io
 import json
 import logging
+import stat
 import tempfile
 import time
 import traceback
@@ -37,6 +38,7 @@ from redis_benchmarks_specification.__common__.env import (
     REDIS_HEALTH_CHECK_INTERVAL,
     REDIS_SOCKET_TIMEOUT,
     REDIS_BINS_EXPIRE_SECS,
+    redis_long_blocking_read_keepalive_options,
 )
 from redis_benchmarks_specification.__common__.github import (
     check_github_available_and_actionable,
@@ -125,7 +127,18 @@ class ZipFileWithPermissions(ZipFile):
 
         attr = member.external_attr >> 16
         if attr != 0:
-            os.chmod(targetpath, attr)
+            if stat.S_ISLNK(attr):
+                # git-style symlink zip encoding: the "file" super() just wrote
+                # contains the link target string, not real content — swap it
+                # for an actual symlink. (Written by the submodule-aware archive
+                # path in builder_schema.py; a plain `git archive`/GitHub zip
+                # never sets this bit today, so this is a no-op for those.)
+                with open(targetpath, "rb") as f:
+                    link_target = f.read().decode("utf-8")
+                os.remove(targetpath)
+                os.symlink(link_target, targetpath)
+            else:
+                os.chmod(targetpath, attr)
         return targetpath
 
 
@@ -220,6 +233,7 @@ def main():
             health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
             socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             socket_keepalive=True,
+            socket_keepalive_options=redis_long_blocking_read_keepalive_options(),
         )
         conn.ping()
     except redis.exceptions.ConnectionError as e:
@@ -434,11 +448,24 @@ def builder_process_stream(
             if b"tests_groups_regexp" in testDetails:
                 tests_groups_regexp = testDetails[b"tests_groups_regexp"].decode()
 
-            deployment_name_regexp = ".*"
-            if b"deployment_name_regexp" in testDetails:
-                deployment_name_regexp = testDetails[b"deployment_name_regexp"].decode()
+            # Hand-rolled byte-key membership-check-then-decode extraction is exactly the
+            # pattern that let override_deployment_regexp silently go missing here before
+            # (present on the incoming stream entry, but never read into a variable) --
+            # route both through the shared, declared-field helper instead.
+            deployment_name_regexp, matched_dnr = read_stream_field(
+                testDetails, "deployment_name_regexp", default=".*"
+            )
+            if matched_dnr is not None:
                 logging.info(
                     f"detected deployment_name_regexp on build stream: {deployment_name_regexp}"
+                )
+
+            override_deployment_regexp, matched_odr = read_stream_field(
+                testDetails, "override_deployment_regexp", default=""
+            )
+            if matched_odr is not None:
+                logging.info(
+                    f"detected override_deployment_regexp on build stream: {override_deployment_regexp}"
                 )
 
             command_regexp = ".*"
@@ -650,7 +677,7 @@ def builder_process_stream(
                         github_repo,
                         artifact_keys,  # Pass existing artifact keys
                         deployment_name_regexp,
-                        "",  # override_deployment_regexp - not used for reuse case
+                        override_deployment_regexp,
                     )
                     # Add to benchmark stream even when reusing artifacts
                     if result is True:
@@ -810,7 +837,7 @@ def builder_process_stream(
                     github_repo,
                     None,  # existing_artifact_keys - None for new builds
                     deployment_name_regexp,
-                    "",  # override_deployment_regexp - not available at builder level
+                    override_deployment_regexp,
                 )
                 if result is True:
                     arch_specific_stream = get_arch_specific_stream_name(build_arch)

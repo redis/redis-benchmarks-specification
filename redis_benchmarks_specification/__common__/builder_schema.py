@@ -5,6 +5,7 @@
 #
 import logging
 import os
+import stat
 import tempfile
 import zipfile
 import git
@@ -26,6 +27,7 @@ def commit_schema_to_stream(
     gh_repo,
     gh_token=None,
     local_repo_path=None,
+    recurse_submodules=False,
 ):
     """uses to the provided JSON dict of fields and pushes that info to the corresponding stream"""
     fields = fields
@@ -54,6 +56,7 @@ def commit_schema_to_stream(
             gh_token,
             None,  # gh_branch
             local_repo_path,
+            recurse_submodules,
         )
         reply_fields["use_git_timestamp"] = fields["use_git_timestamp"]
         if "git_timestamp_ms" in fields:
@@ -69,13 +72,133 @@ def commit_schema_to_stream(
     return result, reply_fields, error_msg
 
 
-def get_archive_zip_from_hash(gh_org, gh_repo, git_hash, fields, local_repo_path=None):
+def get_archive_zip_from_hash(
+    gh_org, gh_repo, git_hash, fields, local_repo_path=None, recurse_submodules=False
+):
     error_msg = None
     result = False
     binary_value = None
     bin_key = "zipped:source:{}/{}/archive/{}.zip".format(gh_org, gh_repo, git_hash)
 
-    if local_repo_path is not None:
+    if local_repo_path is not None and recurse_submodules:
+        # Submodule-aware path (opt-in, default OFF): `git archive` — and GitHub's own
+        # /archive/{ref}.zip endpoint — both exclude submodule content by design, so a
+        # repo like dragonflydb/dragonfly (helio/ as a submodule) can never build from
+        # the plain archive path below. Instead check out the exact commit in the local
+        # clone, materialize submodules there, and zip the *worktree* file list
+        # (`git ls-files --recurse-submodules`, which walks into every submodule in one
+        # call) rather than using `git archive`. This mutates local_repo_path (checkout +
+        # submodule update) — callers must only pass a disposable/dedicated clone here,
+        # never a developer's own working directory with uncommitted changes.
+        try:
+            logging.info(
+                "Creating submodule-aware ZIP archive from local repository: {} "
+                "(commit {})".format(local_repo_path, git_hash)
+            )
+            repo = git.Repo(local_repo_path)
+
+            def _clean_worktree_including_submodules():
+                # local_repo_path is reused across every commit in a multi-hash
+                # trigger batch (one clone, checked out+re-checked-out in a loop).
+                # Plain `git clean` only reaches the superproject's own working
+                # tree -- it does NOT descend into an already-initialized
+                # submodule's working directory (verified: an untracked file left
+                # inside a live submodule survives `git clean -ffdx` at the parent
+                # level). `submodule foreach --recursive` runs the same clean
+                # inside every currently-materialized submodule too, so leftovers
+                # from a tree transition one level down (e.g. inside a nested
+                # submodule like Dragonfly's helio/) can't leak into a later
+                # commit's archive either. `foreach` aborts the WHOLE recursive
+                # walk on the first submodule it can't clean (does not continue
+                # to healthy siblings) -- log rather than silently swallow that,
+                # since a swallowed failure here means unlogged stale content can
+                # survive in whichever submodule(s) came after the failing one.
+                repo.git.clean("-ffdx")
+                try:
+                    repo.git.submodule("foreach", "--recursive", "git clean -ffdx")
+                except git.GitCommandError as e:
+                    logging.warning(
+                        "submodule foreach --recursive git clean -ffdx failed "
+                        "(%s); some submodule working directories may not have "
+                        "been cleaned",
+                        e,
+                    )
+
+            _clean_worktree_including_submodules()
+            repo.git.checkout("--force", git_hash)
+            try:
+                repo.git.submodule("update", "--init", "--recursive", "--force")
+            except git.GitCommandError:
+                # A transient failure (e.g. a network blip fetching a nested
+                # submodule) can leave the shared clone's submodule state dirty,
+                # which would otherwise poison every subsequent commit reusing
+                # this same local_repo_path. One clean+retry recovers in place
+                # instead of cascading failures across the rest of the batch.
+                _clean_worktree_including_submodules()
+                repo.git.submodule("update", "--init", "--recursive", "--force")
+
+            archive_prefix = "{}-{}/".format(gh_repo, git_hash)
+            tracked_files = repo.git.ls_files("--recurse-submodules").splitlines()
+
+            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            temp_zip.close()
+            try:
+                with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for rel_path in tracked_files:
+                        abs_path = os.path.join(local_repo_path, rel_path)
+                        if os.path.islink(abs_path):
+                            # os.path.isfile()/zf.write() both follow symlinks,
+                            # which would either silently drop a dangling tracked
+                            # symlink or silently replace it with its target's
+                            # content under the link's name. Encode it the way
+                            # git's own archive formats do instead: entry content
+                            # is the link target string, and the S_IFLNK bit lives
+                            # in external_attr for the extractor to reconstruct a
+                            # real symlink from.
+                            link_target = os.readlink(abs_path)
+                            zi = zipfile.ZipInfo(archive_prefix + rel_path)
+                            zi.external_attr = (stat.S_IFLNK | 0o777) << 16
+                            zf.writestr(zi, link_target)
+                            continue
+                        if not os.path.isfile(abs_path):
+                            # A tracked path with no file/symlink content on disk
+                            # after checkout + submodule update means the worktree
+                            # isn't what `git ls-files` claims it is -- the whole
+                            # point of this path is exact tree reconstruction, so
+                            # fail loudly (caught below) rather than silently ship
+                            # an incomplete archive as success.
+                            raise RuntimeError(
+                                "tracked path {!r} has no file/symlink content on "
+                                "disk after checkout + submodule update".format(
+                                    rel_path
+                                )
+                            )
+                        zf.write(abs_path, arcname=archive_prefix + rel_path)
+
+                with open(temp_zip.name, "rb") as zip_file:
+                    binary_value = zip_file.read()
+            finally:
+                os.unlink(temp_zip.name)
+
+            fields["zip_archive_key"] = bin_key
+            fields["zip_archive_len"] = len(binary_value)
+            result = True
+            logging.info(
+                "Successfully created submodule-aware ZIP archive ({} files). "
+                "Size: {} bytes ({:.2f} MB)".format(
+                    len(tracked_files),
+                    len(binary_value),
+                    len(binary_value) / (1024 * 1024),
+                )
+            )
+        except Exception as e:
+            error_msg = (
+                "Error creating submodule-aware ZIP archive from local repository "
+                "{}: {}".format(local_repo_path, str(e))
+            )
+            logging.error(error_msg)
+            result = False
+    elif local_repo_path is not None:
         # Create ZIP archive from local repository
         try:
             logging.info(
@@ -154,6 +277,7 @@ def get_commit_dict_from_sha(
     gh_token=None,
     gh_branch=None,
     local_repo_path=None,
+    recurse_submodules=False,
 ):
     commit = None
     # using an access token - but only if we're not using a local repository
@@ -190,6 +314,7 @@ def get_commit_dict_from_sha(
         git_hash,
         commit_dict,
         local_repo_path,
+        recurse_submodules,
     )
     return result, error_msg, commit_dict, commit, binary_key, binary_value
 

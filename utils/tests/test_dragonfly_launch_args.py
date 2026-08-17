@@ -183,6 +183,33 @@ def test_dragonfly_proactor_override_space_form():
     assert "--proactor_threads=1" not in cmd
 
 
+def test_dragonfly_proactor_explicit_one_does_not_warn(caplog):
+    """Explicitly requesting --proactor_threads 1 is a legitimate value (the
+    single-thread baseline topology), not a parse failure — must not warn."""
+    with caplog.at_level("WARNING"):
+        cmd = generate_standalone_dragonfly_server_args(
+            "/mnt/redis/dragonfly-server",
+            6379,
+            "/mnt/redis/",
+            redis_arguments="--proactor_threads 1",
+        )
+    assert "--proactor_threads=1" in cmd
+    assert "no value was parsed" not in caplog.text
+
+
+def test_dragonfly_proactor_genuinely_unparseable_still_warns(caplog):
+    """A dangling --proactor_threads with no value must still warn and default to 1."""
+    with caplog.at_level("WARNING"):
+        cmd = generate_standalone_dragonfly_server_args(
+            "/mnt/redis/dragonfly-server",
+            6379,
+            "/mnt/redis/",
+            redis_arguments="--proactor_threads",
+        )
+    assert "--proactor_threads=1" in cmd
+    assert "no value was parsed" in caplog.text
+
+
 def test_dragonfly_proactor_defaults_to_one_when_absent():
     cmd = generate_standalone_dragonfly_server_args(
         "/mnt/redis/dragonfly-server",

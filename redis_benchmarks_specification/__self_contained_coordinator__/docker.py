@@ -66,12 +66,15 @@ def generate_standalone_dragonfly_server_args(
     proactor_threads = "1"
     if redis_arguments != "":
         toks = redis_arguments.split(" ")
+        parsed = False
         for i, tok in enumerate(toks):
             if tok.startswith("--proactor_threads="):
                 proactor_threads = tok.split("=", 1)[1]
+                parsed = True
             elif tok == "--proactor_threads" and i + 1 < len(toks):
                 proactor_threads = toks[i + 1]
-        if "proactor_threads" in redis_arguments and proactor_threads == "1":
+                parsed = True
+        if "proactor_threads" in redis_arguments and not parsed:
             logging.warning(
                 "redis_arguments contains 'proactor_threads' but no value was parsed; "
                 "defaulting Dragonfly to --proactor_threads=1. redis_arguments=%r",
