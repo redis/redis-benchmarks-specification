@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-zrangebyscore-random-position
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains a nominal 1M elements (integer scores drawn from the 1..1,000,000 range -- the actual
+  populated count and score distribution evenness are somewhat affected by a separate, pre-existing
+  preload quirk tracked in #508) and we query it using ZRANGEBYSCORE starting from a score drawn
+  uniformly at random from that same nominal range up to +inf, LIMIT 0 10 -- so every call seeks a
+  fresh, arbitrary position rather than always starting from an edge. Encoding: skiplist+hashtable
+  / B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec. Designed to stress the score-ordered structure''s top-down seek-to-position path,
+  complementing the existing zrangebyscore-all-elements specs (which only cover a 100-element
+  listpack-encoded set) and the zrangestore specs (which copy a contiguous range and mostly hit an
+  edge/monotonic-append fast path, not a genuine arbitrary seek).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
+      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangebyscore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANGEBYSCORE lb __key__ +inf LIMIT 0 10" --key-minimum 1
+    --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram
+    --test-time 180 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73

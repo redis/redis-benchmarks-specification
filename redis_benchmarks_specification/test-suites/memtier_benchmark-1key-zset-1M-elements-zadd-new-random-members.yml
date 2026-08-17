@@ -1,0 +1,59 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-zadd-new-random-members
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  is pre-loaded with a nominal 1M elements (integer scores drawn from the 1..1,000,000 range --
+  the actual populated count is somewhat lower than 1M due to a separate, pre-existing preload
+  quirk tracked in #508) then we ZADD members named newmember__key__ with a score, where the
+  member-name suffix and the score are each drawn independently and uniformly at random from that
+  SAME 1..1,000,000 range -- memtier evaluates every __key__ occurrence in a command as its own
+  independent draw, not one shared value, so the score is not simply "the member''s number" (the
+  range must match the preloaded range -- drawing from a wider range would land almost every
+  insert past the max score, exercising the tail-append/rightmost path instead of random-position
+  navigation). Because there are only ~1,000,000 possible member-name values, sustained random
+  draws eventually revisit an already-used name (birthday paradox), which repositions that
+  existing member to a fresh random score rather than growing the zset with a genuinely new one --
+  both operations exercise the same top-down insert-position lookup, but only the former is a true
+  "new member" insert as the name states. The run is bounded to -n 300000 rather than an unbounded
+  --test-time so revisits stay infrequent (empirically verified on the smaller 250-element sibling
+  spec at an equivalent domain fraction: 90% of ops grew the zset). Encoding: skiplist+hashtable /
+  B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-position
+  lookup, unlike the existing zincrby/zrank specs whose update-in-place and hash-indexed-lookup
+  paths bypass it.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
+      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
+tested-groups:
+- sorted-set
+tested-commands:
+- zadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZADD lb __key__ newmember__key__" --key-minimum 1 --key-maximum
+    1000000 --command-key-pattern=R --key-prefix "" --hide-histogram -n 300000
+    --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73
