@@ -6,8 +6,8 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key 
   redis/redis#15635) and we query it using ZRANGESTORE, copying the full 100,000-element
   source into a destination key -- the write-heavy large-copy path, adapted from the
   registered 600K-to-300K ZRANGESTORE specs to a realistic mixed-size corpus instead of a
-  uniform short-integer one. Measures Ops/sec. This dataset contains 1 sorted set key with 100,000 elements whose member sizes follow a realistic mixed distribution (24B 70%, 96B 15%, 192B 5%, 320B 4%, 1024B 4%, 4096B 2%) matching the size mix cited in upstream large-zset representation design reports (redis/redis#15635), which introduce external allocation for members >=320B. Members are deterministic (literal filler + embedded numeric id, not random bytes) so exact per-bucket byte sizes are reproducible; content-uniqueness relies on the embedded id, not on randomized payload bytes. Every element has a constant score (0) -- a single `__key__` occurrence per preload command (score is a literal, not a second `__key__`). Encoding: skiplist+hashtable
-  (100,000 elements, exceeds zset-max-listpack-entries 128).'
+  uniform short-integer one. Measures Ops/sec. Encoding: skiplist+hashtable (100,000
+  elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -11,9 +11,9 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   spec (a --test-time design here would either drain to empty mid-run and start measuring
   cheap no-ops, or need a same-invocation refill stream, which memtier''s CLI rejects when
   mixing a keyless command with a keyed one in one invocation -- verified empirically, RC=2 on
-  every combination tried). Measures p50/p99 latency. This dataset contains 1 sorted set key with 30,000 elements, each member a deterministic 4096-byte string (literal filler + embedded numeric id -- not random bytes, so it is exactly reproducible by the client query) and every score a constant 0 -- a single `__key__` occurrence in the preload command (score is a literal, not a second `__key__`), so every id in the preload range is written exactly once as a member with no off-by-one gap at the range boundary. The id range (100000-129999) is fixed at a constant 6 digits so every member is exactly 4096 bytes regardless of which id it embeds -- an earlier draft started the id range at 1, which gave a variable 1-5 digit width and members 1-2 bytes short of the claimed 4096B; fixed by using a 6-digit-floor id range, the same convention as the other new specs in this PR. Exercises the fallback / external-allocation path identified by competitive analysis of ongoing large-zset representation work (members far above the redis/redis#15635 external-allocation threshold of 320B), which used to force a whole-key skiplist fallback. Encoding:
-  skiplist+hashtable (30,000 elements, exceeds zset-max-listpack-entries 128, and every
-  member exceeds zset-max-listpack-value 64B).'
+  every combination tried). Measures p50/p99 latency. Encoding: skiplist+hashtable (30,000
+  elements, exceeds zset-max-listpack-entries 128, and every member exceeds
+  zset-max-listpack-value 64B).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -27,7 +27,10 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-30K-elements-large-members
-  dataset_description: This dataset contains 1 sorted set key with 30,000 elements, each member a deterministic 4096-byte string (literal filler + embedded numeric id -- not random bytes, so it is exactly reproducible by the client query) and every score a constant 0 -- a single `__key__` occurrence in the preload command (score is a literal, not a second `__key__`), so every id in the preload range is written exactly once as a member with no off-by-one gap at the range boundary. The id range (100000-129999) is fixed at a constant 6 digits so every member is exactly 4096 bytes regardless of which id it embeds -- an earlier draft started the id range at 1, which gave a variable 1-5 digit width and members 1-2 bytes short of the claimed 4096B; fixed by using a 6-digit-floor id range, the same convention as the other new specs in this PR. Exercises the fallback / external-allocation path identified by competitive analysis of ongoing large-zset representation work (members far above the redis/redis#15635 external-allocation threshold of 320B), which used to force a whole-key skiplist fallback.
+  dataset_description: This dataset contains 1 sorted set key with 30,000 elements (ids
+    100000-129999), each member a deterministic 4096-byte string (literal filler + a
+    constant-6-digit embedded numeric id, so every member is exactly 4096 bytes) and every
+    score a constant 0.
 tested-groups:
 - sorted-set
 tested-commands:
