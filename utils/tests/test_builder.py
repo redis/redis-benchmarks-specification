@@ -3,6 +3,8 @@
 #  Copyright (c) 2021., Redis Labs
 #  All rights reserved.
 #
+import ast
+import inspect
 import os
 import logging
 from pathlib import Path
@@ -21,6 +23,7 @@ from redis_benchmarks_specification.__builder__.builder import (
     builder_consumer_group_create,
     builder_process_stream,
     build_spec_image_prefetch,
+    generate_benchmark_stream_request,
 )
 from redis_benchmarks_specification.__common__.env import (
     STREAM_KEYNAME_GH_EVENTS_COMMIT,
@@ -457,9 +460,7 @@ def test_xack_uses_caller_supplied_group_not_default():
         assert new_builds_count == 0
 
         # The message must have been ACKed against the arch-specific group.
-        pending_custom = conn.xpending(
-            STREAM_KEYNAME_GH_EVENTS_COMMIT, custom_group
-        )
+        pending_custom = conn.xpending(STREAM_KEYNAME_GH_EVENTS_COMMIT, custom_group)
         # Redis returns a dict with 'pending' count on the python client.
         # If entry was XACKed correctly, pending count is 0.
         pending_count = (
@@ -476,3 +477,56 @@ def test_xack_uses_caller_supplied_group_not_default():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def _generate_benchmark_stream_request_calls_in(func):
+    """Parse `func`'s source and, for every call to generate_benchmark_stream_request()
+    inside it, return the AST expression node actually passed at each parameter position
+    (resolving both positional and keyword call styles against the real signature) --
+    an execution-free regression guard for a whole-function-reachability problem: hitting
+    both call sites (the artifact-reuse branch and the fresh-build branch) end-to-end
+    would need a Docker build or a hand-rolled fake-artifact-keys fixture matching an
+    internal sha256 build_signature, neither of which is proportionate to the bug class
+    this guards against (an argument silently hardcoded or transposed at the call site --
+    exactly how override_deployment_regexp went missing here before)."""
+    sig = inspect.signature(generate_benchmark_stream_request)
+    param_names = list(sig.parameters.keys())
+
+    tree = ast.parse(inspect.getsource(func))
+    calls = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "generate_benchmark_stream_request"
+        ):
+            resolved = {}
+            for i, arg in enumerate(node.args):
+                resolved[param_names[i]] = arg
+            for kw in node.keywords:
+                resolved[kw.arg] = kw.value
+            calls.append(resolved)
+    return calls
+
+
+def test_deployment_regexps_wired_correctly_at_both_call_sites():
+    """Regression test for the two-layer override_deployment_regexp bug: the field was
+    computed correctly but never reached generate_benchmark_stream_request() because the
+    builder-side call sites didn't forward it (hardcoded ""). Both call sites (the
+    artifact-reuse branch and the fresh-build branch) must pass the correct LOCAL
+    VARIABLE at the deployment_name_regexp / override_deployment_regexp positions -- not
+    a hardcoded literal, and not the two arguments transposed with each other."""
+    calls = _generate_benchmark_stream_request_calls_in(builder_process_stream)
+    assert len(calls) == 2, (
+        "expected exactly 2 generate_benchmark_stream_request(...) call sites "
+        f"(artifact-reuse + fresh-build) inside builder_process_stream, found {len(calls)}"
+    )
+    for call in calls:
+        for param in ("deployment_name_regexp", "override_deployment_regexp"):
+            assert param in call, f"{param} not passed at this call site at all"
+            expr = call[param]
+            assert isinstance(expr, ast.Name) and expr.id == param, (
+                f"{param} must be forwarded as the local variable of the same name, "
+                f"got {ast.dump(expr)} instead -- this is exactly how the field went "
+                f"missing before (hardcoded '' rather than the real variable)"
+            )

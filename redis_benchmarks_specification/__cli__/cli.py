@@ -590,7 +590,9 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
             # checked out into) too — they opted into the mutation explicitly.
             local_repo_path = (
                 redisDirPath
-                if (args.redis_repo is not None or (args.recurse_submodules and cleanUp))
+                if (
+                    args.redis_repo is not None or (args.recurse_submodules and cleanUp)
+                )
                 else None
             )
 
