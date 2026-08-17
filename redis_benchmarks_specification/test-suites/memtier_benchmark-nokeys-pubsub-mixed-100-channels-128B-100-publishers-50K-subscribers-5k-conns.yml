@@ -32,7 +32,8 @@ clientconfigs:
 - run_image: filipe958/pubsub-sub-bench:latest
   tool: pubsub-sub-bench
   arguments: -clients 5000 -channel-minimum 1 -channel-maximum 100 -subscriber-prefix
-    "channel-" -mode subscribe -test-time 120 -subscribers-per-channel 10
+    "channel-" -mode subscribe -test-time 120 -min-number-channels-per-subscriber 10
+    -max-number-channels-per-subscriber 10
   resources:
     requests:
       cpus: '4'
