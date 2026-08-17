@@ -147,6 +147,18 @@ def spec_cli_args(parser):
     parser.add_argument("--gh_org", type=str, default="redis")
     parser.add_argument("--gh_repo", type=str, default="redis")
     parser.add_argument("--server_name", type=str, default=None)
+    parser.add_argument(
+        "--recurse_submodules",
+        action="store_true",
+        default=False,
+        help="Ship submodule contents (e.g. Dragonfly's helio/) in the source archive. "
+        "Default OFF — a no-op for redis/valkey, whose plain `git archive` path is "
+        "unchanged. When set, checks out the requested commit and runs "
+        "`git submodule update --init --recursive` in the local clone (a disposable "
+        "temp clone unless --redis_repo is also given, in which case that directory "
+        "IS checked out/mutated — never point this at a working dir with local changes "
+        "you care about).",
+    )
     parser.add_argument("--run_image", type=str, default="redis")
     parser.add_argument("--arch", type=str, default="amd64")
     parser.add_argument(
