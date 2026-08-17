@@ -103,9 +103,18 @@ spec:
   # equal hardware, not equal flag values (Redis's N io-threads run alongside the always-on
   # main thread, so its cpus is N+1; Dragonfly's N proactor threads have no separate main
   # thread, so pinning it to the same N+1 cpus hands it one spare core too, mirroring the
-  # headroom convention above rather than shorting it a core). Requires --server_name
-  # dragonfly at trigger time; see competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md for
-  # what still blocks an actual fleet build (INTERNAL — never reference in public output).
+  # headroom convention above rather than shorting it a core — a deliberately generous
+  # choice, not a proven-neutral one: it's the simplest reproducible rule available without
+  # asserting more than is known about Dragonfly's other background/fiber-scheduler threads).
+  # EXCEPTION — the 01 rung: there is no oss-standalone-01-io-threads entry (the io-threads
+  # ladder above starts at 02), so dragonfly-01-proactor-threads has no N+1 counterpart to
+  # mirror and is instead pinned to cpus=1 (=N, not N+1), matching the single-threaded base
+  # `oss-standalone` entry below the io-threads ladder. It is therefore the one strict,
+  # ungenerous floor/control rung in this ladder, not part of the N+1 pattern used by every
+  # other rung — use it to sanity-check the rest of the ladder for systematic bias.
+  # Requires --server_name dragonfly at trigger time; see
+  # competitive-tracking/dragonfly/PHASE-B-ENABLEMENT.md for what still blocks an actual
+  # fleet build (INTERNAL — never reference in public output).
   - name: dragonfly-01-proactor-threads
     type: oss-standalone
     redis_topology:
