@@ -17,8 +17,10 @@ dbconfig:
   init_commands:
   - '"RPUSH" "growlist:10" "elem000000" "elem000001" "elem000002" "elem000003" "elem000004"
     "elem000005" "elem000006" "elem000007" "elem000008" "elem000009"'
-  dataset_name: 1key-list-10-elements
-  dataset_description: This dataset contains 1 list key with 10 small elements (listpack encoded).
+  dataset_name: 1key-growlist-10-elements
+  dataset_description: This dataset contains 1 list key (growlist:10) with 10 small elements
+    (listpack encoded) -- distinct from the 1key-list-10-elements dataset used by the LRANGE
+    siblings, which seeds a different key (list:10) with different values.
 tested-groups:
 - list
 tested-commands:
