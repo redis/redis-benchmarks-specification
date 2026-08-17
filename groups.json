@@ -8,7 +8,7 @@
     "display": "Bitmap"
   },
   "blocking": {
-    "description": "Blocking commands (BLPOP, BZPOPMIN, XREADGROUP BLOCK, ...) exercising the blocked/unblocked client code path in blocked.c",
+    "description": "Commands that block a client until a key becomes available (BLPOP, BZPOPMIN, XREADGROUP BLOCK, ...)",
     "display": "Blocking Commands"
   },
   "cluster": {
