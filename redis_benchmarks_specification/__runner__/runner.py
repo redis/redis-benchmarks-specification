@@ -2906,6 +2906,14 @@ def process_self_contained_coordinator_stream(
                             full_result_path = "{}/{}".format(
                                 temporary_dir_client, local_benchmark_output_filename
                             )
+                        elif any(t in benchmark_tool for t in JOB_QUEUE_BENCH_TOOLS):
+                            # prepare_job_queue_bench_parameters() writes --output as a
+                            # bare basename into the container's working dir, which is
+                            # mounted at temporary_dir_client on the host -- same join
+                            # as memtier_benchmark/pubsub-sub-bench above.
+                            full_result_path = "{}/{}".format(
+                                temporary_dir_client, local_benchmark_output_filename
+                            )
                         elif "vector-db-benchmark" in benchmark_tool:
                             # For vector-db-benchmark, look for summary JSON file
                             summary_files = [
