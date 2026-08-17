@@ -5,6 +5,7 @@
 #
 import logging
 import os
+import stat
 import tempfile
 import zipfile
 import git
@@ -95,8 +96,23 @@ def get_archive_zip_from_hash(
                 "(commit {})".format(local_repo_path, git_hash)
             )
             repo = git.Repo(local_repo_path)
+            # local_repo_path is reused across every commit in a multi-hash trigger
+            # batch (one clone, checked out+re-checked-out in a loop) — clean any
+            # untracked leftovers from the PREVIOUS commit's checkout (e.g. a
+            # submodule dir left behind by a tree that removed/relocated it) before
+            # moving to this one, so stale content can never leak into this zip.
+            repo.git.clean("-ffdx")
             repo.git.checkout("--force", git_hash)
-            repo.git.submodule("update", "--init", "--recursive")
+            try:
+                repo.git.submodule("update", "--init", "--recursive", "--force")
+            except git.GitCommandError:
+                # A transient failure (e.g. a network blip fetching a nested
+                # submodule) can leave the shared clone's submodule state dirty,
+                # which would otherwise poison every subsequent commit reusing
+                # this same local_repo_path. One clean+retry recovers in place
+                # instead of cascading failures across the rest of the batch.
+                repo.git.clean("-ffdx")
+                repo.git.submodule("update", "--init", "--recursive", "--force")
 
             archive_prefix = "{}-{}/".format(gh_repo, git_hash)
             tracked_files = repo.git.ls_files("--recurse-submodules").splitlines()
@@ -106,10 +122,29 @@ def get_archive_zip_from_hash(
             with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zf:
                 for rel_path in tracked_files:
                     abs_path = os.path.join(local_repo_path, rel_path)
-                    if not os.path.isfile(abs_path):
-                        # submodule gitlink entries / symlinks with no regular file
-                        # target are not archivable content; skip rather than abort.
+                    if os.path.islink(abs_path):
+                        # os.path.isfile()/zf.write() both follow symlinks, which
+                        # would either silently drop a dangling tracked symlink or
+                        # silently replace it with its target's content under the
+                        # link's name. Encode it the way git's own archive formats
+                        # do instead: entry content is the link target string, and
+                        # the S_IFLNK bit lives in external_attr for the extractor
+                        # to reconstruct a real symlink from.
+                        link_target = os.readlink(abs_path)
+                        zi = zipfile.ZipInfo(archive_prefix + rel_path)
+                        zi.external_attr = (stat.S_IFLNK | 0o777) << 16
+                        zf.writestr(zi, link_target)
                         continue
+                    if not os.path.isfile(abs_path):
+                        # A tracked path with no file/symlink content on disk after
+                        # checkout + submodule update means the worktree isn't what
+                        # `git ls-files` claims it is — the whole point of this path
+                        # is exact tree reconstruction, so fail loudly (caught below)
+                        # rather than silently ship an incomplete archive as success.
+                        raise RuntimeError(
+                            "tracked path {!r} has no file/symlink content on disk "
+                            "after checkout + submodule update".format(rel_path)
+                        )
                     zf.write(abs_path, arcname=archive_prefix + rel_path)
 
             with open(temp_zip.name, "rb") as zip_file:

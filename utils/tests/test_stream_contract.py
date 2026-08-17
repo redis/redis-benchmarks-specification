@@ -201,6 +201,26 @@ def test_str_keyed_entries_are_supported():
     assert (value, matched) == (5, "tests_priority_upper_limit")
 
 
+def test_override_deployment_regexp_is_read_from_build_stream_entry():
+    """Regression test for the builder-side half of the override_deployment_regexp bug:
+    the CLI computed and sent the field correctly, but builder.py's extraction was a
+    hand-rolled `if b"x" in testDetails` check that (in one historical version) never ran,
+    so a topology override present on the incoming build stream entry was silently dropped
+    before ever reaching generate_benchmark_stream_request. Assert the declared-field
+    reader picks it up exactly like every other stream field."""
+    entry = {b"override_deployment_regexp": b"oss-standalone-0[12]-replicas"}
+    value, matched = read_stream_field(entry, "override_deployment_regexp", default="")
+    assert (value, matched) == (
+        "oss-standalone-0[12]-replicas",
+        "override_deployment_regexp",
+    )
+
+
+def test_override_deployment_regexp_defaults_to_empty_when_absent():
+    value, matched = read_stream_field({}, "override_deployment_regexp", default="")
+    assert (value, matched) == ("", None)
+
+
 def _build_stream_payload(**overrides):
     """Build a builds-stream payload and return it.
 
