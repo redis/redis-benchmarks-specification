@@ -225,6 +225,60 @@ def test_recurse_submodules_reused_clone_reflects_each_commit(tmp_path, monkeypa
     )
 
 
+def test_recurse_submodules_reused_clone_cleans_inside_submodule_too(
+    tmp_path, monkeypatch
+):
+    """Plain `git clean -ffdx` at the parent level does NOT descend into an
+    already-initialized submodule's own working directory -- an untracked file left
+    inside a live submodule survives it. A reused local_repo_path that materialized a
+    submodule on call 1 must not leak untracked content left inside THAT submodule
+    into call 2's archive; the fix recurses the clean into every submodule via
+    `git submodule foreach --recursive`."""
+    parent_dir, head1 = _make_fixture(tmp_path)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+
+    # First call materializes the submodule on disk.
+    result1 = get_archive_zip_from_hash(
+        "testorg",
+        "testrepo",
+        head1,
+        {},
+        local_repo_path=parent_dir,
+        recurse_submodules=True,
+    )
+    assert result1[0] is True
+
+    # Simulate leftover untracked content inside the now-materialized submodule's
+    # own working directory (e.g. a build artifact, or a file from a submodule
+    # commit that was checked out earlier in a batch and never got cleaned).
+    stale_path = os.path.join(parent_dir, "subdir", "stale_leftover.txt")
+    with open(stale_path, "w") as f:
+        f.write("should never appear in a later archive\n")
+    assert os.path.exists(stale_path)
+
+    # Second call, same clone, same commit -- must not pick up the stale file.
+    result2 = get_archive_zip_from_hash(
+        "testorg",
+        "testrepo",
+        head1,
+        {},
+        local_repo_path=parent_dir,
+        recurse_submodules=True,
+    )
+    assert result2[0] is True
+
+    names2 = zipfile.ZipFile(io.BytesIO(result2[2])).namelist()
+    assert not any(n.endswith("stale_leftover.txt") for n in names2), (
+        "untracked content left inside an already-initialized submodule leaked "
+        "into a later archive from the same reused clone -- git clean at the "
+        "parent level alone does not reach into submodule working "
+        "directories: {}".format(names2)
+    )
+    assert not os.path.exists(
+        stale_path
+    ), "stale file inside the submodule was not actually removed from disk"
+
+
 def test_recurse_submodules_broken_submodule_fails_loudly(tmp_path, monkeypatch):
     """If `git submodule update --init --recursive` cannot succeed (e.g. the submodule's
     remote is gone), the call must return result=False with a populated error_msg --
@@ -315,3 +369,61 @@ def test_recurse_submodules_tracked_symlink_preserved(tmp_path, monkeypatch):
         "regular file containing the literal target path"
     )
     assert zf.read(info).decode("utf-8") == "top_file.txt"
+
+
+def test_recurse_submodules_tracked_symlink_extracts_as_real_symlink(
+    tmp_path, monkeypatch
+):
+    """The archive-side symlink encoding (previous test) is only half the round trip --
+    the builder's own extractor (ZipFileWithPermissions) must turn it back into a real
+    symlink, not leave the placeholder regular file (whose content is the literal link
+    target string) that zipfile.ZipFile.extractall() would otherwise produce."""
+    import stat
+
+    from redis_benchmarks_specification.__builder__.builder import (
+        ZipFileWithPermissions,
+    )
+
+    parent_dir, head = _make_fixture(tmp_path)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+    env = dict(os.environ)
+    env["GIT_ALLOW_PROTOCOL"] = "file"
+
+    os.symlink("top_file.txt", os.path.join(parent_dir, "top_file_link.txt"))
+    _run(["git", "add", "top_file_link.txt"], cwd=parent_dir, env=env)
+    _run(["git", "commit", "-q", "-m", "add symlink"], cwd=parent_dir, env=env)
+    head_with_link = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=parent_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+    result, bin_key, binary_value, error_msg = get_archive_zip_from_hash(
+        "testorg",
+        "testrepo",
+        head_with_link,
+        {},
+        local_repo_path=parent_dir,
+        recurse_submodules=True,
+    )
+    assert error_msg is None
+    assert result is True
+
+    extract_dir = str(tmp_path / "extracted")
+    os.makedirs(extract_dir)
+    with ZipFileWithPermissions(io.BytesIO(binary_value)) as zf:
+        zf.extractall(extract_dir)
+
+    prefix = "testrepo-{}/".format(head_with_link)
+    link_path = os.path.join(extract_dir, prefix, "top_file_link.txt")
+
+    assert os.path.islink(link_path), (
+        "extractor left a regular file containing the literal target path instead "
+        "of reconstructing a real symlink -- this is the exact failure mode "
+        "test_recurse_submodules_tracked_symlink_preserved does NOT catch, since "
+        "it only inspects the zip bytes and never extracts them"
+    )
+    assert os.readlink(link_path) == "top_file.txt"

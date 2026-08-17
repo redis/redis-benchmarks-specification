@@ -96,12 +96,27 @@ def get_archive_zip_from_hash(
                 "(commit {})".format(local_repo_path, git_hash)
             )
             repo = git.Repo(local_repo_path)
-            # local_repo_path is reused across every commit in a multi-hash trigger
-            # batch (one clone, checked out+re-checked-out in a loop) — clean any
-            # untracked leftovers from the PREVIOUS commit's checkout (e.g. a
-            # submodule dir left behind by a tree that removed/relocated it) before
-            # moving to this one, so stale content can never leak into this zip.
-            repo.git.clean("-ffdx")
+
+            def _clean_worktree_including_submodules():
+                # local_repo_path is reused across every commit in a multi-hash
+                # trigger batch (one clone, checked out+re-checked-out in a loop).
+                # Plain `git clean` only reaches the superproject's own working
+                # tree -- it does NOT descend into an already-initialized
+                # submodule's working directory (verified: an untracked file left
+                # inside a live submodule survives `git clean -ffdx` at the parent
+                # level). `submodule foreach --recursive` runs the same clean
+                # inside every currently-materialized submodule too, so leftovers
+                # from a tree transition one level down (e.g. inside a nested
+                # submodule like Dragonfly's helio/) can't leak into a later
+                # commit's archive either. Errors if no submodule is initialized
+                # yet (first run on a fresh clone) -- harmless, nothing to clean.
+                repo.git.clean("-ffdx")
+                try:
+                    repo.git.submodule("foreach", "--recursive", "git clean -ffdx")
+                except git.GitCommandError:
+                    pass
+
+            _clean_worktree_including_submodules()
             repo.git.checkout("--force", git_hash)
             try:
                 repo.git.submodule("update", "--init", "--recursive", "--force")
@@ -111,7 +126,7 @@ def get_archive_zip_from_hash(
                 # which would otherwise poison every subsequent commit reusing
                 # this same local_repo_path. One clean+retry recovers in place
                 # instead of cascading failures across the rest of the batch.
-                repo.git.clean("-ffdx")
+                _clean_worktree_including_submodules()
                 repo.git.submodule("update", "--init", "--recursive", "--force")
 
             archive_prefix = "{}-{}/".format(gh_repo, git_hash)
@@ -119,37 +134,43 @@ def get_archive_zip_from_hash(
 
             temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
             temp_zip.close()
-            with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zf:
-                for rel_path in tracked_files:
-                    abs_path = os.path.join(local_repo_path, rel_path)
-                    if os.path.islink(abs_path):
-                        # os.path.isfile()/zf.write() both follow symlinks, which
-                        # would either silently drop a dangling tracked symlink or
-                        # silently replace it with its target's content under the
-                        # link's name. Encode it the way git's own archive formats
-                        # do instead: entry content is the link target string, and
-                        # the S_IFLNK bit lives in external_attr for the extractor
-                        # to reconstruct a real symlink from.
-                        link_target = os.readlink(abs_path)
-                        zi = zipfile.ZipInfo(archive_prefix + rel_path)
-                        zi.external_attr = (stat.S_IFLNK | 0o777) << 16
-                        zf.writestr(zi, link_target)
-                        continue
-                    if not os.path.isfile(abs_path):
-                        # A tracked path with no file/symlink content on disk after
-                        # checkout + submodule update means the worktree isn't what
-                        # `git ls-files` claims it is — the whole point of this path
-                        # is exact tree reconstruction, so fail loudly (caught below)
-                        # rather than silently ship an incomplete archive as success.
-                        raise RuntimeError(
-                            "tracked path {!r} has no file/symlink content on disk "
-                            "after checkout + submodule update".format(rel_path)
-                        )
-                    zf.write(abs_path, arcname=archive_prefix + rel_path)
+            try:
+                with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for rel_path in tracked_files:
+                        abs_path = os.path.join(local_repo_path, rel_path)
+                        if os.path.islink(abs_path):
+                            # os.path.isfile()/zf.write() both follow symlinks,
+                            # which would either silently drop a dangling tracked
+                            # symlink or silently replace it with its target's
+                            # content under the link's name. Encode it the way
+                            # git's own archive formats do instead: entry content
+                            # is the link target string, and the S_IFLNK bit lives
+                            # in external_attr for the extractor to reconstruct a
+                            # real symlink from.
+                            link_target = os.readlink(abs_path)
+                            zi = zipfile.ZipInfo(archive_prefix + rel_path)
+                            zi.external_attr = (stat.S_IFLNK | 0o777) << 16
+                            zf.writestr(zi, link_target)
+                            continue
+                        if not os.path.isfile(abs_path):
+                            # A tracked path with no file/symlink content on disk
+                            # after checkout + submodule update means the worktree
+                            # isn't what `git ls-files` claims it is -- the whole
+                            # point of this path is exact tree reconstruction, so
+                            # fail loudly (caught below) rather than silently ship
+                            # an incomplete archive as success.
+                            raise RuntimeError(
+                                "tracked path {!r} has no file/symlink content on "
+                                "disk after checkout + submodule update".format(
+                                    rel_path
+                                )
+                            )
+                        zf.write(abs_path, arcname=archive_prefix + rel_path)
 
-            with open(temp_zip.name, "rb") as zip_file:
-                binary_value = zip_file.read()
-            os.unlink(temp_zip.name)
+                with open(temp_zip.name, "rb") as zip_file:
+                    binary_value = zip_file.read()
+            finally:
+                os.unlink(temp_zip.name)
 
             fields["zip_archive_key"] = bin_key
             fields["zip_archive_len"] = len(binary_value)
