@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-1key-list-10-elements-lset-listpack-to-quicklist
+name: memtier_benchmark-1key-growlist-10-elements-lset-listpack-to-quicklist
 description: 'Runs memtier_benchmark, for a keyspace length of 1 LIST key. The LIST starts as a small
   listpack (10 elements) and we LSET an element with a value of 9000 Bytes, which is above the
   list-max-listpack-size -2 (8 KiB) node limit and therefore forces a listpack -> quicklist
