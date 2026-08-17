@@ -1,0 +1,36 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-client-list-id
+description: Measures throughput of CLIENT LIST ID <id> point lookups, one random id per call. Unlike plain CLIENT LIST and CLIENT LIST TYPE, the ID form does not walk the client list at all - it resolves each requested id via lookupClientByID (raxFind over server.clients_index, a radix tree keyed by the 8-byte big-endian client id), so per-call cost is a depth-bounded index lookup plus at most one catClientInfoString serialization on a hit. getAllClientsInfoString, the list-walk function the sibling specs exercise, is never reached on this path - the ID branch allocates its own reply buffer up front, so a miss returns an empty reply rather than falling back to the full list. This spec therefore covers a different subsystem (client index lookup) rather than a cheaper corner of the same walk, and complements the full CLIENT LIST test (bulk serialization of every client) and the CLIENT KILL ADDR no-match test (full filter-matching walk). The id is injected via memtier's __key__ substitution with --key-prefix "" and a random pattern (--command-key-pattern R) over --key-minimum 1 --key-maximum 2000. Redis assigns client ids monotonically and never reuses them, so the ~1000 sustained connections (-c 250 -t 4) occupy roughly [130,1130] after the small preload offset and that range gives a deliberate mix of hits (lookup + serialize one client) and misses (lookup + empty reply); both cases exercise the same lookup, so the measurement is stable either way. The sustained connection population sizes the radix tree being searched, not the per-call work. Preloads 1M keys to simulate a realistic server state.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+tested-commands:
+- client
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "CLIENT LIST ID __key__" --command-key-pattern R --key-minimum 1 --key-maximum 2000 --key-prefix "" -c 250 -t 4 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 50

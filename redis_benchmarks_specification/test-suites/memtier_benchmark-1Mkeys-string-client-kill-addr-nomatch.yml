@@ -1,0 +1,36 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-client-kill-addr-nomatch
+description: Measures throughput of CLIENT KILL ADDR <addr> command in a no-match configuration. CLIENT KILL walks the full client list and matches each client against the supplied filter set (here ADDR), returning the number killed. The address 203.0.113.1:1 (TEST-NET-3, reserved for documentation) never matches a real client, so nothing is killed but the full filter-matching loop is walked on every call, isolating filter cost from connection teardown. A sustained population of ~1000 connections (-c 250 -t 4) is kept open by the benchmark itself so the filter loop walks a large list. Preloads 1M keys to simulate a realistic server state.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+tested-commands:
+- client
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "CLIENT KILL ADDR 203.0.113.1:1" -c 250 -t 4 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 50
