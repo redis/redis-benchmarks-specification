@@ -13,6 +13,7 @@ from redis_benchmarks_specification.__cli__.cli import (
     get_commits_by_branch,
     get_commits_by_tags,
     get_repo,
+    resolve_local_repo_path,
 )
 
 
@@ -75,3 +76,45 @@ def test_get_commits():
         get_commits_by_tags(args, repo)
     except SystemExit as e:
         assert e.code == 0
+
+
+def test_resolve_local_repo_path_dry_run_never_returns_a_path():
+    # --dry-run must force the non-mutating GitHub-archive-endpoint fallback
+    # (local_repo_path=None) regardless of which other flags are set --
+    # get_commit_dict_from_sha()'s checkout/`git clean -ffdx`/submodule-update
+    # path only runs when it receives a non-None local_repo_path.
+    dry_run = True
+    assert (
+        resolve_local_repo_path(
+            "/some/redis/repo", True, True, dry_run, "/some/redis/repo"
+        )
+        is None
+    )
+    assert (
+        resolve_local_repo_path(
+            "/some/redis/repo", False, False, dry_run, "/some/redis/repo"
+        )
+        is None
+    )
+    assert resolve_local_repo_path(None, True, True, dry_run, "/tmp/clone") is None
+    assert resolve_local_repo_path(None, False, False, dry_run, "/tmp/clone") is None
+
+
+def test_resolve_local_repo_path_non_dry_run_matches_prior_behavior():
+    dry_run = False
+    # --redis_repo alone -> local path used
+    assert (
+        resolve_local_repo_path(
+            "/some/redis/repo", False, False, dry_run, "/some/redis/repo"
+        )
+        == "/some/redis/repo"
+    )
+    # --recurse_submodules with our own disposable clone (clean_up=True) -> local path used
+    assert (
+        resolve_local_repo_path(None, True, True, dry_run, "/tmp/clone") == "/tmp/clone"
+    )
+    # --recurse_submodules but NOT our own clone (e.g. a shared/reused checkout,
+    # clean_up=False) -> no local path, avoid mutating a checkout we don't own
+    assert resolve_local_repo_path(None, True, False, dry_run, "/tmp/clone") is None
+    # neither flag set -> GitHub-archive-endpoint fallback (no local path)
+    assert resolve_local_repo_path(None, False, False, dry_run, "/tmp/clone") is None

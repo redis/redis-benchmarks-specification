@@ -466,6 +466,29 @@ def check_benchmark_build_comment(comments):
     return res, pos
 
 
+def resolve_local_repo_path(
+    redis_repo, recurse_submodules, clean_up, dry_run, redis_dir_path
+):
+    """Decide whether the archive-building step is allowed to touch a real
+    local working tree (checkout/`git clean -ffdx`/submodule-update), or must
+    fall back to GitHub's non-mutating archive-download endpoint.
+
+    A local path is used only when the caller explicitly opted into local
+    archiving (--redis_repo) or into submodule recursion against our own
+    disposable clone (--recurse_submodules with clean_up=True) -- AND only
+    when this is not a dry run. --dry-run must never mutate a real working
+    tree, regardless of which other flags are set: get_commit_dict_from_sha()
+    only enters the mutating checkout/submodule-update path when it receives
+    a non-None local_repo_path, so returning None here is sufficient on its
+    own (recurse_submodules is inert without a local_repo_path).
+    """
+    if dry_run:
+        return None
+    if redis_repo is not None or (recurse_submodules and clean_up):
+        return redis_dir_path
+    return None
+
+
 def trigger_tests_cli_command_logic(args, project_name, project_version):
     logging.info(
         "Using: {project_name} {project_version}".format(
@@ -581,19 +604,12 @@ def trigger_tests_cli_command_logic(args, project_name, project_version):
     conn.ping()
     for rep in range(0, 1):
         for cdict in filtered_hash_commits:
-            # Pass local repository path if using local repo, OR if --recurse_submodules
-            # was requested and we own the clone (cleanUp==True, our own disposable temp
-            # dir from get_repo()) — recurse_submodules needs a real local checkout to
-            # `git submodule update` into, since GitHub's archive endpoint (the no-local-
-            # repo-path fallback) can never include submodule content. If the user passed
-            # both --redis_repo and --recurse_submodules, that directory is used (and
-            # checked out into) too — they opted into the mutation explicitly.
-            local_repo_path = (
-                redisDirPath
-                if (
-                    args.redis_repo is not None or (args.recurse_submodules and cleanUp)
-                )
-                else None
+            local_repo_path = resolve_local_repo_path(
+                args.redis_repo,
+                args.recurse_submodules,
+                cleanUp,
+                args.dry_run,
+                redisDirPath,
             )
 
             (
