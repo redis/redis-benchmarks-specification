@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-200K-elements-zscan-count-1000
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 200K elements in it and we query it using ZSCAN with a constant cursor of 0 and
+  COUNT 1000, repeated over the measurement window -- the count-hinted companion to
+  memtier_benchmark-1key-zset-200K-elements-zscan, exercising the larger per-call batch-walk
+  path (bigger bucket scan per invocation) at the same 200K-element scale used in upstream
+  large-zset representation design reports (redis/redis#15635). Members are short (13B)
+  alphanumeric strings; every member has a constant score (0) -- a single `__key__`
+  occurrence in the preload (score is a literal, not a second `__key__`) so every id in the
+  preload range is written exactly once as a member, with no off-by-one gap at the range
+  boundary. Measures Ops/sec. Encoding: skiplist+hashtable (200,000 elements, exceeds
+  zset-max-listpack-entries 128).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-prefix "" --command "ZADD zscan200k 0 zxxxxxx__key__"
+      --command-key-pattern P -n allkeys -c 1 -t 1 --hide-histogram --key-minimum 100000
+      --key-maximum 300000 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-200K-elements-short-alphanumeric
+  dataset_description: This dataset contains 1 sorted set key with 200,000 elements,
+    each member a 13-byte alphanumeric string and every score a constant 0.
+tested-groups:
+- sorted-set
+tested-commands:
+- zscan
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZSCAN zscan200k 0 COUNT 1000" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 53
