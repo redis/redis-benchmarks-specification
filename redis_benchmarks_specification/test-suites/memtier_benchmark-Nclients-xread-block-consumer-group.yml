@@ -81,6 +81,7 @@ tested-commands:
 - xreadgroup
 tested-groups:
 - stream
+- blocking
 redis-topologies:
 - oss-standalone
 build-variants:

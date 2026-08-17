@@ -17,6 +17,7 @@
     "memtier_benchmark-connection-hello",
     "memtier_benchmark-nokeys-server-time-pipeline-10",
     "memtier_benchmark-playbook-session-caching-json-100k-sessions",
-    "memtier_benchmark-array-arget-1K-random"
+    "memtier_benchmark-array-arget-1K-random",
+    "memtier_benchmark-Nclients-blpop-1key-rotated-pipeline-1"
   ]
 }

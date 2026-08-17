@@ -62,6 +62,7 @@ tested-commands:
 - blpop
 tested-groups:
 - list
+- blocking
 redis-topologies:
 - oss-standalone
 build-variants:
