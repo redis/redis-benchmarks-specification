@@ -97,6 +97,110 @@ spec:
       requests:
         cpus: "65"
         memory: "10g"
+
+  # Dragonfly proactor-thread ladder — cpus budget matches the oss-standalone-NN-io-threads
+  # rows above 1:1 (same core count at each rung) so a multi-core scaling comparison is on
+  # equal hardware, not equal flag values (Redis's N io-threads run alongside the always-on
+  # main thread, so its cpus is N+1; Dragonfly's N proactor threads have no separate main
+  # thread, so pinning it to the same N+1 cpus hands it one spare core too, mirroring the
+  # headroom convention above rather than shorting it a core — a deliberately generous
+  # choice, not a proven-neutral one: it's the simplest reproducible rule available without
+  # asserting more than is known about Dragonfly's other background/fiber-scheduler threads).
+  # EXCEPTION — the 01 rung: there is no oss-standalone-01-io-threads entry (the io-threads
+  # ladder above starts at 02), so dragonfly-01-proactor-threads has no N+1 counterpart to
+  # mirror and is instead pinned to cpus=1 (=N, not N+1), matching the single-threaded base
+  # `oss-standalone` entry below the io-threads ladder. It is therefore the one strict,
+  # ungenerous floor/control rung in this ladder, not part of the N+1 pattern used by every
+  # other rung — use it to sanity-check the rest of the ladder for systematic bias.
+  # Requires --server_name dragonfly at trigger time.
+  - name: dragonfly-01-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 1
+    resources:
+      requests:
+        cpus: "1"
+        memory: "10g"
+
+  - name: dragonfly-02-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 2
+    resources:
+      requests:
+        cpus: "3"
+        memory: "10g"
+
+  - name: dragonfly-04-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 4
+    resources:
+      requests:
+        cpus: "5"
+        memory: "10g"
+
+  - name: dragonfly-08-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 8
+    resources:
+      requests:
+        cpus: "9"
+        memory: "10g"
+
+  - name: dragonfly-12-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 12
+    resources:
+      requests:
+        cpus: "13"
+        memory: "10g"
+
+  - name: dragonfly-16-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 16
+    resources:
+      requests:
+        cpus: "17"
+        memory: "10g"
+
+  - name: dragonfly-32-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 32
+    resources:
+      requests:
+        cpus: "33"
+        memory: "10g"
+
+  - name: dragonfly-64-proactor-threads
+    type: oss-standalone
+    redis_topology:
+      primaries: 1
+      replicas: 0
+    redis_arguments: --proactor_threads 64
+    resources:
+      requests:
+        cpus: "65"
+        memory: "10g"
+
   - name: oss-standalone-01-replicas
     type: oss-standalone
     redis_topology:

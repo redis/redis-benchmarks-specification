@@ -26,6 +26,60 @@ def test_extract_redis_configuration_from_topology():
     assert "--io-threads 4 --io-threads-do-reads yes" in res
 
 
+def test_extract_dragonfly_configuration_from_topology():
+    topologies_map = get_topologies(
+        "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+    )
+    assert "dragonfly-04-proactor-threads" in topologies_map.keys()
+    res = extract_redis_configuration_from_topology(
+        topologies_map, "dragonfly-04-proactor-threads"
+    )
+    assert res != ""
+    assert "--proactor_threads 4" in res
+
+
+def test_dragonfly_topologies_match_io_threads_cpu_budget():
+    """Each dragonfly-NN-proactor-threads rung must request the same cpus as the
+    matching oss-standalone-NN-io-threads rung, so a scaling comparison runs on
+    equal hardware at every step.
+
+    The "01" rung is deliberately excluded here: there is no
+    oss-standalone-01-io-threads entry to match against (the io-threads ladder
+    starts at 02), so dragonfly-01-proactor-threads is instead the strict N-cpu
+    floor/control rung pinned against the base oss-standalone entry — see the
+    next test and the topologies.yml comment above the ladder."""
+    topologies_map = get_topologies(
+        "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+    )
+    for n in ["02", "04", "08", "12", "16", "32", "64"]:
+        redis_cpus = topologies_map[f"oss-standalone-{n}-io-threads"]["resources"][
+            "requests"
+        ]["cpus"]
+        dragonfly_cpus = topologies_map[f"dragonfly-{n}-proactor-threads"]["resources"][
+            "requests"
+        ]["cpus"]
+        assert (
+            redis_cpus == dragonfly_cpus
+        ), f"cpu budget mismatch at {n} threads: redis={redis_cpus} dragonfly={dragonfly_cpus}"
+
+
+def test_dragonfly_01_rung_is_the_strict_floor_control():
+    """dragonfly-01-proactor-threads has no oss-standalone-01-io-threads
+    counterpart (the io-threads ladder starts at 02), so it does NOT follow the
+    N+1 pattern every other rung above follows. It is pinned to cpus=1, matching
+    the single-threaded base oss-standalone entry (also cpus=1) instead — the
+    one strict, ungenerous rung in the ladder."""
+    topologies_map = get_topologies(
+        "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+    )
+    assert "oss-standalone-01-io-threads" not in topologies_map
+    assert (
+        topologies_map["dragonfly-01-proactor-threads"]["resources"]["requests"]["cpus"]
+        == topologies_map["oss-standalone"]["resources"]["requests"]["cpus"]
+        == "1"
+    )
+
+
 def test_extract_replica_count():
     topologies_map = get_topologies(
         "./redis_benchmarks_specification/setups/topologies/topologies.yml"
