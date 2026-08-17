@@ -76,6 +76,12 @@ def test_array_file_is_mapped():
     }
 
 
+def test_blocked_file_is_mapped():
+    assert scope_fields_from_changed_files(["src/blocked.c"], F2G, CORE) == {
+        "tests_groups_regexp": "^(?:blocking)$"
+    }
+
+
 def test_non_source_changes_ignored():
     f = scope_fields_from_changed_files(
         ["src/t_hash.c", "tests/unit/type/hash.tcl", ".github/workflows/ci.yml"],
