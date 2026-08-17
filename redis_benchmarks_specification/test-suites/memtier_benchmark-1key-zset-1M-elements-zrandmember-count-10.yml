@@ -1,0 +1,47 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-zrandmember-count-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 1M elements (integer scores 1..1,000,000) and we query it using ZRANDMEMBER key 10 --
+  a small positive count, well under the ZRANDMEMBER_SUB_STRATEGY_MUL large-fraction threshold, so
+  zrandmemberWithCountCommand takes its cheap CASE 1/2 strategy (repeated single-member random
+  picks), not the allocation-heavy CASE 3 auxiliary-dict-build path. This is the common
+  "fetch a handful of random members" usage pattern, distinct from the existing 10K-element spec
+  (memtier_benchmark-1key-zset-10K-elements-skiplist-zrandmember-count-5K.yml), which deliberately
+  exercises the opposite, large-fraction CASE 3 path. Before this spec, nothing above 1M members
+  ran for any zset read command in this suite. Encoding: skiplist (1,000,000 elements, exceeds
+  zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
+      --key-maximum 1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-integer
+  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
+    each with an integer score.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANDMEMBER lb 10" --hide-histogram --test-time 180 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73
