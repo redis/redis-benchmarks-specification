@@ -1,18 +1,21 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zpopmin-bounded
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key preloaded with
-  ~1M elements (999,996 verified via ZCARD), issuing a BOUNDED number of ZPOPMIN calls. PRELOAD
+  1,000,000 elements (verified via ZCARD), issuing a BOUNDED number of ZPOPMIN calls. PRELOAD
   DOMAIN: the ZADD lb __key__ __key__ preload has TWO __key__ occurrences, and memtier''s P
   key-pattern draws a fresh sequential integer per occurrence -- so each ZADD call consumes 2
-  domain positions (one becomes the score, the next the member) -- --key-maximum is set to
-  2,000,000 (double the ~1M target) so the 10 connections x 100,000 calls each can consume their
-  full domain share without overrunning into a neighbor''s range (which, at key-maximum 1,000,000,
-  caused a measured shortfall to 949,996 via cross-connection collisions). ZPOPMIN is destructive
-  -- to avoid draining the zset (which would fall onto the empty-key fast-return path and corrupt
-  the measurement, the anti-pattern this suite already avoids for LPOP/RPOP via
+  CONSECUTIVE domain positions (the first becomes the score, the second becomes the member). The
+  preload explicitly sets --key-minimum 1 --key-maximum 2000000, a clean 2,000,000-value domain
+  (double the ~1M element target) so the 10 connections x 100,000 calls each consume an exact
+  200,000-value block (2 positions x 100,000 calls) with no fractional boundary and no overrun into
+  a neighbor''s range (an earlier version without an explicit --key-minimum defaulted it to 0,
+  making the domain 2,000,001-wide and not evenly divisible by 10, and at --key-maximum 1,000,000
+  caused a measured cardinality shortfall to 949,996 via cross-connection collisions). ZPOPMIN is
+  destructive -- to avoid draining the zset (which would fall onto the empty-key fast-return path
+  and corrupt the measurement, the anti-pattern this suite already avoids for LPOP/RPOP via
   memtier_benchmark-1Mkeys-list-lpop-rpop-with-10B-values), the client phase is capped via -n
-  200000 (t=1, c=1, so -n is the exact total pop count) -- roughly 20% of the preloaded 999,996
-  elements, leaving ~799,996 intact for the full run. Encoding: skiplist (999,996 elements,
+  200000 (t=1, c=1, so -n is the exact total pop count) -- exactly 20% of the preloaded 1,000,000
+  elements, leaving 800,000 intact for the full run. Encoding: skiplist (1,000,000 elements,
   exceeds zset-max-listpack-entries 128). Metric of interest: Ops/sec. ZPOPMIN had zero
   non-blocking benchmark coverage before this spec (only the blocking BZPOPMIN variant existed).'
 dbconfig:
@@ -24,15 +27,15 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --pipeline 50 --command="ZADD lb __key__  __key__" --command-key-pattern=P
-      --key-maximum 2000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+      --key-minimum 1 --key-maximum 2000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 999,996 elements (verified
-    via ZCARD), each with an integer score. Member and score values span the 1..2,000,000
-    domain (score = member - 1) rather than 1..1,000,000, due to the preload's dual __key__
-    draw per ZADD call -- see the workload description for detail.
+  dataset_description: This dataset contains 1 sorted set key with 1,000,000 elements (verified
+    via ZCARD), each with an integer score. Member values are the even integers 2..2,000,000
+    and score values are the odd integers 1..1,999,999 (score = member - 1), a byproduct of
+    the preload's dual __key__ draw per ZADD call -- see the workload description for detail.
 tested-groups:
 - sorted-set
 tested-commands:
