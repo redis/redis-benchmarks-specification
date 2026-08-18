@@ -25,7 +25,7 @@ build-variants:
 clientconfig:
   run_image: redis/bullmq-benchmark:0.1.0
   tool: bullmq-bench
-  arguments: --workers 50 --jobs 100000 --warmup-jobs 2000 --num-queues 1 --quiet
+  arguments: --workers 50 --jobs 100000 --warmup-jobs 2000 --num-queues 1 --quiet --queue "{jobs}default"
   resources:
     requests:
       cpus: '4'

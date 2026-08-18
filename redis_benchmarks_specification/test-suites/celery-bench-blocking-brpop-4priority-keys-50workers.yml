@@ -29,7 +29,7 @@ clientconfig:
   run_image: redis/celery-benchmark:0.1.0
   tool: celery-bench
   arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 1 --priorities
-    4 --brpop-timeout-secs 1 --quiet
+    4 --brpop-timeout-secs 1 --quiet --queue "{jobs}default"
   resources:
     requests:
       cpus: '4'

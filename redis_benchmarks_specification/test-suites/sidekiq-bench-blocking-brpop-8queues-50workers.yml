@@ -26,7 +26,7 @@ build-variants:
 clientconfig:
   run_image: redis/sidekiq-benchmark:0.1.0
   tool: sidekiq-bench
-  arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 8 --quiet
+  arguments: --workers 50 --jobs 200000 --warmup-jobs 5000 --num-queues 8 --quiet --queue "{jobs}default"
   resources:
     requests:
       cpus: '4'
