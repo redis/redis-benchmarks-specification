@@ -16,7 +16,7 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   "new member" insert as the name states. The run is bounded to -n 300000 rather than an unbounded
   --test-time so revisits stay infrequent (empirically verified on the smaller 250-element sibling
   spec at an equivalent domain fraction: 90% of ops grew the zset). Encoding: skiplist+hashtable /
-  B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  B+tree (949,996 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
   Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-position
   lookup, unlike the existing zincrby/zrank specs whose update-in-place and hash-indexed-lookup
   paths bypass it.'
