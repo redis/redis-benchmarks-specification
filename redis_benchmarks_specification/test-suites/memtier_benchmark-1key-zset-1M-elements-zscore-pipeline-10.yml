@@ -1,8 +1,15 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zscore-pipeline-10
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements in it and we query it using ZCARD. Encoding: skiplist+hashtable (1,000,000
-  elements, exceeds zset-max-listpack-entries 128).'
+  contains 998,950 elements (verified via ZCARD), not the nominal 1,000,000 -- the shared preload
+  command (ZADD lb __key__ __key__) has two __key__ occurrences, and memtier''s P key-pattern
+  draws a fresh sequential value per occurrence rather than one shared value, leaving the set
+  slightly short of the nominal count (see #508). We query it using ZSCORE. FIX: the client
+  command previously omitted --key-maximum, so memtier defaulted to its own 10,000,000 key range
+  -- with real members only populated up to ~1,000,000, ~90% of ZSCORE calls missed entirely
+  (confirmed live: 89.72% miss rate). Added --key-maximum 1000000 to match the real populated
+  range; re-verified live at 99.87% hit rate (0.13% residual miss from the ZCARD shortfall above).
+  Encoding: skiplist+hashtable (998,950 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -17,8 +24,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 998,950 elements (verified
+    via ZCARD, not the nominal 1,000,000 -- see #508), each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -32,8 +39,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="zscore lb __key__" --key-prefix "" --hide-histogram --test-time
-    180 --pipeline 10
+  arguments: --command="zscore lb __key__" --key-maximum 1000000 --key-prefix "" --hide-histogram
+    --test-time 180 --pipeline 10
   resources:
     requests:
       cpus: '4'
