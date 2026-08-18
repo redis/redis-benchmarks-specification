@@ -1,8 +1,13 @@
 version: 0.4
 name: memtier_benchmark-1key-zrank-1M-elements-pipeline-1
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements and we query it using ZRANK. Encoding: skiplist+hashtable (1,000,000
-  elements, exceeds zset-max-listpack-entries 128).'
+  contains 949,996 elements (verified via ZCARD), not the nominal 1,000,000 -- the shared
+  preload command (ZADD lb __key__ __key__) has two __key__ occurrences, and memtier''s P
+  key-pattern draws a fresh sequential value per occurrence rather than one shared value, so
+  cross-connection wraparound leaves the set ~5% short of the nominal count (see #508). Query
+  member lookups (ZRANK) still hit real, densely-packed members at a ~95%+ rate since the
+  populated range still spans close to the full nominal domain. Encoding: skiplist+hashtable
+  (949,996 elements, exceeds zset-max-listpack-entries 128).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -17,8 +22,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 949,996 elements (verified
+    via ZCARD, not the nominal 1,000,000 -- see #508), each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:

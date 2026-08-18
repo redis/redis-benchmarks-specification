@@ -1,9 +1,9 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zadd-new-random-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  is pre-loaded with a nominal 1M elements (integer scores drawn from the 1..1,000,000 range --
-  the actual populated count is somewhat lower than 1M due to a separate, pre-existing preload
-  quirk tracked in #508) then we ZADD members named newmember__key__ with a score, where the
+  is pre-loaded with 949,996 elements (verified via ZCARD, not the nominal 1,000,000 -- the
+  shared preload has a dual-__key__-draw mechanic documented in #508 and its fix) then we ZADD
+  members named newmember__key__ with a score, where the
   member-name suffix and the score are each drawn independently and uniformly at random from that
   SAME 1..1,000,000 range -- memtier evaluates every __key__ occurrence in a command as its own
   independent draw, not one shared value, so the score is not simply "the member''s number" (the
@@ -16,7 +16,7 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key.
   "new member" insert as the name states. The run is bounded to -n 300000 rather than an unbounded
   --test-time so revisits stay infrequent (empirically verified on the smaller 250-element sibling
   spec at an equivalent domain fraction: 90% of ops grew the zset). Encoding: skiplist+hashtable /
-  B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  B+tree (949,996 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
   Ops/sec. Designed to stress the score-ordered structure''s top-down descent/insert-position
   lookup, unlike the existing zincrby/zrank specs whose update-in-place and hash-indexed-lookup
   paths bypass it.'
@@ -34,8 +34,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 949,996 elements (verified
+    via ZCARD, not the nominal 1,000,000 -- see #508), each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:

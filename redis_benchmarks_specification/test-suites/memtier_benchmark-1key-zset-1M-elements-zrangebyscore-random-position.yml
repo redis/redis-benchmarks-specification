@@ -1,12 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zrangebyscore-random-position
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains a nominal 1M elements (integer scores drawn from the 1..1,000,000 range -- the actual
-  populated count and score distribution evenness are somewhat affected by a separate, pre-existing
-  preload quirk tracked in #508) and we query it using ZRANGEBYSCORE starting from a score drawn
-  uniformly at random from that same nominal range up to +inf, LIMIT 0 10 -- so every call seeks a
-  fresh, arbitrary position rather than always starting from an edge. Encoding: skiplist+hashtable
-  / B+tree (nominal 1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of interest:
+  contains 949,996 elements (verified via ZCARD, not the nominal 1,000,000 -- the shared preload
+  has a dual-__key__-draw mechanic documented in #508 and its fix) and we query it using
+  ZRANGEBYSCORE starting from a score drawn uniformly at random from the same nominal 1..1,000,000
+  range up to +inf, LIMIT 0 10 -- so every call seeks a fresh, arbitrary position rather than
+  always starting from an edge. Encoding: skiplist+hashtable / B+tree (949,996 elements, exceeds
+  zset-max-listpack-entries 128). Metric of interest:
   Ops/sec. Designed to stress the score-ordered structure''s top-down seek-to-position path,
   complementing the existing zrangebyscore-all-elements specs (which only cover a 100-element
   listpack-encoded set) and the zrangestore specs (which copy a contiguous range and mostly hit an
@@ -25,8 +25,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 949,996 elements (verified
+    via ZCARD, not the nominal 1,000,000 -- see #508), each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:

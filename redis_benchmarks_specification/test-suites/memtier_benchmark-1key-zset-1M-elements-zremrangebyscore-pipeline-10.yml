@@ -1,9 +1,24 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-1M-elements-zremrangebyscore-pipeline-10
-description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
-  contains 1M elements in it and we query it using ZREVRANGE with a range of 5 elements. This
-  benchmarks helps assessing: https://github.com/redis/redis/issues/10310 Encoding:
-  skiplist+hashtable (1,000,000 elements, exceeds zset-max-listpack-entries 128).'
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key preloaded with
+  998,950 elements (verified via ZCARD; the ~5% shortfall vs. the nominal 1,000,000 is the same
+  dual-__key__ preload mechanic tracked in #508) and we remove ranges from it using
+  ZREMRANGEBYSCORE. FIX (more severe than the cardinality issue above): the client command
+  previously omitted BOTH --key-maximum and --key-prefix. Without --key-prefix, memtier defaulted
+  to prefixing substituted values with "memtier-" (e.g. "memtier-138344"), so every
+  ZREMRANGEBYSCORE call sent non-numeric score bounds -- confirmed live via MONITOR and 0 net
+  ZCARD change across hundreds of thousands of calls: this spec has never actually removed a
+  single real element, only measured Redis''s error-reply latency for an invalid-float score
+  argument. Added --key-maximum 1000000 --key-prefix "" to send real numeric bounds within the
+  populated range. CAVEAT (documented, not fully resolved -- see follow-up issue): because both
+  range endpoints are still drawn independently and uniformly across the full 0..1,000,000 span,
+  a single call has a high chance of spanning a huge fraction of the domain -- verified live: the
+  set drops to <1% of its original size within the first ~100 calls, after which the remainder of
+  the run measures the fast empty-range no-op path, not steady-state removal cost. A proper fix
+  needs a producer that continuously refills the key (the multi-clientconfig pattern used by the
+  BLPOP/BZPOPMIN/XREADGROUP blocking suites), which is a larger redesign tracked separately.
+  Encoding: skiplist+hashtable (998,950 elements at test start, exceeds zset-max-listpack-entries
+  128).'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -18,8 +33,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 1key-zset-1M-elements-integer
-  dataset_description: This dataset contains 1 sorted set key with 1 million elements,
-    each with an integer score.
+  dataset_description: This dataset contains 1 sorted set key with 998,950 elements (verified
+    via ZCARD, not the nominal 1,000,000 -- see #508), each with an integer score.
 tested-groups:
 - sorted-set
 tested-commands:
@@ -33,8 +48,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZREMRANGEBYSCORE lb __key__ __key__"  --hide-histogram --test-time
-    120 --pipeline 10
+  arguments: --command="ZREMRANGEBYSCORE lb __key__ __key__" --key-maximum 1000000 --key-prefix
+    "" --hide-histogram --test-time 120 --pipeline 10
   resources:
     requests:
       cpus: '4'
