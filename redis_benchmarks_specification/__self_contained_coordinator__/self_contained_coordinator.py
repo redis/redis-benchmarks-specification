@@ -172,13 +172,13 @@ def _start_heartbeat(conn, platform, arch, version, args):
     """Start a background thread that writes runner state to Redis every HEARTBEAT_INTERVAL_SECS."""
     import threading
 
-    start_ts = int(datetime.datetime.utcnow().timestamp())
+    start_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
     def _heartbeat_loop():
         key = f"{HEARTBEAT_KEY_PREFIX}:{platform}"
         while True:
             try:
-                now_ts = int(datetime.datetime.utcnow().timestamp())
+                now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 fields = {
                     "platform": platform,
                     "arch": arch,

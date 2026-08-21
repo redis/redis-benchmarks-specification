@@ -435,7 +435,7 @@ def admin_queues_command(conn, args):
         zset_key = platforms[platform_name]
 
         # Get recent benchmark runs (last 7 days)
-        now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
+        now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
         week_ago_ms = now_ms - (7 * 24 * 60 * 60 * 1000)
         stream_ids = conn.zrangebyscore(zset_key, week_ago_ms, "+inf", withscores=True)
 
@@ -1227,7 +1227,7 @@ def admin_work_command(conn, args):
 
     # 2. Also collect from active queues (streams that have test lists but may not be in pending)
     platform_keys = conn.keys("ci.benchmarks.redis/ci/redis/redis:benchmarks:*:zset")
-    now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     day_ago_ms = now_ms - (24 * 60 * 60 * 1000)
 
     for pk in platform_keys:
@@ -1513,7 +1513,7 @@ def admin_health_command(conn, args):
         started_at_str = fields.get("started_at", "0")
 
         # Calculate age of heartbeat and uptime
-        now_epoch = int(datetime.datetime.utcnow().timestamp())
+        now_epoch = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
         try:
             ts = int(ts_str)
             age_secs = now_epoch - ts
