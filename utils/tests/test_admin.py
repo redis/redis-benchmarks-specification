@@ -121,7 +121,7 @@ def test_format_age():
     """Test stream ID age formatting."""
     import datetime
 
-    now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     # 30 seconds ago
     assert "s ago" in _format_age(f"{now_ms - 30000}-0")
     # 5 minutes ago
