@@ -1053,9 +1053,11 @@ def compute_env_comparison_table(
     if to_date is None:
         to_date = START_TIME_NOW_UTC
     if from_ts_ms is None:
-        from_ts_ms = int(from_date.timestamp() * 1000)
+        from_ts_ms = int(
+            from_date.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000
+        )
     if to_ts_ms is None:
-        to_ts_ms = int(to_date.timestamp() * 1000)
+        to_ts_ms = int(to_date.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
 
     # Extract test names from the test parameter
     test_names = []
@@ -1357,9 +1359,11 @@ def compute_regression_table(
     if to_date is None:
         to_date = START_TIME_NOW_UTC
     if from_ts_ms is None:
-        from_ts_ms = int(from_date.timestamp() * 1000)
+        from_ts_ms = int(
+            from_date.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000
+        )
     if to_ts_ms is None:
-        to_ts_ms = int(to_date.timestamp() * 1000)
+        to_ts_ms = int(to_date.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
     from_human_str = humanize.naturaltime(
         dt.datetime.utcfromtimestamp(from_ts_ms / 1000)
     )

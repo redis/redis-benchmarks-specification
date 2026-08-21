@@ -364,7 +364,7 @@ class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
                     request_data = {}
 
                 # Record flush timestamp
-                flush_time = datetime.datetime.utcnow()
+                flush_time = datetime.datetime.now(datetime.timezone.utc)
                 _flush_timestamp = flush_time
 
                 logging.info(
