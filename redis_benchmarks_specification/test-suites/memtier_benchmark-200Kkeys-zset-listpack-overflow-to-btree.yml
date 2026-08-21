@@ -1,0 +1,55 @@
+version: 0.4
+name: memtier_benchmark-200Kkeys-zset-listpack-overflow-to-btree
+description: 'Runs memtier_benchmark over 200,000 independent SORTED SET keys, each preloaded
+  with exactly 8 listpack-encoded members (zset-max-listpack-entries set to 8), then each
+  measured ZADD adds a 9th member to its own key -- crossing the threshold and triggering
+  exactly one zsetConvertAndExpand() LISTPACK->BTREE conversion per op. Isolates the
+  conversion cost as the dominant per-op cost (unlike a single large key growing past the
+  threshold once across hundreds of thousands of unrelated ops, where the one-time
+  conversion is diluted to invisibility in the Ops/sec metric). This is the closest
+  memtier-expressible proxy for the LISTPACK->BTREE conversion cost paid during RDB load of
+  a listpack-encoded zset that exceeds the loading instance''s zset-max-listpack-entries
+  (ZADD''s own listpack-overflow path and RDB listpack-promotion both call the exact same
+  zsetConvertAndExpand() code, so the per-conversion cost measured here transfers directly)
+  -- an actual RDB-load-time benchmark is not expressible in this memtier-command-throughput
+  framework, since RDB load happens once at server startup rather than as a repeatable
+  client-issued command. Encoding: listpack (8 elements, at zset-max-listpack-entries) ->
+  btree (9 elements, past it). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    zset-max-listpack-entries: '8'
+  check:
+    keyspacelen: 200000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="ZADD zset:__key__ 1 m1 2 m2 3 m3 4 m4 5 m5 6 m6 7 m7 8 m8"
+      --command-key-pattern=P --key-minimum 1 --key-maximum 200000 --key-prefix ""
+      -n 200000 --hide-histogram -t 10 -c 1 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 200Kkeys-zset-8-elements-listpack
+  dataset_description: 200,000 sorted-set keys, each listpack-encoded with 8 integer-scored
+    members (m1..m8), exactly at zset-max-listpack-entries 8.
+tested-groups:
+- sorted-set
+tested-commands:
+- zadd
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZADD zset:__key__ 9 m9" --command-key-pattern=P --key-minimum 1
+    --key-maximum 200000 --key-prefix "" --hide-histogram -n 200000 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 74
