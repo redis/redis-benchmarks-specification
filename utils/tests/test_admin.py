@@ -28,8 +28,10 @@ from redis_benchmarks_specification.__cli__.admin import (
     _format_idle,
     _format_age,
     _get_queue_progress,
+    _get_stale_pel_summary,
     _short_hash,
     _short_info,
+    STALE_PEL_IDLE_MS,
 )
 from redis_benchmarks_specification.__builder__.builder import (
     generate_benchmark_stream_request,
@@ -41,6 +43,9 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
     get_arch_specific_stream_name,
     REDIS_BINS_EXPIRE_SECS,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
+    get_runners_consumer_group_name,
 )
 
 
@@ -655,6 +660,161 @@ def test_admin_cancel_command():
         # Clean up
         conn.delete(zset_key)
 
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def _reset_runner_group(conn, stream, group_name):
+    """Drop any leftover consumer group from a prior run (e.g. one that
+    crashed before its own cleanup ran, or a concurrent test run) so each
+    stale-PEL test starts from a known-empty PEL."""
+    try:
+        conn.xgroup_destroy(stream, group_name)
+    except redis.exceptions.ResponseError:
+        pass
+    conn.xgroup_create(stream, group_name, id="$", mkstream=True)
+
+
+def test_get_stale_pel_summary_flags_abandoned_message_when_idle():
+    """A pending message idle past STALE_PEL_IDLE_MS is flagged when the
+    heartbeat reports idle/waiting -- the #519 fingerprint: a runner that
+    looks perfectly healthy while it silently abandoned a message."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-stale-pel"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        msg_id = None
+        try:
+            msg_id = conn.xadd(stream, {"f": "v"})
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+
+            # Force this specific message's idle time past the threshold
+            # without actually waiting -- XCLAIM's IDLE option exists for
+            # exactly this.
+            conn.xclaim(
+                stream,
+                group_name,
+                "consumer-1",
+                min_idle_time=0,
+                message_ids=[msg_id],
+                idle=STALE_PEL_IDLE_MS + 1000,
+            )
+
+            summary = _get_stale_pel_summary(conn, platform, "waiting")
+            assert summary != ""
+            assert "1 msgs" in summary
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            if msg_id is not None:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_get_stale_pel_summary_ignores_pending_message_while_running():
+    """The exact same old pending message must NOT be flagged while the
+    heartbeat reports "running" -- a message legitimately stays pending for
+    the entire duration of a benchmark run (a full suite can take many
+    hours), so idle time alone is not a valid abandonment signal."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-stale-pel-busy"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        msg_id = None
+        try:
+            msg_id = conn.xadd(stream, {"f": "v"})
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+            conn.xclaim(
+                stream,
+                group_name,
+                "consumer-1",
+                min_idle_time=0,
+                message_ids=[msg_id],
+                idle=STALE_PEL_IDLE_MS + 1000,
+            )
+
+            assert _get_stale_pel_summary(conn, platform, "running") == ""
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            if msg_id is not None:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_get_stale_pel_summary_combines_both_arch_streams():
+    """A platform whose runner has stale pending messages on BOTH arch
+    streams (unusual, but not prevented by anything) must report the
+    combined count and the oldest of the two ages, not just one arch's."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-stale-pel-both-arch"
+        amd_stream = get_arch_specific_stream_name("amd64")
+        arm_stream = get_arch_specific_stream_name("arm64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, amd_stream, group_name)
+        _reset_runner_group(conn, arm_stream, group_name)
+
+        amd_msg_id = None
+        arm_msg_id = None
+        try:
+            amd_msg_id = conn.xadd(amd_stream, {"f": "v"})
+            conn.xreadgroup(group_name, "consumer-1", {amd_stream: ">"}, count=1)
+            conn.xclaim(
+                amd_stream,
+                group_name,
+                "consumer-1",
+                min_idle_time=0,
+                message_ids=[amd_msg_id],
+                idle=STALE_PEL_IDLE_MS + 1000,
+            )
+
+            arm_msg_id = conn.xadd(arm_stream, {"f": "v"})
+            conn.xreadgroup(group_name, "consumer-1", {arm_stream: ">"}, count=1)
+            conn.xclaim(
+                arm_stream,
+                group_name,
+                "consumer-1",
+                min_idle_time=0,
+                message_ids=[arm_msg_id],
+                idle=2 * STALE_PEL_IDLE_MS + 1000,  # older than the amd64 one
+            )
+
+            summary = _get_stale_pel_summary(conn, platform, "waiting")
+            assert "2 msgs" in summary
+        finally:
+            conn.xgroup_destroy(amd_stream, group_name)
+            conn.xgroup_destroy(arm_stream, group_name)
+            if amd_msg_id is not None:
+                conn.xdel(amd_stream, amd_msg_id)
+            if arm_msg_id is not None:
+                conn.xdel(arm_stream, arm_msg_id)
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_get_stale_pel_summary_clean_when_no_group():
+    """No consumer group at all for this platform must not raise -- e.g. a
+    freshly-onboarded runner that has never claimed a message yet."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+        assert _get_stale_pel_summary(conn, "test-platform-never-seen", "waiting") == ""
     except redis.exceptions.ConnectionError:
         pass
 

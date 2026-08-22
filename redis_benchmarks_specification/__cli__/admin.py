@@ -18,6 +18,27 @@ from redis_benchmarks_specification.__common__.env import (
     STREAM_GH_NEW_BUILD_RUNNERS_CG,
     get_arch_specific_stream_name,
 )
+from redis_benchmarks_specification.__self_contained_coordinator__.runners import (
+    get_runners_consumer_group_name,
+)
+
+# A runner's own consumer group can hold abandoned (delivered, never ACK'd) messages
+# indefinitely while its heartbeat still reports a healthy "waiting"/"idle" status --
+# the heartbeat only reflects in-memory process state, it never cross-checks the PEL.
+# See redis/redis-benchmarks-specification#519: one runner sat on 62 abandoned
+# messages (oldest 16.9 days) while every liveness view showed it idle-and-available.
+#
+# This threshold deliberately does NOT try to catch "processing is taking too long" --
+# a single legitimate message stays pending for the entire duration of its work, which
+# for a full test suite can be many hours (see the GA-baseline-seed cost note: an
+# n=1 full-suite pass is 11.7h+), so any fixed idle-time cutoff alone would false-positive
+# on every long-running legitimate benchmark. The actual #519 fingerprint is narrower and
+# unambiguous: heartbeat status is idle/waiting (i.e. NOT "running") while the PEL still
+# has a pending message -- a healthy runner always acks before flipping back to waiting,
+# so that combination can only mean an abandoned message. See
+# _get_stale_pel_summary()'s status gate. This grace window just absorbs the brief
+# window around a heartbeat write (every 30s) and the ack/status-flip ordering.
+STALE_PEL_IDLE_MS = 60 * 1000  # 1 minute
 
 
 def _get_caller_identity():
@@ -1468,11 +1489,67 @@ def admin_work_command(conn, args):
     print()
 
 
+def _get_stale_pel_summary(conn, platform, heartbeat_status):
+    """Check platform's own runner consumer group for abandoned (pending, never
+    ACK'd) messages older than STALE_PEL_IDLE_MS, across both arch streams.
+
+    Only meaningful when the heartbeat itself claims the runner is NOT
+    actively processing anything (idle/waiting): a single legitimate message
+    stays pending in the PEL for the *entire* duration of that message's
+    work, which for a full test suite can be many hours (a busy runner with
+    status "running" is expected to have an old-looking pending message --
+    that's not a bug). The #519 fingerprint is specifically the combination
+    of "heartbeat says idle/waiting" + "PEL still has an old pending
+    message" -- that mismatch is what a healthy runner can never produce on
+    its own, since it always acks before going back to "waiting".
+
+    Returns "" when clean or when the runner is legitimately busy, otherwise
+    a short "N msgs, oldest=Xm/h/d" summary (see
+    redis/redis-benchmarks-specification#519).
+    """
+    # Also suppresses "DOWN"/"?": a runner with no recent heartbeat at all is
+    # already alerted separately via the heartbeat-age check in admin_health_command
+    # and fleet-health-watch.sh -- reporting stale PEL too would be redundant
+    # noise for the same underlying "this runner is unreachable" condition.
+    if heartbeat_status not in ("waiting", "idle"):
+        return ""
+    group_name = get_runners_consumer_group_name(platform)
+    worst_count = 0
+    worst_idle_ms = 0
+    for arch in ("amd64", "arm64"):
+        stream = get_arch_specific_stream_name(arch)
+        try:
+            pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 1000)
+        except redis.exceptions.ResponseError:
+            continue  # group doesn't exist on this arch stream -- not an error
+        if not pending_msgs:
+            continue
+        idle_values = [m.get("time_since_delivered", 0) for m in pending_msgs]
+        max_idle = max(idle_values)
+        if max_idle > STALE_PEL_IDLE_MS:
+            worst_count += len(pending_msgs)
+            worst_idle_ms = max(worst_idle_ms, max_idle)
+    if worst_idle_ms == 0:
+        return ""
+    idle_secs = worst_idle_ms / 1000
+    if idle_secs < 3600:
+        age = f"{int(idle_secs // 60)}m"
+    elif idle_secs < 86400:
+        age = f"{int(idle_secs // 3600)}h"
+    else:
+        age = f"{idle_secs / 86400:.1f}d"
+    return f"{worst_count} msgs, oldest={age}"
+
+
 def admin_health_command(conn, args):
     """Show runner health table from heartbeat keys.
 
     Each runner writes a heartbeat HASH every 30s with platform, arch, version,
     status, filters, and current work. Missing heartbeat = runner is down.
+
+    Also cross-checks each runner's own consumer group PEL for abandoned
+    messages -- the heartbeat alone cannot detect this, since it only reflects
+    in-memory process state and never queries the PEL (see #519).
     """
     print("\n=== RUNNER HEALTH ===\n")
 
@@ -1568,12 +1645,20 @@ def admin_health_command(conn, args):
                 short_test = current_test.replace("memtier_benchmark-", "mt-")
                 work += f" ({short_test})"
 
+        # Cross-check this runner's own consumer group PEL: a healthy-looking
+        # heartbeat (idle/waiting/running) can coexist with abandoned messages
+        # the heartbeat itself has no way to see (#519). Single space-free
+        # token ("-" when clean) so it stays positionally parseable.
+        stale_pel = _get_stale_pel_summary(conn, platform, status)
+        pel_flag = ("STALE:" + stale_pel.replace(" ", "")) if stale_pel else "-"
+
         rows.append(
             {
                 "platform": platform,
                 "arch": arch,
                 "version": version,
                 "status": status,
+                "pel": pel_flag,
                 "heartbeat": age,
                 "uptime": uptime,
                 "filters": filters_str,
@@ -1583,12 +1668,14 @@ def admin_health_command(conn, args):
 
     # Print table
     print(
-        f"  {'PLATFORM':<45} {'ARCH':<6} {'VERSION':<10} {'STATUS':<9} {'BEAT':<6} {'UPTIME':<8} {'FILTERS':<25} {'CURRENT WORK'}"
+        f"  {'PLATFORM':<45} {'ARCH':<6} {'VERSION':<10} {'STATUS':<9} {'PEL':<28} {'BEAT':<6} {'UPTIME':<8} {'FILTERS':<25} {'CURRENT WORK'}"
     )
-    print(f"  {'-'*45} {'-'*6} {'-'*10} {'-'*9} {'-'*6} {'-'*8} {'-'*25} {'-'*40}")
+    print(
+        f"  {'-'*45} {'-'*6} {'-'*10} {'-'*9} {'-'*28} {'-'*6} {'-'*8} {'-'*25} {'-'*40}"
+    )
     for r in rows:
         print(
-            f"  {r['platform']:<45} {r['arch']:<6} {r['version']:<10} {r['status']:<9} {r['heartbeat']:<6} {r['uptime']:<8} {r['filters']:<25} {r['work']}"
+            f"  {r['platform']:<45} {r['arch']:<6} {r['version']:<10} {r['status']:<9} {r['pel']:<28} {r['heartbeat']:<6} {r['uptime']:<8} {r['filters']:<25} {r['work']}"
         )
     print()
 
