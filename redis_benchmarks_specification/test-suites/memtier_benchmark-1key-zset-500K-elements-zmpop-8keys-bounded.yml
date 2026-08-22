@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-500K-elements-zmpop-8keys-bounded
-description: 'Runs memtier_benchmark issuing ZMPOP with numkeys=8 against a single populated sorted set of 500,000 elements, using a BOUNDED number of calls. ZMPOP has no coverage today. Only the LAST of the 8 key names is populated: ZMPOP scans the provided keys in order and stops at the first non-empty one, so populating the last key forces all 8 lookups on every call and exercises the numkeys fan-out rather than a single hit. PRELOAD DOMAIN: the ZADD preload has two __key__ occurrences (score and member) and runs -n 50000 across -t 10 threads, giving 500,000 members (verified via ZCARD). The client is bounded to -n 100000 at -c 1 -t 1, i.e. exactly 100,000 pops - 20% of the preload - so the sorted set cannot drain and the suite cannot degenerate into measuring the empty reply.'
+description: 'Runs memtier_benchmark issuing ZMPOP with numkeys=8 against a single populated sorted set of 500,000 elements, using a BOUNDED number of calls. ZMPOP has no coverage today. Only the LAST of the 8 key names is populated: ZMPOP scans the provided keys in order and stops at the first non-empty one, so populating the last key forces all 8 lookups on every call and exercises the numkeys fan-out rather than a single hit. PRELOAD DOMAIN: the ZADD preload has two __key__ occurrences (score and member) and runs -n 50000 across -t 10 threads for 500,000 commands; because each command draws TWO domain positions the key domain is sized at 1,000,000 so the draws do not wrap and collide, giving 500,000 distinct members (verified via ZCARD). The client is bounded to -n 100000 at -c 1 -t 1, i.e. exactly 100,000 pops - 20% of the preload - so the sorted set cannot drain and the suite cannot degenerate into measuring the empty reply.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -9,7 +9,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --pipeline 50 --command="ZADD zmpop:key:8 __key__ __key__" --command-key-pattern=P --key-minimum 1 --key-maximum 500000 --key-prefix "" -n 50000 --hide-histogram -t 10 -c 1
+    arguments: --pipeline 50 --command="ZADD zmpop:key:8 __key__ __key__" --command-key-pattern=P --key-minimum 1 --key-maximum 1000000 --key-prefix "" -n 50000 --hide-histogram -t 10 -c 1
   resources:
     requests:
       memory: 1g
