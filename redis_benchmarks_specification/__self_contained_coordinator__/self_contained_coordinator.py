@@ -431,7 +431,12 @@ class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
         # Stop all Docker containers with force if needed
         try:
             logging.info("Stopping all Docker containers")
-            client = docker.from_env()
+            # Explicit timeout: docker-py's client-wide default is 60s,
+            # applied to every API call that doesn't pass its own override. A
+            # busy shared Docker host can exceed 60s for an ordinary, fast
+            # call, so a longer client-wide default avoids spurious
+            # ReadTimeout failures under load.
+            client = docker.from_env(timeout=300)
             containers = client.containers.list()
 
             if not containers:
@@ -481,7 +486,12 @@ class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
     def _check_stuck_containers(self, max_hours=2):
         """Check for containers running longer than max_hours and return info"""
         try:
-            client = docker.from_env()
+            # Explicit timeout: docker-py's client-wide default is 60s,
+            # applied to every API call that doesn't pass its own override. A
+            # busy shared Docker host can exceed 60s for an ordinary, fast
+            # call, so a longer client-wide default avoids spurious
+            # ReadTimeout failures under load.
+            client = docker.from_env(timeout=300)
             containers = client.containers.list()
             stuck_containers = []
 
@@ -560,7 +570,11 @@ def cleanup_system_processes():
 
         # Stop all docker containers
         logging.info("Stopping all docker containers")
-        docker_client = docker.from_env()
+        # Explicit timeout: docker-py's client-wide default is 60s, applied to
+        # every API call that doesn't pass its own override. A busy shared
+        # Docker host can exceed 60s for an ordinary, fast call, so a longer
+        # client-wide default avoids spurious ReadTimeout failures under load.
+        docker_client = docker.from_env(timeout=300)
         containers = docker_client.containers.list()
         for container in containers:
             try:
@@ -809,7 +823,16 @@ def main():
         )
 
     stream_id = None
-    docker_client = docker.from_env()
+    # Explicit timeout: docker-py's client-wide default is 60s, applied to
+    # every API call that doesn't pass its own override (e.g. container
+    # inspect/logs, unlike container.wait() which already computes its own
+    # generous per-call timeout in run_client_configs()). A busy shared
+    # Docker host can exceed 60s for an ordinary, fast call, so a longer
+    # client-wide default avoids spurious ReadTimeout failures under load --
+    # confirmed as the cause of BZPOPMIN and ARM ZREMRANGEBYSCORE benchmark
+    # runs failing with UnixHTTPConnectionPool ReadTimeout errors even though
+    # the underlying redis-server and its container were healthy.
+    docker_client = docker.from_env(timeout=300)
     home = str(Path.home())
     cpuset_start_pos = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
