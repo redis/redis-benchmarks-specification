@@ -5,21 +5,21 @@ dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 64
+    keyspacelen: 8
   resources:
     requests:
       memory: 1g
   init_lua: |
-    -- 64 sorted sets all holding the identical 500-member set, so an intersection over
+    -- 8 sorted sets all holding the identical 500-member set, so an intersection over
     -- any subset returns a constant 500 and width is the only variable.
-    for k = 1, 64 do
+    for k = 1, 8 do
       for m = 1, 500 do
         redis.call('ZADD', 'ov:' .. k, m, 'm:' .. m)
       end
     end
     return 1
-  dataset_name: 64keys-sorted-set-500-elements-identical-members
-  dataset_description: 64 sorted sets, each containing the identical 500 members m:1..m:500.
+  dataset_name: 8keys-sorted-set-500-elements-identical-members
+  dataset_description: 8 sorted sets, each containing the identical 500 members m:1..m:500.
 tested-commands:
 - zinter
 redis-topologies:
