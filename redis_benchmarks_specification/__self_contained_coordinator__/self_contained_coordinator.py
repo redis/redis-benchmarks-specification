@@ -952,35 +952,125 @@ def main():
 
     logging.info("Entering blocking read waiting for work.")
     if stream_id is None:
-        stream_id = args.consumer_start_id
+        stream_id = _initial_stream_id(args)
+    consecutive_connection_errors = 0
     while True:
-        _, stream_id, _, _ = self_contained_coordinator_blocking_read(
-            gh_event_conn,
-            datasink_push_results_redistimeseries,
-            docker_client,
-            home,
-            stream_id,
-            datasink_conn,
-            testsuite_spec_files,
-            topologies_map,
-            running_platform,
-            profilers_enabled,
-            profilers_list,
-            grafana_profile_dashboard,
-            cpuset_start_pos,
-            redis_proc_start_port,
-            consumer_pos,
-            docker_air_gap,
-            override_memtier_test_time,
-            default_metrics,
-            arch,
-            github_token,
-            priority_lower_limit,
-            priority_upper_limit,
-            default_baseline_branch,
-            default_metrics_str,
+        stream_id, consecutive_connection_errors = _poll_for_work_with_retry(
+            consecutive_connection_errors,
+            github_event_conn=gh_event_conn,
+            datasink_push_results_redistimeseries=datasink_push_results_redistimeseries,
+            docker_client=docker_client,
+            home=home,
+            stream_id=stream_id,
+            datasink_conn=datasink_conn,
+            testsuite_spec_files=testsuite_spec_files,
+            topologies_map=topologies_map,
+            platform_name=running_platform,
+            profilers_enabled=profilers_enabled,
+            profilers_list=profilers_list,
+            grafana_profile_dashboard=grafana_profile_dashboard,
+            cpuset_start_pos=cpuset_start_pos,
+            redis_proc_start_port=redis_proc_start_port,
+            consumer_pos=consumer_pos,
+            docker_air_gap=docker_air_gap,
+            override_test_time=override_memtier_test_time,
+            default_metrics=default_metrics,
+            arch=arch,
+            github_token=github_token,
+            priority_lower_limit=priority_lower_limit,
+            priority_upper_limit=priority_upper_limit,
+            default_baseline_branch=default_baseline_branch,
+            default_metrics_str=default_metrics_str,
             explicit_only=explicit_only,
         )
+
+
+def _initial_stream_id(args):
+    """Pick the starting XREADGROUP id for main()'s polling loop.
+
+    When --skip-clear-pending-on-startup is set, the PEL cleanup a few lines
+    above this call is skipped, so this consumer may have pending (delivered,
+    never-acked) messages left over from a prior crashed incarnation.
+    Draining that history before falling through to new work is exactly what
+    XREADGROUP's "0" id does: it walks every not-yet-acked message previously
+    delivered to this consumer name, oldest first, and
+    self_contained_coordinator_blocking_read's existing empty-response branch
+    already falls through to the normal args.consumer_start_id (">" by
+    default) once that history is exhausted. Without this,
+    --skip-clear-pending-on-startup preserves old work across a restart but
+    nothing ever goes back to actually finish it
+    (redis/redis-benchmarks-specification#519): it just accumulates forever
+    instead.
+    """
+    if args.skip_clear_pending_on_startup:
+        return "0"
+    return args.consumer_start_id
+
+
+# A transient blip (the actual #519 bug -- a proxy/idle-timeout socket drop
+# every ~8126s) should be absorbed silently. A PERSISTENT outage (revoked
+# credentials, the endpoint genuinely gone) should NOT retry forever: the
+# background heartbeat thread keeps writing "waiting" the whole time this
+# loop is stuck retrying, so a silent infinite retry would make `admin
+# health` report a runner as healthy while it can no longer do any work at
+# all -- a worse, quieter version of the exact blind spot #519 is about.
+# Re-raising past this cap restores the old crash+respawn behavior (visible
+# in supervisor logs, and eventually in heartbeat staleness once restarts
+# can no longer keep up), which is a real, if crude, alerting signal for a
+# failure this fix was never meant to paper over.
+MAX_CONSECUTIVE_CONNECTION_ERRORS = 20
+
+
+def _poll_for_work_with_retry(consecutive_connection_errors, **blocking_read_kwargs):
+    """One iteration of the main polling loop, resilient to transient event-stream
+    connection errors (redis/redis-benchmarks-specification#519).
+
+    self_contained_coordinator_blocking_read() is blocked indefinitely on
+    XREADGROUP (BLOCK 0) waiting for new work. Any intermediate proxy/load-
+    balancer/NAT with an idle-connection timeout can sever that socket out from
+    under redis-py -- observed in production as a ~8126s-periodic crash on one
+    runner. Uncaught, this kills the whole process; supervisor respawns it, but
+    the fresh process has no memory of whether the in-flight XREADGROUP had
+    *already* been fulfilled server-side (a message delivered into this
+    consumer's PEL) before the client gave up waiting for the reply -- that
+    message is then never acked and never retried, since a brand-new process
+    starts back at "read only new work", not "check my own pending backlog
+    first". Catching the error here keeps the process (and therefore this
+    consumer identity) alive so the *same* alternating own-PEL-then-new-work
+    logic that already exists in self_contained_coordinator_blocking_read gets
+    a chance to pick that message back up on a later iteration, instead of
+    orphaning it and burning through a fresh restart+reconnect on every single
+    occurrence.
+
+    Bounded by MAX_CONSECUTIVE_CONNECTION_ERRORS: a PERSISTENT failure
+    (as opposed to the transient blip this is meant to absorb) re-raises
+    instead of retrying forever, see module comment above.
+
+    Returns (next_stream_id, next_consecutive_connection_errors).
+    """
+    try:
+        _, stream_id, _, _ = self_contained_coordinator_blocking_read(
+            **blocking_read_kwargs
+        )
+        return stream_id, 0
+    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
+        consecutive_connection_errors += 1
+        if consecutive_connection_errors > MAX_CONSECUTIVE_CONNECTION_ERRORS:
+            logging.critical(
+                "Event stream connection error persisted for {} consecutive "
+                "attempts: {}. Giving up and letting the process exit so it "
+                "can be restarted/alerted on, rather than retrying a "
+                "seemingly-permanent outage forever.".format(
+                    consecutive_connection_errors, e
+                )
+            )
+            raise
+        logging.warning(
+            "Event stream connection error on iteration (attempt {}): {}. "
+            "Retrying after a short backoff.".format(consecutive_connection_errors, e)
+        )
+        time.sleep(min(consecutive_connection_errors * 2, 30))
+        return blocking_read_kwargs["stream_id"], consecutive_connection_errors
 
 
 def check_health(container):
