@@ -283,7 +283,13 @@ def trigger_tests_dockerhub_cli_command_logic(args, project_name, project_versio
         build_stream_fields["target_platform"] = args.target_platform
         logging.info(f"Targeting specific runner: {args.target_platform}")
     if args.docker_dont_air_gap is False:
-        docker_client = docker.from_env()
+        # Explicit timeout: docker-py's client-wide default is 60s, applied to
+        # every API call that doesn't pass its own override (e.g. container
+        # inspect/logs, unlike container.wait() which already computes its own
+        # generous per-call timeout). A busy shared Docker host can exceed 60s
+        # for an ordinary, fast call, so a longer client-wide default avoids
+        # spurious ReadTimeout failures under load.
+        docker_client = docker.from_env(timeout=300)
         store_airgap_image_redis(conn, docker_client, args.run_image)
 
     if result is True:

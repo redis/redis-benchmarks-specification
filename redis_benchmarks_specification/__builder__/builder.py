@@ -360,7 +360,11 @@ def builder_process_stream(
         # commit = None
         # commited_date = ""
         # tag = ""
-        docker_client = docker.from_env()
+        # Explicit timeout: docker-py's client-wide default is 60s, applied to
+        # every API call that doesn't pass its own override. A busy shared
+        # Docker host can exceed 60s for an ordinary, fast call, so a longer
+        # client-wide default avoids spurious ReadTimeout failures under load.
+        docker_client = docker.from_env(timeout=300)
         from pathlib import Path
 
         build_request_arch = None
@@ -1094,7 +1098,11 @@ def build_spec_image_prefetch(builders_folder, different_build_specs):
     logging.info("checking build spec requirements")
     already_checked_images = []
     hub_pulled_images = 0
-    client = docker.from_env()
+    # Explicit timeout: docker-py's client-wide default is 60s, applied to
+    # every API call that doesn't pass its own override. A busy shared Docker
+    # host can exceed 60s for an ordinary, fast call, so a longer client-wide
+    # default avoids spurious ReadTimeout failures under load.
+    client = docker.from_env(timeout=300)
     for build_spec in different_build_specs:
         build_config, id = get_build_config(builders_folder + "/" + build_spec)
         if build_config["kind"] == "docker":

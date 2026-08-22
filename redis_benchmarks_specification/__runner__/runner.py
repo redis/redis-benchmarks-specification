@@ -795,7 +795,11 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     client_aggregated_results_folder = args.client_aggregated_results_folder
     preserve_temporary_client_dirs = args.preserve_temporary_client_dirs
 
-    docker_client = docker.from_env()
+    # Explicit timeout: docker-py's client-wide default is 60s, applied to
+    # every API call that doesn't pass its own override. A busy shared Docker
+    # host can exceed 60s for an ordinary, fast call, so a longer client-wide
+    # default avoids spurious ReadTimeout failures under load.
+    docker_client = docker.from_env(timeout=300)
     home = str(Path.home())
     profilers_list = []
     profilers_enabled = args.enable_profilers
