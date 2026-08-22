@@ -1054,10 +1054,18 @@ def self_contained_coordinator_blocking_read(
     else:
         # Update heartbeat: running
         _heartbeat_status = "running"
+        # Capture the delivered message id up front. This is the id we MUST
+        # ack no matter what happens below -- `stream_id` gets reassigned to
+        # whatever process_self_contained_coordinator_stream() returns, which
+        # can be a sentinel that acks nothing, silently leaving the real
+        # message pending in the consumer group's PEL forever (see
+        # redis/redis-benchmarks-specification#519).
+        received_stream_id = newTestInfo[0][1][0][0]
         try:
-            sid_raw = newTestInfo[0][1][0][0]
             _heartbeat_current_stream = (
-                sid_raw.decode() if isinstance(sid_raw, bytes) else str(sid_raw)
+                received_stream_id.decode()
+                if isinstance(received_stream_id, bytes)
+                else str(received_stream_id)
             )
         except Exception:
             pass
@@ -1069,49 +1077,67 @@ def self_contained_coordinator_blocking_read(
 
         args = Args()
 
-        (
-            stream_id,
-            overall_result,
-            total_test_suite_runs,
-        ) = process_self_contained_coordinator_stream(
-            github_event_conn,
-            datasink_push_results_redistimeseries,
-            docker_client,
-            home,
-            newTestInfo,
-            datasink_conn,
-            testsuite_spec_files,
-            topologies_map,
-            platform_name,
-            profilers_enabled,
-            profilers_list,
-            grafana_profile_dashboard,
-            cpuset_start_pos,
-            redis_proc_start_port,
-            docker_air_gap,
-            "defaults.yml",
-            override_test_time,
-            default_metrics,
-            arch,
-            github_token,
-            priority_lower_limit,
-            priority_upper_limit,
-            default_baseline_branch,
-            default_metrics_str,
-            docker_keep_env,
-            restore_build_artifacts_default,
-            args,
-            explicit_only=explicit_only,
-        )
-        num_process_streams = num_process_streams + 1
-        num_process_test_suites = num_process_test_suites + total_test_suite_runs
+        try:
+            (
+                stream_id,
+                overall_result,
+                total_test_suite_runs,
+            ) = process_self_contained_coordinator_stream(
+                github_event_conn,
+                datasink_push_results_redistimeseries,
+                docker_client,
+                home,
+                newTestInfo,
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                platform_name,
+                profilers_enabled,
+                profilers_list,
+                grafana_profile_dashboard,
+                cpuset_start_pos,
+                redis_proc_start_port,
+                docker_air_gap,
+                "defaults.yml",
+                override_test_time,
+                default_metrics,
+                arch,
+                github_token,
+                priority_lower_limit,
+                priority_upper_limit,
+                default_baseline_branch,
+                default_metrics_str,
+                docker_keep_env,
+                restore_build_artifacts_default,
+                args,
+                explicit_only=explicit_only,
+            )
+            num_process_streams = num_process_streams + 1
+            num_process_test_suites = num_process_test_suites + total_test_suite_runs
+        except Exception as e:
+            # Never let a single bad job wedge this consumer's PEL. Log and
+            # fall through to the unconditional ack below on the *captured*
+            # message id, then let the caller's while-loop poll for the next
+            # message.
+            logging.critical(
+                "Unhandled exception while processing BENCHMARK variation "
+                "stream with id {}: {}. Acknowledging the message anyway "
+                "to avoid wedging the consumer group.".format(received_stream_id, e)
+            )
+            # Mirror the success path's stream_id type (decoded str) so the
+            # next blocking-read call's PEL-history lookup behaves the same
+            # way it would have after a normal ack.
+            stream_id = _heartbeat_current_stream
+            overall_result = False
 
-        # Always acknowledge the message, even if it was filtered out
+        # Always acknowledge the ORIGINAL delivered message, even if it was
+        # filtered out or the processor raised -- never ack `stream_id` here,
+        # it may have been reassigned to a sentinel by the processor.
         arch_specific_stream = get_arch_specific_stream_name(arch)
         ack_reply = github_event_conn.xack(
             arch_specific_stream,
             get_runners_consumer_group_name(platform_name),
-            stream_id,
+            received_stream_id,
         )
         if type(ack_reply) == bytes:
             ack_reply = ack_reply.decode()
@@ -1119,19 +1145,19 @@ def self_contained_coordinator_blocking_read(
             if overall_result is True:
                 logging.info(
                     "Successfully acknowledged BENCHMARK variation stream with id {} (processed).".format(
-                        stream_id
+                        received_stream_id
                     )
                 )
             else:
                 logging.info(
                     "Successfully acknowledged BENCHMARK variation stream with id {} (filtered/skipped).".format(
-                        stream_id
+                        received_stream_id
                     )
                 )
         else:
             logging.error(
                 "Unable to acknowledge build variation stream with id {}. XACK reply {}".format(
-                    stream_id, ack_reply
+                    received_stream_id, ack_reply
                 )
             )
     return overall_result, stream_id, num_process_streams, num_process_test_suites
