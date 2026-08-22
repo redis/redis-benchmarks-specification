@@ -1,0 +1,75 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-set-eviction-allkeys-lru
+description: |
+  Steady-state SET throughput (Ops/sec) under continuous maxmemory eviction,
+  allkeys-lru policy, RAW-encoded strings (100B random values, >44B ⇒ RAW,
+  not EMBSTR). Closes a real coverage gap: no spec in the suite sets a
+  maxmemory limit, so performEvictions() (called from processCommand()
+  before every command's dispatch) and evictionPoolPopulate() (the
+  approximate-LRU sampling loop, maxmemory-samples=5 per cycle) have zero
+  benchmark coverage today, despite sitting directly in the write path for
+  any capped/cache-style deployment.
+
+  Design: maxmemory is set to 256MB, well below what the preload writes (3M
+  keys × ~154B/key resident cost ⇒ ~460MB uncapped) — eviction is therefore
+  already running continuously by the time preload finishes (empirically
+  verified: DBSIZE stabilizes around ~1.7M keys, used_memory pinned at the
+  256MB cap, evicted_keys climbing into the millions during preload alone).
+  This means the measured phase starts from an already-warm steady state,
+  not a cold fill — the number reflects the eviction cycle, not the fill
+  phase. The measured phase continues writing brand-new keys (a disjoint,
+  far larger id range than the preload used) at saturating throughput, so
+  every SET is a genuine new-key insert that must evict something to make
+  room, sustaining the same steady state for the full --test-time window.
+
+  dbconfig.check.keyspacelen is intentionally omitted: the resident key
+  count is not a fixed, asserted invariant here (unlike a plain preloaded
+  dataset) — it's whatever allkeys-lru's approximate-LRU sampling converges
+  to under the configured cap, which varies slightly run-to-run by design.
+  See memtier_benchmark-3Mkeys-string-set-eviction-allkeys-random.yml for
+  the allkeys-random sibling, which isolates evictionPoolPopulate's
+  sampling cost from allkeys-lru's additional pool-sort/recency bookkeeping
+  by changing only maxmemory-policy — everything else is identical.
+dbconfig:
+  configuration-parameters:
+    maxmemory: 268435456
+    maxmemory-policy: allkeys-lru
+    maxmemory-samples: 5
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 100 -R --command "SET __key__ __data__" --command-key-pattern
+      P --key-minimum 1 --key-maximum 3000001 -n allkeys --pipeline 10 --hide-histogram
+      -c 25 -t 8
+  resources:
+    requests:
+      memory: 512mb
+  dataset_name: 3Mkeys-string-100B-eviction-allkeys-lru
+  dataset_description: |
+    Preload attempts 3,000,001 keys of 100-byte random RAW-encoded string
+    values into a server capped at 256MB maxmemory with allkeys-lru active
+    — eviction runs throughout preload itself, so the dataset never
+    actually reaches 3M resident keys. Empirically observed to stabilize
+    around ~1.7M resident keys with used_memory pinned at the 256MB cap.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "100" -R --command "SET __key__ __data__" --command-key-pattern
+    P --key-minimum 3000002 --key-maximum 5003000002 --pipeline 10 -c 25 -t 8 --test-time
+    600 --hide-histogram'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 1g
+tested-groups:
+- string
+priority: 61

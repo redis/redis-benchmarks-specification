@@ -1,0 +1,89 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-set-eviction-volatile-lru
+description: |
+  Steady-state SET throughput (Ops/sec) under continuous maxmemory
+  eviction, volatile-lru policy, RAW-encoded strings (100B random values,
+  >44B ⇒ RAW). Every key carries a 24h TTL (SET __key__ __data__ EX 86400)
+  — long enough that no key ever expires naturally within the 600s
+  measured window, so every eviction observed is driven purely by memory
+  pressure, not the active-expire cycle. volatile-lru samples its eviction
+  candidates from Redis's separate `expires` dict rather than the main
+  keyspace dict that allkeys-lru/allkeys-random walk, so this exercises a
+  genuinely different sampling population, not just a different victim-
+  selection rule on the same structure.
+
+  Scope note / simplification vs. a fully mixed dataset: the originating
+  issue's suggested design has only *some* keys carrying a TTL, so the
+  sampler has to skip non-candidates while scanning. That would need two
+  disjoint key-id pools (TTL-bearing vs. permanent) sized independently —
+  not practical to build reliably in a single spec, since memtier's
+  --key-minimum/--key-maximum are global to the whole invocation, not
+  settable per --command, and dbconfig only supports one preload_tool
+  phase (a second phase via init_commands runs *after* preload_tool here,
+  not before, so it can't lay down a disjoint baseline pool first either).
+  This spec instead makes every key volatile, which still isolates the
+  expires-dict sampling machinery as new coverage, just without the
+  candidate/non-candidate skip-scanning nuance. A follow-up spec adding a
+  genuinely mixed pool is possible but needs new plumbing (e.g. a
+  multi-stage preload), not just a YAML change.
+
+  Design otherwise identical to the allkeys-lru/allkeys-random siblings:
+  maxmemory=256MB (well below the ~530MB an uncapped 3M-key TTL-bearing
+  preload would resident — TTL tracking adds a per-key `expires` dict
+  entry on top of the plain-string ~154B/key cost), so eviction is already
+  running continuously by the time preload finishes. The measured phase
+  writes brand-new keys (each also carrying EX 86400, a disjoint far
+  larger id range than preload used) at saturating throughput, so every
+  SET both grows the volatile pool and is itself immediately eviction-
+  eligible, sustaining the same steady state for the full --test-time
+  window without ever exhausting the evictable population.
+
+  dbconfig.check.keyspacelen is intentionally omitted, as with the
+  allkeys-lru/allkeys-random siblings: the resident key count is whatever
+  volatile-lru's sampling converges to under the cap (empirically observed
+  around ~1.45M, lower than allkeys-lru's ~1.7M due to the extra
+  per-key expires-dict overhead), not a fixed invariant.
+dbconfig:
+  configuration-parameters:
+    maxmemory: 268435456
+    maxmemory-policy: volatile-lru
+    maxmemory-samples: 5
+    save: '""'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 100 -R --command "SET __key__ __data__ EX 86400" --command-key-pattern
+      P --key-minimum 1 --key-maximum 3000001 -n allkeys --pipeline 10 --hide-histogram
+      -c 25 -t 8
+  resources:
+    requests:
+      memory: 512mb
+  dataset_name: 3Mkeys-string-100B-eviction-volatile-lru-ttl
+  dataset_description: |
+    Preload attempts 3,000,001 keys of 100-byte random RAW-encoded string
+    values, every key carrying a 24h TTL, into a server capped at 256MB
+    maxmemory with volatile-lru active — eviction runs throughout preload
+    itself, so the dataset never actually reaches 3M resident keys.
+    Empirically observed to stabilize around ~1.45M resident keys with
+    used_memory pinned at the 256MB cap.
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--data-size" "100" -R --command "SET __key__ __data__ EX 86400" --command-key-pattern
+    P --key-minimum 3000002 --key-maximum 5003000002 --pipeline 10 -c 25 -t 8 --test-time
+    600 --hide-histogram'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 1g
+tested-groups:
+- string
+priority: 63
