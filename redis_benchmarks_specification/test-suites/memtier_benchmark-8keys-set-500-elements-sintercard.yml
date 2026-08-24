@@ -1,0 +1,41 @@
+version: 0.4
+name: memtier_benchmark-8keys-set-500-elements-sintercard
+description: 'Runs memtier_benchmark issuing SINTERCARD over 8 sets of 500 elements each. SINTERCARD has no coverage today and is a separate implementation from the sorted-set numkeys commands. All 8 keys hold the identical member set so the cardinality is a constant 500. Encoding: hashtable (500 non-integer members, exceeds set-max-listpack-entries 128). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 8
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- 8 sets all holding the identical 500-member set, so the intersection cardinality
+    -- is a constant 500.
+    for k = 1, 8 do
+      for m = 1, 500 do
+        redis.call('SADD', 'st:' .. k, 'm:' .. m)
+      end
+    end
+    return 1
+  dataset_name: 8keys-set-500-elements-identical-members
+  dataset_description: 8 sets, each containing the identical 500 members m:1..m:500.
+tested-commands:
+- sintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SINTERCARD 8 st:1 st:2 st:3 st:4 st:5 st:6 st:7 st:8 LIMIT 0"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- set
+priority: 131
