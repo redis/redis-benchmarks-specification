@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-8keys-zset-500-elements-zdiff
-description: 'Runs memtier_benchmark issuing ZDIFF over 8 sorted sets of 500 elements each. ZDIFF has no coverage today. The 8 member sets are pairwise disjoint, so the reply is the full first set (500 members) rather than the empty reply a naive overlapping dataset would produce. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128).'
+description: 'Runs memtier_benchmark issuing ZDIFF over 8 sorted sets of 500 elements each. ZDIFF has no coverage today. The 8 member sets are pairwise disjoint, so the reply is the full first set (500 members) rather than the empty reply a naive overlapping dataset would produce. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'

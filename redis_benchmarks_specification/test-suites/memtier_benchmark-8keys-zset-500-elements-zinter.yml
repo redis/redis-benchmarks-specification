@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-8keys-zset-500-elements-zinter
-description: 'Runs memtier_benchmark issuing ZINTER over 8 sorted sets of 500 elements each. ZINTER has no coverage today. All 8 keys hold the identical member set so the reply is a constant 500 elements, making this the reply-producing counterpart to ZINTERCARD at the same width. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128).'
+description: 'Runs memtier_benchmark issuing ZINTER over 8 sorted sets of 500 elements each. ZINTER has no coverage today. All 8 keys hold the identical member set so the reply is a constant 500 elements, making this the reply-producing counterpart to ZINTERCARD at the same width. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'

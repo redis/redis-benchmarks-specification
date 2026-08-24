@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-8keys-set-500-elements-sintercard
-description: 'Runs memtier_benchmark issuing SINTERCARD over 8 sets of 500 elements each. SINTERCARD has no coverage today and is a separate implementation from the sorted-set numkeys commands. All 8 keys hold the identical member set so the cardinality is a constant 500.'
+description: 'Runs memtier_benchmark issuing SINTERCARD over 8 sets of 500 elements each. SINTERCARD has no coverage today and is a separate implementation from the sorted-set numkeys commands. All 8 keys hold the identical member set so the cardinality is a constant 500. Encoding: hashtable (500 non-integer members, exceeds set-max-listpack-entries 128). Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'
