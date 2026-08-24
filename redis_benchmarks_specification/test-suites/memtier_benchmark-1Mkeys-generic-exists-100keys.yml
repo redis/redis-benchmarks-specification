@@ -1,9 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-generic-exists-100keys
-description: Runs memtier_benchmark issuing EXISTS with 100 keys per call against a 1M-key dataset. EXISTS is variadic
+description: 'Runs memtier_benchmark issuing EXISTS with 100 keys per call against a 1M-key dataset. EXISTS is variadic
   but every existing suite calls it with a single key, where only the fixed per-command cost is visible; at 100
   keys the per-key lookup loop dominates. --key-maximum is twice the preloaded keyspace, so each call mixes hits
-  and misses rather than measuring an all-hit best case.
+  and misses rather than measuring an all-hit best case. Encoding: RAW (100B values, exceeds the 44B EMBSTR threshold).
+  Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'

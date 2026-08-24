@@ -3,7 +3,7 @@ name: memtier_benchmark-1Mkeys-generic-touch-100keys
 description: 'Runs memtier_benchmark issuing TOUCH with 100 keys per call against a 1M-key dataset. Paired with
   the EXISTS 100-key suite at identical width and keyspace: both perform N lookups, but TOUCH additionally updates
   LRU/LFU metadata per key, so the difference between the two isolates that maintenance cost at a width where it
-  resolves.'
+  resolves. Encoding: RAW (100B values, exceeds the 44B EMBSTR threshold). Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'

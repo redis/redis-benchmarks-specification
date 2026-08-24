@@ -1,8 +1,12 @@
 version: 0.4
 name: memtier_benchmark-5Mkeys-string-mset-100B-100keys
-description: Runs memtier_benchmark issuing MSET with 100 key/value pairs per call against a 5M-key dataset of 100B
+description: 'Runs memtier_benchmark issuing MSET with 100 key/value pairs per call against a 5M-key dataset of 100B
   values. Existing MSET suites top out at 50 pairs while MGET already runs at 100, so this completes the write side
-  at the read side's widest point and makes the two directly comparable.
+  at the read side''s widest point and makes the two directly comparable. Encoding: RAW (100B values, exceeds the
+  44B EMBSTR threshold). Metric of interest: Ops/sec. Note: the preload uses --random-data but the measured MSET
+  calls send the default constant filler -- deliberate, since the objective here is dispatch/argument-vector
+  overhead (100 key/value pairs per call), not payload compressibility or memcpy cost, which the preload''s
+  encoding check already covers.'
 dbconfig:
   configuration-parameters:
     save: '""'
