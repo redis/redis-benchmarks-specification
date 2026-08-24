@@ -1,0 +1,57 @@
+version: 0.4
+name: memtier_benchmark-5Mkeys-string-mset-100B-100keys
+description: 'Runs memtier_benchmark issuing MSET with 100 key/value pairs per call against a 5M-key dataset of 100B
+  values. Existing MSET suites top out at 50 pairs while MGET already runs at 100, so this completes the write side
+  at the read side''s widest point and makes the two directly comparable. Encoding: RAW (100B values, exceeds the
+  44B EMBSTR threshold). Metric of interest: Ops/sec. Note: the preload uses --random-data but the measured MSET
+  calls send the default constant filler -- deliberate, since the objective here is dispatch/argument-vector
+  overhead (100 key/value pairs per call), not payload compressibility or memcpy cost, which the preload''s
+  encoding check already covers.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 5000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-minimum 1 --data-size 100 --key-maximum 5000000 --ratio 1:0 -n allkeys --random-data --key-pattern
+      P:P --hide-histogram -t 4 -c 50 --pipeline 50
+  resources:
+    requests:
+      memory: 2g
+tested-commands:
+- mset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --key-minimum 1 --key-maximum 5000000 --data-size 100 --command "MSET __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__
+    __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__
+    __data__" -c 50 -t 8 --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+tested-groups:
+- string
+priority: 1
