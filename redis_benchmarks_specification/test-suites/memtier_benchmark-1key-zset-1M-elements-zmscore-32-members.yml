@@ -1,16 +1,13 @@
 version: 0.4
-name: memtier_benchmark-1key-zset-1M-elements-zmscore-16-members
+name: memtier_benchmark-1key-zset-1M-elements-zmscore-32-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
   contains 1,000,000 elements (integer members 1..1,000,000, all with a constant score of 1) and
-  we query it using ZMSCORE with 16 independent random members per call. Sibling of the existing
+  we query it using ZMSCORE with 32 independent random members per call. Sibling of the existing
   memtier_benchmark-1key-zset-1M-elements-zmscore-100-members suite (same dataset, same preload,
   same query shape) -- this family sweeps the member-count axis to cover the intra-command
-  dict-prefetch batching thresholds that the 100-member-only suite left unmeasured. 16 is the
-  server-side batch-size constant (ZMSCORE_PREFETCH_BATCH) itself: at this width the whole call
-  is handled as a single undivided dict-prefetch batch (the adaptive-shrink rule only splits a
-  call into multiple batches once at least twice the batch size, 32, remains -- see the 32- and
-  33-member sibling suites for that boundary). Encoding: skiplist (1,000,000 elements, exceeds
-  zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
+  dict-prefetch batching thresholds that the 100-member-only suite left unmeasured. 32 is the smallest width where the dict-prefetch batching actually splits into multiple dictPrefetchKeys calls: the adaptive-shrink rule only takes a full ZMSCORE_PREFETCH_BATCH-sized (16) chunk when at least twice that many members remain, so 32 is handled as two clean, evenly-sized batches of 16 -- the first point at which the multi-batch loop path is exercised at all.
+  Encoding: skiplist (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of
+  interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -40,7 +37,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
+  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
     --key-minimum 1 --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram
     --test-time 180 --pipeline 1 -c 1 -t 1
   resources:

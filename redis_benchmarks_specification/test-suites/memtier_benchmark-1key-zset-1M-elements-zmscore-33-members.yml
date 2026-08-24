@@ -1,12 +1,12 @@
 version: 0.4
-name: memtier_benchmark-1key-zset-1M-elements-zmscore-17-members
+name: memtier_benchmark-1key-zset-1M-elements-zmscore-33-members
 description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
   contains 1,000,000 elements (integer members 1..1,000,000, all with a constant score of 1) and
-  we query it using ZMSCORE with 17 independent random members per call. Sibling of the existing
+  we query it using ZMSCORE with 33 independent random members per call. Sibling of the existing
   memtier_benchmark-1key-zset-1M-elements-zmscore-100-members suite (same dataset, same preload,
-  same query shape) -- this family sweeps the member-count axis at 1/16/17/100 to cover the
-  intra-command dict-prefetch batching thresholds that the 100-member-only suite left unmeasured.
-  This width is one member past a full intra-command dict-prefetch batch -- the shape where a naive fixed-size chunking implementation would leave a trailing batch of exactly 1 member with no prefetch benefit; adaptive batch sizing folds it into the prior batch instead. Encoding: skiplist (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of
+  same query shape) -- this family sweeps the member-count axis to cover the intra-command
+  dict-prefetch batching thresholds that the 100-member-only suite left unmeasured. 33 is one member past the clean 32-member split: it is handled as a 16-member batch followed by a 17-member batch, not as 16+16+1. This is the shape a naive fixed-size chunking implementation (no adaptive shrink) would instead split into a trailing batch of exactly 1 member -- which the underlying dict-prefetch primitive silently gives no prefetch benefit to -- so this suite is the direct proof that the adaptive-shrink rule folds that remainder away rather than stranding it.
+  Encoding: skiplist (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric of
   interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
@@ -37,7 +37,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
+  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
     --key-minimum 1 --key-maximum 1000000 --command-key-pattern=R --key-prefix "" --hide-histogram
     --test-time 180 --pipeline 1 -c 1 -t 1
   resources:
