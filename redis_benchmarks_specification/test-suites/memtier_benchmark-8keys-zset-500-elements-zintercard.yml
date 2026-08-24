@@ -4,7 +4,8 @@ description: 'Runs memtier_benchmark against 8 sorted sets of 500 elements each,
   ZINTERCARD with numkeys=8. All 8 keys hold the identical member set, so the reply is always
   500 and the intersection result does not vary with width - the only thing that changes across
   the width-2/8/64 suites in this family is the numkeys argument, isolating the cost of collecting
-  and looking up N keys. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128).'
+  and looking up N keys. Encoding: skiplist (500 elements, exceeds zset-max-listpack-entries 128).
+  Metric of interest: Ops/sec.'
 dbconfig:
   configuration-parameters:
     save: '""'
