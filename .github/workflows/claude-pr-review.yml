@@ -48,6 +48,15 @@ name: Claude Automated PR Review
 #     on this workflow -- per the action's own docs both can leak
 #     tokens/credentials into public step logs.
 #
+# Re-review on push: `synchronize` re-runs this on every commit pushed to the
+# PR (in addition to `opened`), so a push/review/iterate loop stays current.
+# This multiplies the "no rate limiting" residual risk below by every commit
+# pushed by anyone -- including fork contributors -- not just once per PR.
+# To avoid piling up one comment per push, the posting step below edits the
+# SAME comment in place (found by an invisible `<!-- claude-pr-review:auto -->`
+# marker written by the shell step, never by the model) instead of creating a
+# new one each time.
+#
 # Residual risks not fully closed by the above (see PR description for the
 # full writeup): no volume/rate limiting on how many times this can fire
 # (set a spend alert on the API key); Claude Code's Bash allowlist matching
@@ -57,7 +66,18 @@ name: Claude Automated PR Review
 
 on:
   pull_request_target:
-    types: [opened]
+    types: [opened, synchronize]
+  # Manual re-run for maintainer testing/verification only (e.g. exercising
+  # this workflow once against an existing PR, since a pull_request_target
+  # workflow definition can't be pre-tested via a draft PR). GitHub restricts
+  # workflow_dispatch to actors with write access to this repo, so this
+  # doesn't widen who can trigger a run beyond the real trigger's audience.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to run the review against"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -66,8 +86,10 @@ permissions:
 jobs:
   claude-review:
     # Skip bot-authored PRs (e.g. Dependabot) -- an AI review comment on a
-    # bot-authored, mechanical PR is pure noise, not a courtesy.
-    if: github.event.pull_request.user.type != 'Bot'
+    # bot-authored, mechanical PR is pure noise, not a courtesy. (No
+    # `user.type` to check on a manual workflow_dispatch run, so this only
+    # applies to the real trigger.)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -86,7 +108,7 @@ jobs:
 
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
 
             Use the redis-benchmarks-specification-maintainer-review skill
             (.claude/skills/redis-benchmarks-specification-maintainer-review/)
@@ -150,7 +172,7 @@ jobs:
 
           claude_args: |
             --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*)"
-            --max-turns 8
+            --max-turns 35
             --json-schema '{"type":"object","properties":{"skip_comment":{"type":"boolean","description":"true if this routine/out-of-scope PR should get no comment at all"},"comment_body":{"type":"string","description":"The review comment text, empty string if skip_comment is true"}},"required":["skip_comment","comment_body"]}'
 
       - name: Post comment (only after a deterministic secret-pattern check)
@@ -158,7 +180,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -168,7 +191,12 @@ jobs:
             exit 0
           fi
 
-          echo "$STRUCTURED_OUTPUT" | jq -r '.comment_body' > review_body.txt
+          # Deterministic marker, not model-controlled -- identifies our own
+          # comment across re-runs so a re-review updates it in place instead
+          # of piling up one comment per push.
+          MARKER="<!-- claude-pr-review:auto -->"
+          echo "$MARKER" > review_body.txt
+          echo "$STRUCTURED_OUTPUT" | jq -r '.comment_body' >> review_body.txt
 
           # Hard, deterministic gate -- independent of anything the model was told.
           # Covers this workflow's own secret types (Anthropic API keys, GitHub
@@ -182,4 +210,13 @@ jobs:
             exit 1
           fi
 
-          gh pr comment "$PR_NUMBER" --repo redis/redis-benchmarks-specification --body-file review_body.txt
+          EXISTING_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            -q '.[] | select(.user.login == "github-actions[bot]") | select(.body | startswith("<!-- claude-pr-review:auto -->")) | .id' \
+            | tail -n1)
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Updating prior automated review comment (id $EXISTING_ID) in place."
+            gh api "repos/$REPO/issues/comments/$EXISTING_ID" -X PATCH -f body=@review_body.txt >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file review_body.txt
+          fi
