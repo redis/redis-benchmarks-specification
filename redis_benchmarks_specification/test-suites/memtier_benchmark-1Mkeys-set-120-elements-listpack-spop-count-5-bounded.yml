@@ -5,7 +5,7 @@ description: 'Runs memtier_benchmark against a keyspace of 1,000,000 SET keys of
   tiny fraction of each set, spopWithCountCommand takes its CASE 2 strategy and -- with
   listpack-encoded sets -- goes through the specialized listpack path (lpNextRandom traversal
   plus a batched lpBatchDelete), which the generic hashtable CASE 2 spec
-  (memtier_benchmark-1key-set-1M-elements-hashtable-spop-count-5-bounded) never reaches. A
+  (memtier_benchmark-1key-set-5M-elements-hashtable-spop-count-5-bounded) never reaches. A
   single listpack key cannot sustain a bounded run (set-max-listpack-entries caps it at 128
   members, i.e. at most 25 five-member pops before draining), so the dataset spreads the same
   shape across 1,000,000 keys, mirroring how memtier_benchmark-1Mkeys-list-lpop-rpop-with-10B-values
@@ -16,8 +16,11 @@ description: 'Runs memtier_benchmark against a keyspace of 1,000,000 SET keys of
   path. PRELOAD: SADD __key__ __data__ with --data-size 10 --random-data over the P pattern.
   --random-data is mandatory for set preloads: memtier fills the data buffer with a constant
   without it, which would collapse every set to a single member; with it, one buffer byte is
-  mutated per request so all values are distinct (verified at reduced scale: SADD preload over
-  10 keys / -n 1200 yielded SCARD exactly 120 per key, listpack-encoded). Because the P
+  mutated per request and the buffer is re-seeded with fresh random data every data-size
+  requests, so members stay distinct indefinitely (verified by running this exact preload at
+  full scale: the 120,000,000-request preload produced dbsize 1,000,000 with SCARD exactly
+  120 on every sampled key, listpack-encoded, at a steady-state used_memory of ~1.47 GiB,
+  inside the 4g request). Because the P
   pattern partitions the key domain across the 200 preload clients (5,000 keys each, cycled
   exactly 120 times via -n 600000), every member of a given key comes from one client and
   stays distinct. The set size is deliberately 120 rather than 128: it keeps listpack

@@ -1,6 +1,6 @@
 version: 0.4
-name: memtier_benchmark-1key-set-1M-elements-hashtable-spop-count-5-bounded
-description: 'Runs memtier_benchmark against a single SET key of 1,000,000 integer elements,
+name: memtier_benchmark-1key-set-5M-elements-hashtable-spop-count-5-bounded
+description: 'Runs memtier_benchmark against a single SET key of 5,000,000 integer elements,
   issuing a BOUNDED number of SPOP key 5 calls. Because the requested count (5) is a tiny
   fraction of the set, spopWithCountCommand takes its CASE 2 strategy and -- with a
   hashtable-encoded set -- goes through repeated setTypePopRandom extraction (5 random lookups
@@ -8,16 +8,20 @@ description: 'Runs memtier_benchmark against a single SET key of 1,000,000 integ
   -- to avoid draining the set (which would fall onto the empty-set fast-return path and
   corrupt the measurement, the same anti-pattern this suite already avoids for ZPOPMIN via
   memtier_benchmark-1key-zset-1M-elements-zpopmin-bounded), the client phase is capped via
-  -n 40000 (t=1, c=1, so -n is the exact total pop call count) -- 40,000 calls x 5 members =
-  200,000 elements, exactly 20% of the preloaded 1,000,000, leaving 800,000 intact for the
+  -n 200000 (t=1, c=1, so -n is the exact total pop call count) -- 200,000 calls x 5 members =
+  1,000,000 elements, exactly 20% of the preloaded 5,000,000, leaving 4,000,000 intact for the
   full run (remaining*SPOP_MOVE_STRATEGY_MUL 5 > count holds throughout, so every call stays
   in CASE 2). Every popped member propagates as SREM (5 removals per call, well inside the
   1,024-element propagation batch cap; the batch boundary itself is exercised by the CASE 3
   spec, memtier_benchmark-2000keys-set-10K-elements-hashtable-spop-count-9K-bounded).
-  Encoding: hashtable (1,000,000 integer elements exceed set-max-intset-entries 512). Metric
-  of interest: Ops/sec. A modest --pipeline 4 keeps the single-threaded server continuously
-  busy on the extraction/delete path (avoids an RTT-bound closed loop) while bounding in-flight
-  replies. SPOP with count had zero benchmark coverage before this spec.'
+  Encoding: hashtable (5,000,000 integer elements exceed set-max-intset-entries 512).
+  PRELOAD: SADD set:5M:elements __key__ uses the key counter itself as the member, so members
+  are distinct by construction without --random-data; run at full scale it produced SCARD
+  exactly 5,000,000 (hashtable-encoded) at a steady-state used_memory of ~199 MiB, inside the
+  1g request. Metric of interest: Ops/sec. A modest --pipeline 4 keeps the single-threaded
+  server continuously busy on the extraction/delete path (avoids an RTT-bound closed loop)
+  while bounding in-flight replies. SPOP with count had zero benchmark coverage before this
+  spec.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -29,10 +33,10 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="SADD set:1M:elements __key__" --command-key-pattern=P --key-minimum
-      1 --key-maximum 1000000 --key-prefix "" -n 1000000 --hide-histogram -t 1 -c 1 --pipeline 50
-  dataset_name: 1key-set-1M-elements-int
-  dataset_description: This dataset contains 1 set key with 1,000,000 integer elements
+    arguments: --command="SADD set:5M:elements __key__" --command-key-pattern=P --key-minimum
+      1 --key-maximum 5000000 --key-prefix "" -n 5000000 --hide-histogram -t 1 -c 1 --pipeline 50
+  dataset_name: 1key-set-5M-elements-int
+  dataset_description: This dataset contains 1 set key with 5,000,000 integer elements
     (hashtable-encoded, exceeds set-max-intset-entries 512).
 tested-groups:
 - set
@@ -47,7 +51,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="SPOP set:1M:elements 5" --hide-histogram -n 40000 --pipeline 4 -c 1 -t 1
+  arguments: --command="SPOP set:5M:elements 5" --hide-histogram -n 200000 --pipeline 4 -c 1 -t 1
   resources:
     requests:
       cpus: '4'

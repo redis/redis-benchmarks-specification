@@ -15,15 +15,18 @@ description: 'Runs memtier_benchmark against 2,000 SET keys of ~10,000 members e
   key, so the sample size lever is more keys rather than more calls per key: 2,000 heavy
   calls (~18M popped elements) against a 1g request keeps this a real time-series sample
   instead of a 50-op blip dominated by connection setup. PRELOAD: SADD spop90:set:__key__
-  __data__ with --data-size 8 --random-data over the P pattern cycles every key exactly
-  10,000 times (-n 20000000 / 2000 keys); --random-data is mandatory for set preloads
+  __data__ with --data-size 8 --random-data over the P pattern, which partitions the 2,000
+  keys across the 4 preload clients (500 keys each, cycled exactly 10,000 times via
+  -n 5000000; 20,000,000 requests total); --random-data is mandatory for set preloads
   because memtier fills the data buffer with a constant without it, which would collapse
   every set to a single member and silently flip this spec onto CASE 1 -- with it, one
   buffer byte is mutated per request and the buffer is re-seeded with fresh random data
   every data-size requests, so members stay distinct indefinitely (verified by running this
   exact preload at full scale: all sampled keys measured SCARD exactly 10,000 with hashtable
   encoding after the 20M-request preload, and a subsequent SPOP key 9000 returned 9,000
-  members leaving exactly 1,000 -- the CASE 3 path). Random non-integer members
+  members leaving exactly 1,000 -- the CASE 3 path). The 20M-member dataset measured a
+  steady-state used_memory of ~783 MiB after the preload, inside the 1g request. Random
+  non-integer members
   keep the sets hashtable-encoded (far above set-max-intset-entries 512 and
   set-max-listpack-entries 128). The bounded shape mirrors
   memtier_benchmark-1key-zset-1M-elements-zpopmin-bounded. Metric of interest: Ops/sec
@@ -41,7 +44,7 @@ dbconfig:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: '"--data-size" "8" --random-data --command "SADD spop90:set:__key__ __data__" --command-key-pattern="P"
-      --key-minimum=1 --key-maximum=2000 --key-prefix "" -n 20000000 -c 1 -t 1 --hide-histogram
+      --key-minimum=1 --key-maximum=2000 --key-prefix "" -n 5000000 -c 4 -t 1 --hide-histogram
       --pipeline 50'
   dataset_name: 2000keys-set-10K-members-8B
   dataset_description: This dataset contains 2,000 set keys with ~10,000 distinct members of
