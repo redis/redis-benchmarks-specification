@@ -1,14 +1,15 @@
 version: 0.4
 name: memtier_benchmark-nokeys-pubsub-10-channels-128B-skewed-publishers-170-subscribers
-description: Publish/subscribe where publish rate is deliberately uneven across client
-  connections. Every other pubsub suite drives all publisher connections at the same rate,
-  which spreads load evenly over server/proxy worker threads and makes per-worker imbalance
-  unmeasurable by construction. Real deployments are not uniform - a small number of busy
-  producers alongside many quiet ones is the common shape, and because a connection is
-  handled by one worker for its lifetime, a single high-rate connection loads its worker far
-  harder than the rest. This suite pairs one heavily pipelined publisher with a pool of
-  lightly loaded ones so that per-worker distribution, not just aggregate throughput,
-  becomes an observable property.
+description: Publish/subscribe with deliberately few publisher connections, so that publish
+  load concentrates on a small number of server or proxy worker threads. Where connections are
+  assigned to workers round-robin at accept and then handled by that worker for their lifetime,
+  per-worker load is governed by how many publisher connections landed on each worker, not by
+  pipeline depth or per-connection rate. Suites that open many publisher connections therefore
+  place publish work on every worker and average the imbalance away by construction - 200
+  connections spread over 8 workers is 25 apiece, and the hottest worker sees exactly its even
+  share. This suite opens 3 publisher connections against the same 10 channels and 170
+  subscribers as the sibling suite, so only a few workers carry publish traffic at all and
+  per-worker distribution becomes an observable property rather than an assumption.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -27,25 +28,16 @@ build-variants:
 - gcc:15.2.0-arm64-debian-bookworm-default
 - dockerhub
 clientconfigs:
-# Hot publisher: a single connection carrying a large share of the publishes.
+# Few publisher connections. With round-robin accept, 3 connections occupy 3 workers and the
+# rest carry no publish traffic; pipeline supplies the rate, not the concentration.
 - run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --test-time 120 --key-prefix "channel-" --pipeline 30 -d 128 --key-maximum
-    10 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 1 -t 1
+  arguments: --test-time 120 --key-prefix "channel-" --pipeline 10 -d 128 --key-maximum
+    10 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 3 -t 1
     --hide-histogram
   resources:
     requests:
       cpus: '2'
-      memory: 1g
-# Background publishers: many connections, each at a low per-connection rate.
-- run_image: redislabs/memtier_benchmark:edge
-  tool: memtier_benchmark
-  arguments: --test-time 120 --key-prefix "channel-" --pipeline 1 -d 128 --key-maximum
-    10 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 12 -t 4
-    --hide-histogram
-  resources:
-    requests:
-      cpus: '4'
       memory: 1g
 - run_image: filipe958/pubsub-sub-bench:latest
   tool: pubsub-sub-bench
