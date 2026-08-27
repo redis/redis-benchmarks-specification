@@ -1,0 +1,58 @@
+version: 0.4
+name: memtier_benchmark-nokeys-pubsub-10-channels-128B-skewed-publishers-170-subscribers
+description: Publish/subscribe where publish rate is deliberately uneven across client
+  connections. Every other pubsub suite drives all publisher connections at the same rate,
+  which spreads load evenly over server/proxy worker threads and makes per-worker imbalance
+  unmeasurable by construction. Real deployments are not uniform - a small number of busy
+  producers alongside many quiet ones is the common shape, and because a connection is
+  handled by one worker for its lifetime, a single high-rate connection loads its worker far
+  harder than the rest. This suite pairs one heavily pipelined publisher with a pool of
+  lightly loaded ones so that per-worker distribution, not just aggregate throughput,
+  becomes an observable property.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-groups:
+- pubsub
+tested-commands:
+- publish
+- subscribe
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+# Hot publisher: a single connection carrying a large share of the publishes.
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 --key-prefix "channel-" --pipeline 30 -d 128 --key-maximum
+    10 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 1 -t 1
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+# Background publishers: many connections, each at a low per-connection rate.
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 --key-prefix "channel-" --pipeline 1 -d 128 --key-maximum
+    10 --command "PUBLISH __key__ __data__" --command-key-pattern="R" -c 12 -t 4
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+- run_image: filipe958/pubsub-sub-bench:latest
+  tool: pubsub-sub-bench
+  arguments: -clients 170 -channel-minimum 1 -channel-maximum 10 -subscriber-prefix
+    "channel-" -mode subscribe -test-time 120 -subscribers-per-channel 17
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+priority: 23
