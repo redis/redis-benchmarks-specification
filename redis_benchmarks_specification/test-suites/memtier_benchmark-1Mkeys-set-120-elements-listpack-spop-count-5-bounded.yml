@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-set-120-elements-listpack-spop-count-5-bounded
+description: 'Runs memtier_benchmark against a keyspace of 1,000,000 SET keys of 120 members
+  each, issuing a BOUNDED number of SPOP key 5 calls. Because the requested count (5) is a
+  tiny fraction of each set, spopWithCountCommand takes its CASE 2 strategy and -- with
+  listpack-encoded sets -- goes through the specialized listpack path (lpNextRandom traversal
+  plus a batched lpBatchDelete), which the generic hashtable CASE 2 spec
+  (memtier_benchmark-1key-set-1M-elements-hashtable-spop-count-5-bounded) never reaches. A
+  single listpack key cannot sustain a bounded run (set-max-listpack-entries caps it at 128
+  members, i.e. at most 25 five-member pops before draining), so the dataset spreads the same
+  shape across 1,000,000 keys, mirroring how memtier_benchmark-1Mkeys-list-lpop-rpop-with-10B-values
+  bounds its destructive pops. SPOP is destructive -- the client phase is capped via -n 24000
+  at -c 50 -t 4 (200 clients, so 4,800,000 total pop calls x 5 members = 24,000,000 elements,
+  exactly 20% of the preloaded 120,000,000), and the R key-pattern spreads pops so each key
+  loses ~24 of its 120 members on average -- no set drains onto the empty-set fast-return
+  path. PRELOAD: SADD __key__ __data__ with --data-size 10 --random-data over the P pattern.
+  --random-data is mandatory for set preloads: memtier fills the data buffer with a constant
+  without it, which would collapse every set to a single member; with it, one buffer byte is
+  mutated per request so all values are distinct (verified at reduced scale: SADD preload over
+  10 keys / -n 1200 yielded SCARD exactly 120 per key, listpack-encoded). Because the P
+  pattern partitions the key domain across the 200 preload clients (5,000 keys each, cycled
+  exactly 120 times via -n 600000), every member of a given key comes from one client and
+  stays distinct. The set size is deliberately 120 rather than 128: it keeps listpack
+  encoding with headroom below set-max-listpack-entries against any preload drift, and at
+  least one non-integer member rules out intset. Metric of interest: Ops/sec. SPOP on
+  listpack sets had zero benchmark coverage before this spec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  resources:
+    requests:
+      memory: 4g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" --random-data --command "SADD __key__ __data__" --command-key-pattern="P"
+      --key-minimum=1 --key-maximum 1000000 -n 600000 -c 50 -t 4 --hide-histogram
+      --pipeline 50'
+  dataset_name: 1Mkeys-set-120-members-10B
+  dataset_description: This dataset contains 1 million set keys, each with 120 distinct members
+    of 10 bytes (listpack-encoded, below set-max-listpack-entries 128).
+tested-groups:
+- set
+tested-commands:
+- spop
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "SPOP __key__ 5" --command-key-pattern="R" --key-minimum=1 --key-maximum
+    1000000 -n 24000 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73

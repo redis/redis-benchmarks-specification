@@ -11,8 +11,9 @@ description: 'Runs memtier_benchmark against a single SET key of 1,000,000 integ
   -n 40000 (t=1, c=1, so -n is the exact total pop call count) -- 40,000 calls x 5 members =
   200,000 elements, exactly 20% of the preloaded 1,000,000, leaving 800,000 intact for the
   full run (remaining*SPOP_MOVE_STRATEGY_MUL 5 > count holds throughout, so every call stays
-  in CASE 2). Every popped member propagates as SREM in batches capped at 1,024 elements, so
-  this spec also exercises the propagation batching path on the common small-count write shape.
+  in CASE 2). Every popped member propagates as SREM (5 removals per call, well inside the
+  1,024-element propagation batch cap; the batch boundary itself is exercised by the CASE 3
+  spec, memtier_benchmark-2000keys-set-10K-elements-hashtable-spop-count-9K-bounded).
   Encoding: hashtable (1,000,000 integer elements exceed set-max-intset-entries 512). Metric
   of interest: Ops/sec. A modest --pipeline 4 keeps the single-threaded server continuously
   busy on the extraction/delete path (avoids an RTT-bound closed loop) while bounding in-flight
