@@ -19,8 +19,11 @@ description: 'Runs memtier_benchmark against 2,000 SET keys of ~10,000 members e
   10,000 times (-n 20000000 / 2000 keys); --random-data is mandatory for set preloads
   because memtier fills the data buffer with a constant without it, which would collapse
   every set to a single member and silently flip this spec onto CASE 1 -- with it, one
-  buffer byte is mutated per request so all members stay distinct (verified at reduced
-  scale: 5 keys / -n 500 yielded SCARD exactly 100 per key). Random non-integer members
+  buffer byte is mutated per request and the buffer is re-seeded with fresh random data
+  every data-size requests, so members stay distinct indefinitely (verified by running this
+  exact preload at full scale: all sampled keys measured SCARD exactly 10,000 with hashtable
+  encoding after the 20M-request preload, and a subsequent SPOP key 9000 returned 9,000
+  members leaving exactly 1,000 -- the CASE 3 path). Random non-integer members
   keep the sets hashtable-encoded (far above set-max-intset-entries 512 and
   set-max-listpack-entries 128). The bounded shape mirrors
   memtier_benchmark-1key-zset-1M-elements-zpopmin-bounded. Metric of interest: Ops/sec

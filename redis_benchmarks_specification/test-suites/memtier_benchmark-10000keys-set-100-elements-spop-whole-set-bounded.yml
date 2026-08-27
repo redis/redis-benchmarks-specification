@@ -16,13 +16,14 @@ description: 'Runs memtier_benchmark against a keyspace of 10,000 SET keys of 10
   keys); --random-data is mandatory for set preloads because memtier fills the data buffer
   with a constant without it, which would collapse every set to a single member and shrink
   the measured reply from 100 elements to 1 -- with it, one buffer byte is mutated per
-  request so all members stay distinct (verified at reduced scale: 10 keys / -n 1000 yielded
-  SCARD exactly 100 per key, listpack-encoded, and SPOP key 100 returned all 100 members and
-  deleted the key). Random 10-byte non-integer members keep every set listpack-encoded (100
-  entries, below set-max-listpack-entries 128). The keyspace check observes the 10,000
-  preloaded keys before the client phase; after the run the keyspace is empty by
-  construction. Metric of interest: Ops/sec. SPOP whole-set CASE 1 had zero benchmark
-  coverage before this spec.'
+  request and the buffer is re-seeded with fresh random data every data-size requests, so
+  members stay distinct indefinitely (verified by running this exact preload at full scale:
+  all sampled keys measured SCARD exactly 100, listpack-encoded, and SPOP key 100 returned
+  all 100 members and deleted the key). Random 10-byte non-integer members keep every set
+  listpack-encoded (100 entries, below set-max-listpack-entries 128). The keyspace check
+  observes the 10,000 preloaded keys before the client phase; after the run the keyspace is
+  empty by construction. Metric of interest: Ops/sec. SPOP whole-set CASE 1 had zero
+  benchmark coverage before this spec.'
 dbconfig:
   configuration-parameters:
     save: '""'
