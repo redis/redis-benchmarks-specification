@@ -8,9 +8,16 @@ generated against Redis <= 8.0.0; this script refreshes it from a newer tree.
 Sources, all read from the checkout passed as the first argument:
   - src/commands/*.json          command metadata (the command table)
   - modules/vector-sets/commands.json   vector-set module commands
-  - the existing commands.json   module entries not part of the checkout
-                                 (e.g. RedisJSON's JSON.* commands) are
-                                 carried over verbatim
+  - the existing commands.json   entries on the CARRIED_OVER_COMMANDS
+                                 allowlist (external module bundles such as
+                                 RedisJSON, not part of the checkout) are
+                                 carried over verbatim; anything else that
+                                 only exists in the file is treated as
+                                 drift and fails the run
+
+Every tested-commands entry of the suites must resolve in the result, which
+turns "a suite names a command that does not exist" (e.g. the historical
+`setx` typo) into a hard error instead of a silent statistics gap.
 
 Usage:
     python3 utils/regenerate_commands_json.py /path/to/redis [--check]
@@ -25,38 +32,15 @@ import json
 import os
 import sys
 
+import yaml
+
 VECTOR_SET_MODULE_FILE = "modules/vector-sets/commands.json"
 
-# Sentinel-only commands never run against the redis-server instances this
-# corpus benchmarks, so they are left out.
-EXCLUDED_FILES = {
-    "sentinel.json",
-    "sentinel-ckquorum.json",
-    "sentinel-config.json",
-    "sentinel-debug.json",
-    "sentinel-failover.json",
-    "sentinel-flushconfig.json",
-    "sentinel-get-master-addr-by-name.json",
-    "sentinel-help.json",
-    "sentinel-info-cache.json",
-    "sentinel-is-master-down-by-addr.json",
-    "sentinel-master.json",
-    "sentinel-masters.json",
-    "sentinel-monitor.json",
-    "sentinel-myid.json",
-    "sentinel-pending-scripts.json",
-    "sentinel-remove.json",
-    "sentinel-replicas.json",
-    "sentinel-reset.json",
-    "sentinel-sentinels.json",
-    "sentinel-set.json",
-    "sentinel-simulate-failure.json",
-    "sentinel-slaves.json",
-}
-
-# Commands whose registered name is itself hyphenated rather than a
-# "container subcommand" pair; keep the file name verbatim.
-NON_SUBCOMMAND_HYPHENATED = {"restore-asking"}
+# Commands that live outside the redis checkout (external module bundles,
+# e.g. RedisJSON) and are carried over verbatim from the committed corpus.
+# The allowlist is explicit on purpose: a command upstream removes must not
+# silently survive regeneration from the stale file being validated.
+CARRIED_OVER_COMMANDS = ("JSON.GET", "JSON.SET")
 
 # The command table spells some groups with underscores; the corpus uses the
 # canonical groups.json names (see PR #371 for the sorted-set precedent).
@@ -117,33 +101,24 @@ ENTRY_FIELD_ORDER = [
 ]
 
 
-def command_name_from_file(stem):
-    """Derive the corpus name from a command-file stem.
-
-    Subcommand files use hyphens as separators, but subcommand names may
-    contain hyphens themselves, so only the first one becomes a space:
-    acl-cat.json -> "ACL CAT", client-no-evict.json -> "CLIENT NO-EVICT".
-    """
-    if stem in NON_SUBCOMMAND_HYPHENATED or "-" not in stem:
-        return stem.upper()
-    parent, _, subcommand = stem.partition("-")
-    return "{} {}".format(parent.upper(), subcommand.upper())
-
-
 def load_core_command_table(redis_root):
     """Flatten src/commands/*.json into {COMMAND NAME: raw metadata}.
 
-    Each file holds a single top-level entry whose key is the bare command
-    name ("CAT" in acl-cat.json), so the full corpus name must come from the
-    file name rather than the key.
+    Subcommand entries declare their parent in a "container" field, so the
+    corpus name is "<container> <key>" ("ACL CAT"); standalone commands keep
+    their key verbatim ("MSETEX", "RESTORE-ASKING"). Sentinel-only commands
+    never run against the redis-server instances this corpus benchmarks.
     """
     table = {}
     for path in sorted(glob.glob(os.path.join(redis_root, "src", "commands", "*.json"))):
-        if os.path.basename(path) in EXCLUDED_FILES:
-            continue
         stem = os.path.basename(path)[:-len(".json")]
+        if stem == "sentinel" or stem.startswith("sentinel-"):
+            continue
         with open(path, encoding="utf-8") as handle:
-            table[command_name_from_file(stem)] = next(iter(json.load(handle).values()))
+            key, metadata = next(iter(json.load(handle).items()))
+        container = metadata.get("container")
+        name = "{} {}".format(container, key) if container else key
+        table[name] = metadata
     return table
 
 
@@ -248,11 +223,37 @@ def regenerate(redis_root, existing_corpus):
                 converted["group"] = "module"
                 corpus[name] = converted
 
-    # Commands tracked by the corpus but absent from the checkout (module
-    # commands of external bundles, e.g. RedisJSON) are carried over verbatim.
-    for name in sorted(set(existing_corpus) - set(corpus)):
-        corpus[name] = existing_corpus[name]
+    # External-bundle commands on the allowlist are carried over verbatim;
+    # anything else present only in the committed corpus is drift.
+    orphans = set(existing_corpus) - set(corpus) - set(CARRIED_OVER_COMMANDS)
+    if orphans:
+        sys.exit("commands present only in the committed corpus (removed upstream?): {}".format(sorted(orphans)))
+    for name in CARRIED_OVER_COMMANDS:
+        if name in existing_corpus:
+            corpus[name] = existing_corpus[name]
     return {name: corpus[name] for name in sorted(corpus)}
+
+
+def validate_suite_commands(repo_root, corpus):
+    """Fail when a suite declares a tested-command the corpus cannot resolve.
+
+    stats.py looks each suite command up as-is and then upper-cased; a name
+    that resolves neither way is silently dropped from coverage statistics.
+    Suites may spell subcommands with Redis' pipe separator (client|list)
+    while the corpus uses a space (CLIENT LIST), so both spellings resolve.
+    """
+    suites_dir = os.path.join(repo_root, "redis_benchmarks_specification", "test-suites")
+    unresolvable = []
+    for path in sorted(glob.glob(os.path.join(suites_dir, "*.yml"))):
+        with open(path, encoding="utf-8") as handle:
+            spec = yaml.safe_load(handle)
+        for command in (spec or {}).get("tested-commands") or []:
+            spaced = command.replace("|", " ")
+            candidates = {command, spaced, command.upper(), spaced.upper()}
+            if not candidates & set(corpus):
+                unresolvable.append("{}: {}".format(os.path.basename(path), command))
+    if unresolvable:
+        sys.exit("tested-commands that resolve nowhere in commands.json:\n  " + "\n  ".join(unresolvable))
 
 
 def main():
@@ -275,17 +276,18 @@ def main():
     if unknown_groups:
         sys.exit("groups {} are not present in groups.json; add them there first".format(sorted(unknown_groups)))
 
-    payload = json.dumps(regenerated, indent=2)
+    validate_suite_commands(repo_root, regenerated)
 
     if args.check:
         with open(corpus_path, encoding="utf-8") as handle:
-            drift = handle.read() != payload
+            drift = json.load(handle) != regenerated
         if drift:
             print("commands.json is stale relative to the checkout at {}".format(args.redis_root))
         else:
             print("commands.json matches the checkout at {}".format(args.redis_root))
         sys.exit(1 if drift else 0)
 
+    payload = json.dumps(regenerated, indent=2)
     with open(corpus_path, "w", encoding="utf-8") as handle:
         handle.write(payload)
     print("Wrote {} commands to {}".format(len(regenerated), corpus_path))
