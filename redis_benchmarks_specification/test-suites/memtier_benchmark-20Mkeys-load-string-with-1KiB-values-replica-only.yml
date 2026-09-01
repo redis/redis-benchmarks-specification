@@ -61,4 +61,9 @@ clientconfig:
       memory: 1g
 tested-groups:
 - string
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.ReplicationFullSyncSeconds
+    - $."ALL STATS".Totals.ReplicationFullSyncCountDuringBench
 priority: 17
