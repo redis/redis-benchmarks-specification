@@ -20,7 +20,26 @@ description: |
   the tens-of-seconds range where the 100ms-polled clock can actually
   resolve a percentage change, while preserving the per-value byte count
   and incompressibility that are the properties this dataset shape needs
-  to test.
+  to test. That 5s sleep is also a near-constant ~5s undercount baked
+  into every ReplicationFullSyncSeconds datapoint on this spec (and its
+  1KiB sibling) — harmless for A/B direction, but it inflates any
+  percentage delta computed from the exported value; keep that in mind
+  when reading results rather than taking the percentage at face value.
+
+  Value size is 131062 bytes, not a round 131072 (128KiB): sds's header
+  (9 bytes) plus NUL terminator push a raw 131072-byte payload one byte
+  past jemalloc's 131072 size class, rounding the actual allocation up
+  to 163840 (160KiB) — 140K x 160KiB ~= 22.9 GB instead of the intended
+  ~18.4 GB. Trimming 10 bytes off the requested value size keeps the
+  allocation inside the 131072 bin; the crc64 hypothesis this spec tests
+  doesn't care about the last 10 bytes per value.
+
+  repl-diskless-load is pinned to on-empty-db (safe here since the
+  replica always starts empty). Left at its default (disabled), the
+  replica writes the full incoming RDB to the bind-mounted data dir and
+  only then reads it back to parse — a full ~18 GB disk write plus a
+  full serial re-read landing inside the exact window this spec
+  measures, on top of the checksum cost the spec exists to isolate.
 
   Random (-R) values are deliberate: memtier's default data pattern is
   highly LZF-compressible, which shrinks the on-wire/checksummed byte
@@ -34,7 +53,7 @@ description: |
   measures). Large, incompressible values are the one shape where a
   faster crc64() can actually show up end-to-end: enough raw bytes per
   value that checksum cost is no longer negligible (Amdahl), and no
-  compression competing for the same CPU budget.
+  compression or disk I/O competing for the same CPU/wall-clock budget.
 
   Steady-state benchmark is intentionally short (30s) — the point of this
   test is the SYNC time during topology setup, not the steady-state ops/sec.
@@ -47,23 +66,25 @@ dbconfig:
     save: '""'
     maxmemory-policy: noeviction
     rdbcompression: 'no'
+    repl-diskless-load: on-empty-db
   check:
     keyspacelen: 140000
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --data-size 131072 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+    arguments: --data-size 131062 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
       140000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
   resources:
     requests:
-      memory: 20g
+      memory: 23g
   dataset_name: 140Kkeys-string-128KiB-size-randomdata
   dataset_description: |
-    140,000 string keys, each with a 131072-byte (128KiB) random incompressible
-    value (~18.4 GB dataset) — same per-value shape as redis/redis#15732's own
-    "value-heavy" benchmark cell, scaled up in key count so the full-sync
-    duration is long enough for the coordinator's 100ms-polled clock to
-    resolve a percentage-level change.
+    140,000 string keys, each with a 131062-byte (~128KiB) random incompressible
+    value (~18.4 GB dataset, sized to stay inside jemalloc's 131072-byte size
+    class after sds header/NUL overhead) — same per-value shape as
+    redis/redis#15732's own "value-heavy" benchmark cell, scaled up in key
+    count so the full-sync duration is long enough for the coordinator's
+    100ms-polled clock to resolve a percentage-level change.
 tested-commands:
 - set
 redis-topologies:
@@ -75,7 +96,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "131072" --pipeline 10 --distinct-client-seed --ratio
+  arguments: '"--data-size" "131062" --pipeline 10 --distinct-client-seed --ratio
     0:1 --key-pattern R:R --key-minimum=1 --key-maximum 140000 --test-time 30 -c
     20 -t 4 --hide-histogram'
   resources:
