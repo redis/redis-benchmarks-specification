@@ -1,0 +1,155 @@
+version: 0.4
+name: memtier_benchmark-1400keys-load-string-with-128KiB-values-randomdata-debug-reload
+description: |
+  Standalone RDB-load-time benchmark: 1400 keys with 128KiB random
+  (incompressible) values (~183.5MB dataset) reloaded repeatedly via
+  DEBUG RELOAD NOSAVE. This reproduces redis/redis#15732's own reported
+  benchmark cell ("Value-heavy: 1400 x 128KB strings, 183MB, warm cache",
+  claimed -24.6% RDB load time) using the same methodology the PR author
+  used: server-side RDB parse/load time (the measured window is
+  flush-then-load, not load alone -- NOSAVE skips the write side but not
+  emptyData(); at 1400 keys the flush side is small enough that it
+  shouldn't move an A/B, in the same spirit as the replica-only sibling's
+  own documented ~5s clock undercount), with no replication, no network
+  hop, and no coordinator-polled clock in the critical path.
+
+  This spec exists because its replica-full-sync sibling
+  (140Kkeys-load-string-with-128KiB-values-randomdata-replica-only) cannot
+  isolate crc64's effect end-to-end: profiling that spec under the fix
+  showed replica-side loopback socket I/O as the dominant self-time cost,
+  not crc64 or RDB parsing -- a full sync inherently pays a network-transfer
+  hop that this PR's own benchmark methodology never had to contend with.
+  DEBUG RELOAD NOSAVE has no such hop: it flushes the keyspace and reloads
+  server.rdb from local disk in-process, which is exactly what the PR's
+  "warm cache" RDB-load-time numbers measure.
+
+  Unlike the replica-only sibling, this spec does not need to scale the
+  dataset up to survive a coarse polled clock -- the signal here is
+  memtier's own per-request latency (microsecond resolution), so the PR
+  author's literal 1400 x 128KiB dataset size is used directly for exact
+  comparability with the PR's reported numbers, rather than the ~140K-key
+  scale-up used on the full-sync sibling.
+
+  Value size is 131062 bytes, not a round 131072 (128KiB), for the same
+  reason as the full-sync sibling: sds's header (9 bytes) plus NUL
+  terminator would otherwise push a raw 131072-byte payload one byte past
+  jemalloc's 131072 size class, rounding the actual allocation up to
+  163840 (160KiB). Trimming 10 bytes off the requested value size keeps
+  the allocation inside the 131072 bin.
+
+  rdbcompression is pinned off: values are incompressible random data, so
+  attempting LZF on save only adds CPU for zero bytes saved, and loading a
+  compressed-but-incompressible RDB would additionally pay LZF-decompress
+  cost inside the measured window -- exactly the confound that made the
+  full-sync sibling's original 1KiB-value spec measure ~0% effect for
+  #15732 (crc64 ~0.12% of CPU there, lzf_decompress 62%).
+
+  dbconfig.init_commands issues a single SAVE right after preload so
+  server.rdb exists on disk before the first DEBUG RELOAD NOSAVE call.
+  Every subsequent DEBUG RELOAD NOSAVE call reloads that same on-disk file
+  (NOSAVE skips writing a fresh RDB before the reload), so all 100 samples
+  measure the identical 183.5MB payload -- no dataset drift across the run.
+
+  configuration-parameters only take effect as redis-server startup args
+  on the self-contained-coordinator path (used to trigger this spec) --
+  the standalone __runner__ CLI path runs the same spec file against an
+  externally-provisioned server and never applies configuration-parameters
+  at all, so on that path every key in this block would silently stay at
+  whatever that server already has. Two of the four are addressed via
+  dbconfig.init_commands, which does run on both paths: DEBUG is gated
+  behind enable-debug-command (IMMUTABLE_CONFIG, default "no" since Redis
+  7.0) and can only be set at startup, so init_commands instead adds a
+  DEBUG RELOAD NOSAVE probe right after the SAVE -- execute_init_commands()
+  re-raises ResponseError for a Redis-semantics server_name (this spec's
+  intended target), so a run where DEBUG is disabled for any reason
+  aborts loudly at setup instead of silently benchmarking error replies
+  (memtier does not abort on error
+  replies on its own). rdbcompression, unlike enable-debug-command, is
+  runtime-mutable (MODIFIABLE_CONFIG), so it's additionally forced via an
+  explicit CONFIG SET ahead of the SAVE, closing the gap on both paths.
+  rdbchecksum cannot be handled the same way: it is also IMMUTABLE_CONFIG
+  (confirmed directly -- CONFIG SET rdbchecksum rejects with "can't set
+  immutable config" even on a fresh, otherwise-default server), so on the
+  __runner__ path there is no way to force it via init_commands, and an
+  externally-provisioned server started without rdbchecksum yes would
+  silently reproduce the ~0%-effect confound this spec exists to avoid,
+  with no fail-loud signal (the DEBUG probe only proves DEBUG is reachable,
+  not that checksums are on). That's a real, currently-unclosed gap on the
+  __runner__ path specifically; the self-contained-coordinator path this
+  spec is actually triggered through does not have it, since startup args
+  cover all four configuration-parameters correctly there.
+
+  This benchmarked command is single-connection and blocks the whole
+  server for the duration of each reload. Measured directly against this
+  exact dataset shape (local build, DEBUG RELOAD NOSAVE timed 5x on a
+  183.5MB RDB), reload took ~0.17-0.46s, i.e. ~2-6 ops/sec, so 100
+  reloads finish in roughly 30s -- comfortably inside the coordinator's
+  flat 300s container timeout with no explicit --test-time needed (it
+  cannot be combined with -n here regardless: memtier treats --requests
+  and --test-time as mutually exclusive and refuses to start with both
+  set). Metric of interest is p50.00: at exactly 100 samples p99.00 is
+  the single top sample rather than a real order statistic, so it is
+  exported for completeness but p50 is what an A/B comparison should
+  read.
+
+  Two scope limits worth stating plainly. First, the DEBUG-disabled
+  fail-loud probe (above) only fails loud when execute_init_commands()
+  is called with a Redis-semantics server_name; the
+  self-contained-coordinator path threads through whatever --server_name
+  the run was triggered with, and this coordinator also supports several
+  non-Redis server types for which that argument's tolerate-and-continue
+  branch would swallow a probe failure silently -- some of those
+  integrations additionally translate only a handful of
+  configuration-parameters (e.g. maxmemory) and drop the rest rather than
+  erroring, so a misrouted run against one would export meaningless
+  numbers with no error anywhere. This spec is only meaningful when
+  triggered against a real Redis-compatible DEBUG RELOAD implementation.
+  Second, enable-debug-command only exists from Redis 7.0 onward and
+  configuration-parameters reach redis-server unfiltered with no version
+  gate, so a pre-7.0 target (reachable via the dockerhub build-variant)
+  would fail to start rather than skip this spec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    rdbcompression: 'no'
+    rdbchecksum: 'yes'
+    enable-debug-command: 'yes'
+  check:
+    keyspacelen: 1400
+  init_commands:
+  - '"CONFIG" "SET" "rdbcompression" "no"'
+  - '"SAVE"'
+  - '"DEBUG" "RELOAD" "NOSAVE"'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 131062 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      1400 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1400keys-string-128KiB-size-randomdata
+  dataset_description: |
+    1,400 string keys, each with a 131062-byte (~128KiB) random incompressible
+    value (~183.5MB dataset, sized to stay inside jemalloc's 131072-byte size
+    class after sds header/NUL overhead) -- the exact dataset shape and size
+    of redis/redis#15732's own "value-heavy" reported benchmark cell.
+tested-commands:
+- debug
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "DEBUG RELOAD NOSAVE" -n 100 -c 1 -t 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- server
+priority: 50
