@@ -2261,10 +2261,19 @@ def process_self_contained_coordinator_stream(
                                     # exporter's merged defaults.yml metrics under the
                                     # spec's test name with nothing to signal they aren't
                                     # save duration -- the same "misleading datapoint"
-                                    # outcome bgsave_metric_missing (single-tool path) and
-                                    # the __runner__ CLI skip both exist to prevent. Skip
-                                    # this suite the same way, before any client work
-                                    # runs (mirrors the MULTITOOL_ENABLED skip above).
+                                    # outcome bgsave_metric_missing exists to prevent on
+                                    # the single-tool path. Reuse that exact flag here
+                                    # (rather than continue, which would jump past the
+                                    # shared tail's tear-down a few hundred lines below --
+                                    # the DB container was already started earlier in
+                                    # this same topology iteration regardless of
+                                    # clientconfigs/wait_for_bgsave, so continue-ing here
+                                    # would leak it under network_mode="host" exactly
+                                    # like the single-tool path's own comment warns
+                                    # against). The multi-tool client still runs and
+                                    # falls through to the shared tail either way; setting
+                                    # this flag only suppresses that tail's
+                                    # exporter_datasink_common() call.
                                     if benchmark_config.get("dbconfig", {}).get(
                                         "wait_for_bgsave", False
                                     ):
@@ -2273,12 +2282,11 @@ def process_self_contained_coordinator_stream(
                                             "suite %s, but wait_for_bgsave is not supported "
                                             "on the multi-tool path (no BGSAVE "
                                             "wait/confirm/injection is available here). "
-                                            "Skipping this suite rather than exporting a "
-                                            "misleading datapoint.",
+                                            "Suppressing this run's export rather than "
+                                            "publishing a misleading datapoint.",
                                             test_name,
                                         )
-                                        test_result = True
-                                        continue
+                                        bgsave_metric_missing = True
                                     (
                                         start_time,
                                         start_time_ms,
