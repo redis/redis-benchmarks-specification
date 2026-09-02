@@ -3074,7 +3074,15 @@ def process_self_contained_coordinator_stream(
                                 # to block here until that BGSAVE actually finishes,
                                 # then inject the resulting duration/fork-time into
                                 # results_dict so it reaches TimeSeries.
-                                if bgsave_wait_enabled:
+                                # not bgsave_metric_missing: the keyspacelen_mismatch()
+                                # check above already ran and can have set this True
+                                # on a preload that's already known bad -- paying for
+                                # a real BGSAVE (seconds) plus up to bgsave_timeout_seconds
+                                # (default 300s) of polling for a datapoint the export
+                                # gate discards anyway would be pure waste. Still no
+                                # `continue`: tear-down further down this same
+                                # iteration still needs to run.
+                                if bgsave_wait_enabled and not bgsave_metric_missing:
                                     bgsave_timeout_seconds = benchmark_config.get(
                                         "dbconfig", {}
                                     ).get("bgsave_timeout_seconds", 300)
@@ -3294,13 +3302,25 @@ def process_self_contained_coordinator_stream(
                                         # silently strip it from export. Not reachable
                                         # by this spec's two flat metrics today, where
                                         # last-field and Totals-child are the same
-                                        # string either way. Scoped to "ALL STATS"
-                                        # only (not BEST/WORST RUN RESULTS or
-                                        # AGGREGATED AVERAGE RESULTS, which defaults.yml
-                                        # also declares Ops/sec/p50.00/etc under) --
-                                        # deliberate and verified for this spec's
-                                        # single-run (-x unset) memtier output, which
-                                        # has no other top-level sections; a future
+                                        # string either way. Only a path rooted at
+                                        # "ALL STATS" (chain[0], enforced below, not
+                                        # just "Totals" appearing anywhere in the
+                                        # chain) contributes to the allowlist -- a
+                                        # declared $."BEST RUN RESULTS".Totals."Ops/sec"
+                                        # also has "Totals" in its chain, and without
+                                        # this check would put "Ops/sec" into
+                                        # declared_metric_keys and thereby keep the
+                                        # degenerate ALL_STATS.Totals.Ops/sec this
+                                        # filter exists to strip -- the same series
+                                        # the coordinator's own regression comment
+                                        # hardcodes as ALL_STATS.Totals.Ops/sec for
+                                        # every test. The filter itself still only
+                                        # ever touches results_dict["ALL STATS"]["Totals"];
+                                        # BEST/WORST RUN RESULTS and AGGREGATED
+                                        # AVERAGE RESULTS (which defaults.yml also
+                                        # declares Ops/sec/p50.00/etc under) are
+                                        # verified absent from this spec's single-run
+                                        # (-x unset) memtier output -- a future
                                         # skip_throughput_floor spec running -x >1
                                         # would need those scoped too.
                                         declared_metric_keys = set()
@@ -3310,27 +3330,34 @@ def process_self_contained_coordinator_stream(
                                             .get("metrics", [])
                                         ):
                                             chain = jsonpath_field_chain(path)
-                                            if chain and "Totals" in chain:
+                                            if (
+                                                chain
+                                                and chain[0] == "ALL STATS"
+                                                and "Totals" in chain
+                                            ):
                                                 totals_idx = chain.index("Totals")
                                                 if totals_idx + 1 < len(chain):
                                                     declared_metric_keys.add(
                                                         chain[totals_idx + 1]
                                                     )
                                                     continue
-                                            # A declared path that doesn't resolve
-                                            # to a Totals child (unparseable, or no
-                                            # "Totals" segment) is silently dropped
-                                            # from the allowlist -- not a failure by
-                                            # itself if at least one other declared
-                                            # path resolves (the empty-allowlist case
-                                            # below covers total failure), but worth
-                                            # a log even on partial failure so a
-                                            # malformed metric declaration doesn't
+                                            # A declared path that doesn't resolve to
+                                            # an "ALL STATS".Totals child (unparseable,
+                                            # declared under a different section, or
+                                            # no "Totals" segment at all) is silently
+                                            # dropped from the allowlist -- not a
+                                            # failure by itself if at least one other
+                                            # declared path resolves (the
+                                            # empty-allowlist case below covers total
+                                            # failure), but worth a log even on
+                                            # partial failure so a malformed or
+                                            # misplaced metric declaration doesn't
                                             # disappear from export with nothing
                                             # anywhere to explain why.
                                             logging.warning(
                                                 f"Test {test_name}: exporter.redistimeseries.metrics "
-                                                f"entry {path!r} did not resolve to a Totals child -- "
+                                                f"entry {path!r} did not resolve to an "
+                                                f'"ALL STATS".Totals child (chain={chain!r}) -- '
                                                 "excluded from the export allowlist."
                                             )
                                         if declared_metric_keys:

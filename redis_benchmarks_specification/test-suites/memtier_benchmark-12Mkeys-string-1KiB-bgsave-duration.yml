@@ -86,19 +86,14 @@ dbconfig:
   resources:
     requests:
       memory: 20g
-  # Distinct from two existing datasets that would otherwise collide as a
-  # preload-reuse key (dataset_name doubles as that key in
-  # __runner__/runner.py, so it must stay unique regardless): the
-  # 3Mkeys-string-1KiB-size dataset (memtier_benchmark-3Mkeys-string-get-
-  # with-1KiB-values-400_conns.yml) also omits -R (equally compressible)
-  # and differs only in --data-size (1000 vs this spec's 1024); the
-  # closest sibling by preload shape, 20Mkeys-string-1KiB-size
-  # (memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml),
-  # uses the same --data-size 1024 this spec does, so the "-1024B-size"
-  # suffix doesn't disambiguate from that one on data size alone -- it's
-  # a third naming convention rather than a principled distinction, kept
-  # for uniqueness rather than to convey anything about the dataset shape.
-  dataset_name: 12Mkeys-string-1024B-size
+  # Follows the same "<N>keys-string-1KiB-size" convention as the closest
+  # sibling by preload shape, 20Mkeys-string-1KiB-size
+  # (memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml,
+  # same --data-size 1024). dataset_name doubles as the preload-reuse key
+  # in __runner__/runner.py, so it must stay unique regardless -- no
+  # existing 12Mkeys-* dataset in the tree, so the key count alone already
+  # guarantees that here.
+  dataset_name: 12Mkeys-string-1KiB-size
   dataset_description: |
     12 million string keys, each with a 1024-byte compressible value
     (memtier's default data pattern, not -R random bytes -- the
