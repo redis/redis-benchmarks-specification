@@ -26,13 +26,15 @@ description: |
   snapshot AND rdb_last_bgsave_status is ok -- rdb_bgsave_in_progress==0
   alone doesn't prove a save ran; a fresh/never-saved server reads 0
   too) before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's
-  own resolution), RdbLastForkUsec (microseconds, from INFO's *stats*
-  section) and RdbBgsaveWaitElapsedSeconds (the coordinator's own
-  200ms-resolution poll-loop timer -- a finer-grained companion to the
-  whole-second Redis field, though only a lower bound since polling
-  starts after the client run returns) into the exported metrics. If
-  that confirmation fails (timeout, or no save detected), nothing is
-  injected rather than exporting a stale or sentinel (-1) value.
+  own resolution) and RdbLastForkUsec (microseconds, from INFO's
+  *stats* section) into the exported metrics. If that confirmation
+  fails (timeout, or no save detected), nothing is injected rather than
+  exporting a stale or sentinel (-1) value. (The coordinator's own
+  poll-loop timer has finer, 200ms resolution than Redis's whole-second
+  field, but is not exported: the poll only starts after container
+  teardown -- topdown/profiler stop, results parsing -- which can
+  easily outlast a write-quiescent BGSAVE, so it would measure
+  coordinator teardown latency more than BGSAVE itself.)
 
   save is pinned to "" so periodic autosave never fires -- the only
   BGSAVE in the measured window is the one this spec explicitly issues.
@@ -79,7 +81,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "BGSAVE" -n 1 -c 1 -t 1 --hide-histogram
+  arguments: --command "BGSAVE" --command-key-pattern="R" -n 1 -c 1 -t 1 --hide-histogram
   resources:
     requests:
       cpus: '2'
@@ -91,5 +93,4 @@ exporter:
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
-    - $."ALL STATS".Totals.RdbBgsaveWaitElapsedSeconds
 priority: 50
