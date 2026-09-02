@@ -22,6 +22,34 @@ description: |
   uses 25g memory at ~21GB resident); this spec's 12M/15GB sits below
   that.
 
+  Rescaling to 12M keys has a real, measured side effect worth stating
+  plainly: fork() cost (CoW page-table setup) scales with resident
+  memory, not just with dataset byte count on disk. The clientconfig's
+  BGSAVE fork-ack latency -- the value validate_benchmark_metrics()
+  actually sees, since that gate runs before this spec's own
+  wait/confirm/inject logic -- was ~4ms at the original 3M-key/3.75GB
+  scale but measured ~349ms at this shipped 12M-key/15GB scale (fed
+  through the real validator directly: Ops/sec=2.87, is_valid=True).
+  That's real headroom above the validator's <1 QPS floor, but a
+  materially thinner margin than the smaller scale had -- if this spec
+  is ever scaled up further, or if some platform's fork() is
+  meaningfully slower than this measurement's box, that floor gets
+  closer. A validator failure here hits the same pre-existing
+  continue-past-tear-down path as any other spec's metric-validation
+  failure (out of scope for this PR, see the exporter block below for
+  the analogous, already-fixed issue on this spec's own new code), so
+  keep this margin in mind before scaling the dataset any further.
+
+  Separately, a pre-existing, spec-agnostic cleanup gate is worth
+  flagging for this spec specifically: the coordinator's server data
+  directory (holding server.rdb) is only removed when test_result is
+  True. Most specs leave a few KB of logs behind on a failed run; this
+  one leaves the full ~469MB dump.rdb, since a failure here (unconfirmed
+  BGSAVE, or the validator issue above) doesn't change what's already
+  on disk. Not fixed here -- same shared, out-of-scope cleanup path --
+  but worth knowing when reasoning about fleet disk usage from repeated
+  failures of this spec specifically.
+
   Built to give a clean, write-quiescent BGSAVE duration number --
   distinct from the existing 3Mkeys-set family, which intentionally
   times fork/CoW cost *under* sustained write pressure (a different,

@@ -115,6 +115,20 @@ def test_wait_for_bgsave_completion_returns_immediately_when_done():
     conn.info.assert_called_with("persistence")
 
 
+def test_wait_for_bgsave_completion_missing_key_keeps_polling_not_done():
+    """A persistence INFO missing rdb_bgsave_in_progress entirely (e.g. a
+    non-Redis-INFO-shape server) must NOT be treated as "finished" --
+    that's the same .get()-defaulting shape inject_persistence_metrics()
+    was fixed to avoid. Missing means unknown, so keep polling until the
+    timeout bounds it, rather than falsely declaring completion on the
+    first poll."""
+    conn = Mock()
+    conn.info.return_value = {"some_other_field": 1}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=0.5)
+    assert completed is False
+    assert elapsed >= 0.5
+
+
 def test_wait_for_bgsave_completion_polls_until_done():
     """Should keep polling while in progress, then return True once it clears."""
     conn = Mock()

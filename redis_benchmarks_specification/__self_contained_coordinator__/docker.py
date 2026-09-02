@@ -73,7 +73,17 @@ def wait_for_bgsave_completion(
         try:
             persistence_info = redis_conn.info("persistence")
             consecutive_errors = 0
-            if int(persistence_info.get("rdb_bgsave_in_progress", 0)) == 0:
+            # Deliberately NOT persistence_info.get("rdb_bgsave_in_progress", 0)
+            # -- the same .get()-defaulting shape inject_persistence_metrics()
+            # was fixed to avoid, for the same non-Redis-INFO-shape reason.
+            # A missing key here means "unknown", not "finished": keep
+            # polling (safe direction, since the timeout still bounds it)
+            # rather than falsely declaring completion on the very first
+            # poll against a server whose INFO doesn't have this field.
+            if (
+                "rdb_bgsave_in_progress" in persistence_info
+                and int(persistence_info["rdb_bgsave_in_progress"]) == 0
+            ):
                 return True, elapsed
         except Exception as e:
             consecutive_errors += 1
