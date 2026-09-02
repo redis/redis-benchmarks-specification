@@ -134,16 +134,24 @@ build-variants:
 # QPS floor gated on) is architecture-sensitive and only measured on
 # amd64. That floor is now skipped entirely for this spec (see
 # dbconfig.skip_throughput_floor above), which retires the reason arm64
-# was excluded, so it's back. dockerhub
-# remains out: its own architecture dispatch behavior wasn't confirmed
-# amd64/arm64-correct in the time available to check, which is
-# unrelated to the QPS-floor issue above.
+# was excluded, so it's back. dockerhub was also excluded on a similar
+# precautionary basis, but its own architecture dispatch isn't
+# spec-specific -- the closest siblings by shape/size all ship it
+# alongside the same amd64/arm64 pair (3Mkeys-string-set-1KiB-pipeline-10,
+# 20Mkeys-load-string-with-1KiB-values-replica-only,
+# 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only), so
+# there's no remaining reason for this spec to be the exception.
 - gcc:15.2.0-amd64-debian-bookworm-default
 - gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "BGSAVE" --command-key-pattern="R" -n 1 -c 1 -t 1 --hide-histogram
+  # No --command-key-pattern: BGSAVE takes no key, so there's no __key__
+  # placeholder to generate for. Matches the two existing keyless
+  # arbitrary-command specs (1Mkeys-generic-info-all, 1Mkeys-string-acl-whoami),
+  # neither of which passes it either.
+  arguments: --command "BGSAVE" -n 1 -c 1 -t 1 --hide-histogram
   resources:
     requests:
       cpus: '2'
