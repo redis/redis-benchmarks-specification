@@ -3058,11 +3058,17 @@ def process_self_contained_coordinator_stream(
                                         # run this code just declared failed, worse than a
                                         # hole. Fail it loudly instead, the same way a
                                         # metric-validation failure does a few lines above --
-                                        # but WITHOUT a continue: tear-down
-                                        # (stop_and_remove_container_safe for both DB and
-                                        # client containers) lives further down in this same
-                                        # try block, and skipping it would leak this run's
-                                        # containers rather than just failing the datapoint.
+                                        # but WITHOUT a continue: stop_and_remove_container_safe()
+                                        # for both DB and client containers runs later in this
+                                        # same per-topology iteration (past a separate, narrower
+                                        # try/except ConnectionError that wraps only
+                                        # exporter_datasink_common() and the connection shutdown
+                                        # loop -- that inner try isn't what protects tear-down
+                                        # here). continue-ing at this point would jump straight
+                                        # back to the topology loop, skipping everything after
+                                        # it in this iteration including that tear-down, and
+                                        # leak this run's containers rather than just failing
+                                        # the datapoint.
                                         # bgsave_metric_missing carries the failure through
                                         # the unconditional "test_result = True" reset below,
                                         # and separately gates the exporter_datasink_common()
