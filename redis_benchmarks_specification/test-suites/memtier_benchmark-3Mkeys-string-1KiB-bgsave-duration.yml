@@ -17,19 +17,34 @@ description: |
   no page-dirtying/CoW noise superimposed.
 
   BGSAVE forks and replies "Background saving started" immediately --
-  client-observed latency is fork time, not save time. dbconfig.wait_for_bgsave
+  client-observed latency is fork time, not save time (confirmed
+  directly: 4.1ms client-side against a real ~1s save). dbconfig.wait_for_bgsave
   makes the coordinator poll INFO persistence's rdb_bgsave_in_progress
   after the client run finishes, blocking until the save Redis is
-  actually running completes, then injecting RdbLastBgsaveTimeSec
-  (whole seconds -- Redis's own resolution) and RdbLastForkUsec
-  (microseconds) from INFO into the exported metrics.
+  actually running completes, then confirms a save genuinely happened
+  in that window (rdb_last_save_time strictly advanced past a pre-run
+  snapshot AND rdb_last_bgsave_status is ok -- rdb_bgsave_in_progress==0
+  alone doesn't prove a save ran; a fresh/never-saved server reads 0
+  too) before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's
+  own resolution), RdbLastForkUsec (microseconds, from INFO's *stats*
+  section) and RdbBgsaveWaitElapsedSeconds (the coordinator's own
+  200ms-resolution poll-loop timer -- a finer-grained companion to the
+  whole-second Redis field, though only a lower bound since polling
+  starts after the client run returns) into the exported metrics. If
+  that confirmation fails (timeout, or no save detected), nothing is
+  injected rather than exporting a stale or sentinel (-1) value.
 
   save is pinned to "" so periodic autosave never fires -- the only
   BGSAVE in the measured window is the one this spec explicitly issues.
-  rdbcompression is left at its default (yes): LZF running against
-  realistically compressible data is the actual save-path cost this
-  spec exists to measure, unlike the crc64-isolation specs
-  (140Kkeys/1400keys-...-randomdata-...) which deliberately disable it.
+  rdbcompression is left at its default (yes) so LZF actually runs,
+  unlike the crc64-isolation specs (140Kkeys/1400keys-...-randomdata-...)
+  which deliberately disable it. Values use memtier's default data
+  pattern (not -R random bytes), which is the highly-compressible
+  extreme -- the sibling 140Kkeys-...-randomdata-replica-only spec's own
+  profiling puts lzf_decompress at 62% of CPU on that exact shape -- not
+  a "representative" middle ground; -R would be the incompressible
+  extreme instead. This spec deliberately sits at the compressible end
+  since that is where LZF's own cost is largest and most visible.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -47,10 +62,11 @@ dbconfig:
   dataset_name: 3Mkeys-string-1KiB-size-compressible
   dataset_description: |
     3 million string keys, each with a 1024-byte compressible value
-    (memtier's default data pattern, not -R random bytes) -- ~3GB
-    dataset sized to make BGSAVE take a measurable, meaningful amount
-    of time (tens of seconds) while keeping the LZF-compression cost
-    representative of realistic (non-incompressible) customer data.
+    (memtier's default data pattern, not -R random bytes -- the
+    highly-compressible extreme, not a realistic middle ground) --
+    ~3GB dataset sized to make BGSAVE take a measurable, meaningful
+    amount of time (tens of seconds) while maximizing LZF's own share
+    of the save-path cost.
   wait_for_bgsave: true
 tested-commands:
 - bgsave
@@ -75,4 +91,5 @@ exporter:
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
+    - $."ALL STATS".Totals.RdbBgsaveWaitElapsedSeconds
 priority: 50
