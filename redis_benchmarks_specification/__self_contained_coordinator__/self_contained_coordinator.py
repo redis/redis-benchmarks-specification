@@ -2949,12 +2949,24 @@ def process_self_contained_coordinator_stream(
                                             )
 
                                     if not bgsave_confirmed:
-                                        logging.warning(
-                                            "Skipping RdbLastBgsaveTimeSec/RdbLastForkUsec injection: "
-                                            "no confirmed successful BGSAVE detected in the measured "
-                                            "window (rdb_last_save_time did not advance, "
-                                            "rdb_last_bgsave_status != ok, or the wait timed out)."
+                                        # A spec that opts into wait_for_bgsave has no
+                                        # metric of interest other than the ones injected
+                                        # below -- if nothing gets injected here, the
+                                        # exporter has nothing to push and the run would
+                                        # otherwise report success with zero datapoints,
+                                        # silently growing a hole in TimeSeries. Fail it
+                                        # loudly instead, the same way a metric-validation
+                                        # failure does a few lines above.
+                                        logging.error(
+                                            f"Test {test_name} failed: dbconfig.wait_for_bgsave "
+                                            "is set but no confirmed successful BGSAVE was "
+                                            "detected in the measured window (rdb_last_save_time "
+                                            "did not advance, rdb_last_bgsave_status != ok, or "
+                                            "the wait timed out) -- nothing to export."
                                         )
+                                        test_result = False
+                                        failed_tests += 1
+                                        continue
                                     elif inject_persistence_metrics(
                                         results_dict, primary_conns[0]
                                     ):

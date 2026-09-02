@@ -290,6 +290,32 @@ def test_preload_before_replica_flag_in_20m_spec():
         ), f"20M replica-only spec must use only replica topologies, got {topology}"
 
 
+def test_bgsave_duration_spec_wiring_matches_injector():
+    """The BGSAVE-duration spec must set wait_for_bgsave: true (without it,
+    RdbLastBgsaveTimeSec/RdbLastForkUsec are never injected and the exporter
+    has nothing to push -- BGSAVE's client-observed latency is fork time,
+    not save time, so there's no other source for these metrics), and its
+    exporter jsonpaths must end in the exact keys inject_persistence_metrics()
+    writes -- there's nothing else checking that contract, and a typo on
+    either side lands in a silent, no-exception empty export."""
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-3Mkeys-string-1KiB-bgsave-duration.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+    assert (
+        benchmark_config["dbconfig"].get("wait_for_bgsave") is True
+    ), "BGSAVE-duration spec must set wait_for_bgsave: true"
+    metrics = benchmark_config["exporter"]["redistimeseries"]["metrics"]
+    assert any(
+        m.endswith("RdbLastBgsaveTimeSec") for m in metrics
+    ), "exporter must export the RdbLastBgsaveTimeSec key inject_persistence_metrics() writes"
+    assert any(
+        m.endswith("RdbLastForkUsec") for m in metrics
+    ), "exporter must export the RdbLastForkUsec key inject_persistence_metrics() writes"
+
+
 def test_preload_before_replica_default_off():
     """Existing replica test specs must not have preload_before_replica set.
 
