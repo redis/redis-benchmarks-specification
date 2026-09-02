@@ -40,10 +40,13 @@ description: |
   explicitly to 180 (~7x margin over the measured save). The client's
   single BGSAVE command's fork-ack reply latency (what
   validate_benchmark_metrics() would otherwise see as this spec's
-  "Ops/sec") is exempted from that function's throughput floor --
-  dbconfig.wait_for_bgsave gates the skip -- since fork() cost scales
-  with resident memory rather than anything this spec is meant to
-  measure, so there's no principled floor for it to clear.
+  "Ops/sec") is exempted from that function's throughput floor via
+  dbconfig.skip_throughput_floor -- a separate key from wait_for_bgsave,
+  since only a client run that's nothing but the BGSAVE command itself
+  has an Ops/sec with no principled floor (fork() cost scales with
+  resident memory, not anything this spec is meant to measure); a future
+  BGSAVE-under-write-load variant would want wait_for_bgsave without
+  this exemption.
 
   Measured directly on this exact dataset shape, on a local
   redis-server: BGSAVE takes ~26.2s (rdb_last_bgsave_time_sec=26), so
@@ -95,6 +98,11 @@ dbconfig:
     quantization at this scale) sits comfortably inside the ~20-33%
     BGSAVE regression class this spec exists to detect.
   wait_for_bgsave: true
+  # Separate from wait_for_bgsave (see that key's description paragraph
+  # above): this spec's client run IS the BGSAVE command, so its
+  # Ops/sec has no throughput signal to guard. Read by
+  # validate_benchmark_metrics() in __runner__/runner.py.
+  skip_throughput_floor: true
   # ~7x margin over the ~26s measured save -- deliberately smaller than
   # wait_for_bgsave_completion()'s own 300s default so a genuinely stuck
   # or catastrophically slow BGSAVE (versus normal fleet/platform
@@ -126,8 +134,8 @@ build-variants:
 # latency at ~15GB RSS (the quantity validate_benchmark_metrics()'s <1
 # QPS floor gated on) is architecture-sensitive and only measured on
 # amd64. That floor is now skipped entirely for this spec (see
-# dbconfig.wait_for_bgsave's description paragraph above), which
-# retires the reason arm64 was excluded, so it's back. dockerhub
+# dbconfig.skip_throughput_floor above), which retires the reason arm64
+# was excluded, so it's back. dockerhub
 # remains out: its own architecture dispatch behavior wasn't confirmed
 # amd64/arm64-correct in the time available to check, which is
 # unrelated to the QPS-floor issue above.

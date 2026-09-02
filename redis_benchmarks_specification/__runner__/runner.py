@@ -196,15 +196,19 @@ def validate_benchmark_metrics(
                 cmd.lower() for cmd in benchmark_config["tested-commands"]
             ]
 
-        # wait_for_bgsave specs measure BGSAVE duration/fork-time via
-        # inject_persistence_metrics(), not client-observed throughput -- the
-        # only "Ops/sec" a client sees here is 1/fork-ack-latency, a number
-        # that scales with resident memory and has no principled floor. Skip
-        # the throughput check for these specs rather than depend on that
-        # margin staying above 1 QPS on every platform/topology.
+        # dbconfig.skip_throughput_floor is a separate key from
+        # wait_for_bgsave deliberately: "poll for a BGSAVE to finish" and
+        # "this spec's client-observed throughput has no meaning" aren't
+        # the same claim. A BGSAVE-under-write-load variant (the
+        # 3Mkeys-set family's territory) would want the wait but would
+        # still want the floor guarding its real write throughput -- only
+        # a spec whose client run is nothing but the BGSAVE command
+        # itself (like memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration)
+        # has an Ops/sec that's just 1/fork-ack-latency, a number that
+        # scales with resident memory and has no principled floor.
         skip_throughput_floor = bool(
             benchmark_config
-            and benchmark_config.get("dbconfig", {}).get("wait_for_bgsave")
+            and benchmark_config.get("dbconfig", {}).get("skip_throughput_floor")
         )
 
         # Define validation rules
@@ -2121,21 +2125,34 @@ def process_self_contained_coordinator_stream(
                     # none of that. Unlike preload_before_replica's one-sided read
                     # (whose absence still yields a valid, if different, benchmark),
                     # ignoring wait_for_bgsave here is actively misleading: the
-                    # client still runs BGSAVE via memtier and this path still
-                    # exports the merged defaults.yml metrics (Ops/sec/p50.00/p99.00
-                    # off a single fork-ack reply) under the spec's test name, with
-                    # nothing to signal that number isn't save duration.
+                    # client would still run BGSAVE via memtier and this path would
+                    # still export the merged defaults.yml metrics
+                    # (Ops/sec/p50.00/p99.00 off a single fork-ack reply) under the
+                    # spec's test name, with nothing to signal that number isn't
+                    # save duration -- the same "misleading datapoint, worse than a
+                    # hole" outcome bgsave_metric_missing exists to prevent on the
+                    # coordinator path. Skip the test entirely instead (test_result
+                    # stays at its default False, matching the preload-failure skip
+                    # a few lines up), rather than let a client run through to an
+                    # export the coordinator side would have refused.
                     if benchmark_config.get("dbconfig", {}).get(
                         "wait_for_bgsave", False
                     ):
                         logging.warning(
                             "dbconfig.wait_for_bgsave is set on %s, but wait_for_bgsave "
                             "is not supported on the __runner__ CLI path -- no BGSAVE "
-                            "wait/confirm/injection will happen, and the exported "
-                            "Ops/sec/p50.00/p99.00 will reflect a single BGSAVE "
-                            "fork-ack reply, not save duration.",
+                            "wait/confirm/injection is available here, and the exported "
+                            "Ops/sec/p50.00/p99.00 would reflect a single BGSAVE "
+                            "fork-ack reply, not save duration. Skipping this test "
+                            "rather than exporting a misleading datapoint.",
                             test_name,
                         )
+                        delete_temporary_files(
+                            temporary_dir_client=temporary_dir_client,
+                            full_result_path=None,
+                            benchmark_tool_global=benchmark_tool_global,
+                        )
+                        continue
 
                     used_memory_check(
                         test_name,
