@@ -25,15 +25,18 @@ description: |
   client-observed latency is fork time, not save time. dbconfig.wait_for_bgsave
   makes the coordinator poll INFO persistence's rdb_bgsave_in_progress
   after the client run finishes, blocking until the save actually
-  completes, then confirms a save genuinely happened in that window
-  (rdb_last_save_time strictly advanced past a pre-run snapshot AND
-  rdb_last_bgsave_status is ok -- rdb_bgsave_in_progress==0 alone
-  doesn't prove a save ran; a fresh/never-saved server reads 0 too)
-  before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's own
-  resolution) and RdbLastForkUsec (microseconds, from INFO's *stats*
-  section -- "the last fork of any kind," not BGSAVE-specific in
-  general, but exact here since this topology has no other fork source:
-  no AOF, no replicas). If confirmation fails, nothing is injected and
+  completes, then confirms a save genuinely happened in that window under
+  conditions where the result can be trusted (rdb_last_save_time strictly
+  advanced past a pre-run snapshot; rdb_last_bgsave_status is ok --
+  rdb_bgsave_in_progress==0 alone doesn't prove a save ran, a
+  fresh/never-saved server reads 0 too; aof_enabled is falsy; and the
+  server's live save-points config is empty) before injecting
+  RdbLastBgsaveTimeSec (whole seconds -- Redis's own resolution) and
+  RdbLastForkUsec (microseconds, from INFO's *stats* section -- "the last
+  fork of any kind," not BGSAVE-specific in general, but exact here since
+  the last two checks actively verify this topology has no other fork
+  source, rather than just assuming it from this spec's own
+  configuration-parameters). If confirmation fails, nothing is injected and
   the export is skipped entirely, rather than letting the standard
   Ops/sec/p50.00/p99.00 series (see the exporter block) reach TimeSeries
   from a run already declared failed. The client's
@@ -58,6 +61,24 @@ dbconfig:
   configuration-parameters:
     save: '""'
     maxmemory-policy: noeviction
+  # NOT actually enforced on the path this spec runs on: dbconfig_keyspacelen_check()
+  # has exactly two call sites (__runner__/runner.py, __self_contained_coordinator__/
+  # runners.py), and neither is process_self_contained_coordinator_stream() --
+  # the coordinator function that actually drives this spec on the fleet. The
+  # __runner__ path never reaches its own call site either, since this PR's
+  # pre-preload wait_for_bgsave skip continues before it. Declared here as
+  # documentation of the expected count (and because check.keyspacelen is a
+  # normal, expected key on a preload-tool spec), not as a guarantee: if the
+  # preload shape drifts (a memtier_benchmark:edge change, a -t/-c change)
+  # and loads fewer than 12M keys, nothing on this spec's actual execution
+  # path will catch it -- the whole ~15GB/~26.2s/~3.8%-quantization sizing
+  # argument in the dataset_description above rests on this count being
+  # right, unverified. Pre-existing gap (redis-benchmarks-spec-cli's own
+  # --key-maximum-off-by-one class of issue, #509/#510/PR#441), not
+  # introduced by this spec -- but this preload's shape (-n allkeys with a
+  # --key-maximum/--key-minimum range) is exactly the count-fragile kind
+  # test-suites/memtier_benchmark-playbook-feature-store-hash-10M-entities-50-features.yml's
+  # own comment warns about.
   check:
     keyspacelen: 12000000
   preload_tool:

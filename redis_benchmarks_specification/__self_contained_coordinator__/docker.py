@@ -102,9 +102,12 @@ def wait_for_bgsave_completion(
         time.sleep(poll_interval)
 
 
-def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
+def confirm_bgsave_completed(
+    rdb_last_save_time_before, info_after, save_points_config=None
+):
     """Return True only if INFO shows a BGSAVE genuinely completed
-    successfully since the pre-run snapshot.
+    successfully since the pre-run snapshot, under conditions where the
+    exported metrics can actually be attributed to that BGSAVE.
 
     wait_for_bgsave_completion() returning True (rdb_bgsave_in_progress==0)
     does not on its own prove a save ran in the measured window -- that
@@ -116,6 +119,25 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
     Requires rdb_last_save_time to have strictly advanced past the pre-run
     snapshot AND rdb_last_bgsave_status to be "ok" (not e.g. an OOM'd or
     signal-killed child, which leaves rdb_bgsave_in_progress==0 too).
+
+    Also requires the two remaining conditions inject_persistence_metrics()'s
+    own docstring names as the reason latest_fork_usec is unambiguous ("no
+    AOF, no replicas" -- the caller is responsible for the replica half via
+    wait_for_bgsave_topology_unsafe(), checked before this ever runs):
+
+    - aof_enabled must be falsy. AOF rewrites call redisFork() same as
+      BGSAVE, so an AOF rewrite landing in the measured window could be the
+      fork latest_fork_usec actually reflects, misattributed as "the BGSAVE
+      fork". (AOF rewrites do NOT touch rdb_last_save_time -- only
+      RDB-writing events do -- so this confound is specific to
+      RdbLastForkUsec's correctness, not this function's other check.)
+    - save_points_config must be falsy (None or empty/whitespace-only, i.e.
+      Redis's own "save points disabled" representation). A non-empty
+      config means periodic autosave is active and could have written the
+      RDB (and therefore satisfied the rdb_last_save_time check above) on
+      its own schedule, independent of the client's explicit BGSAVE --
+      exactly the same "some other trigger, not the client's BGSAVE"
+      confound the replica check exists to rule out.
 
     NOTE: rdb_last_save_time is whole-second unix time, so this assumes the
     save takes at least a couple of seconds -- a save fast enough to finish
@@ -132,13 +154,23 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
         rdb_last_save_time_before: rdb_last_save_time captured before the
             client run, or None if the snapshot itself failed.
         info_after: dict from a post-run info() call (any section that
-            includes rdb_last_save_time and rdb_last_bgsave_status), or
-            None if that call failed.
+            includes rdb_last_save_time, rdb_last_bgsave_status, and
+            aof_enabled -- an unscoped info() call has all three), or None
+            if that call failed.
+        save_points_config: the server's live `save` config value (e.g.
+            from CONFIG GET save), or None/empty if not fetched or disabled.
+            Not part of INFO output, so callers must fetch it separately
+            (e.g. alongside info_after, since save points aren't expected
+            to change mid-run for a wait_for_bgsave spec).
     """
     if rdb_last_save_time_before is None or info_after is None:
         return False
     rdb_last_save_time_after = info_after.get("rdb_last_save_time")
     if rdb_last_save_time_after is None:
+        return False
+    if info_after.get("aof_enabled"):
+        return False
+    if save_points_config is not None and save_points_config.strip():
         return False
     return (
         rdb_last_save_time_after > rdb_last_save_time_before

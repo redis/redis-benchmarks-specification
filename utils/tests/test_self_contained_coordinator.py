@@ -227,6 +227,36 @@ def test_confirm_bgsave_completed_false_on_missing_after_info():
     assert confirm_bgsave_completed(100, None) is False
 
 
+def test_confirm_bgsave_completed_false_when_aof_enabled():
+    """aof_enabled must be falsy: an AOF rewrite calls redisFork() same as
+    BGSAVE, so it could be the fork latest_fork_usec actually reflects,
+    misattributed as "the BGSAVE fork". Otherwise-happy-path inputs."""
+    info_after = {
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+        "aof_enabled": 1,
+    }
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_when_save_points_configured():
+    """A non-empty save-points config means periodic autosave could have
+    written the RDB (and satisfied the rdb_last_save_time check) on its own
+    schedule, independent of the client's explicit BGSAVE. Otherwise-happy-
+    path inputs."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after, "3600 1 300 100") is False
+
+
+def test_confirm_bgsave_completed_true_with_explicit_empty_save_points():
+    """An explicitly-fetched, empty save-points config (Redis's own "save
+    points disabled" representation) must not be treated as unsafe -- this
+    is the expected value for a spec that pins save: '""' and is the
+    normal, safe case, not a missing-data one."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after, "") is True
+
+
 def test_inject_persistence_metrics_reads_from_given_server_info():
     """RdbLastBgsaveTimeSec/RdbLastForkUsec come from the server_info dict the
     caller passes in -- no info() call of its own. latest_fork_usec lives in

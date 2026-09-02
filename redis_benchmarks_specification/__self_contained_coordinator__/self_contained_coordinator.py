@@ -3072,8 +3072,24 @@ def process_self_contained_coordinator_stream(
                                     if bgsave_completed:
                                         try:
                                             info_after = primary_conns[0].info()
+                                            # Not part of info() output -- a separate
+                                            # command. Fetched here rather than at the
+                                            # pre-run snapshot: save points aren't
+                                            # expected to change mid-run for a
+                                            # wait_for_bgsave spec (nothing in this
+                                            # flow issues CONFIG SET save), so either
+                                            # timing gives the same answer, and this
+                                            # avoids touching the pre-run snapshot
+                                            # code path at all.
+                                            save_points_config = (
+                                                primary_conns[0]
+                                                .config_get("save")
+                                                .get("save")
+                                            )
                                             bgsave_confirmed = confirm_bgsave_completed(
-                                                rdb_last_save_time_before, info_after
+                                                rdb_last_save_time_before,
+                                                info_after,
+                                                save_points_config,
                                             )
                                         except Exception as e:
                                             logging.warning(
@@ -3116,7 +3132,8 @@ def process_self_contained_coordinator_stream(
                                             f"Test {test_name} failed: dbconfig.wait_for_bgsave "
                                             "is set but no confirmed successful BGSAVE was "
                                             "detected in the measured window (rdb_last_save_time "
-                                            "did not advance, rdb_last_bgsave_status != ok, or "
+                                            "did not advance, rdb_last_bgsave_status != ok, "
+                                            "aof_enabled, save points were configured, or "
                                             "the wait timed out) -- nothing to export."
                                         )
                                         bgsave_metric_missing = True
