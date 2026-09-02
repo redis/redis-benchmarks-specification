@@ -18,6 +18,9 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_image,
     extract_client_tool,
 )
+from redis_benchmarks_specification.__common__.timeseries import (
+    merge_default_and_config_metrics,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
     stop_and_remove_container_safe,
@@ -353,6 +356,37 @@ def test_wait_for_bgsave_topology_unsafe_unmapped_fails_safe():
         )
         is True
     )
+
+
+def test_merge_default_and_config_metrics_does_not_mutate_default_metrics():
+    """merge_default_and_config_metrics() must return a new list, not mutate
+    the caller's default_metrics in place -- default_metrics is built once
+    per coordinator process and threaded through every test
+    (self_contained_coordinator.py), so an in-place .extend() here leaked
+    each spec's own exporter metrics into every later spec's export for the
+    rest of that process's lifetime (redis/redis-benchmarks-specification#550),
+    and, once a spec's own results table is printed more than once in the
+    same run (a wait_for_bgsave spec re-printing after metric injection),
+    into that same spec's own subsequent call too -- doubling its exported
+    metrics rather than leaving them stable."""
+    default_metrics = ["Ops/sec"]
+    benchmark_config = {
+        "exporter": {"redistimeseries": {"metrics": ["$.Extra.Metric"]}}
+    }
+    _, merged_once = merge_default_and_config_metrics(
+        benchmark_config, default_metrics, None
+    )
+    assert default_metrics == [
+        "Ops/sec"
+    ], "default_metrics must be unchanged after the call"
+    assert merged_once == ["Ops/sec", "$.Extra.Metric"]
+
+    # A second call with the same (unmodified) default_metrics must produce
+    # the same result, not accumulate a duplicate from the first call.
+    _, merged_twice = merge_default_and_config_metrics(
+        benchmark_config, default_metrics, None
+    )
+    assert merged_twice == ["Ops/sec", "$.Extra.Metric"]
 
 
 def test_bgsave_duration_spec_wiring_matches_injector():

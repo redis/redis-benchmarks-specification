@@ -936,7 +936,15 @@ def merge_default_and_config_metrics(
 ):
     if default_metrics is None:
         default_metrics = []
-    metrics = default_metrics
+    # A copy, not an alias: default_metrics is built once per coordinator
+    # process and threaded through every test (self_contained_coordinator.py),
+    # so extending it in place here leaked each spec's own extra_metrics into
+    # every later spec's export for the rest of that process's lifetime --
+    # and, once a spec's own results table gets printed more than once in
+    # the same run (e.g. a wait_for_bgsave spec re-printing after metric
+    # injection), leaked into that spec's own subsequent call too, doubling
+    # its exported metrics. See redis/redis-benchmarks-specification#550.
+    metrics = list(default_metrics)
     if benchmark_config is not None:
         if "exporter" in benchmark_config:
             extra_metrics = parse_exporter_metrics_definition(

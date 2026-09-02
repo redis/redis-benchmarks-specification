@@ -3384,25 +3384,32 @@ def process_self_contained_coordinator_stream(
                                     # condition), so the temporary_dir rmtree below
                                     # is skipped and redis.log is preserved -- only
                                     # the RDB itself is unlinked.
-                                    try:
-                                        for rdb_path in list(
-                                            Path(temporary_dir).glob("dump.rdb")
-                                        ) + list(
-                                            Path(temporary_dir).glob("temp-*.rdb")
-                                        ):
+                                    # try inside the loop, not wrapping it: the
+                                    # dominant case this block exists for (a
+                                    # wait_for_bgsave_completion() timeout) leaves
+                                    # temp-<pid>.rdb on disk, not dump.rdb, and
+                                    # dump.rdb is globbed first -- an OSError on a
+                                    # dump.rdb that doesn't even exist in that case
+                                    # would otherwise abort the whole sweep before
+                                    # ever reaching the temp-*.rdb files that are
+                                    # actually there. Best-effort per file instead.
+                                    for rdb_path in list(
+                                        Path(temporary_dir).glob("dump.rdb")
+                                    ) + list(Path(temporary_dir).glob("temp-*.rdb")):
+                                        try:
                                             rdb_path.unlink()
                                             logging.info(
                                                 "Removed unconfirmed-BGSAVE artifact %s "
                                                 "(kept redis.log for debugging)",
                                                 rdb_path,
                                             )
-                                    except OSError as e:
-                                        logging.warning(
-                                            "Failed to clean up RDB artifacts in %s "
-                                            "after an unconfirmed BGSAVE: %s",
-                                            temporary_dir,
-                                            e,
-                                        )
+                                        except OSError as e:
+                                            logging.warning(
+                                                "Failed to remove RDB artifact %s "
+                                                "after an unconfirmed BGSAVE: %s",
+                                                rdb_path,
+                                                e,
+                                            )
 
                                 for redis_container in client_containers:
                                     if type(redis_container) == Container:

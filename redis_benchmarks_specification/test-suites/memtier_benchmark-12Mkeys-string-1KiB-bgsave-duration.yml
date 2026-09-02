@@ -180,10 +180,14 @@ exporter:
     # margin above 1 is only ~3x, and fork() cost is architecture-sensitive
     # (the reason arm64 was excluded for a while) and could plausibly
     # shrink further under oss-standalone's single-CPU fleet contention.
-    # Why: see
-    # redis/redis-benchmarks-specification#550
-    # (merge_default_and_config_metrics() extends rather than replaces
-    # defaults.yml). This affects both comparison paths:
+    # Why: merge_default_and_config_metrics() (__common__/timeseries.py)
+    # deliberately extends defaults.yml's metrics rather than replacing
+    # them -- by design, unrelated to the shared-list mutation bug
+    # redis/redis-benchmarks-specification#550 tracked and this PR fixed
+    # at the source (that bug leaked each spec's extra metrics into every
+    # later spec's export for the rest of the coordinator process; this
+    # spec's own extend is the intended behavior, not that bug). This
+    # affects both comparison paths:
     # - redis-benchmarks-spec-compare defaults --metric_name to
     #   ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
     #   always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
