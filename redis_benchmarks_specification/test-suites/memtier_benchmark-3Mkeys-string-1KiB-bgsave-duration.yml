@@ -2,13 +2,30 @@ version: 0.4
 name: memtier_benchmark-3Mkeys-string-1KiB-bgsave-duration
 description: |
   Standalone BGSAVE-duration benchmark: preloads 3M string keys with
-  1024-byte compressible values (~3GB dataset, memtier's default data
-  pattern -- not -R random bytes -- so LZF actually does real compression
-  work), then issues a single explicit BGSAVE and times it via Redis's
-  own INFO persistence fields (rdb_last_bgsave_time_sec, latest_fork_usec),
-  not client-observed latency. rdb_last_bgsave_time_sec is whole seconds --
-  at this spec's "tens of seconds" scale that's a few percent of
-  quantization noise on the headline number, not sub-second precision.
+  1024-byte compressible values (~3.75GB resident, memtier's default
+  data pattern -- not -R random bytes -- so LZF actually does real
+  compression work; measured locally at 115MB on disk, ~32x), then
+  issues a single explicit BGSAVE and times it via Redis's own INFO
+  persistence fields (rdb_last_bgsave_time_sec, latest_fork_usec), not
+  client-observed latency.
+
+  Measured directly against this exact dataset shape (local build, one
+  BGSAVE timed by polling rdb_bgsave_in_progress): ~5.6s wall-clock,
+  rdb_last_bgsave_time_sec=5. That is meaningfully faster than an
+  earlier "tens of seconds" estimate carried over from the
+  incompressible/under-write-pressure 3Mkeys-set sibling -- this spec
+  removes both compression and write pressure, so most of what's left
+  is LZF CPU over a dataset that compresses ~32x, not disk I/O. At ~5s,
+  rdb_last_bgsave_time_sec's whole-second resolution is a real ~20%
+  single-run quantization, not the few-percent this description
+  originally (incorrectly) claimed. That resolution is still adequate
+  for what this spec exists to validate -- the referenced fix targets a
+  ~20-33% BGSAVE regression, well above the per-sample noise floor, and
+  the standard n>=3 fleet trigger practice averages the quantization
+  down further -- but a future investigation needing single-digit-percent
+  resolution would need either a scaled-up dataset (proportionally
+  larger than this one) or a coordinator-side sub-second timer instead
+  of relying on rdb_last_bgsave_time_sec alone.
 
   Built to give a clean, write-quiescent BGSAVE duration number --
   distinct from the existing 3Mkeys-set family, which intentionally
@@ -68,9 +85,10 @@ dbconfig:
     3 million string keys, each with a 1024-byte compressible value
     (memtier's default data pattern, not -R random bytes -- the
     highly-compressible extreme, not a realistic middle ground) --
-    ~3GB dataset sized to make BGSAVE take a measurable, meaningful
-    amount of time (tens of seconds) while maximizing LZF's own share
-    of the save-path cost.
+    ~3.75GB resident (measured), compressing to ~115MB on disk (~32x).
+    Measured BGSAVE duration on this exact shape is ~5-6s, sized to be
+    a measurable, meaningful save-path cost dominated by LZF CPU
+    rather than disk I/O.
   wait_for_bgsave: true
 tested-commands:
 - bgsave

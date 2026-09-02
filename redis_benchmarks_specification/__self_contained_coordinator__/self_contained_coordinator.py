@@ -3011,6 +3011,20 @@ def process_self_contained_coordinator_stream(
                                                 bgsave_wait_elapsed,
                                             )
                                         )
+                                    else:
+                                        # BGSAVE was confirmed, but the injection's own
+                                        # fresh info() round-trip failed (e.g. a dropped
+                                        # connection) -- without this, bgsave_metric_missing
+                                        # stays False and nothing marks the run as failed,
+                                        # even though results_dict ends up with neither key
+                                        # and this spec's only exported metrics are the two
+                                        # inject_persistence_metrics() writes.
+                                        logging.error(
+                                            f"Test {test_name} failed: BGSAVE was confirmed "
+                                            "but inject_persistence_metrics() itself failed "
+                                            "-- nothing to export."
+                                        )
+                                        bgsave_metric_missing = True
                                 try:
                                     exporter_datasink_common(
                                         benchmark_config,
