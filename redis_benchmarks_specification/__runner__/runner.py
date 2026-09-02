@@ -2033,6 +2033,40 @@ def process_self_contained_coordinator_stream(
                             )
                             continue
 
+                        # wait_for_bgsave is __self_contained_coordinator__-only
+                        # (poll rdb_bgsave_in_progress / confirm_bgsave_completed /
+                        # inject_persistence_metrics all live there) -- this path
+                        # has none of that. Ignoring wait_for_bgsave here would be
+                        # actively misleading: the client would still run BGSAVE
+                        # via memtier and this path would still export the merged
+                        # defaults.yml metrics (Ops/sec/p50.00/p99.00 off a single
+                        # fork-ack reply) under the spec's test name, with nothing
+                        # to signal that number isn't save duration -- the same
+                        # "misleading datapoint, worse than a hole" outcome
+                        # bgsave_metric_missing exists to prevent on the
+                        # coordinator path. Checked here, alongside the other
+                        # dbconfig-driven skips and before the preload runs, so an
+                        # unsupported spec doesn't pay for a full (here, ~15GB)
+                        # dataset load only to be discarded afterward.
+                        if benchmark_config["dbconfig"].get("wait_for_bgsave", False):
+                            logging.warning(
+                                "dbconfig.wait_for_bgsave is set on %s, but "
+                                "wait_for_bgsave is not supported on the "
+                                "__runner__ CLI path -- no BGSAVE "
+                                "wait/confirm/injection is available here, and "
+                                "the exported Ops/sec/p50.00/p99.00 would "
+                                "reflect a single BGSAVE fork-ack reply, not "
+                                "save duration. Skipping this test rather than "
+                                "exporting a misleading datapoint.",
+                                test_name,
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
                     if dry_run is True:
                         dry_run_count = dry_run_count + 1
                         dry_run_tests.append(test_name)
@@ -2118,41 +2152,6 @@ def process_self_contained_coordinator_stream(
                     execute_init_commands(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
-
-                    # wait_for_bgsave is __self_contained_coordinator__-only (poll
-                    # rdb_bgsave_in_progress / confirm_bgsave_completed /
-                    # inject_persistence_metrics all live there) -- this path has
-                    # none of that. Unlike preload_before_replica's one-sided read
-                    # (whose absence still yields a valid, if different, benchmark),
-                    # ignoring wait_for_bgsave here is actively misleading: the
-                    # client would still run BGSAVE via memtier and this path would
-                    # still export the merged defaults.yml metrics
-                    # (Ops/sec/p50.00/p99.00 off a single fork-ack reply) under the
-                    # spec's test name, with nothing to signal that number isn't
-                    # save duration -- the same "misleading datapoint, worse than a
-                    # hole" outcome bgsave_metric_missing exists to prevent on the
-                    # coordinator path. Skip the test entirely instead (test_result
-                    # stays at its default False, matching the preload-failure skip
-                    # a few lines up), rather than let a client run through to an
-                    # export the coordinator side would have refused.
-                    if benchmark_config.get("dbconfig", {}).get(
-                        "wait_for_bgsave", False
-                    ):
-                        logging.warning(
-                            "dbconfig.wait_for_bgsave is set on %s, but wait_for_bgsave "
-                            "is not supported on the __runner__ CLI path -- no BGSAVE "
-                            "wait/confirm/injection is available here, and the exported "
-                            "Ops/sec/p50.00/p99.00 would reflect a single BGSAVE "
-                            "fork-ack reply, not save duration. Skipping this test "
-                            "rather than exporting a misleading datapoint.",
-                            test_name,
-                        )
-                        delete_temporary_files(
-                            temporary_dir_client=temporary_dir_client,
-                            full_result_path=None,
-                            benchmark_tool_global=benchmark_tool_global,
-                        )
-                        continue
 
                     used_memory_check(
                         test_name,
