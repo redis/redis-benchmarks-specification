@@ -25,7 +25,6 @@ tested-groups:
 - generic
 tested-commands:
 - set
-- setx
 - get
 - del
 - setex
