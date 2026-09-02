@@ -322,12 +322,15 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     not save time, so there's no other source for these metrics),
     skip_throughput_floor: true (without it, validate_benchmark_metrics()'s
     <1 QPS floor gates on the single BGSAVE fork-ack reply, which scales
-    with resident memory and has no principled floor), its exporter
+    with resident memory and has no principled floor), and its exporter
     jsonpaths must end in the exact keys inject_persistence_metrics()
-    writes, and bgsave_timeout_seconds must be the spec's intended 180 --
-    there's nothing else checking any of this, and a typo on any side lands
-    in a silent, no-exception fallback (300s default for the timeout; empty
-    export for the metric keys; the floor no longer skipped)."""
+    writes -- there's nothing else checking any of this, and a typo on
+    either side lands in a silent, no-exception fallback (the floor no
+    longer skipped; empty export for the metric keys). The spec
+    deliberately does NOT set bgsave_timeout_seconds -- it takes
+    wait_for_bgsave_completion()'s 300s default rather than a tighter
+    bound sized off a local-server-only measurement (see the dbconfig
+    comment on wait_for_bgsave)."""
     spec_path = (
         "./redis_benchmarks_specification/test-suites/"
         "memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration.yml"
@@ -340,9 +343,6 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     assert (
         benchmark_config["dbconfig"].get("skip_throughput_floor") is True
     ), "BGSAVE-duration spec must set skip_throughput_floor: true"
-    assert (
-        benchmark_config["dbconfig"].get("bgsave_timeout_seconds") == 180
-    ), "BGSAVE-duration spec must set bgsave_timeout_seconds: 180 (a typo here silently falls back to the 300s default)"
     metrics = benchmark_config["exporter"]["redistimeseries"]["metrics"]
     assert any(
         m.endswith("RdbLastBgsaveTimeSec") for m in metrics

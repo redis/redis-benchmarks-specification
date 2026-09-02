@@ -36,8 +36,7 @@ description: |
   no AOF, no replicas). If confirmation fails, nothing is injected and
   the export is skipped entirely, rather than letting the standard
   Ops/sec/p50.00/p99.00 series (see the exporter block) reach TimeSeries
-  from a run already declared failed. bgsave_timeout_seconds is set
-  explicitly to 180 (~7x margin over the measured save). The client's
+  from a run already declared failed. The client's
   single BGSAVE command's fork-ack reply latency (what
   validate_benchmark_metrics() would otherwise see as this spec's
   "Ops/sec") is exempted from that function's throughput floor via
@@ -52,20 +51,9 @@ description: |
   redis-server: BGSAVE takes ~26.2s (rdb_last_bgsave_time_sec=26), so
   rdb_last_bgsave_time_sec's whole-second resolution is ~3.8%
   single-run quantization -- comfortably inside the ~20-33% class of
-  BGSAVE regression this spec exists to detect. oss-standalone pins the
-  server (and its forked BGSAVE child) to a single CPU
-  (topologies.yml's resources.requests.cpus: "1", read by cpuset.py)
-  and writes to a bind-mounted runner volume rather than local disk,
-  either of which could push the real fleet duration slower than this
-  local measurement -- not re-verified against a real oss-standalone
-  run.
-
-  A pre-existing, spec-agnostic cleanup gate is also worth flagging here
-  specifically: the coordinator's server data directory (holding
-  server.rdb) is only removed when test_result is True, so a failed run
-  of this spec leaves the full ~469MB dump.rdb on disk rather than the
-  few KB other specs' failures typically leave -- relevant when
-  reasoning about fleet disk usage from repeated failures.
+  BGSAVE regression this spec exists to detect. Not yet re-verified
+  against a real oss-standalone run (single-CPU, bind-mounted volume --
+  see the dbconfig comments below).
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -97,17 +85,25 @@ dbconfig:
     rdb_last_bgsave_time_sec's whole-second resolution (~3.8%
     quantization at this scale) sits comfortably inside the ~20-33%
     BGSAVE regression class this spec exists to detect.
+  # No bgsave_timeout_seconds override -- takes wait_for_bgsave_completion()'s
+  # 300s default. The ~26.2s/dataset_description measurement above is
+  # local-server-only: oss-standalone pins the server (and its forked
+  # BGSAVE child) to a single CPU (topologies.yml's
+  # resources.requests.cpus: "1", read by cpuset.py) and writes to a
+  # bind-mounted runner volume rather than local disk, either of which
+  # could push the real fleet duration up by more than the ~7x margin a
+  # tighter timeout would have assumed -- a parent and its forked RDB
+  # child contending for one core is the kind of thing that costs a
+  # multiple, not tens of percent. A timeout here is a hard test failure
+  # (bgsave_metric_missing -> test_result = False), not just a slow
+  # datapoint, so it's not worth guessing at a tighter bound until a
+  # real oss-standalone run exists to size one from.
   wait_for_bgsave: true
   # Separate from wait_for_bgsave (see that key's description paragraph
   # above): this spec's client run IS the BGSAVE command, so its
   # Ops/sec has no throughput signal to guard. Read by
   # validate_benchmark_metrics() in __runner__/runner.py.
   skip_throughput_floor: true
-  # ~7x margin over the ~26s measured save -- deliberately smaller than
-  # wait_for_bgsave_completion()'s own 300s default so a genuinely stuck
-  # or catastrophically slow BGSAVE (versus normal fleet/platform
-  # variance) fails this test in under 3 minutes instead of 5.
-  bgsave_timeout_seconds: 180
   # The coordinator's automated actionable-PR regression comment
   # (self_contained_coordinator.py, "regression part") hardcodes
   # ALL_STATS.Totals.Ops/sec/higher-better for every spec, with no
@@ -168,8 +164,8 @@ exporter:
     #   regressed (slower) BGSAVE as an improvement.
     # - The coordinator's automated actionable-PR regression comment
     #   hardcodes the same metric/mode for every spec with no per-spec
-    #   override (see dbconfig.bgsave_timeout_seconds's comment above for
-    #   why one wasn't added here), so this spec's Ops/sec may
+    #   override (see the comment on dbconfig.skip_throughput_floor above
+    #   for why one wasn't added here), so this spec's Ops/sec may
     #   occasionally surface there too -- treat any such flag on this
     #   specific spec with skepticism and check RdbLastBgsaveTimeSec
     #   manually before trusting it.
