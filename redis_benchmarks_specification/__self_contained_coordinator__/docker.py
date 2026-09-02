@@ -41,6 +41,73 @@ def inject_replication_sync_metrics(
         return False
 
 
+def wait_for_bgsave_completion(redis_conn, bgsave_timeout_seconds=300):
+    """Poll INFO persistence until rdb_bgsave_in_progress clears, or timeout.
+
+    BGSAVE forks and replies immediately -- the client-observed latency is
+    just fork time, not save time. Use this after issuing BGSAVE (or after a
+    client run that issued it) to block until the background save Redis is
+    actually running has finished, so rdb_last_bgsave_time_sec/
+    latest_fork_usec reflect the save just triggered rather than a stale
+    prior one (or a still-in-flight one).
+
+    Returns:
+        tuple: (completed: bool, elapsed_seconds: float)
+    """
+    start = time.monotonic()
+    poll_interval = 0.2  # 200ms -- BGSAVE durations of interest are seconds+
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= bgsave_timeout_seconds:
+            return False, elapsed
+        try:
+            persistence_info = redis_conn.info("persistence")
+            if int(persistence_info.get("rdb_bgsave_in_progress", 0)) == 0:
+                return True, elapsed
+        except Exception as e:
+            logging.warning(
+                "Error polling INFO persistence while waiting for BGSAVE: {}".format(e)
+            )
+        time.sleep(poll_interval)
+
+
+def inject_persistence_metrics(results_dict, redis_conn):
+    """Inject the most recent BGSAVE's duration/fork-time into a results_dict.
+
+    Adds under results_dict["ALL STATS"]["Totals"]:
+    - RdbLastBgsaveTimeSec: rdb_last_bgsave_time_sec (INFO persistence section)
+    - RdbLastForkUsec: latest_fork_usec (INFO *stats* section, not persistence
+      -- confirmed against src/server.c, where it's emitted alongside
+      keyspace_hits/expired_keys, not the rdb_*/aof_* fields).  Calling
+      info() with no section argument returns Redis's default INFO, which
+      includes both sections in one round-trip.
+
+    Callers should call wait_for_bgsave_completion() first, otherwise these
+    fields may reflect a stale prior BGSAVE or one still in progress.
+
+    Returns True on success, False on failure. Safe to call with None or
+    non-dict results_dict (returns False).
+    """
+    if not isinstance(results_dict, dict):
+        return False
+    try:
+        server_info = redis_conn.info()
+        if "ALL STATS" not in results_dict:
+            results_dict["ALL STATS"] = {}
+        if "Totals" not in results_dict["ALL STATS"]:
+            results_dict["ALL STATS"]["Totals"] = {}
+        results_dict["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] = int(
+            server_info.get("rdb_last_bgsave_time_sec", -1)
+        )
+        results_dict["ALL STATS"]["Totals"]["RdbLastForkUsec"] = int(
+            server_info.get("latest_fork_usec", -1)
+        )
+        return True
+    except Exception as e:
+        logging.warning("Failed to inject persistence metrics: {}".format(e))
+        return False
+
+
 def generate_standalone_dragonfly_server_args(
     binary,
     port,

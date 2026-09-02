@@ -638,10 +638,12 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    inject_persistence_metrics,
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     start_redis_container,
+    wait_for_bgsave_completion,
 )
 
 
@@ -2866,6 +2868,42 @@ def process_self_contained_coordinator_stream(
                                         logging.info(
                                             "Injected ReplicationFullSyncCountDuringBench={} (backlog overflow during write workload)".format(
                                                 sync_full_during_benchmark
+                                            )
+                                        )
+
+                                # Opt-in: specs that explicitly trigger a BGSAVE as
+                                # the benchmarked command (BGSAVE forks and replies
+                                # immediately, so the client-observed latency is just
+                                # fork time, not save time) set dbconfig.wait_for_bgsave
+                                # to block here until that BGSAVE actually finishes,
+                                # then inject the resulting duration/fork-time into
+                                # results_dict so it reaches TimeSeries.
+                                if benchmark_config.get("dbconfig", {}).get(
+                                    "wait_for_bgsave", False
+                                ):
+                                    bgsave_completed, bgsave_wait_elapsed = (
+                                        wait_for_bgsave_completion(primary_conns[0])
+                                    )
+                                    if not bgsave_completed:
+                                        logging.warning(
+                                            "BGSAVE did not complete within the wait timeout "
+                                            "({:.1f}s elapsed) -- RdbLastBgsaveTimeSec/RdbLastForkUsec "
+                                            "will reflect whatever BGSAVE last completed, not this run's.".format(
+                                                bgsave_wait_elapsed
+                                            )
+                                        )
+                                    if inject_persistence_metrics(
+                                        results_dict, primary_conns[0]
+                                    ):
+                                        logging.info(
+                                            "Injected RdbLastBgsaveTimeSec={}s RdbLastForkUsec={}us (waited {:.1f}s for BGSAVE to finish)".format(
+                                                results_dict["ALL STATS"]["Totals"][
+                                                    "RdbLastBgsaveTimeSec"
+                                                ],
+                                                results_dict["ALL STATS"]["Totals"][
+                                                    "RdbLastForkUsec"
+                                                ],
+                                                bgsave_wait_elapsed,
                                             )
                                         )
                                 try:

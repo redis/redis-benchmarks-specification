@@ -1,4 +1,5 @@
 import os
+from unittest.mock import Mock
 
 import docker
 import redis
@@ -39,9 +40,11 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
+    inject_persistence_metrics,
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
+    wait_for_bgsave_completion,
 )
 
 
@@ -99,6 +102,102 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     totals = results["ALL STATS"]["Totals"]
     assert totals["ReplicationFullSyncSeconds"] == 2.0
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
+
+
+def test_wait_for_bgsave_completion_returns_immediately_when_done():
+    """If rdb_bgsave_in_progress is already 0, return (True, ~0) without polling."""
+    conn = Mock()
+    conn.info.return_value = {"rdb_bgsave_in_progress": 0}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+    assert elapsed < 1.0
+    conn.info.assert_called_with("persistence")
+
+
+def test_wait_for_bgsave_completion_polls_until_done():
+    """Should keep polling while in progress, then return True once it clears."""
+    conn = Mock()
+    conn.info.side_effect = [
+        {"rdb_bgsave_in_progress": 1},
+        {"rdb_bgsave_in_progress": 1},
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+    assert conn.info.call_count == 3
+
+
+def test_wait_for_bgsave_completion_times_out():
+    """A BGSAVE that never clears within the timeout returns (False, >=timeout)."""
+    conn = Mock()
+    conn.info.return_value = {"rdb_bgsave_in_progress": 1}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=0.5)
+    assert completed is False
+    assert elapsed >= 0.5
+
+
+def test_wait_for_bgsave_completion_tolerates_info_errors():
+    """A transient INFO error should not crash the poll loop -- keep retrying."""
+    conn = Mock()
+    conn.info.side_effect = [
+        redis.exceptions.ConnectionError("boom"),
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+
+
+def test_inject_persistence_metrics_reads_default_info():
+    """RdbLastBgsaveTimeSec/RdbLastForkUsec come from a plain info() call --
+    latest_fork_usec lives in the *stats* section, not persistence (confirmed
+    against src/server.c), so this must NOT call info("persistence") only."""
+    conn = Mock()
+    conn.info.return_value = {
+        "rdb_last_bgsave_time_sec": 12,
+        "latest_fork_usec": 345678,
+    }
+    results = {"ALL STATS": {"Totals": {"Ops/sec": 1.0}}}
+    ok = inject_persistence_metrics(results, conn)
+    assert ok is True
+    totals = results["ALL STATS"]["Totals"]
+    assert totals["RdbLastBgsaveTimeSec"] == 12
+    assert totals["RdbLastForkUsec"] == 345678
+    # Existing metrics not clobbered
+    assert totals["Ops/sec"] == 1.0
+    conn.info.assert_called_with()
+
+
+def test_inject_persistence_metrics_creates_missing_keys():
+    """The function should create ALL STATS / Totals if they don't exist."""
+    conn = Mock()
+    conn.info.return_value = {
+        "rdb_last_bgsave_time_sec": 5,
+        "latest_fork_usec": 1000,
+    }
+    results = {}
+    ok = inject_persistence_metrics(results, conn)
+    assert ok is True
+    assert results["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] == 5
+    assert results["ALL STATS"]["Totals"]["RdbLastForkUsec"] == 1000
+
+
+def test_inject_persistence_metrics_invalid_input():
+    """Non-dict results should be rejected gracefully (return False)."""
+    conn = Mock()
+    conn.info.return_value = {"rdb_last_bgsave_time_sec": 1, "latest_fork_usec": 1}
+    assert inject_persistence_metrics(None, conn) is False
+    assert inject_persistence_metrics("not a dict", conn) is False
+    assert inject_persistence_metrics([], conn) is False
+
+
+def test_inject_persistence_metrics_info_error_returns_false():
+    """An INFO failure (e.g. connection drop) should be caught, not raised."""
+    conn = Mock()
+    conn.info.side_effect = redis.exceptions.ConnectionError("boom")
+    results = {}
+    assert inject_persistence_metrics(results, conn) is False
+    # No partial/garbage keys left behind
+    assert results == {}
 
 
 def test_preload_before_replica_flag_in_20m_spec():
@@ -885,9 +984,7 @@ def test_stop_and_remove_container_safe_409_already_in_progress():
             super().__init__(
                 "409 Client Error: Conflict",
                 response=None,
-                explanation=(
-                    "removal of container abc123 is already in progress"
-                ),
+                explanation=("removal of container abc123 is already in progress"),
             )
 
         def __str__(self):
