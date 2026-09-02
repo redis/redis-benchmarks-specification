@@ -14,7 +14,7 @@ def parse(string):
     return JsonPathParser().parse(string)
 
 
-def jsonpath_field_chain(jsonpath: str):
+def jsonpath_field_chain(jsonpath):
     """Return the ordered list of field names a jsonpath resolves through,
     root first (e.g. $."ALL STATS".Totals."p50.00" -> ["ALL STATS", "Totals",
     "p50.00"]), or None if it doesn't parse into a plain field-access chain.
@@ -25,7 +25,16 @@ def jsonpath_field_chain(jsonpath: str):
     would break apart. jsonpath_ng represents a chain like $.a.b.c as
     nested Child(Child(Child(Root, Fields(a)), Fields(b)), Fields(c)); walk
     the left spine collecting each level's Fields tuple, then reverse.
+
+    Accepts the same two exporter-metric shapes extract_results_table()
+    does: a plain jsonpath string, or the dict form {jsonpath: targets}
+    (metric_name -> per-target overrides) -- reads the dict's first key as
+    the jsonpath, exactly like list(jsonpath.keys())[0] does there.
     """
+    if isinstance(jsonpath, dict):
+        if not jsonpath:
+            return None
+        jsonpath = list(jsonpath.keys())[0]
     try:
         node = parse(jsonpath)
     except Exception:

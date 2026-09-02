@@ -3294,7 +3294,15 @@ def process_self_contained_coordinator_stream(
                                         # silently strip it from export. Not reachable
                                         # by this spec's two flat metrics today, where
                                         # last-field and Totals-child are the same
-                                        # string either way.
+                                        # string either way. Scoped to "ALL STATS"
+                                        # only (not BEST/WORST RUN RESULTS or
+                                        # AGGREGATED AVERAGE RESULTS, which defaults.yml
+                                        # also declares Ops/sec/p50.00/etc under) --
+                                        # deliberate and verified for this spec's
+                                        # single-run (-x unset) memtier output, which
+                                        # has no other top-level sections; a future
+                                        # skip_throughput_floor spec running -x >1
+                                        # would need those scoped too.
                                         declared_metric_keys = set()
                                         for path in (
                                             benchmark_config.get("exporter", {})
@@ -3308,13 +3316,32 @@ def process_self_contained_coordinator_stream(
                                                     declared_metric_keys.add(
                                                         chain[totals_idx + 1]
                                                     )
-                                        results_dict["ALL STATS"]["Totals"] = {
-                                            k: v
-                                            for k, v in results_dict["ALL STATS"][
-                                                "Totals"
-                                            ].items()
-                                            if k in declared_metric_keys
-                                        }
+                                        if declared_metric_keys:
+                                            results_dict["ALL STATS"]["Totals"] = {
+                                                k: v
+                                                for k, v in results_dict["ALL STATS"][
+                                                    "Totals"
+                                                ].items()
+                                                if k in declared_metric_keys
+                                            }
+                                        else:
+                                            # Every declared exporter.redistimeseries.metrics
+                                            # entry failed to resolve to a Totals child
+                                            # (e.g. a malformed jsonpath) -- not this
+                                            # spec's own metrics today, both parse
+                                            # cleanly, but a future spec's authoring bug.
+                                            # Fail loud rather than replace Totals with
+                                            # {} and export a confirmed run with nothing
+                                            # in it: same "missing means unknown, not
+                                            # verified" principle this diff applies
+                                            # everywhere else, not a silent empty
+                                            # datapoint.
+                                            logging.error(
+                                                f"Test {test_name} failed: skip_throughput_floor "
+                                                "is set but none of exporter.redistimeseries.metrics "
+                                                "resolved to a Totals child -- nothing to export."
+                                            )
+                                            bgsave_metric_missing = True
                                     if not bgsave_metric_missing:
                                         exporter_datasink_common(
                                             benchmark_config,

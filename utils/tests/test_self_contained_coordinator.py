@@ -460,6 +460,22 @@ def test_jsonpath_field_chain_unparseable_returns_none():
     assert jsonpath_field_chain("not a jsonpath [[[") is None
 
 
+def test_jsonpath_field_chain_accepts_dict_form_like_extract_results_table():
+    """exporter.redistimeseries.metrics entries can be the dict form
+    {jsonpath: targets} -- extract_results_table() (__common__/timeseries.py)
+    already supports it via list(jsonpath.keys())[0]; jsonpath_field_chain()
+    must read the same shape the same way, or every dict-form entry
+    silently resolves to no chain at all."""
+    chain = jsonpath_field_chain(
+        {'$."ALL STATS".Totals.RdbLastBgsaveTimeSec': {"some": "target"}}
+    )
+    assert chain == ["ALL STATS", "Totals", "RdbLastBgsaveTimeSec"]
+
+
+def test_jsonpath_field_chain_empty_dict_returns_none():
+    assert jsonpath_field_chain({}) is None
+
+
 def test_merge_default_and_config_metrics_does_not_mutate_default_metrics():
     """merge_default_and_config_metrics() must return a new list, not mutate
     the caller's default_metrics in place -- default_metrics is built once
