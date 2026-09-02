@@ -209,57 +209,48 @@ def test_confirm_bgsave_completed_false_on_missing_after_info():
     assert confirm_bgsave_completed(100, None) is False
 
 
-def test_inject_persistence_metrics_reads_default_info():
-    """RdbLastBgsaveTimeSec/RdbLastForkUsec come from a plain info() call --
-    latest_fork_usec lives in the *stats* section, not persistence (confirmed
-    against src/server.c), so this must NOT call info("persistence") only."""
-    conn = Mock()
-    conn.info.return_value = {
+def test_inject_persistence_metrics_reads_from_given_server_info():
+    """RdbLastBgsaveTimeSec/RdbLastForkUsec come from the server_info dict the
+    caller passes in -- no info() call of its own. latest_fork_usec lives in
+    the *stats* section, not persistence (confirmed against src/server.c),
+    so the caller must pass a plain/default info() result covering both."""
+    server_info = {
         "rdb_last_bgsave_time_sec": 12,
         "latest_fork_usec": 345678,
     }
     results = {"ALL STATS": {"Totals": {"Ops/sec": 1.0}}}
-    ok = inject_persistence_metrics(results, conn)
+    ok = inject_persistence_metrics(results, server_info)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
     assert totals["RdbLastBgsaveTimeSec"] == 12
     assert totals["RdbLastForkUsec"] == 345678
     # Existing metrics not clobbered
     assert totals["Ops/sec"] == 1.0
-    conn.info.assert_called_with()
 
 
 def test_inject_persistence_metrics_creates_missing_keys():
     """The function should create ALL STATS / Totals if they don't exist."""
-    conn = Mock()
-    conn.info.return_value = {
+    server_info = {
         "rdb_last_bgsave_time_sec": 5,
         "latest_fork_usec": 1000,
     }
     results = {}
-    ok = inject_persistence_metrics(results, conn)
+    ok = inject_persistence_metrics(results, server_info)
     assert ok is True
     assert results["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] == 5
     assert results["ALL STATS"]["Totals"]["RdbLastForkUsec"] == 1000
 
 
 def test_inject_persistence_metrics_invalid_input():
-    """Non-dict results should be rejected gracefully (return False)."""
-    conn = Mock()
-    conn.info.return_value = {"rdb_last_bgsave_time_sec": 1, "latest_fork_usec": 1}
-    assert inject_persistence_metrics(None, conn) is False
-    assert inject_persistence_metrics("not a dict", conn) is False
-    assert inject_persistence_metrics([], conn) is False
-
-
-def test_inject_persistence_metrics_info_error_returns_false():
-    """An INFO failure (e.g. connection drop) should be caught, not raised."""
-    conn = Mock()
-    conn.info.side_effect = redis.exceptions.ConnectionError("boom")
-    results = {}
-    assert inject_persistence_metrics(results, conn) is False
-    # No partial/garbage keys left behind
-    assert results == {}
+    """Non-dict results or server_info should be rejected gracefully (return
+    False), not raise -- covers both a failed pre-run results_dict and a
+    failed post-run info() call (server_info=None) upstream."""
+    server_info = {"rdb_last_bgsave_time_sec": 1, "latest_fork_usec": 1}
+    assert inject_persistence_metrics(None, server_info) is False
+    assert inject_persistence_metrics("not a dict", server_info) is False
+    assert inject_persistence_metrics([], server_info) is False
+    assert inject_persistence_metrics({}, None) is False
+    assert inject_persistence_metrics({}, "not a dict") is False
 
 
 def test_preload_before_replica_flag_in_20m_spec():

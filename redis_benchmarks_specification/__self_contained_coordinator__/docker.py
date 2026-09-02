@@ -134,27 +134,40 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
     )
 
 
-def inject_persistence_metrics(results_dict, redis_conn):
+def inject_persistence_metrics(results_dict, server_info):
     """Inject the most recent BGSAVE's duration/fork-time into a results_dict.
 
     Adds under results_dict["ALL STATS"]["Totals"]:
     - RdbLastBgsaveTimeSec: rdb_last_bgsave_time_sec (INFO persistence section)
     - RdbLastForkUsec: latest_fork_usec (INFO *stats* section, not persistence
       -- confirmed against src/server.c, where it's emitted alongside
-      keyspace_hits/expired_keys, not the rdb_*/aof_* fields).  Calling
-      info() with no section argument returns Redis's default INFO, which
-      includes both sections in one round-trip.
+      keyspace_hits/expired_keys, not the rdb_*/aof_* fields). NOTE:
+      latest_fork_usec is "the last fork of any kind" (redisFork() updates
+      it for AOF rewrites, diskless replica syncs, and module forks too),
+      not specifically the last BGSAVE's fork -- only accurate as "the
+      BGSAVE fork" when the caller has otherwise ensured nothing else could
+      have forked in the measured window (e.g. this spec's oss-standalone
+      + save "" + no AOF + no replicas).
 
-    Callers should call wait_for_bgsave_completion() first, otherwise these
-    fields may reflect a stale prior BGSAVE or one still in progress.
+    Args:
+        results_dict: dict to inject into (created/extended in place).
+        server_info: a dict from a prior info() call (no section argument,
+            so both the persistence and stats sections are present) --
+            takes the caller's already-fetched dict rather than issuing its
+            own info() round-trip, so confirm_bgsave_completed() (if used)
+            and this injection read the exact same snapshot rather than two
+            separate ones a moment apart.
+
+    Callers should call wait_for_bgsave_completion() (and ideally
+    confirm_bgsave_completed()) first, otherwise these fields may reflect a
+    stale prior BGSAVE or one still in progress.
 
     Returns True on success, False on failure. Safe to call with None or
-    non-dict results_dict (returns False).
+    non-dict results_dict/server_info (returns False).
     """
-    if not isinstance(results_dict, dict):
+    if not isinstance(results_dict, dict) or not isinstance(server_info, dict):
         return False
     try:
-        server_info = redis_conn.info()
         if "ALL STATS" not in results_dict:
             results_dict["ALL STATS"] = {}
         if "Totals" not in results_dict["ALL STATS"]:

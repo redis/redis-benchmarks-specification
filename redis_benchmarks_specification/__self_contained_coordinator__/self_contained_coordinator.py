@@ -2216,6 +2216,14 @@ def process_self_contained_coordinator_stream(
                                 # just no-op there rather than NameError.
                                 bgsave_wait_enabled = False
                                 rdb_last_save_time_before = None
+                                # wait_for_bgsave is __self_contained_coordinator__-only by
+                                # design, same as preload_before_replica/
+                                # inject_replication_sync_metrics (neither is referenced in
+                                # __runner__/runner.py either) -- this is the path that
+                                # actually executes fleet-triggered specs, so a spec setting
+                                # wait_for_bgsave is not silently unsupported there in
+                                # practice, just on the standalone __runner__ CLI mode this
+                                # spec family has never targeted.
                                 # Set when wait_for_bgsave is on but no BGSAVE was confirmed.
                                 # Applied to test_result AFTER the unconditional
                                 # "test_result = True" a few hundred lines below (which would
@@ -3000,7 +3008,7 @@ def process_self_contained_coordinator_stream(
                                         )
                                         bgsave_metric_missing = True
                                     elif inject_persistence_metrics(
-                                        results_dict, primary_conns[0]
+                                        results_dict, info_after
                                     ):
                                         # bgsave_wait_elapsed is NOT exported: the poll
                                         # loop only starts after the container-teardown
