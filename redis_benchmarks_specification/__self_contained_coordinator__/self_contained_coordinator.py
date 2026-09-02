@@ -3210,6 +3210,43 @@ def process_self_contained_coordinator_stream(
                                 # wait_for_bgsave, so this collapses to the exact same
                                 # True for the ordinary case.
                                 test_result = not bgsave_metric_missing
+                                if bgsave_metric_missing:
+                                    # test_result is False here, so the tear-down
+                                    # block below preserves temporary_dir entirely
+                                    # (redis.log included, deliberately, for
+                                    # debugging) rather than shutil.rmtree-ing it.
+                                    # For this spec that directory is also the
+                                    # server's bind-mounted --dir, holding
+                                    # whatever RDB state the unconfirmed BGSAVE
+                                    # left behind: dump.rdb if it actually
+                                    # finished just after the wait gave up, or a
+                                    # temp-<pid>.rdb if it was still in flight
+                                    # when the container stopped -- either way,
+                                    # up to the full dataset size (~469MB for the
+                                    # 12Mkeys-bgsave-duration spec) that's dead
+                                    # weight for diagnosing "no BGSAVE confirmed"
+                                    # and would otherwise never get swept.
+                                    # Unlinking just the RDB files (not the whole
+                                    # directory) keeps the log available.
+                                    try:
+                                        for rdb_path in list(
+                                            Path(temporary_dir).glob("dump.rdb")
+                                        ) + list(
+                                            Path(temporary_dir).glob("temp-*.rdb")
+                                        ):
+                                            rdb_path.unlink()
+                                            logging.info(
+                                                "Removed unconfirmed-BGSAVE artifact %s "
+                                                "(kept redis.log for debugging)",
+                                                rdb_path,
+                                            )
+                                    except OSError as e:
+                                        logging.warning(
+                                            "Failed to clean up RDB artifacts in %s "
+                                            "after an unconfirmed BGSAVE: %s",
+                                            temporary_dir,
+                                            e,
+                                        )
                                 total_test_suite_runs = total_test_suite_runs + 1
 
                             except Exception as e:

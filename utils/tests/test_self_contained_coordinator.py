@@ -344,12 +344,16 @@ def test_bgsave_duration_spec_wiring_matches_injector():
         benchmark_config["dbconfig"].get("skip_throughput_floor") is True
     ), "BGSAVE-duration spec must set skip_throughput_floor: true"
     metrics = benchmark_config["exporter"]["redistimeseries"]["metrics"]
-    assert any(
-        m.endswith("RdbLastBgsaveTimeSec") for m in metrics
-    ), "exporter must export the RdbLastBgsaveTimeSec key inject_persistence_metrics() writes"
-    assert any(
-        m.endswith("RdbLastForkUsec") for m in metrics
-    ), "exporter must export the RdbLastForkUsec key inject_persistence_metrics() writes"
+    # Exact match, not endswith(): a prefix typo like $."ALL_STATS" (underscore
+    # instead of the space inject_persistence_metrics() actually writes under)
+    # would still satisfy an endswith() check while exporting nothing -- the
+    # same silent, no-exception fallback this test exists to catch.
+    assert (
+        '$."ALL STATS".Totals.RdbLastBgsaveTimeSec' in metrics
+    ), "exporter must export the exact jsonpath inject_persistence_metrics() writes RdbLastBgsaveTimeSec under"
+    assert (
+        '$."ALL STATS".Totals.RdbLastForkUsec' in metrics
+    ), "exporter must export the exact jsonpath inject_persistence_metrics() writes RdbLastForkUsec under"
 
 
 def test_preload_before_replica_default_off():
