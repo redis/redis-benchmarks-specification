@@ -64,21 +64,15 @@ dbconfig:
   # NOT actually enforced on the path this spec runs on: dbconfig_keyspacelen_check()
   # has exactly two call sites (__runner__/runner.py, __self_contained_coordinator__/
   # runners.py), and neither is process_self_contained_coordinator_stream() --
-  # the coordinator function that actually drives this spec on the fleet. The
-  # __runner__ path never reaches its own call site either, since this PR's
-  # pre-preload wait_for_bgsave skip continues before it. Declared here as
-  # documentation of the expected count (and because check.keyspacelen is a
-  # normal, expected key on a preload-tool spec), not as a guarantee: if the
-  # preload shape drifts (a memtier_benchmark:edge change, a -t/-c change)
-  # and loads fewer than 12M keys, nothing on this spec's actual execution
-  # path will catch it -- the whole ~15GB/~26.2s/~3.8%-quantization sizing
-  # argument in the dataset_description above rests on this count being
-  # right, unverified. Pre-existing gap (redis-benchmarks-spec-cli's own
-  # --key-maximum-off-by-one class of issue, #509/#510/PR#441), not
-  # introduced by this spec -- but this preload's shape (-n allkeys with a
-  # --key-maximum/--key-minimum range) is exactly the count-fragile kind
-  # test-suites/memtier_benchmark-playbook-feature-store-hash-10M-entities-50-features.yml's
-  # own comment warns about.
+  # the coordinator function that actually drives this spec on the fleet.
+  # Declared here as documentation of the expected count, not as a guarantee
+  # this path enforces. Verified empirically against the exact preload_tool
+  # arguments below (redislabs/memtier_benchmark:edge, --key-minimum 1
+  # --key-maximum N, -t 8 -c 25) that --key-maximum N loads exactly N keys
+  # (1..N inclusive) -- no off-by-one on this memtier version/image, unlike
+  # the older-version behavior test-suites/memtier_benchmark-playbook-
+  # feature-store-hash-10M-entities-50-features.yml's comment describes and
+  # compensates for with --key-maximum N+1. 12000000 is correct as-is.
   check:
     keyspacelen: 12000000
   preload_tool:
