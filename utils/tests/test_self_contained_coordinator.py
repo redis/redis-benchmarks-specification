@@ -19,6 +19,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
 )
 from redis_benchmarks_specification.__common__.timeseries import (
+    jsonpath_last_field,
     merge_default_and_config_metrics,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
@@ -386,6 +387,31 @@ def test_wait_for_bgsave_topology_unsafe_unmapped_fails_safe():
         )
         is True
     )
+
+
+def test_jsonpath_last_field_simple_unquoted_segment():
+    assert (
+        jsonpath_last_field('$."ALL STATS".Totals.RdbLastBgsaveTimeSec')
+        == "RdbLastBgsaveTimeSec"
+    )
+
+
+def test_jsonpath_last_field_quoted_segment_with_literal_dot():
+    """A naive path.rsplit(".", 1)[-1] would truncate a quoted "p50.00"
+    segment to "00" -- this is exactly why jsonpath_last_field() parses
+    with JsonPathParser() instead of splitting on "." as a string."""
+    assert (
+        jsonpath_last_field('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')
+        == "p50.00"
+    )
+
+
+def test_jsonpath_last_field_quoted_segment_with_slash():
+    assert jsonpath_last_field('$."BEST RUN RESULTS".Totals."Ops/sec"') == "Ops/sec"
+
+
+def test_jsonpath_last_field_unparseable_returns_none():
+    assert jsonpath_last_field("not a jsonpath [[[") is None
 
 
 def test_merge_default_and_config_metrics_does_not_mutate_default_metrics():

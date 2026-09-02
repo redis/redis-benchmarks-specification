@@ -14,6 +14,25 @@ def parse(string):
     return JsonPathParser().parse(string)
 
 
+def jsonpath_last_field(jsonpath: str):
+    """Return the final field name a jsonpath resolves to, or None if it
+    doesn't parse or doesn't end in a plain field access.
+
+    Uses the same JsonPathParser() this module already parses exporter
+    jsonpaths with, rather than a naive string split -- a jsonpath field
+    can itself contain a literal "." (e.g. $."ALL STATS".Totals."Percentile
+    Latencies"."p50.00"), which a plain path.rsplit(".", 1)[-1] would
+    truncate to "00". A parsed Child(..., Fields(("p50.00",))) node's
+    right-hand Fields tuple gives the real last segment regardless of
+    quoting.
+    """
+    try:
+        expr = parse(jsonpath)
+        return expr.right.fields[0]
+    except Exception:
+        return None
+
+
 def parse_exporter_timemetric(metric_path: str, results_dict: dict):
     datapoints_timestamp = None
     try:

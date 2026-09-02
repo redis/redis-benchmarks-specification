@@ -62,6 +62,7 @@ from redis_benchmarks_specification.__common__.runner import (
 )
 from redis_benchmarks_specification.__common__.timeseries import (
     datasink_profile_tabular_data,
+    jsonpath_last_field,
 )
 from redis_benchmarks_specification.__compare__.compare import (
     compute_regression_table,
@@ -1835,6 +1836,19 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
+                            # topology_replica_count and topology_unmapped exist
+                            # only for the pre-container wait_for_bgsave guard a
+                            # few lines below -- deliberately defensive (defaults
+                            # rather than raises for an unmapped topology, since
+                            # the guard needs a value before any container work
+                            # starts) and deliberately NOT reused later for the
+                            # real replica-spin-up replica_count, which still calls
+                            # extract_replica_count() itself and is allowed to
+                            # KeyError on an unmapped topology exactly like it did
+                            # before this PR -- reusing this defaulted value there
+                            # would silently turn that pre-existing loud failure
+                            # into a normal-looking run for every spec, not just
+                            # ones using wait_for_bgsave.
                             topology_replica_count = 0
                             topology_unmapped = topology_spec_name not in topologies_map
                             if not topology_unmapped:
@@ -1984,12 +1998,30 @@ def process_self_contained_coordinator_stream(
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
                                 )
-                                # Already computed as topology_replica_count before
-                                # the try (see the wait_for_bgsave topology guard
-                                # above) -- reused here rather than calling
-                                # extract_replica_count() a second time for the
-                                # same topology under a second name.
-                                replica_count = topology_replica_count
+                                # Deliberately NOT reusing topology_replica_count
+                                # (computed before the try, for the wait_for_bgsave
+                                # topology guard) even though it's the same
+                                # underlying value for a mapped topology: that one
+                                # defaults to 0 for an unmapped topology_spec_name
+                                # rather than raising, because the guard needs a
+                                # value before any container work and treats
+                                # "unmapped" as unsafe via a separate flag
+                                # regardless of the count. This call site is
+                                # different -- it's what pre-existing (main, before
+                                # any of this PR's changes) code already ran here,
+                                # and extract_replica_count()'s bare
+                                # topologies_map[topology_spec_name] genuinely
+                                # KeyErrors on an unmapped name, which is caught by
+                                # the outer except and correctly fails the test
+                                # loudly. Reusing the guard's defensively-defaulted
+                                # value here would have silently turned that failure
+                                # into a normal-looking run with replica_count=0 for
+                                # every spec, not just wait_for_bgsave ones -- a
+                                # much larger blast radius than the one spec this PR
+                                # actually ships.
+                                replica_count = extract_replica_count(
+                                    topologies_map, topology_spec_name
+                                )
                                 if replica_count > 0:
                                     primary_cpu_limit = max(
                                         1,
@@ -3258,19 +3290,25 @@ def process_self_contained_coordinator_stream(
                                         # coordinator's automated regression comment
                                         # too, off the single degenerate fork-ack
                                         # reply. Restrict Totals to exactly what this
-                                        # spec's own exporter block declares (the last
-                                        # dotted segment of each jsonpath) rather than
-                                        # a separately hardcoded key list -- keeps this
-                                        # self-consistent with inject_persistence_metrics()
-                                        # and the spec YAML by construction instead of
-                                        # needing to be kept in sync by hand. Scoped to
-                                        # this one run's results_dict, not the shared
-                                        # default_metrics list, so it doesn't touch any
-                                        # other spec or reopen the #550 mutation issue.
-                                        # Runtime (the timemetric source) and everything
-                                        # else in results_dict is untouched.
+                                        # spec's own exporter block declares (the
+                                        # final field each jsonpath resolves to,
+                                        # via jsonpath_last_field() -- a real
+                                        # jsonpath parse, not a naive rsplit(".", 1),
+                                        # since a field can itself contain a literal
+                                        # "." when quoted, e.g. "p50.00") rather
+                                        # than a separately hardcoded key list --
+                                        # keeps this self-consistent with
+                                        # inject_persistence_metrics() and the spec
+                                        # YAML by construction instead of needing to
+                                        # be kept in sync by hand. Scoped to this
+                                        # one run's results_dict, not the shared
+                                        # default_metrics list, so it doesn't touch
+                                        # any other spec or reopen the #550 mutation
+                                        # issue. Runtime (the timemetric source) and
+                                        # everything else in results_dict is
+                                        # untouched.
                                         declared_metric_keys = {
-                                            path.rsplit(".", 1)[-1].strip('"')
+                                            jsonpath_last_field(path)
                                             for path in benchmark_config.get(
                                                 "exporter", {}
                                             )
