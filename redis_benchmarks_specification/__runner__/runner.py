@@ -196,6 +196,17 @@ def validate_benchmark_metrics(
                 cmd.lower() for cmd in benchmark_config["tested-commands"]
             ]
 
+        # wait_for_bgsave specs measure BGSAVE duration/fork-time via
+        # inject_persistence_metrics(), not client-observed throughput -- the
+        # only "Ops/sec" a client sees here is 1/fork-ack-latency, a number
+        # that scales with resident memory and has no principled floor. Skip
+        # the throughput check for these specs rather than depend on that
+        # margin staying above 1 QPS on every platform/topology.
+        skip_throughput_floor = bool(
+            benchmark_config
+            and benchmark_config.get("dbconfig", {}).get("wait_for_bgsave")
+        )
+
         # Define validation rules
         throughput_patterns = [
             "ops/sec",
@@ -257,14 +268,15 @@ def validate_benchmark_metrics(
                         return
 
                 # Check throughput metrics
-                for pattern in throughput_patterns:
-                    if pattern in metric_path_lower:
-                        if data < 1:  # Below 1 QPS threshold
-                            validation_errors.append(
-                                f"Throughput metric '{path}' has invalid value: {data} "
-                                f"(below 1 QPS threshold)"
-                            )
-                        break
+                if not skip_throughput_floor:
+                    for pattern in throughput_patterns:
+                        if pattern in metric_path_lower:
+                            if data < 1:  # Below 1 QPS threshold
+                                validation_errors.append(
+                                    f"Throughput metric '{path}' has invalid value: {data} "
+                                    f"(below 1 QPS threshold)"
+                                )
+                            break
 
                 # Check latency metrics
                 for pattern in latency_patterns:
