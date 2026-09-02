@@ -97,19 +97,28 @@ dbconfig:
   # or catastrophically slow BGSAVE (versus normal fleet/platform
   # variance) fails this test in under 3 minutes instead of 5.
   bgsave_timeout_seconds: 180
-  # The coordinator's automated actionable-PR regression comment defaults to
-  # ALL_STATS.Totals.Ops/sec on every spec, with no per-spec override before
-  # this -- for this spec that's a single BGSAVE fork-ack sample, which
-  # scales with dataset RSS rather than anything this spec is meant to
-  # measure (~4ms at 3M keys vs ~349ms at this spec's actual 12M-key scale,
-  # an ~87x swing from a dataset resize alone). Left as the default,
-  # ~10%-threshold Ops/sec regression checks against redis/redis PRs would
-  # fire on noise unrelated to BGSAVE performance. regression_metric_name/
-  # regression_metric_mode redirect that same automated table at the metric
-  # this spec actually exists to track, instead of suppressing regression
-  # detection for this spec entirely.
-  regression_metric_name: ALL_STATS.Totals.RdbLastBgsaveTimeSec
-  regression_metric_mode: lower-better
+  # The coordinator's automated actionable-PR regression comment
+  # (self_contained_coordinator.py, "regression part") hardcodes
+  # ALL_STATS.Totals.Ops/sec/higher-better for every spec, with no
+  # per-spec override -- for this spec that's a single BGSAVE fork-ack
+  # sample, which scales with dataset RSS rather than anything this spec
+  # is meant to measure (~4ms at 3M keys vs ~349ms at this spec's actual
+  # 12M-key scale, an ~87x swing from a dataset resize alone). A
+  # per-spec override was attempted and reverted: compute_regression_table()
+  # is called with test=""/testname_regex="" (all tests) on every test's
+  # own loop iteration, and prepare_regression_comment() rebuilds the
+  # PR-level comment body from scratch each call rather than merging --
+  # so any per-spec metric_name override corrupts every OTHER spec's row
+  # in the shared comment for that update, with the final persisted state
+  # depending on iteration order. Real BGSAVE-duration regression
+  # detection for this spec needs either a genuine per-spec-scoped
+  # regression table (not just a swapped metric_name on the existing
+  # all-tests call) or the coordinator issuing BGSAVE directly instead of
+  # via a memtier client -- both larger, higher-risk changes than this PR
+  # given this exact code path has no test coverage and can't be
+  # exercised live in this environment. Manual comparison via
+  # --metric_name RdbLastBgsaveTimeSec (see the exporter block) remains
+  # the reliable way to check this spec for regressions.
 tested-commands:
 - bgsave
 redis-topologies:
@@ -134,25 +143,22 @@ exporter:
     # replacing it, so the standard Ops/sec / Latency / p50.00 / p99.00
     # series also get pushed under this test name, off the single BGSAVE
     # fork-ack reply (measured ~4ms at 3M keys, ~349ms at this spec's
-    # actual 12M-key scale -- fork() cost scales with resident memory).
-    # That degenerate number is NOT just harmless dashboard noise:
-    # - The coordinator's automated actionable-PR regression comment
-    #   (self_contained_coordinator.py, the "regression part" block) would
-    #   default to it too -- fixed via dbconfig.regression_metric_name/
-    #   regression_metric_mode below, which redirect that SAME automated
-    #   table at RdbLastBgsaveTimeSec instead, so redis/redis PR runs get
-    #   real BGSAVE-duration regression detection rather than either noise
-    #   or no detection at all.
-    # - The manual redis-benchmarks-spec-compare CLI is a separate code
-    #   path (reads --metric_name from its own args, not from dbconfig) and
-    #   is NOT covered by that fix -- it still defaults --metric_name to
+    # actual 12M-key scale -- fork() cost scales with resident memory, so
+    # this is not a stable number). This affects both comparison paths:
+    # - redis-benchmarks-spec-compare defaults --metric_name to
     #   ALL_STATS.Totals.Ops/sec, so always pass
     #   --metric_name RdbLastBgsaveTimeSec (or RdbLastForkUsec) explicitly
     #   when comparing this spec manually.
+    # - The coordinator's automated actionable-PR regression comment
+    #   hardcodes the same metric/mode for every spec with no per-spec
+    #   override (see dbconfig.bgsave_timeout_seconds's comment above for
+    #   why one wasn't added here), so this spec's Ops/sec may
+    #   occasionally surface there too -- treat any such flag on this
+    #   specific spec with skepticism and check RdbLastBgsaveTimeSec
+    #   manually before trusting it.
     # Issuing BGSAVE directly from the coordinator instead of through a
-    # memtier client would remove the degenerate Ops/sec at the source
-    # instead of routing around it twice, but reworking the client/tested-
-    # commands shape is a larger change than this PR -- deferred.
+    # memtier client would remove the degenerate Ops/sec at the source;
+    # deferred as a larger change than this PR.
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
