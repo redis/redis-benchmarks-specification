@@ -3044,12 +3044,20 @@ def process_self_contained_coordinator_stream(
                                             )
                                         )
                                     else:
-                                        # BGSAVE was confirmed, but the injection's own
-                                        # fresh info() round-trip failed (e.g. a dropped
-                                        # connection) -- without this, bgsave_metric_missing
-                                        # stays False and nothing marks the run as failed,
-                                        # even though results_dict ends up with neither key
-                                        # and this spec's only exported metrics are the two
+                                        # BGSAVE was confirmed (a real rdb_last_save_time
+                                        # advance + status ok), but inject_persistence_metrics()
+                                        # itself returned False -- info_after (this same
+                                        # snapshot) is missing rdb_last_bgsave_time_sec and/or
+                                        # latest_fork_usec, or one holds a non-numeric value.
+                                        # Narrow for a real Redis target (confirm_bgsave_completed()
+                                        # already required rdb_last_save_time/rdb_last_bgsave_status
+                                        # to be present and sane), but docker.py also builds
+                                        # non-Redis server launch commands, and this repo's
+                                        # generic INFO-shape assumptions don't all hold there.
+                                        # Without this branch, bgsave_metric_missing would stay
+                                        # False and nothing would mark the run as failed, even
+                                        # though results_dict ends up with neither key and this
+                                        # spec's only exported metrics are the two
                                         # inject_persistence_metrics() writes.
                                         logging.error(
                                             f"Test {test_name} failed: BGSAVE was confirmed "

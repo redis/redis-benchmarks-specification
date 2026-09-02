@@ -112,9 +112,11 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
     within the same wall-clock second as the pre-run snapshot would fail
     this check (and, since dbconfig.wait_for_bgsave treats that as a hard
     test failure rather than a skipped export, fail the whole test) even
-    though a real BGSAVE did happen. Fine for multi-second saves like this
-    spec's ~3GB dataset; a spec built around a save fast enough to risk
-    landing in the same second should not opt into wait_for_bgsave.
+    though a real BGSAVE did happen. Fine for multi-second saves like the
+    memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration spec's ~26s save
+    (measured, ~15GB resident dataset); a spec built around a save fast
+    enough to risk landing in the same second should not opt into
+    wait_for_bgsave.
 
     Args:
         rdb_last_save_time_before: rdb_last_save_time captured before the
@@ -163,9 +165,26 @@ def inject_persistence_metrics(results_dict, server_info):
     stale prior BGSAVE or one still in progress.
 
     Returns True on success, False on failure. Safe to call with None or
-    non-dict results_dict/server_info (returns False).
+    non-dict results_dict/server_info (returns False). Also returns False
+    (injecting nothing) if either source key is absent from server_info --
+    deliberately NOT defaulting to -1 for a missing key, since that's
+    Redis's own "no save yet" sentinel and confirm_bgsave_completed() does
+    not check these two specific fields, only rdb_last_save_time/
+    rdb_last_bgsave_status. A non-Redis-semantics server (this coordinator
+    also launches other server types with different INFO shapes) or a
+    future Redis INFO shape that dropped either field would otherwise
+    inject -1 as if it were a real datapoint.
     """
     if not isinstance(results_dict, dict) or not isinstance(server_info, dict):
+        return False
+    if (
+        "rdb_last_bgsave_time_sec" not in server_info
+        or "latest_fork_usec" not in server_info
+    ):
+        logging.warning(
+            "Failed to inject persistence metrics: server_info is missing "
+            "rdb_last_bgsave_time_sec and/or latest_fork_usec"
+        )
         return False
     try:
         if "ALL STATS" not in results_dict:
@@ -173,10 +192,10 @@ def inject_persistence_metrics(results_dict, server_info):
         if "Totals" not in results_dict["ALL STATS"]:
             results_dict["ALL STATS"]["Totals"] = {}
         results_dict["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] = int(
-            server_info.get("rdb_last_bgsave_time_sec", -1)
+            server_info["rdb_last_bgsave_time_sec"]
         )
         results_dict["ALL STATS"]["Totals"]["RdbLastForkUsec"] = int(
-            server_info.get("latest_fork_usec", -1)
+            server_info["latest_fork_usec"]
         )
         return True
     except Exception as e:

@@ -253,6 +253,26 @@ def test_inject_persistence_metrics_invalid_input():
     assert inject_persistence_metrics({}, "not a dict") is False
 
 
+def test_inject_persistence_metrics_missing_key_returns_false_not_sentinel():
+    """A server_info missing either source key must return False, NOT
+    silently inject -1 -- that's Redis's own "no save yet" sentinel, and
+    confirm_bgsave_completed() only gates on rdb_last_save_time/
+    rdb_last_bgsave_status, never on these two fields, so a caller relying
+    on .get(key, -1) here would export -1 as a real datapoint on any
+    server_info shape missing one of them (e.g. a non-Redis server)."""
+    results = {}
+    assert inject_persistence_metrics(results, {"latest_fork_usec": 100}) is False
+    assert results == {}
+
+    results = {}
+    assert inject_persistence_metrics(results, {"rdb_last_bgsave_time_sec": 5}) is False
+    assert results == {}
+
+    results = {}
+    assert inject_persistence_metrics(results, {}) is False
+    assert results == {}
+
+
 def test_preload_before_replica_flag_in_20m_spec():
     """The 20M-keys replica-only test spec must set preload_before_replica=true.
 
