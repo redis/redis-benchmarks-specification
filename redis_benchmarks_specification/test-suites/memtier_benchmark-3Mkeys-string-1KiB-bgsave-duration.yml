@@ -1,0 +1,78 @@
+version: 0.4
+name: memtier_benchmark-3Mkeys-string-1KiB-bgsave-duration
+description: |
+  Standalone BGSAVE-duration benchmark: preloads 3M string keys with
+  1024-byte compressible values (~3GB dataset, memtier's default data
+  pattern -- not -R random bytes -- so LZF actually does real compression
+  work), then issues a single explicit BGSAVE and times it precisely via
+  Redis's own INFO persistence fields (rdb_last_bgsave_time_sec,
+  latest_fork_usec), not client-observed latency.
+
+  Built to give a clean, write-quiescent BGSAVE duration number --
+  distinct from the existing 3Mkeys-set family, which intentionally
+  times fork/CoW cost *under* sustained write pressure (a different,
+  harder-to-isolate signal). Here there is no concurrent write traffic
+  during the measured BGSAVE, so the number reflects pure save-path
+  cost: fork + RDB serialization + LZF compression + disk write, with
+  no page-dirtying/CoW noise superimposed.
+
+  BGSAVE forks and replies "Background saving started" immediately --
+  client-observed latency is fork time, not save time. dbconfig.wait_for_bgsave
+  makes the coordinator poll INFO persistence's rdb_bgsave_in_progress
+  after the client run finishes, blocking until the save Redis is
+  actually running completes, then injecting RdbLastBgsaveTimeSec
+  (whole seconds -- Redis's own resolution) and RdbLastForkUsec
+  (microseconds) from INFO into the exported metrics.
+
+  save is pinned to "" so periodic autosave never fires -- the only
+  BGSAVE in the measured window is the one this spec explicitly issues.
+  rdbcompression is left at its default (yes): LZF running against
+  realistically compressible data is the actual save-path cost this
+  spec exists to measure, unlike the crc64-isolation specs
+  (140Kkeys/1400keys-...-randomdata-...) which deliberately disable it.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+  check:
+    keyspacelen: 3000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 6g
+  dataset_name: 3Mkeys-string-1KiB-size-compressible
+  dataset_description: |
+    3 million string keys, each with a 1024-byte compressible value
+    (memtier's default data pattern, not -R random bytes) -- ~3GB
+    dataset sized to make BGSAVE take a measurable, meaningful amount
+    of time (tens of seconds) while keeping the LZF-compression cost
+    representative of realistic (non-incompressible) customer data.
+  wait_for_bgsave: true
+tested-commands:
+- bgsave
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BGSAVE" -n 1 -c 1 -t 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- server
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
+    - $."ALL STATS".Totals.RdbLastForkUsec
+priority: 50
