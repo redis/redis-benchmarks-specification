@@ -2,102 +2,64 @@ version: 0.4
 name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
 description: |
   Standalone BGSAVE-duration benchmark: preloads 12M string keys with
-  1024-byte compressible values (~15GB resident, memtier's default
-  data pattern -- not -R random bytes -- so LZF actually does real
-  compression work), then issues a single explicit BGSAVE and times it
-  via Redis's own INFO persistence fields (rdb_last_bgsave_time_sec,
-  latest_fork_usec), not client-observed latency.
+  1024-byte compressible values (~15GB resident, memtier's default data
+  pattern -- not -R random bytes -- the highly-compressible extreme, not
+  a realistic middle ground; -R would be the incompressible extreme
+  instead). rdbcompression is left at its default (yes) so LZF actually
+  runs against real, compressible data; the resulting RDB is ~469MB on
+  disk (~32x), unlike the incompressible crc64-isolation spec family
+  (e.g. 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only),
+  which pins rdbcompression off. save is pinned to "" so periodic
+  autosave never fires -- the only BGSAVE in the measured window is the
+  one this spec explicitly issues.
 
-  Measured directly against this exact dataset shape (local build, one
-  BGSAVE timed by polling rdb_bgsave_in_progress): ~26.2s wall-clock,
-  rdb_last_bgsave_time_sec=26, RDB compresses to 469MB on disk from
-  15GB resident (~32x). Started at 3M keys (~5.6s measured), which put
-  rdb_last_bgsave_time_sec's whole-second resolution at a real ~20%
-  single-run quantization -- right at the bottom edge of the ~20-33%
-  BGSAVE regression class this spec exists to validate, not comfortably
-  inside it. Scaled to 12M keys instead of shipping at that edge:
-  quantization at ~26s is ~3.8% (1/26), well below the detection band,
-  with margin to spare. Precedent for this scale already exists in this
-  repo (the 20Mkeys-load-string-with-1KiB-values-replica-only family
-  uses 25g memory at ~21GB resident); this spec's 12M/15GB sits below
-  that.
-
-  Rescaling to 12M keys has a real, measured side effect worth stating
-  plainly: fork() cost (CoW page-table setup) scales with resident
-  memory, not just with dataset byte count on disk. The clientconfig's
-  BGSAVE fork-ack latency -- the value validate_benchmark_metrics()
-  actually sees, since that gate runs before this spec's own
-  wait/confirm/inject logic -- was ~4ms at the original 3M-key/3.75GB
-  scale but measured ~349ms at this shipped 12M-key/15GB scale (fed
-  through the real validator directly: Ops/sec=2.87, is_valid=True).
-  That's real headroom above the validator's <1 QPS floor, but a
-  materially thinner margin than the smaller scale had -- if this spec
-  is ever scaled up further, or if some platform's fork() is
-  meaningfully slower than this measurement's box, that floor gets
-  closer. A validator failure here hits the same pre-existing
-  continue-past-tear-down path as any other spec's metric-validation
-  failure (out of scope for this PR, see the exporter block below for
-  the analogous, already-fixed issue on this spec's own new code), so
-  keep this margin in mind before scaling the dataset any further.
-
-  Separately, a pre-existing, spec-agnostic cleanup gate is worth
-  flagging for this spec specifically: the coordinator's server data
-  directory (holding server.rdb) is only removed when test_result is
-  True. Most specs leave a few KB of logs behind on a failed run; this
-  one leaves the full ~469MB dump.rdb, since a failure here (unconfirmed
-  BGSAVE, or the validator issue above) doesn't change what's already
-  on disk. Not fixed here -- same shared, out-of-scope cleanup path --
-  but worth knowing when reasoning about fleet disk usage from repeated
-  failures of this spec specifically.
-
-  Built to give a clean, write-quiescent BGSAVE duration number --
-  distinct from the existing 3Mkeys-set family, which intentionally
-  times fork/CoW cost *under* sustained write pressure (a different,
-  harder-to-isolate signal). Here there is no concurrent write traffic
-  during the measured BGSAVE, so the number reflects pure save-path
-  cost: fork + RDB serialization + LZF compression + disk write, with
-  no page-dirtying/CoW noise superimposed.
+  Distinct from the existing 3Mkeys-set family, which intentionally
+  times fork/CoW cost *under* sustained write pressure with incompressible
+  data (a different, harder-to-isolate signal, and a different I/O
+  profile -- real GBs written to disk vs. this spec's ~469MB). This spec
+  has no concurrent write traffic during the measured BGSAVE, so the
+  number reflects pure save-path cost: fork + RDB serialization + LZF
+  compression + disk write.
 
   BGSAVE forks and replies "Background saving started" immediately --
-  client-observed latency is fork time, not save time (confirmed
-  directly: 4.1ms client-side against a real ~1s save). dbconfig.wait_for_bgsave
+  client-observed latency is fork time, not save time. dbconfig.wait_for_bgsave
   makes the coordinator poll INFO persistence's rdb_bgsave_in_progress
-  after the client run finishes, blocking until the save Redis is
-  actually running completes, then confirms a save genuinely happened
-  in that window (rdb_last_save_time strictly advanced past a pre-run
-  snapshot AND rdb_last_bgsave_status is ok -- rdb_bgsave_in_progress==0
-  alone doesn't prove a save ran; a fresh/never-saved server reads 0
-  too) before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's
-  own resolution) and RdbLastForkUsec (microseconds, from INFO's
-  *stats* section -- "the last fork of any kind," not BGSAVE-specific
-  in general, but exact here since this spec's topology has no other
-  fork source: no AOF, no replicas) into the exported metrics. If that
-  confirmation fails (timeout, or no save detected), nothing is
-  injected and the export itself is skipped -- exporter_datasink_common()
-  has no concept of test failure and would otherwise push the standard
-  Ops/sec/p50.00/p99.00 series (see the exporter block below) under
-  this test name from a run already declared failed, which is worse
-  than a hole. (The coordinator's own poll-loop timer has finer, 200ms
-  resolution than Redis's whole-second field, but is not exported: the
-  poll only starts after container teardown -- topdown/profiler stop,
-  results parsing -- which can easily outlast a write-quiescent BGSAVE,
-  so it would measure coordinator teardown latency more than BGSAVE
-  itself.)
+  after the client run finishes, blocking until the save actually
+  completes, then confirms a save genuinely happened in that window
+  (rdb_last_save_time strictly advanced past a pre-run snapshot AND
+  rdb_last_bgsave_status is ok -- rdb_bgsave_in_progress==0 alone
+  doesn't prove a save ran; a fresh/never-saved server reads 0 too)
+  before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's own
+  resolution) and RdbLastForkUsec (microseconds, from INFO's *stats*
+  section -- "the last fork of any kind," not BGSAVE-specific in
+  general, but exact here since this topology has no other fork source:
+  no AOF, no replicas). If confirmation fails, nothing is injected and
+  the export is skipped entirely, rather than letting the standard
+  Ops/sec/p50.00/p99.00 series (see the exporter block) reach TimeSeries
+  from a run already declared failed. bgsave_timeout_seconds is set
+  explicitly to 180 (~7x margin over the measured save).
 
-  save is pinned to "" so periodic autosave never fires -- the only
-  BGSAVE in the measured window is the one this spec explicitly issues.
-  rdbcompression is left at its default (yes) so LZF actually runs,
-  unlike the crc64-isolation spec
-  (140Kkeys-load-string-with-128KiB-values-randomdata-replica-only)
-  which deliberately disables it. Values use memtier's default data
-  pattern (not -R random bytes), which is the highly-compressible
-  extreme, not a "representative" middle ground; -R would be the
-  incompressible extreme instead. This spec deliberately sits at the
-  compressible end since that is where lzf_compress's own cost is
-  largest and most visible -- confirmed directly: the resulting RDB
-  measured 469MB on disk against a 15GB resident dataset (~32x), so
-  LZF is doing real, substantial work rather than a few bytes of no-op
-  compression attempts.
+  Measured directly on this exact dataset shape: BGSAVE takes ~26.2s
+  (rdb_last_bgsave_time_sec=26), so rdb_last_bgsave_time_sec's
+  whole-second resolution is ~3.8% single-run quantization -- comfortably
+  inside the ~20-33% class of BGSAVE regression this spec exists to
+  detect. The clientconfig's BGSAVE fork-ack latency (what
+  validate_benchmark_metrics() sees, since that gate runs before this
+  spec's own wait/confirm/inject logic) measured ~349ms at this scale --
+  fork() cost scales with resident memory, so this number is NOT stable
+  across dataset sizes and shouldn't be assumed constant if this spec is
+  ever rescaled. That's real headroom above the validator's <1 QPS
+  floor today (Ops/sec=2.87, confirmed against the real validator), but
+  worth re-checking directly (not assumed) before any further rescale,
+  since a validator failure here shares the same tear-down-skipping
+  container-leak risk this PR's own new code was written to avoid.
+
+  A pre-existing, spec-agnostic cleanup gate is also worth flagging here
+  specifically: the coordinator's server data directory (holding
+  server.rdb) is only removed when test_result is True, so a failed run
+  of this spec leaves the full ~469MB dump.rdb on disk rather than the
+  few KB other specs' failures typically leave -- relevant when
+  reasoning about fleet disk usage from repeated failures.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -127,16 +89,27 @@ dbconfig:
     ~15GB resident (measured), compressing to ~469MB on disk (~32x).
     Measured BGSAVE duration on this exact shape is ~26s, sized so
     rdb_last_bgsave_time_sec's whole-second resolution (~3.8%
-    quantization at this scale) sits comfortably below the ~20-33%
-    BGSAVE regression class this spec exists to validate, rather than
-    at its edge (an earlier 3M-key/~5.6s version measured ~20%
-    quantization -- see the top-level description for that history).
+    quantization at this scale) sits comfortably inside the ~20-33%
+    BGSAVE regression class this spec exists to detect.
   wait_for_bgsave: true
   # ~7x margin over the ~26s measured save -- deliberately smaller than
   # wait_for_bgsave_completion()'s own 300s default so a genuinely stuck
   # or catastrophically slow BGSAVE (versus normal fleet/platform
   # variance) fails this test in under 3 minutes instead of 5.
   bgsave_timeout_seconds: 180
+  # The coordinator's automated actionable-PR regression comment defaults to
+  # ALL_STATS.Totals.Ops/sec on every spec, with no per-spec override before
+  # this -- for this spec that's a single BGSAVE fork-ack sample, which
+  # scales with dataset RSS rather than anything this spec is meant to
+  # measure (~4ms at 3M keys vs ~349ms at this spec's actual 12M-key scale,
+  # an ~87x swing from a dataset resize alone). Left as the default,
+  # ~10%-threshold Ops/sec regression checks against redis/redis PRs would
+  # fire on noise unrelated to BGSAVE performance. regression_metric_name/
+  # regression_metric_mode redirect that same automated table at the metric
+  # this spec actually exists to track, instead of suppressing regression
+  # detection for this spec entirely.
+  regression_metric_name: ALL_STATS.Totals.RdbLastBgsaveTimeSec
+  regression_metric_mode: lower-better
 tested-commands:
 - bgsave
 redis-topologies:
@@ -159,19 +132,27 @@ exporter:
   redistimeseries:
     # merge_default_and_config_metrics() EXTENDS defaults.yml rather than
     # replacing it, so the standard Ops/sec / Latency / p50.00 / p99.00
-    # series also get pushed under this test name, off the single ~4ms
-    # BGSAVE fork-ack reply. This is NOT just harmless dashboard noise:
-    # redis-benchmarks-spec-compare defaults --metric_name to
-    # ALL_STATS.Totals.Ops/sec, so a compare run against this spec WITHOUT
-    # an explicit --metric_name would regress-check a one-sample fork-ack
-    # number, not save duration. Always pass
-    # --metric_name RdbLastBgsaveTimeSec (or RdbLastForkUsec) explicitly
-    # when comparing this spec. Issuing BGSAVE directly from the
-    # coordinator instead of through a memtier client (dropping the
-    # degenerate Ops/sec entirely and getting a clean sub-second wait
-    # timer as a side effect) would fix this at the source, but is a
-    # larger change than this spec -- accepted as a known limitation of
-    # the memtier-client-issues-BGSAVE shape rather than expanding scope.
+    # series also get pushed under this test name, off the single BGSAVE
+    # fork-ack reply (measured ~4ms at 3M keys, ~349ms at this spec's
+    # actual 12M-key scale -- fork() cost scales with resident memory).
+    # That degenerate number is NOT just harmless dashboard noise:
+    # - The coordinator's automated actionable-PR regression comment
+    #   (self_contained_coordinator.py, the "regression part" block) would
+    #   default to it too -- fixed via dbconfig.regression_metric_name/
+    #   regression_metric_mode below, which redirect that SAME automated
+    #   table at RdbLastBgsaveTimeSec instead, so redis/redis PR runs get
+    #   real BGSAVE-duration regression detection rather than either noise
+    #   or no detection at all.
+    # - The manual redis-benchmarks-spec-compare CLI is a separate code
+    #   path (reads --metric_name from its own args, not from dbconfig) and
+    #   is NOT covered by that fix -- it still defaults --metric_name to
+    #   ALL_STATS.Totals.Ops/sec, so always pass
+    #   --metric_name RdbLastBgsaveTimeSec (or RdbLastForkUsec) explicitly
+    #   when comparing this spec manually.
+    # Issuing BGSAVE directly from the coordinator instead of through a
+    # memtier client would remove the degenerate Ops/sec at the source
+    # instead of routing around it twice, but reworking the client/tested-
+    # commands shape is a larger change than this PR -- deferred.
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
