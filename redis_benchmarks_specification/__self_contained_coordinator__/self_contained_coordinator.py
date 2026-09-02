@@ -3357,8 +3357,23 @@ def process_self_contained_coordinator_stream(
                         baseline_tag = None
                         baseline_deployment_name = "oss-standalone"
                         comparison_deployment_name = "oss-standalone"
-                        metric_name = "ALL_STATS.Totals.Ops/sec"
-                        metric_mode = "higher-better"
+                        # Default: throughput, higher is better. A spec whose
+                        # exported metric of interest isn't Ops/sec (e.g. a
+                        # coordinator-injected duration/latency field, where
+                        # Ops/sec is either absent or a degenerate single-op
+                        # fork-ack number unrelated to what the spec measures)
+                        # can override both via dbconfig -- this drives the
+                        # SAME automated regression-comment table every spec
+                        # gets, just pointed at the metric that's actually
+                        # meaningful, rather than silently regress-checking
+                        # noise on every actionable PR run.
+                        regression_dbconfig = benchmark_config.get("dbconfig", {})
+                        metric_name = regression_dbconfig.get(
+                            "regression_metric_name", "ALL_STATS.Totals.Ops/sec"
+                        )
+                        metric_mode = regression_dbconfig.get(
+                            "regression_metric_mode", "higher-better"
+                        )
                         to_date = datetime.datetime.utcnow()
                         from_date = to_date - datetime.timedelta(days=180)
                         baseline_branch = default_baseline_branch
