@@ -196,6 +196,21 @@ def validate_benchmark_metrics(
                 cmd.lower() for cmd in benchmark_config["tested-commands"]
             ]
 
+        # dbconfig.skip_throughput_floor is a separate key from
+        # wait_for_bgsave deliberately: "poll for a BGSAVE to finish" and
+        # "this spec's client-observed throughput has no meaning" aren't
+        # the same claim. A BGSAVE-under-write-load variant (the
+        # 3Mkeys-set family's territory) would want the wait but would
+        # still want the floor guarding its real write throughput -- only
+        # a spec whose client run is nothing but the BGSAVE command
+        # itself (like memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration)
+        # has an Ops/sec that's just 1/fork-ack-latency, a number that
+        # scales with resident memory and has no principled floor.
+        skip_throughput_floor = bool(
+            benchmark_config
+            and benchmark_config.get("dbconfig", {}).get("skip_throughput_floor")
+        )
+
         # Define validation rules
         throughput_patterns = [
             "ops/sec",
@@ -257,14 +272,15 @@ def validate_benchmark_metrics(
                         return
 
                 # Check throughput metrics
-                for pattern in throughput_patterns:
-                    if pattern in metric_path_lower:
-                        if data < 1:  # Below 1 QPS threshold
-                            validation_errors.append(
-                                f"Throughput metric '{path}' has invalid value: {data} "
-                                f"(below 1 QPS threshold)"
-                            )
-                        break
+                if not skip_throughput_floor:
+                    for pattern in throughput_patterns:
+                        if pattern in metric_path_lower:
+                            if data < 1:  # Below 1 QPS threshold
+                                validation_errors.append(
+                                    f"Throughput metric '{path}' has invalid value: {data} "
+                                    f"(below 1 QPS threshold)"
+                                )
+                            break
 
                 # Check latency metrics
                 for pattern in latency_patterns:
@@ -2009,6 +2025,40 @@ def process_self_contained_coordinator_stream(
                                 "Skipping test {} in memory comparison mode as it does not contain dbconfig".format(
                                     test_name
                                 )
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        # wait_for_bgsave is __self_contained_coordinator__-only
+                        # (poll rdb_bgsave_in_progress / confirm_bgsave_completed /
+                        # inject_persistence_metrics all live there) -- this path
+                        # has none of that. Ignoring wait_for_bgsave here would be
+                        # actively misleading: the client would still run BGSAVE
+                        # via memtier and this path would still export the merged
+                        # defaults.yml metrics (Ops/sec/p50.00/p99.00 off a single
+                        # fork-ack reply) under the spec's test name, with nothing
+                        # to signal that number isn't save duration -- the same
+                        # "misleading datapoint, worse than a hole" outcome
+                        # bgsave_metric_missing exists to prevent on the
+                        # coordinator path. Checked here, alongside the other
+                        # dbconfig-driven skips and before the preload runs, so an
+                        # unsupported spec doesn't pay for a full (here, ~15GB)
+                        # dataset load only to be discarded afterward.
+                        if benchmark_config["dbconfig"].get("wait_for_bgsave", False):
+                            logging.warning(
+                                "dbconfig.wait_for_bgsave is set on %s, but "
+                                "wait_for_bgsave is not supported on the "
+                                "__runner__ CLI path -- no BGSAVE "
+                                "wait/confirm/injection is available here, and "
+                                "the exported Ops/sec/p50.00/p99.00 would "
+                                "reflect a single BGSAVE fork-ack reply, not "
+                                "save duration. Skipping this test rather than "
+                                "exporting a misleading datapoint.",
+                                test_name,
                             )
                             delete_temporary_files(
                                 temporary_dir_client=temporary_dir_client,

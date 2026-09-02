@@ -1,4 +1,5 @@
 import os
+from unittest.mock import Mock
 
 import docker
 import redis
@@ -16,6 +17,11 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_cpu_limit,
     extract_client_container_image,
     extract_client_tool,
+)
+from redis_benchmarks_specification.__common__.timeseries import (
+    jsonpath_field_chain,
+    jsonpath_last_field,
+    merge_default_and_config_metrics,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
@@ -37,11 +43,16 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    confirm_bgsave_completed,
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
+    inject_persistence_metrics,
     inject_replication_sync_metrics,
+    keyspacelen_mismatch,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
+    wait_for_bgsave_completion,
+    wait_for_bgsave_topology_unsafe,
 )
 
 
@@ -101,6 +112,218 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
+def test_wait_for_bgsave_completion_returns_immediately_when_done():
+    """If rdb_bgsave_in_progress is already 0, return (True, ~0) without polling."""
+    conn = Mock()
+    conn.info.return_value = {"rdb_bgsave_in_progress": 0}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+    assert elapsed < 1.0
+    conn.info.assert_called_with("persistence")
+
+
+def test_wait_for_bgsave_completion_missing_key_keeps_polling_not_done():
+    """A persistence INFO missing rdb_bgsave_in_progress entirely (e.g. a
+    non-Redis-INFO-shape server) must NOT be treated as "finished" --
+    that's the same .get()-defaulting shape inject_persistence_metrics()
+    was fixed to avoid. Missing means unknown, so keep polling until the
+    timeout bounds it, rather than falsely declaring completion on the
+    first poll."""
+    conn = Mock()
+    conn.info.return_value = {"some_other_field": 1}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=0.5)
+    assert completed is False
+    assert elapsed >= 0.5
+
+
+def test_wait_for_bgsave_completion_polls_until_done():
+    """Should keep polling while in progress, then return True once it clears."""
+    conn = Mock()
+    conn.info.side_effect = [
+        {"rdb_bgsave_in_progress": 1},
+        {"rdb_bgsave_in_progress": 1},
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+    assert conn.info.call_count == 3
+
+
+def test_wait_for_bgsave_completion_times_out():
+    """A BGSAVE that never clears within the timeout returns (False, >=timeout)."""
+    conn = Mock()
+    conn.info.return_value = {"rdb_bgsave_in_progress": 1}
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=0.5)
+    assert completed is False
+    assert elapsed >= 0.5
+
+
+def test_wait_for_bgsave_completion_tolerates_info_errors():
+    """A transient INFO error should not crash the poll loop -- keep retrying."""
+    conn = Mock()
+    conn.info.side_effect = [
+        redis.exceptions.ConnectionError("boom"),
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
+    assert completed is True
+
+
+def test_wait_for_bgsave_completion_gives_up_after_consecutive_errors():
+    """A dead connection should bail out after max_consecutive_errors rather
+    than retrying silently for the full timeout."""
+    conn = Mock()
+    conn.info.side_effect = redis.exceptions.ConnectionError("dead")
+    completed, elapsed = wait_for_bgsave_completion(
+        conn, bgsave_timeout_seconds=300, max_consecutive_errors=3
+    )
+    assert completed is False
+    assert conn.info.call_count == 3
+
+
+def test_wait_for_bgsave_completion_error_streak_resets_on_success():
+    """A transient error followed by a real reading resets the error streak --
+    a single blip should not count toward the consecutive-error bail-out."""
+    conn = Mock()
+    conn.info.side_effect = [
+        redis.exceptions.ConnectionError("blip"),
+        {"rdb_bgsave_in_progress": 1},
+        redis.exceptions.ConnectionError("blip"),
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(
+        conn, bgsave_timeout_seconds=5, max_consecutive_errors=2
+    )
+    assert completed is True
+    assert conn.info.call_count == 4
+
+
+def test_confirm_bgsave_completed_when_save_time_advanced_and_status_ok():
+    """The happy path: rdb_last_save_time advanced and status is ok."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after) is True
+
+
+def test_confirm_bgsave_completed_false_when_save_time_unchanged():
+    """No BGSAVE ran in the window (e.g. the client command never landed) --
+    rdb_last_save_time stayed the same as the pre-run snapshot."""
+    info_after = {"rdb_last_save_time": 100, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_when_status_not_ok():
+    """rdb_last_save_time advancing alone is not enough -- a failed/killed
+    BGSAVE child can still leave rdb_bgsave_in_progress==0."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "err"}
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_on_missing_before_snapshot():
+    """A failed pre-run snapshot (before is None) must not silently pass --
+    there's nothing to compare rdb_last_save_time against."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(None, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_on_missing_after_info():
+    """A failed post-run info() call (after is None) must not silently pass."""
+    assert confirm_bgsave_completed(100, None) is False
+
+
+def test_confirm_bgsave_completed_false_when_aof_enabled():
+    """aof_enabled must be falsy: an AOF rewrite calls redisFork() same as
+    BGSAVE, so it could be the fork latest_fork_usec actually reflects,
+    misattributed as "the BGSAVE fork". Otherwise-happy-path inputs."""
+    info_after = {
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+        "aof_enabled": 1,
+    }
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_when_save_points_configured():
+    """A non-empty save-points config means periodic autosave could have
+    written the RDB (and satisfied the rdb_last_save_time check) on its own
+    schedule, independent of the client's explicit BGSAVE. Otherwise-happy-
+    path inputs."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after, "3600 1 300 100") is False
+
+
+def test_confirm_bgsave_completed_true_with_explicit_empty_save_points():
+    """An explicitly-fetched, empty save-points config (Redis's own "save
+    points disabled" representation) must not be treated as unsafe -- this
+    is the expected value for a spec that pins save: '""' and is the
+    normal, safe case, not a missing-data one."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after, "") is True
+
+
+def test_inject_persistence_metrics_reads_from_given_server_info():
+    """RdbLastBgsaveTimeSec/RdbLastForkUsec come from the server_info dict the
+    caller passes in -- no info() call of its own. latest_fork_usec lives in
+    the *stats* section, not persistence (confirmed against src/server.c),
+    so the caller must pass a plain/default info() result covering both."""
+    server_info = {
+        "rdb_last_bgsave_time_sec": 12,
+        "latest_fork_usec": 345678,
+    }
+    results = {"ALL STATS": {"Totals": {"Ops/sec": 1.0}}}
+    ok = inject_persistence_metrics(results, server_info)
+    assert ok is True
+    totals = results["ALL STATS"]["Totals"]
+    assert totals["RdbLastBgsaveTimeSec"] == 12
+    assert totals["RdbLastForkUsec"] == 345678
+    # Existing metrics not clobbered
+    assert totals["Ops/sec"] == 1.0
+
+
+def test_inject_persistence_metrics_creates_missing_keys():
+    """The function should create ALL STATS / Totals if they don't exist."""
+    server_info = {
+        "rdb_last_bgsave_time_sec": 5,
+        "latest_fork_usec": 1000,
+    }
+    results = {}
+    ok = inject_persistence_metrics(results, server_info)
+    assert ok is True
+    assert results["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] == 5
+    assert results["ALL STATS"]["Totals"]["RdbLastForkUsec"] == 1000
+
+
+def test_inject_persistence_metrics_invalid_input():
+    """Non-dict results or server_info should be rejected gracefully (return
+    False), not raise -- covers both a failed pre-run results_dict and a
+    failed post-run info() call (server_info=None) upstream."""
+    server_info = {"rdb_last_bgsave_time_sec": 1, "latest_fork_usec": 1}
+    assert inject_persistence_metrics(None, server_info) is False
+    assert inject_persistence_metrics("not a dict", server_info) is False
+    assert inject_persistence_metrics([], server_info) is False
+    assert inject_persistence_metrics({}, None) is False
+    assert inject_persistence_metrics({}, "not a dict") is False
+
+
+def test_inject_persistence_metrics_missing_key_returns_false_not_sentinel():
+    """A server_info missing either source key must return False, NOT
+    silently inject -1 -- that's Redis's own "no save yet" sentinel, and
+    confirm_bgsave_completed() only gates on rdb_last_save_time/
+    rdb_last_bgsave_status, never on these two fields, so a caller relying
+    on .get(key, -1) here would export -1 as a real datapoint on any
+    server_info shape missing one of them (e.g. a non-Redis server)."""
+    results = {}
+    assert inject_persistence_metrics(results, {"latest_fork_usec": 100}) is False
+    assert results == {}
+
+    results = {}
+    assert inject_persistence_metrics(results, {"rdb_last_bgsave_time_sec": 5}) is False
+    assert results == {}
+
+    results = {}
+    assert inject_persistence_metrics(results, {}) is False
+    assert results == {}
+
+
 def test_preload_before_replica_flag_in_20m_spec():
     """The 20M-keys replica-only test spec must set preload_before_replica=true.
 
@@ -127,6 +350,234 @@ def test_preload_before_replica_flag_in_20m_spec():
         assert (
             "replicas" in topology
         ), f"20M replica-only spec must use only replica topologies, got {topology}"
+
+
+def test_wait_for_bgsave_topology_unsafe_plain_oss_standalone_is_safe():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=0, topology_unmapped=False
+        )
+        is False
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_multi_primary():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-cluster", replica_count=0, topology_unmapped=False
+        )
+        is True
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_has_replicas():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=1, topology_unmapped=False
+        )
+        is True
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_unmapped_fails_safe():
+    """The default (setup_type, replica_count) an unmapped topology name
+    reaches this function with -- ("oss-standalone", 0) -- must not be
+    treated as safe just because those defaults happen to look benign."""
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=0, topology_unmapped=True
+        )
+        is True
+    )
+
+
+def test_keyspacelen_mismatch_nothing_declared_is_never_a_mismatch():
+    assert keyspacelen_mismatch(None, 42) is False
+    assert keyspacelen_mismatch(None, None) is False
+
+
+def test_keyspacelen_mismatch_matching_count_is_not_a_mismatch():
+    assert keyspacelen_mismatch(12000000, 12000000) is False
+
+
+def test_keyspacelen_mismatch_under_loaded_preload_is_a_mismatch():
+    assert keyspacelen_mismatch(12000000, 11999999) is True
+
+
+def test_keyspacelen_mismatch_unreadable_dbsize_is_a_mismatch_when_expected():
+    """actual=None (DBSIZE couldn't be read) must not silently pass as
+    verified when a count was declared -- "unknown" is not "matches"."""
+    assert keyspacelen_mismatch(12000000, None) is True
+
+
+def test_jsonpath_last_field_simple_unquoted_segment():
+    assert (
+        jsonpath_last_field('$."ALL STATS".Totals.RdbLastBgsaveTimeSec')
+        == "RdbLastBgsaveTimeSec"
+    )
+
+
+def test_jsonpath_last_field_quoted_segment_with_literal_dot():
+    """A naive path.rsplit(".", 1)[-1] would truncate a quoted "p50.00"
+    segment to "00" -- this is exactly why jsonpath_last_field() parses
+    with JsonPathParser() instead of splitting on "." as a string."""
+    assert (
+        jsonpath_last_field('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')
+        == "p50.00"
+    )
+
+
+def test_jsonpath_last_field_quoted_segment_with_slash():
+    assert jsonpath_last_field('$."BEST RUN RESULTS".Totals."Ops/sec"') == "Ops/sec"
+
+
+def test_jsonpath_last_field_unparseable_returns_none():
+    assert jsonpath_last_field("not a jsonpath [[[") is None
+
+
+def test_jsonpath_field_chain_flat_child():
+    assert jsonpath_field_chain('$."ALL STATS".Totals.RdbLastBgsaveTimeSec') == [
+        "ALL STATS",
+        "Totals",
+        "RdbLastBgsaveTimeSec",
+    ]
+
+
+def test_jsonpath_field_chain_nested_child_is_not_the_last_field():
+    """The immediate child of Totals for a nested metric is the dict key
+    ("Percentile Latencies"), not the leaf field ("p50.00") -- this is
+    the distinction the export-time Totals filter in
+    self_contained_coordinator.py needs jsonpath_field_chain() for
+    instead of jsonpath_last_field(): filtering on the leaf would delete
+    "Percentile Latencies" from results_dict["ALL STATS"]["Totals"]
+    entirely, since that's the key actually sitting there."""
+    chain = jsonpath_field_chain('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')
+    assert chain == ["ALL STATS", "Totals", "Percentile Latencies", "p50.00"]
+    assert chain[chain.index("Totals") + 1] == "Percentile Latencies"
+
+
+def test_jsonpath_field_chain_unparseable_returns_none():
+    assert jsonpath_field_chain("not a jsonpath [[[") is None
+
+
+def test_jsonpath_field_chain_accepts_dict_form_like_extract_results_table():
+    """exporter.redistimeseries.metrics entries can be the dict form
+    {jsonpath: targets} -- extract_results_table() (__common__/timeseries.py)
+    already supports it via list(jsonpath.keys())[0]; jsonpath_field_chain()
+    must read the same shape the same way, or every dict-form entry
+    silently resolves to no chain at all."""
+    chain = jsonpath_field_chain(
+        {'$."ALL STATS".Totals.RdbLastBgsaveTimeSec': {"some": "target"}}
+    )
+    assert chain == ["ALL STATS", "Totals", "RdbLastBgsaveTimeSec"]
+
+
+def test_jsonpath_field_chain_empty_dict_returns_none():
+    assert jsonpath_field_chain({}) is None
+
+
+def test_merge_default_and_config_metrics_does_not_mutate_default_metrics():
+    """merge_default_and_config_metrics() must return a new list, not mutate
+    the caller's default_metrics in place -- default_metrics is built once
+    per coordinator process and threaded through every test
+    (self_contained_coordinator.py), so an in-place .extend() here leaked
+    each spec's own exporter metrics into every later spec's export for the
+    rest of that process's lifetime (redis/redis-benchmarks-specification#550),
+    and, once a spec's own results table is printed more than once in the
+    same run (a wait_for_bgsave spec re-printing after metric injection),
+    into that same spec's own subsequent call too -- doubling its exported
+    metrics rather than leaving them stable."""
+    default_metrics = ["Ops/sec"]
+    benchmark_config = {
+        "exporter": {"redistimeseries": {"metrics": ["$.Extra.Metric"]}}
+    }
+    _, merged_once = merge_default_and_config_metrics(
+        benchmark_config, default_metrics, None
+    )
+    assert default_metrics == [
+        "Ops/sec"
+    ], "default_metrics must be unchanged after the call"
+    assert merged_once == ["Ops/sec", "$.Extra.Metric"]
+
+    # A second call with the same (unmodified) default_metrics must produce
+    # the same result, not accumulate a duplicate from the first call.
+    _, merged_twice = merge_default_and_config_metrics(
+        benchmark_config, default_metrics, None
+    )
+    assert merged_twice == ["Ops/sec", "$.Extra.Metric"]
+
+
+def test_bgsave_duration_spec_wiring_matches_injector():
+    """The BGSAVE-duration spec must set wait_for_bgsave: true (without it,
+    RdbLastBgsaveTimeSec/RdbLastForkUsec are never injected and the exporter
+    has nothing to push -- BGSAVE's client-observed latency is fork time,
+    not save time, so there's no other source for these metrics),
+    skip_throughput_floor: true (without it, validate_benchmark_metrics()'s
+    <1 QPS floor gates on the single BGSAVE fork-ack reply, which scales
+    with resident memory and has no principled floor), and its exporter
+    jsonpaths must end in the exact keys inject_persistence_metrics()
+    writes -- there's nothing else checking any of this, and a typo on
+    either side lands in a silent, no-exception fallback (the floor no
+    longer skipped; empty export for the metric keys). The spec
+    deliberately does NOT set bgsave_timeout_seconds -- it takes
+    wait_for_bgsave_completion()'s 300s default rather than a tighter
+    bound sized off a local-server-only measurement (see the dbconfig
+    comment on wait_for_bgsave)."""
+    spec_path = (
+        "./redis_benchmarks_specification/test-suites/"
+        "memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration.yml"
+    )
+    with open(spec_path, "r") as yml_file:
+        benchmark_config = yaml.safe_load(yml_file)
+    assert (
+        benchmark_config["dbconfig"].get("wait_for_bgsave") is True
+    ), "BGSAVE-duration spec must set wait_for_bgsave: true"
+    assert (
+        benchmark_config["dbconfig"].get("skip_throughput_floor") is True
+    ), "BGSAVE-duration spec must set skip_throughput_floor: true"
+    metrics = benchmark_config["exporter"]["redistimeseries"]["metrics"]
+    # Exact match, not endswith(): a prefix typo like $."ALL_STATS" (underscore
+    # instead of the space inject_persistence_metrics() actually writes under)
+    # would still satisfy an endswith() check while exporting nothing -- the
+    # same silent, no-exception fallback this test exists to catch.
+    assert (
+        '$."ALL STATS".Totals.RdbLastBgsaveTimeSec' in metrics
+    ), "exporter must export the exact jsonpath inject_persistence_metrics() writes RdbLastBgsaveTimeSec under"
+    assert (
+        '$."ALL STATS".Totals.RdbLastForkUsec' in metrics
+    ), "exporter must export the exact jsonpath inject_persistence_metrics() writes RdbLastForkUsec under"
+    # The two asserts above pin the YAML side against hardcoded literals --
+    # they'd stay green through a rename on inject_persistence_metrics()'s
+    # side (e.g. RdbLastBgsaveTimeSec -> RdbLastBgSaveTimeSec) since nothing
+    # here calls it. Actually run it and derive the real keys it writes, so
+    # a rename on either side breaks this test rather than silently
+    # producing an empty export (the exact gap self_contained_coordinator.py's
+    # export-time Totals filter has its own hard-fail for, on the coordinator
+    # side -- this pins the same contract at the spec-authoring layer).
+    injected_results = {}
+    assert (
+        inject_persistence_metrics(
+            injected_results,
+            {"rdb_last_bgsave_time_sec": 26, "latest_fork_usec": 349000},
+        )
+        is True
+    )
+    injected_keys = set(injected_results["ALL STATS"]["Totals"].keys())
+    for jsonpath in metrics:
+        chain = jsonpath_field_chain(jsonpath)
+        assert chain and chain[0] == "ALL STATS" and "Totals" in chain, (
+            f'{jsonpath!r} must be rooted at "ALL STATS".Totals -- '
+            "the coordinator's export-time filter only ever keeps keys "
+            "matching that shape"
+        )
+        totals_idx = chain.index("Totals")
+        assert totals_idx + 1 < len(chain), f"{jsonpath!r} has no field after Totals"
+        declared_key = chain[totals_idx + 1]
+        assert declared_key in injected_keys, (
+            f"{jsonpath!r} declares Totals key {declared_key!r}, but "
+            f"inject_persistence_metrics() actually writes {injected_keys!r} -- "
+            "a real run would export nothing for this metric"
+        )
 
 
 def test_preload_before_replica_default_off():
@@ -885,9 +1336,7 @@ def test_stop_and_remove_container_safe_409_already_in_progress():
             super().__init__(
                 "409 Client Error: Conflict",
                 response=None,
-                explanation=(
-                    "removal of container abc123 is already in progress"
-                ),
+                explanation=("removal of container abc123 is already in progress"),
             )
 
         def __str__(self):

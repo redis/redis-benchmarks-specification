@@ -41,6 +41,264 @@ def inject_replication_sync_metrics(
         return False
 
 
+def wait_for_bgsave_completion(
+    redis_conn, bgsave_timeout_seconds=300, max_consecutive_errors=10
+):
+    """Poll INFO persistence until rdb_bgsave_in_progress clears, or timeout.
+
+    BGSAVE forks and replies immediately -- the client-observed latency is
+    just fork time, not save time. Use this after issuing BGSAVE (or after a
+    client run that issued it) to block until the background save Redis is
+    actually running has finished, so rdb_last_bgsave_time_sec/
+    latest_fork_usec reflect the save just triggered rather than a stale
+    prior one (or a still-in-flight one).
+
+    NOTE: rdb_bgsave_in_progress==0 on its own does not prove a BGSAVE ran
+    during this call -- it also reads 0 before any save has ever started.
+    Callers that need to confirm a save actually happened in the measured
+    window should additionally compare rdb_last_save_time (or
+    rdb_last_bgsave_status) from before/after, the same way the
+    replication-sync path diffs sync_full.
+
+    Returns:
+        tuple: (completed: bool, elapsed_seconds: float)
+    """
+    start = time.monotonic()
+    poll_interval = 0.2  # 200ms -- BGSAVE durations of interest are seconds+
+    consecutive_errors = 0
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= bgsave_timeout_seconds:
+            return False, elapsed
+        try:
+            persistence_info = redis_conn.info("persistence")
+            consecutive_errors = 0
+            # Deliberately NOT persistence_info.get("rdb_bgsave_in_progress", 0)
+            # -- the same .get()-defaulting shape inject_persistence_metrics()
+            # was fixed to avoid, for the same non-Redis-INFO-shape reason.
+            # A missing key here means "unknown", not "finished": keep
+            # polling (safe direction, since the timeout still bounds it)
+            # rather than falsely declaring completion on the very first
+            # poll against a server whose INFO doesn't have this field.
+            if (
+                "rdb_bgsave_in_progress" in persistence_info
+                and int(persistence_info["rdb_bgsave_in_progress"]) == 0
+            ):
+                return True, elapsed
+        except Exception as e:
+            consecutive_errors += 1
+            logging.warning(
+                "Error polling INFO persistence while waiting for BGSAVE "
+                "({}/{} consecutive): {}".format(
+                    consecutive_errors, max_consecutive_errors, e
+                )
+            )
+            if consecutive_errors >= max_consecutive_errors:
+                logging.warning(
+                    "Giving up on BGSAVE wait after {} consecutive INFO errors "
+                    "(connection likely dead)".format(consecutive_errors)
+                )
+                return False, elapsed
+        time.sleep(poll_interval)
+
+
+def confirm_bgsave_completed(
+    rdb_last_save_time_before, info_after, save_points_config=None
+):
+    """Return True only if INFO shows a BGSAVE genuinely completed
+    successfully since the pre-run snapshot, under conditions where the
+    exported metrics can actually be attributed to that BGSAVE.
+
+    wait_for_bgsave_completion() returning True (rdb_bgsave_in_progress==0)
+    does not on its own prove a save ran in the measured window -- that
+    field also reads 0 before any save has ever started, e.g. a fresh
+    container with save "" and no BGSAVE issued yet. Without this check, a
+    missing/failed client run would still export Redis's own "no save yet"
+    sentinel (rdb_last_bgsave_time_sec==-1) as if it were a real datapoint.
+
+    Requires rdb_last_save_time to have strictly advanced past the pre-run
+    snapshot AND rdb_last_bgsave_status to be "ok" (not e.g. an OOM'd or
+    signal-killed child, which leaves rdb_bgsave_in_progress==0 too).
+
+    Also requires the two remaining conditions inject_persistence_metrics()'s
+    own docstring names as the reason latest_fork_usec is unambiguous ("no
+    AOF, no replicas" -- the caller is responsible for the replica half via
+    wait_for_bgsave_topology_unsafe(), checked before this ever runs):
+
+    - aof_enabled must be falsy. AOF rewrites call redisFork() same as
+      BGSAVE, so an AOF rewrite landing in the measured window could be the
+      fork latest_fork_usec actually reflects, misattributed as "the BGSAVE
+      fork". (AOF rewrites do NOT touch rdb_last_save_time -- only
+      RDB-writing events do -- so this confound is specific to
+      RdbLastForkUsec's correctness, not this function's other check.)
+    - save_points_config must be falsy (None or empty/whitespace-only, i.e.
+      Redis's own "save points disabled" representation). A non-empty
+      config means periodic autosave is active and could have written the
+      RDB (and therefore satisfied the rdb_last_save_time check above) on
+      its own schedule, independent of the client's explicit BGSAVE --
+      exactly the same "some other trigger, not the client's BGSAVE"
+      confound the replica check exists to rule out.
+
+    NOTE: rdb_last_save_time is whole-second unix time, so this assumes the
+    save takes at least a couple of seconds -- a save fast enough to finish
+    within the same wall-clock second as the pre-run snapshot would fail
+    this check (and, since dbconfig.wait_for_bgsave treats that as a hard
+    test failure rather than a skipped export, fail the whole test) even
+    though a real BGSAVE did happen. Fine for multi-second saves like the
+    memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration spec's ~26s save
+    (measured, ~15GB resident dataset); a spec built around a save fast
+    enough to risk landing in the same second should not opt into
+    wait_for_bgsave.
+
+    Args:
+        rdb_last_save_time_before: rdb_last_save_time captured before the
+            client run, or None if the snapshot itself failed.
+        info_after: dict from a post-run info() call (any section that
+            includes rdb_last_save_time, rdb_last_bgsave_status, and
+            aof_enabled -- an unscoped info() call has all three), or None
+            if that call failed.
+        save_points_config: the server's live `save` config value (e.g.
+            from CONFIG GET save), or None/empty if not fetched or disabled.
+            Not part of INFO output, so callers must fetch it separately
+            (e.g. alongside info_after, since save points aren't expected
+            to change mid-run for a wait_for_bgsave spec).
+    """
+    if rdb_last_save_time_before is None or info_after is None:
+        return False
+    rdb_last_save_time_after = info_after.get("rdb_last_save_time")
+    if rdb_last_save_time_after is None:
+        return False
+    if info_after.get("aof_enabled"):
+        return False
+    if save_points_config is not None and save_points_config.strip():
+        return False
+    return (
+        rdb_last_save_time_after > rdb_last_save_time_before
+        and info_after.get("rdb_last_bgsave_status") == "ok"
+    )
+
+
+def wait_for_bgsave_topology_unsafe(setup_type, replica_count, topology_unmapped):
+    """Return True if a topology is unsafe for dbconfig.wait_for_bgsave.
+
+    confirm_bgsave_completed() and inject_persistence_metrics() only ever
+    read primary_conns[0], and inject_persistence_metrics()'s own docstring
+    calls out "no AOF, no replicas" as the reason latest_fork_usec is
+    unambiguous. Three cases make that assumption unsafe:
+
+    - Multi-primary (setup_type != "oss-standalone", e.g. oss-cluster):
+      would confirm and export just node 0's save under the whole test's
+      name while every other primary's save stays unmeasured.
+    - Has replicas (replica_count > 0): a replica full sync forks and
+      overwrites latest_fork_usec, or (on a --save-configured variant) a
+      periodic autosave can satisfy confirm_bgsave_completed() on its own
+      -- neither is the BGSAVE the spec issued.
+    - Unmapped (topology_unmapped=True, i.e. the topology name isn't in
+      topologies_map at all): nothing is actually known about its
+      primaries/replicas, so it can't be assumed safe just because the
+      caller's setup_type/replica_count defaults happen to look benign.
+
+    Positive framing (checking for known-unsafe conditions rather than a
+    known-safe allowlist of exactly "oss-standalone") so a future topology
+    type this function hasn't been taught about still fails safe -- which
+    is also why topology_unmapped is a separate, explicit argument rather
+    than folded into setup_type: the caller's own setup_type/replica_count
+    defaults (("oss-standalone", 0), matching what the actual
+    oss-standalone topology reports) would otherwise be indistinguishable
+    from a real oss-standalone topology and pass this check regardless.
+    """
+    return topology_unmapped or setup_type != "oss-standalone" or replica_count > 0
+
+
+def keyspacelen_mismatch(expected_keyspacelen, actual_keyspacelen):
+    """Return True if a declared dbconfig.check.keyspacelen doesn't match
+    an observed DBSIZE.
+
+    For most specs an under-loaded preload shows up as anomalous
+    throughput. It wouldn't for a wait_for_bgsave spec: rdb_last_bgsave_time_sec
+    is monotone in dataset size and little else, so a truncated preload
+    would just look like a smaller, "improved" BGSAVE, with
+    confirm_bgsave_completed()/inject_persistence_metrics() both still
+    succeeding. This closes that gap.
+
+    expected_keyspacelen=None (nothing declared) is never a mismatch.
+    actual_keyspacelen=None (DBSIZE couldn't be read) IS a mismatch
+    whenever a count was expected -- "unknown" doesn't pass as
+    "verified", the same principle wait_for_bgsave_completion() and
+    confirm_bgsave_completed() apply to their own missing-INFO-key cases.
+    """
+    if expected_keyspacelen is None:
+        return False
+    return actual_keyspacelen != expected_keyspacelen
+
+
+def inject_persistence_metrics(results_dict, server_info):
+    """Inject the most recent BGSAVE's duration/fork-time into a results_dict.
+
+    Adds under results_dict["ALL STATS"]["Totals"]:
+    - RdbLastBgsaveTimeSec: rdb_last_bgsave_time_sec (INFO persistence section)
+    - RdbLastForkUsec: latest_fork_usec (INFO *stats* section, not persistence
+      -- confirmed against src/server.c, where it's emitted alongside
+      keyspace_hits/expired_keys, not the rdb_*/aof_* fields). NOTE:
+      latest_fork_usec is "the last fork of any kind" (redisFork() updates
+      it for AOF rewrites, diskless replica syncs, and module forks too),
+      not specifically the last BGSAVE's fork -- only accurate as "the
+      BGSAVE fork" when the caller has otherwise ensured nothing else could
+      have forked in the measured window (e.g. this spec's oss-standalone
+      + save "" + no AOF + no replicas).
+
+    Args:
+        results_dict: dict to inject into (created/extended in place).
+        server_info: a dict from a prior info() call (no section argument,
+            so both the persistence and stats sections are present) --
+            takes the caller's already-fetched dict rather than issuing its
+            own info() round-trip, so confirm_bgsave_completed() (if used)
+            and this injection read the exact same snapshot rather than two
+            separate ones a moment apart.
+
+    Callers should call wait_for_bgsave_completion() (and ideally
+    confirm_bgsave_completed()) first, otherwise these fields may reflect a
+    stale prior BGSAVE or one still in progress.
+
+    Returns True on success, False on failure. Safe to call with None or
+    non-dict results_dict/server_info (returns False). Also returns False
+    (injecting nothing) if either source key is absent from server_info --
+    deliberately NOT defaulting to -1 for a missing key, since that's
+    Redis's own "no save yet" sentinel and confirm_bgsave_completed() does
+    not check these two specific fields, only rdb_last_save_time/
+    rdb_last_bgsave_status. A non-Redis-semantics server (this coordinator
+    also launches other server types with different INFO shapes) or a
+    future Redis INFO shape that dropped either field would otherwise
+    inject -1 as if it were a real datapoint.
+    """
+    if not isinstance(results_dict, dict) or not isinstance(server_info, dict):
+        return False
+    if (
+        "rdb_last_bgsave_time_sec" not in server_info
+        or "latest_fork_usec" not in server_info
+    ):
+        logging.warning(
+            "Failed to inject persistence metrics: server_info is missing "
+            "rdb_last_bgsave_time_sec and/or latest_fork_usec"
+        )
+        return False
+    try:
+        if "ALL STATS" not in results_dict:
+            results_dict["ALL STATS"] = {}
+        if "Totals" not in results_dict["ALL STATS"]:
+            results_dict["ALL STATS"]["Totals"] = {}
+        results_dict["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] = int(
+            server_info["rdb_last_bgsave_time_sec"]
+        )
+        results_dict["ALL STATS"]["Totals"]["RdbLastForkUsec"] = int(
+            server_info["latest_fork_usec"]
+        )
+        return True
+    except Exception as e:
+        logging.warning("Failed to inject persistence metrics: {}".format(e))
+        return False
+
+
 def generate_standalone_dragonfly_server_args(
     binary,
     port,

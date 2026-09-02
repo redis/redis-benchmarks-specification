@@ -1,0 +1,252 @@
+version: 0.4
+name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
+description: |
+  Standalone BGSAVE-duration benchmark: preloads 12M string keys with
+  1024-byte compressible values (~15GB resident, memtier's default data
+  pattern -- not -R random bytes -- the highly-compressible extreme, not
+  a realistic middle ground; -R would be the incompressible extreme
+  instead). rdbcompression is left at its default (yes) so LZF actually
+  runs against real, compressible data; the resulting RDB is ~469MB on
+  disk (~32x), unlike the incompressible crc64-isolation spec family
+  (e.g. 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only),
+  which pins rdbcompression off. save is pinned to "" so periodic
+  autosave never fires -- the only BGSAVE in the measured window is the
+  one this spec explicitly issues.
+
+  Distinct from the existing 3Mkeys-set family, which intentionally
+  times fork/CoW cost *under* sustained write pressure with incompressible
+  data (a different, harder-to-isolate signal, and a different I/O
+  profile -- real GBs written to disk vs. this spec's ~469MB). This spec
+  has no concurrent write traffic during the measured BGSAVE, so the
+  number reflects pure save-path cost: fork + RDB serialization + LZF
+  compression + disk write.
+
+  BGSAVE forks and replies "Background saving started" immediately --
+  client-observed latency is fork time, not save time. dbconfig.wait_for_bgsave
+  makes the coordinator poll INFO persistence's rdb_bgsave_in_progress
+  after the client run finishes, blocking until the save actually
+  completes, then confirms a save genuinely happened in that window under
+  conditions where the result can be trusted (rdb_last_save_time strictly
+  advanced past a pre-run snapshot; rdb_last_bgsave_status is ok --
+  rdb_bgsave_in_progress==0 alone doesn't prove a save ran, a
+  fresh/never-saved server reads 0 too; aof_enabled is falsy; and the
+  server's live save-points config is empty) before injecting
+  RdbLastBgsaveTimeSec (whole seconds -- Redis's own resolution) and
+  RdbLastForkUsec (microseconds, from INFO's *stats* section -- "the last
+  fork of any kind," not BGSAVE-specific in general, but exact here since
+  the last two checks actively verify this topology has no other fork
+  source, rather than just assuming it from this spec's own
+  configuration-parameters). If confirmation fails, nothing is injected and
+  the export is skipped entirely, rather than letting the standard
+  Ops/sec/p50.00/p99.00 series (see the exporter block) reach TimeSeries
+  from a run already declared failed. The client's
+  single BGSAVE command's fork-ack reply latency (what
+  validate_benchmark_metrics() would otherwise see as this spec's
+  "Ops/sec") is exempted from that function's throughput floor via
+  dbconfig.skip_throughput_floor -- a separate key from wait_for_bgsave,
+  since only a client run that's nothing but the BGSAVE command itself
+  has an Ops/sec with no principled floor (fork() cost scales with
+  resident memory, not anything this spec is meant to measure); a future
+  BGSAVE-under-write-load variant would want wait_for_bgsave without
+  this exemption.
+
+  Measured directly on this exact dataset shape, on a local
+  redis-server: BGSAVE takes ~26.2s (rdb_last_bgsave_time_sec=26), so
+  rdb_last_bgsave_time_sec's whole-second resolution is ~3.8%
+  single-run quantization -- comfortably inside the ~20-33% class of
+  BGSAVE regression this spec exists to detect. Not yet re-verified
+  against a real oss-standalone run (single-CPU, bind-mounted volume --
+  see the dbconfig comments below).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+  # dbconfig_keyspacelen_check() (the normal enforcement path for this key)
+  # is never called from process_self_contained_coordinator_stream() -- the
+  # coordinator function that actually drives this spec on the fleet -- so
+  # this value alone would otherwise be documentation only. Enforced here
+  # instead via a dedicated DBSIZE check (see keyspacelen_mismatch() in
+  # docker.py) folded into this spec's wait_for_bgsave failure path: unlike
+  # most specs, an under-loaded preload here wouldn't read as anomalous
+  # throughput, it would read as a smaller, "improved" BGSAVE. Verified
+  # empirically against the exact preload_tool arguments below
+  # (redislabs/memtier_benchmark:edge, --key-minimum 1 --key-maximum N,
+  # -t 8 -c 25) that --key-maximum N loads exactly N keys (1..N inclusive)
+  # -- no off-by-one on this memtier version/image, unlike the older-version
+  # behavior test-suites/memtier_benchmark-playbook-feature-store-hash-10M-
+  # entities-50-features.yml's comment describes and compensates for with
+  # --key-maximum N+1. 12000000 is correct as-is.
+  check:
+    keyspacelen: 12000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      12000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 20g
+  # Follows the same "<N>keys-string-1KiB-size" convention as the closest
+  # sibling by preload shape, 20Mkeys-string-1KiB-size
+  # (memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml,
+  # same --data-size 1024). dataset_name doubles as the preload-reuse key
+  # in __runner__/runner.py, so it must stay unique regardless -- no
+  # existing 12Mkeys-* dataset in the tree, so the key count alone already
+  # guarantees that here.
+  dataset_name: 12Mkeys-string-1KiB-size
+  dataset_description: |
+    12 million string keys, each with a 1024-byte compressible value
+    (memtier's default data pattern, not -R random bytes -- the
+    highly-compressible extreme, not a realistic middle ground) --
+    ~15GB resident (measured), compressing to ~469MB on disk (~32x).
+    Measured BGSAVE duration on this exact shape is ~26s, sized so
+    rdb_last_bgsave_time_sec's whole-second resolution (~3.8%
+    quantization at this scale) sits comfortably inside the ~20-33%
+    BGSAVE regression class this spec exists to detect.
+  # No bgsave_timeout_seconds override -- the coordinator's own call-site
+  # default (self_contained_coordinator.py's
+  # benchmark_config.get("dbconfig", {}).get("bgsave_timeout_seconds", 300))
+  # is what actually applies here, since it always passes an explicit
+  # value to wait_for_bgsave_completion() -- that function's own
+  # bgsave_timeout_seconds=300 default parameter is never reached from
+  # this path. Both happen to be 300s today. The ~26.2s/dataset_description
+  # measurement above is
+  # local-server-only: oss-standalone pins the server (and its forked
+  # BGSAVE child) to a single CPU (topologies.yml's
+  # resources.requests.cpus: "1", read by cpuset.py) and writes to a
+  # bind-mounted runner volume rather than local disk, either of which
+  # could push the real fleet duration up by more than the ~7x margin a
+  # tighter timeout would have assumed -- a parent and its forked RDB
+  # child contending for one core is the kind of thing that costs a
+  # multiple, not tens of percent. A timeout here is a hard test failure
+  # (bgsave_metric_missing -> test_result = False), not just a slow
+  # datapoint, so it's not worth guessing at a tighter bound until a
+  # real oss-standalone run exists to size one from.
+  wait_for_bgsave: true
+  # Separate from wait_for_bgsave (see that key's description paragraph
+  # above): this spec's client run IS the BGSAVE command, so its
+  # Ops/sec has no throughput signal to guard. Function is defined in
+  # __runner__/runner.py, but that file's own pre-preload skip hard-skips
+  # any wait_for_bgsave spec -- this spec never actually runs there. On
+  # the path this spec does run, it's self_contained_coordinator.py's own
+  # call into that same function that reads this key.
+  skip_throughput_floor: true
+  # The coordinator's automated actionable-PR regression comment
+  # (self_contained_coordinator.py, "regression part") hardcodes
+  # ALL_STATS.Totals.Ops/sec/higher-better for every spec, with no
+  # per-spec override -- there's no per-spec override here:
+  # compute_regression_table() is called with test=""/testname_regex=""
+  # (all tests) on every test's own loop iteration, and
+  # prepare_regression_comment() rebuilds the PR-level comment body from
+  # scratch each call rather than merging -- so a per-spec metric_name
+  # override would corrupt every OTHER spec's row in the shared comment,
+  # not just this one's (an override was attempted and reverted for
+  # exactly this reason). This doesn't bite this spec today, though: the
+  # coordinator strips ALL_STATS.Totals down to just the two RdbLast* keys
+  # before export on this spec's confirmed-run path (see the exporter
+  # block's comment above), so ALL_STATS.Totals.Ops/sec never reaches
+  # TimeSeries for this spec at all -- there's simply no datapoint for
+  # the regression comment to find, flag or not. Real BGSAVE-duration
+  # regression detection still needs either a genuinely per-spec-scoped
+  # regression table or the coordinator issuing BGSAVE directly instead
+  # of via a memtier client; deferred as a larger change than this PR.
+  # Manual comparison via --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
+  # --metric_mode lower-better (see the exporter block) is the reliable
+  # way to check this spec for regressions today -- the fully-qualified
+  # form is required: extract_results_table() writes the TimeSeries
+  # metric label from the exporter jsonpath (stripped/normalized), not
+  # the bare key, so the short form silently matches nothing.
+tested-commands:
+- bgsave
+redis-topologies:
+- oss-standalone
+build-variants:
+# arm64 was excluded in an earlier revision on the grounds that fork()
+# latency at ~15GB RSS (the quantity validate_benchmark_metrics()'s <1
+# QPS floor gated on) is architecture-sensitive and only measured on
+# amd64. That floor is now skipped entirely for this spec (see
+# dbconfig.skip_throughput_floor above), which retires the reason arm64
+# was excluded, so it's back.
+#
+# dockerhub deliberately excluded, on a different and more specific
+# ground than arm64's: the dockerhub trigger path
+# (trigger_tests_dockerhub_cli_command_logic, __cli__/cli.py) sets
+# build_stream_fields["mnt_point"] = args.mnt_point unconditionally,
+# and --mnt_point's own CLI default is "" -- which overrides the
+# coordinator's own mnt_point="/mnt/redis/" default
+# (self_contained_coordinator.py). With mnt_point=="",
+# generate_standalone_redis_server_args() skips --dir/--logfile
+# entirely and start_redis_container() builds no volume at all
+# (docker.py), so the container's redis-server writes its RDB into the
+# image's own writable overlay layer instead of the bind-mounted
+# runner volume the gcc:* variants use. For the sibling specs this
+# variant set is otherwise consistent with (3Mkeys-string-set-1KiB-
+# pipeline-10, 20Mkeys-load-string-with-1KiB-values-replica-only,
+# 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only)
+# that's incidental -- none of them measures the save path itself. For
+# this spec it isn't: rdb_last_bgsave_time_sec on a dockerhub run would
+# be timing overlay2 copy-up rather than the same disk write the gcc:*
+# variants measure, a different quantity under the same metric name,
+# not just a noisier version of the same one.
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  # No --command-key-pattern: BGSAVE takes no key, so there's no __key__
+  # placeholder to generate for. Matches the two existing keyless
+  # arbitrary-command specs (1Mkeys-generic-info-all, 1Mkeys-string-acl-whoami),
+  # neither of which passes it either.
+  arguments: --command "BGSAVE" -n 1 -c 1 -t 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- server
+exporter:
+  redistimeseries:
+    # merge_default_and_config_metrics() (__common__/timeseries.py)
+    # deliberately extends defaults.yml's metrics rather than replacing
+    # them, so the standard Ops/sec/Latency/Misses per sec/p50.00 series
+    # would otherwise also land in results_dict["ALL STATS"]["Totals"]
+    # alongside the two RdbLast* keys below, off the single degenerate
+    # BGSAVE fork-ack reply (~4ms latency at 3M keys, ~349ms at 12M --
+    # fork() cost scales with resident memory, not stable). The
+    # coordinator strips Totals down to exactly what this spec's own
+    # metrics list below declares before export
+    # (self_contained_coordinator.py, right before exporter_datasink_common()),
+    # so neither TimeSeries nor the automated actionable-PR regression
+    # comment ever sees the degenerate Ops/sec for this spec. Gated on
+    # dbconfig.skip_throughput_floor specifically, not bare
+    # wait_for_bgsave -- a future BGSAVE-under-write-load spec variant
+    # would set wait_for_bgsave without skip_throughput_floor (real
+    # write throughput to guard) and must keep its own Ops/sec exported,
+    # so filtering on wait_for_bgsave alone would silently strip it too.
+    # Scoped to this run's own results_dict, not the shared
+    # default_metrics list, so it doesn't affect any other spec. (Measured Ops/sec at 12M keys
+    # was 2.87, confirmed directly against validate_benchmark_metrics() --
+    # above the <1 floor today, not below it, so dbconfig.skip_throughput_floor
+    # is deliberately defensive rather than fixing an observed trip: the
+    # margin above 1 is only ~3x, and fork() cost is architecture-sensitive,
+    # the reason arm64 was excluded for a while, and could plausibly
+    # shrink further under oss-standalone's single-CPU fleet contention.)
+    # redis-benchmarks-spec-compare still needs the fully-qualified form
+    # for manual comparisons: it defaults --metric_name to
+    # ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
+    # always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
+    # (or ALL_STATS.Totals.RdbLastForkUsec) AND --metric_mode lower-better
+    # explicitly -- both exported metrics are lower-better, so
+    # --metric_name alone silently reports a regressed (slower) BGSAVE as
+    # an improvement, and extract_results_table() writes the TimeSeries
+    # metric label from the exporter jsonpath below (stripped of
+    # $./quotes, spaces to _), not the bare key, so the short form
+    # matches no series at all either way. Issuing BGSAVE directly from
+    # the coordinator instead of through a memtier client would remove
+    # the degenerate reply at the source entirely (this fix still routes
+    # a real memtier BGSAVE command, just filters its result before
+    # export); deferred as a larger change than this PR.
+    metrics:
+    - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
+    - $."ALL STATS".Totals.RdbLastForkUsec
+priority: 50

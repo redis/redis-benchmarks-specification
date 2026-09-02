@@ -14,6 +14,52 @@ def parse(string):
     return JsonPathParser().parse(string)
 
 
+def jsonpath_field_chain(jsonpath):
+    """Return the ordered list of field names a jsonpath resolves through,
+    root first (e.g. $."ALL STATS".Totals."p50.00" -> ["ALL STATS", "Totals",
+    "p50.00"]), or None if it doesn't parse into a plain field-access chain.
+
+    Uses the same JsonPathParser() this module already parses exporter
+    jsonpaths with, rather than a naive string split -- a jsonpath field can
+    itself contain a literal "." (e.g. "p50.00"), which splitting on "."
+    would break apart. jsonpath_ng represents a chain like $.a.b.c as
+    nested Child(Child(Child(Root, Fields(a)), Fields(b)), Fields(c)); walk
+    the left spine collecting each level's Fields tuple, then reverse.
+
+    Accepts the same two exporter-metric shapes extract_results_table()
+    does: a plain jsonpath string, or the dict form {jsonpath: targets}
+    (metric_name -> per-target overrides) -- reads the dict's first key as
+    the jsonpath, exactly like list(jsonpath.keys())[0] does there.
+    """
+    if isinstance(jsonpath, dict):
+        if not jsonpath:
+            return None
+        jsonpath = list(jsonpath.keys())[0]
+    try:
+        node = parse(jsonpath)
+    except Exception:
+        return None
+    fields = []
+    while True:
+        if hasattr(node, "right") and hasattr(node.right, "fields"):
+            fields.append(node.right.fields[0])
+            node = node.left
+        elif hasattr(node, "fields"):
+            fields.append(node.fields[0])
+            break
+        else:
+            break
+    fields.reverse()
+    return fields or None
+
+
+def jsonpath_last_field(jsonpath: str):
+    """Return the final field name a jsonpath resolves to, or None if it
+    doesn't parse or doesn't end in a plain field access."""
+    chain = jsonpath_field_chain(jsonpath)
+    return chain[-1] if chain else None
+
+
 def parse_exporter_timemetric(metric_path: str, results_dict: dict):
     datapoints_timestamp = None
     try:
@@ -936,7 +982,15 @@ def merge_default_and_config_metrics(
 ):
     if default_metrics is None:
         default_metrics = []
-    metrics = default_metrics
+    # A copy, not an alias: default_metrics is built once per coordinator
+    # process and threaded through every test (self_contained_coordinator.py),
+    # so extending it in place here leaked each spec's own extra_metrics into
+    # every later spec's export for the rest of that process's lifetime --
+    # and, once a spec's own results table gets printed more than once in
+    # the same run (e.g. a wait_for_bgsave spec re-printing after metric
+    # injection), leaked into that spec's own subsequent call too, doubling
+    # its exported metrics. See redis/redis-benchmarks-specification#550.
+    metrics = list(default_metrics)
     if benchmark_config is not None:
         if "exporter" in benchmark_config:
             extra_metrics = parse_exporter_metrics_definition(
