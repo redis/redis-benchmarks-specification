@@ -60,6 +60,21 @@ description: |
   of this spec leaves the full ~469MB dump.rdb on disk rather than the
   few KB other specs' failures typically leave -- relevant when
   reasoning about fleet disk usage from repeated failures.
+
+  Same caveat as the amd64-only build-variants restriction below, applied
+  to the numbers in this paragraph rather than to architecture: all of
+  them (26.2s save, 349ms fork-ack, Ops/sec=2.87) were measured against a
+  plain local redis-server, not the fleet's oss-standalone topology --
+  which pins the server (and therefore the forked BGSAVE child) to a
+  single CPU (topologies.yml's resources.requests.cpus: "1", read by
+  cpuset.py) and writes to a bind-mounted runner volume rather than local
+  disk. Both plausibly push the real fleet numbers in the slower
+  direction (single core serializing+compressing 15GB instead of
+  whatever this dev box has; volume-backed I/O instead of local), which
+  would extend the save duration in this spec's favor but shrink the
+  fork-ack margin above validate_benchmark_metrics()'s <1 QPS floor in
+  the wrong direction. Not re-verified against a real oss-standalone run
+  before merge -- treat these numbers as directional until one exists.
 dbconfig:
   configuration-parameters:
     save: '""'
