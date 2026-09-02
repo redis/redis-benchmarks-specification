@@ -2216,6 +2216,17 @@ def process_self_contained_coordinator_stream(
                                 # just no-op there rather than NameError.
                                 bgsave_wait_enabled = False
                                 rdb_last_save_time_before = None
+                                # Set when wait_for_bgsave is on but no BGSAVE was confirmed.
+                                # Applied to test_result AFTER the unconditional
+                                # "test_result = True" a few hundred lines below (which would
+                                # otherwise clobber a False set any earlier than that point) --
+                                # deliberately NOT a `continue` here, since the only other
+                                # tear-down call site is teardown itself, a few lines after
+                                # that reset; jumping past it would leak the DB/client
+                                # containers (network_mode="host", so a leaked DB container
+                                # keeps the server port bound for every later test in this
+                                # coordinator process).
+                                bgsave_metric_missing = False
 
                                 # Multi-tool clientconfigs suites (e.g. memtier +
                                 # bcast-listener) are gated behind a feature flag and
@@ -2956,7 +2967,14 @@ def process_self_contained_coordinator_stream(
                                         # otherwise report success with zero datapoints,
                                         # silently growing a hole in TimeSeries. Fail it
                                         # loudly instead, the same way a metric-validation
-                                        # failure does a few lines above.
+                                        # failure does a few lines above -- but WITHOUT a
+                                        # continue: tear-down (stop_and_remove_container_safe
+                                        # for both DB and client containers) lives further
+                                        # down in this same try block, and skipping it would
+                                        # leak this run's containers rather than just failing
+                                        # the datapoint. bgsave_metric_missing carries the
+                                        # failure through the unconditional
+                                        # "test_result = True" reset below instead.
                                         logging.error(
                                             f"Test {test_name} failed: dbconfig.wait_for_bgsave "
                                             "is set but no confirmed successful BGSAVE was "
@@ -2964,9 +2982,7 @@ def process_self_contained_coordinator_stream(
                                             "did not advance, rdb_last_bgsave_status != ok, or "
                                             "the wait timed out) -- nothing to export."
                                         )
-                                        test_result = False
-                                        failed_tests += 1
-                                        continue
+                                        bgsave_metric_missing = True
                                     elif inject_persistence_metrics(
                                         results_dict, primary_conns[0]
                                     ):
@@ -3059,6 +3075,12 @@ def process_self_contained_coordinator_stream(
                                     print("-" * 60)
 
                                 test_result = True
+                                if bgsave_metric_missing:
+                                    # wait_for_bgsave was set but no BGSAVE was confirmed
+                                    # in the measured window -- applied here, after the
+                                    # unconditional reset above, rather than earlier where
+                                    # it would just get overwritten back to True.
+                                    test_result = False
                                 total_test_suite_runs = total_test_suite_runs + 1
 
                             except Exception as e:

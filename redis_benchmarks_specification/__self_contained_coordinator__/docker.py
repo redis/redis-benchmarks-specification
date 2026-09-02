@@ -107,6 +107,15 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
     snapshot AND rdb_last_bgsave_status to be "ok" (not e.g. an OOM'd or
     signal-killed child, which leaves rdb_bgsave_in_progress==0 too).
 
+    NOTE: rdb_last_save_time is whole-second unix time, so this assumes the
+    save takes at least a couple of seconds -- a save fast enough to finish
+    within the same wall-clock second as the pre-run snapshot would fail
+    this check (and, since dbconfig.wait_for_bgsave treats that as a hard
+    test failure rather than a skipped export, fail the whole test) even
+    though a real BGSAVE did happen. Fine for multi-second saves like this
+    spec's ~3GB dataset; a spec built around a save fast enough to risk
+    landing in the same second should not opt into wait_for_bgsave.
+
     Args:
         rdb_last_save_time_before: rdb_last_save_time captured before the
             client run, or None if the snapshot itself failed.

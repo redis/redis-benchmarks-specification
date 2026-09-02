@@ -4,9 +4,11 @@ description: |
   Standalone BGSAVE-duration benchmark: preloads 3M string keys with
   1024-byte compressible values (~3GB dataset, memtier's default data
   pattern -- not -R random bytes -- so LZF actually does real compression
-  work), then issues a single explicit BGSAVE and times it precisely via
-  Redis's own INFO persistence fields (rdb_last_bgsave_time_sec,
-  latest_fork_usec), not client-observed latency.
+  work), then issues a single explicit BGSAVE and times it via Redis's
+  own INFO persistence fields (rdb_last_bgsave_time_sec, latest_fork_usec),
+  not client-observed latency. rdb_last_bgsave_time_sec is whole seconds --
+  at this spec's "tens of seconds" scale that's a few percent of
+  quantization noise on the headline number, not sub-second precision.
 
   Built to give a clean, write-quiescent BGSAVE duration number --
   distinct from the existing 3Mkeys-set family, which intentionally
