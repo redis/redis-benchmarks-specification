@@ -2103,6 +2103,28 @@ def process_self_contained_coordinator_stream(
                         benchmark_config, r, dbconfig_keyname="dbconfig"
                     )
 
+                    # wait_for_bgsave is __self_contained_coordinator__-only (poll
+                    # rdb_bgsave_in_progress / confirm_bgsave_completed /
+                    # inject_persistence_metrics all live there) -- this path has
+                    # none of that. Unlike preload_before_replica's one-sided read
+                    # (whose absence still yields a valid, if different, benchmark),
+                    # ignoring wait_for_bgsave here is actively misleading: the
+                    # client still runs BGSAVE via memtier and this path still
+                    # exports the merged defaults.yml metrics (Ops/sec/p50.00/p99.00
+                    # off a single fork-ack reply) under the spec's test name, with
+                    # nothing to signal that number isn't save duration.
+                    if benchmark_config.get("dbconfig", {}).get(
+                        "wait_for_bgsave", False
+                    ):
+                        logging.warning(
+                            "dbconfig.wait_for_bgsave is set on %s, but wait_for_bgsave "
+                            "is not supported on the __runner__ CLI path -- no BGSAVE "
+                            "wait/confirm/injection will happen, and the exported "
+                            "Ops/sec/p50.00/p99.00 will reflect a single BGSAVE "
+                            "fork-ack reply, not save duration.",
+                            test_name,
+                        )
+
                     used_memory_check(
                         test_name,
                         benchmark_required_memory,

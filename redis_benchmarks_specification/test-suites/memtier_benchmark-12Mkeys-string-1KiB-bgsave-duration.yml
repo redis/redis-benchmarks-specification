@@ -104,6 +104,11 @@ dbconfig:
     at its edge (an earlier 3M-key/~5.6s version measured ~20%
     quantization -- see the top-level description for that history).
   wait_for_bgsave: true
+  # ~7x margin over the ~26s measured save -- deliberately smaller than
+  # wait_for_bgsave_completion()'s own 300s default so a genuinely stuck
+  # or catastrophically slow BGSAVE (versus normal fleet/platform
+  # variance) fails this test in under 3 minutes instead of 5.
+  bgsave_timeout_seconds: 180
 tested-commands:
 - bgsave
 redis-topologies:
