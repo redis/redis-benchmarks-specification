@@ -1834,6 +1834,35 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
+                            # wait_for_bgsave is unsupported on the multi-tool
+                            # (clientconfigs) path -- only the single-tool
+                            # clientconfig branch further down reads it. Checked
+                            # here, before any container/preload/client work for
+                            # this topology starts (mirrors the __runner__ CLI
+                            # path's pre-preload skip), so an unsupported
+                            # combination doesn't pay for a ~15GB preload and a
+                            # client run whose export would be suppressed
+                            # anyway. Independent of BENCHMARK_MULTITOOL_ENABLED:
+                            # the combination is invalid whether or not the
+                            # multi-tool engine itself is enabled.
+                            if "clientconfigs" in benchmark_config and (
+                                benchmark_config.get("dbconfig", {}).get(
+                                    "wait_for_bgsave", False
+                                )
+                            ):
+                                logging.warning(
+                                    "dbconfig.wait_for_bgsave is set on multi-tool "
+                                    "suite %s, but wait_for_bgsave is not supported "
+                                    "on the multi-tool path (no BGSAVE "
+                                    "wait/confirm/injection is available there). "
+                                    "Skipping %s/%s entirely rather than exporting "
+                                    "a misleading datapoint.",
+                                    test_name,
+                                    test_name,
+                                    topology_spec_name,
+                                )
+                                continue
+
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]
                                 setup_type = topology_spec["type"]
@@ -2233,7 +2262,15 @@ def process_self_contained_coordinator_stream(
                                 # that reset; jumping past it would leak the DB/client
                                 # containers (network_mode="host", so a leaked DB container
                                 # keeps the server port bound for every later test in this
-                                # coordinator process).
+                                # coordinator process). This ordering constraint (apply
+                                # AFTER the reset, never `continue` before tear-down) is
+                                # enforced only by this comment -- process_self_contained_
+                                # coordinator_stream() as a whole has no test coverage for
+                                # its control flow (only the pure functions it calls do),
+                                # so a future refactor could silently break it. See
+                                # redis/redis-benchmarks-specification#551 for the broader,
+                                # pre-existing pattern of continue-past-teardown container
+                                # leaks this same reasoning applies to.
                                 bgsave_metric_missing = False
 
                                 # Multi-tool clientconfigs suites (e.g. memtier +
@@ -2255,38 +2292,13 @@ def process_self_contained_coordinator_stream(
                                         test_result = True
                                         continue
                                     # Feature flag ON: run the multi-tool suite.
-                                    # wait_for_bgsave isn't supported here -- only the
-                                    # single-tool branch below reads it. Ignoring it and
-                                    # running anyway would export the multi-tool
-                                    # exporter's merged defaults.yml metrics under the
-                                    # spec's test name with nothing to signal they aren't
-                                    # save duration -- the same "misleading datapoint"
-                                    # outcome bgsave_metric_missing exists to prevent on
-                                    # the single-tool path. Reuse that exact flag here
-                                    # (rather than continue, which would jump past the
-                                    # shared tail's tear-down a few hundred lines below --
-                                    # the DB container was already started earlier in
-                                    # this same topology iteration regardless of
-                                    # clientconfigs/wait_for_bgsave, so continue-ing here
-                                    # would leak it under network_mode="host" exactly
-                                    # like the single-tool path's own comment warns
-                                    # against). The multi-tool client still runs and
-                                    # falls through to the shared tail either way; setting
-                                    # this flag only suppresses that tail's
-                                    # exporter_datasink_common() call.
-                                    if benchmark_config.get("dbconfig", {}).get(
-                                        "wait_for_bgsave", False
-                                    ):
-                                        logging.warning(
-                                            "dbconfig.wait_for_bgsave is set on multi-tool "
-                                            "suite %s, but wait_for_bgsave is not supported "
-                                            "on the multi-tool path (no BGSAVE "
-                                            "wait/confirm/injection is available here). "
-                                            "Suppressing this run's export rather than "
-                                            "publishing a misleading datapoint.",
-                                            test_name,
-                                        )
-                                        bgsave_metric_missing = True
+                                    # wait_for_bgsave is unsupported here (only the
+                                    # single-tool branch below reads it), but that
+                                    # combination is already caught before this
+                                    # topology's container/preload work even started
+                                    # -- see the pre-container skip up near the
+                                    # topology-filter continue, a few hundred lines
+                                    # above.
                                     (
                                         start_time,
                                         start_time_ms,
