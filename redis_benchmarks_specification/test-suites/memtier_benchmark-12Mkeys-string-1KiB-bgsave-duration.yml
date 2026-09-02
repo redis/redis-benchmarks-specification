@@ -1,34 +1,26 @@
 version: 0.4
-name: memtier_benchmark-3Mkeys-string-1KiB-bgsave-duration
+name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
 description: |
-  Standalone BGSAVE-duration benchmark: preloads 3M string keys with
-  1024-byte compressible values (~3.75GB resident, memtier's default
+  Standalone BGSAVE-duration benchmark: preloads 12M string keys with
+  1024-byte compressible values (~15GB resident, memtier's default
   data pattern -- not -R random bytes -- so LZF actually does real
-  compression work; measured locally at 115MB on disk, ~32x), then
-  issues a single explicit BGSAVE and times it via Redis's own INFO
-  persistence fields (rdb_last_bgsave_time_sec, latest_fork_usec), not
-  client-observed latency.
+  compression work), then issues a single explicit BGSAVE and times it
+  via Redis's own INFO persistence fields (rdb_last_bgsave_time_sec,
+  latest_fork_usec), not client-observed latency.
 
   Measured directly against this exact dataset shape (local build, one
-  BGSAVE timed by polling rdb_bgsave_in_progress): ~5.6s wall-clock,
-  rdb_last_bgsave_time_sec=5. That is meaningfully faster than an
-  earlier "tens of seconds" estimate carried over from the
-  incompressible/under-write-pressure 3Mkeys-set sibling -- this spec
-  removes both compression and write pressure, so most of what's left
-  is LZF CPU over a dataset that compresses ~32x, not disk I/O. At ~5s,
-  rdb_last_bgsave_time_sec's whole-second resolution is a real ~20%
-  single-run quantization, not the few-percent this description
-  originally (incorrectly) claimed. That resolution is still adequate
-  for the class of BGSAVE regression this spec was built to validate --
-  a reported lzf_compress cache-line-alignment sensitivity in the
-  ~20-33% range, well above the per-sample noise floor -- and the
-  standard n>=3 fleet trigger practice averages the quantization down
-  further, but a future investigation needing single-digit-percent
-  resolution would need either a scaled-up dataset (proportionally
-  larger than this one) or a coordinator-side sub-second timer instead
-  of relying on rdb_last_bgsave_time_sec alone. (The specific fix that
-  prompted this spec lives in an internal repo, not linkable from here;
-  tracked in this workspace's own approach notes.)
+  BGSAVE timed by polling rdb_bgsave_in_progress): ~26.2s wall-clock,
+  rdb_last_bgsave_time_sec=26, RDB compresses to 469MB on disk from
+  15GB resident (~32x). Started at 3M keys (~5.6s measured), which put
+  rdb_last_bgsave_time_sec's whole-second resolution at a real ~20%
+  single-run quantization -- right at the bottom edge of the ~20-33%
+  BGSAVE regression class this spec exists to validate, not comfortably
+  inside it. Scaled to 12M keys instead of shipping at that edge:
+  quantization at ~26s is ~3.8% (1/26), well below the detection band,
+  with margin to spare. Precedent for this scale already exists in this
+  repo (the 20Mkeys-load-string-with-1KiB-values-replica-only family
+  uses 25g memory at ~21GB resident); this spec's 12M/15GB sits below
+  that.
 
   Built to give a clean, write-quiescent BGSAVE duration number --
   distinct from the existing 3Mkeys-set family, which intentionally
@@ -49,14 +41,20 @@ description: |
   alone doesn't prove a save ran; a fresh/never-saved server reads 0
   too) before injecting RdbLastBgsaveTimeSec (whole seconds -- Redis's
   own resolution) and RdbLastForkUsec (microseconds, from INFO's
-  *stats* section) into the exported metrics. If that confirmation
-  fails (timeout, or no save detected), nothing is injected rather than
-  exporting a stale or sentinel (-1) value. (The coordinator's own
-  poll-loop timer has finer, 200ms resolution than Redis's whole-second
-  field, but is not exported: the poll only starts after container
-  teardown -- topdown/profiler stop, results parsing -- which can
-  easily outlast a write-quiescent BGSAVE, so it would measure
-  coordinator teardown latency more than BGSAVE itself.)
+  *stats* section -- "the last fork of any kind," not BGSAVE-specific
+  in general, but exact here since this spec's topology has no other
+  fork source: no AOF, no replicas) into the exported metrics. If that
+  confirmation fails (timeout, or no save detected), nothing is
+  injected and the export itself is skipped -- exporter_datasink_common()
+  has no concept of test failure and would otherwise push the standard
+  Ops/sec/p50.00/p99.00 series (see the exporter block below) under
+  this test name from a run already declared failed, which is worse
+  than a hole. (The coordinator's own poll-loop timer has finer, 200ms
+  resolution than Redis's whole-second field, but is not exported: the
+  poll only starts after container teardown -- topdown/profiler stop,
+  results parsing -- which can easily outlast a write-quiescent BGSAVE,
+  so it would measure coordinator teardown latency more than BGSAVE
+  itself.)
 
   save is pinned to "" so periodic autosave never fires -- the only
   BGSAVE in the measured window is the one this spec explicitly issues.
@@ -69,23 +67,23 @@ description: |
   incompressible extreme instead. This spec deliberately sits at the
   compressible end since that is where lzf_compress's own cost is
   largest and most visible -- confirmed directly: the resulting RDB
-  measured 115MB on disk against a 3.75GB resident dataset (~32x),
-  so LZF is doing real, substantial work rather than a few bytes of
-  no-op compression attempts.
+  measured 469MB on disk against a 15GB resident dataset (~32x), so
+  LZF is doing real, substantial work rather than a few bytes of no-op
+  compression attempts.
 dbconfig:
   configuration-parameters:
     save: '""'
     maxmemory-policy: noeviction
   check:
-    keyspacelen: 3000000
+    keyspacelen: 12000000
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
     arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
-      3000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+      12000000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 8 -c 25
   resources:
     requests:
-      memory: 6g
+      memory: 20g
   # Distinct from the existing 3Mkeys-string-1KiB-size dataset (used by
   # memtier_benchmark-3Mkeys-string-get-with-1KiB-values-400_conns.yml):
   # that sibling also omits -R (equally compressible) and only differs in
@@ -93,15 +91,18 @@ dbconfig:
   # otherwise misleadingly suggest compressibility is what's different.
   # dataset_name doubles as a preload-reuse key in __runner__/runner.py,
   # so it must stay a distinct string regardless.
-  dataset_name: 3Mkeys-string-1024B-size
+  dataset_name: 12Mkeys-string-1024B-size
   dataset_description: |
-    3 million string keys, each with a 1024-byte compressible value
+    12 million string keys, each with a 1024-byte compressible value
     (memtier's default data pattern, not -R random bytes -- the
     highly-compressible extreme, not a realistic middle ground) --
-    ~3.75GB resident (measured), compressing to ~115MB on disk (~32x).
-    Measured BGSAVE duration on this exact shape is ~5-6s, sized to be
-    a measurable, meaningful save-path cost dominated by LZF CPU
-    rather than disk I/O.
+    ~15GB resident (measured), compressing to ~469MB on disk (~32x).
+    Measured BGSAVE duration on this exact shape is ~26s, sized so
+    rdb_last_bgsave_time_sec's whole-second resolution (~3.8%
+    quantization at this scale) sits comfortably below the ~20-33%
+    BGSAVE regression class this spec exists to validate, rather than
+    at its edge (an earlier 3M-key/~5.6s version measured ~20%
+    quantization -- see the top-level description for that history).
   wait_for_bgsave: true
 tested-commands:
 - bgsave

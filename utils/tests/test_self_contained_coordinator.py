@@ -291,7 +291,7 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     either side lands in a silent, no-exception empty export."""
     spec_path = (
         "./redis_benchmarks_specification/test-suites/"
-        "memtier_benchmark-3Mkeys-string-1KiB-bgsave-duration.yml"
+        "memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration.yml"
     )
     with open(spec_path, "r") as yml_file:
         benchmark_config = yaml.safe_load(yml_file)
