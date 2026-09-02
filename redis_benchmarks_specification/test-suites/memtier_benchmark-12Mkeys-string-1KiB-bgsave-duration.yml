@@ -107,8 +107,11 @@ dbconfig:
   wait_for_bgsave: true
   # Separate from wait_for_bgsave (see that key's description paragraph
   # above): this spec's client run IS the BGSAVE command, so its
-  # Ops/sec has no throughput signal to guard. Read by
-  # validate_benchmark_metrics() in __runner__/runner.py.
+  # Ops/sec has no throughput signal to guard. Function is defined in
+  # __runner__/runner.py, but that file's own pre-preload skip hard-skips
+  # any wait_for_bgsave spec -- this spec never actually runs there. On
+  # the path this spec does run, it's self_contained_coordinator.py's own
+  # call into that same function that reads this key.
   skip_throughput_floor: true
   # The coordinator's automated actionable-PR regression comment
   # (self_contained_coordinator.py, "regression part") hardcodes

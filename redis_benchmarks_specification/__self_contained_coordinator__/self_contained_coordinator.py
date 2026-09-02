@@ -1855,10 +1855,10 @@ def process_self_contained_coordinator_stream(
                             # bites today: this spec pins redis-topologies:
                             # [oss-standalone] exactly, but the guard is meant to be
                             # a fail-safe for wait_for_bgsave generally.
-                            if wait_for_bgsave_topology_unsafe(
-                                setup_type, topology_replica_count, topology_unmapped
-                            ) and benchmark_config.get("dbconfig", {}).get(
+                            if benchmark_config.get("dbconfig", {}).get(
                                 "wait_for_bgsave", False
+                            ) and wait_for_bgsave_topology_unsafe(
+                                setup_type, topology_replica_count, topology_unmapped
                             ):
                                 logging.warning(
                                     "dbconfig.wait_for_bgsave is set on %s, but "
@@ -1984,9 +1984,12 @@ def process_self_contained_coordinator_stream(
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
                                 )
-                                replica_count = extract_replica_count(
-                                    topologies_map, topology_spec_name
-                                )
+                                # Already computed as topology_replica_count before
+                                # the try (see the wait_for_bgsave topology guard
+                                # above) -- reused here rather than calling
+                                # extract_replica_count() a second time for the
+                                # same topology under a second name.
+                                replica_count = topology_replica_count
                                 if replica_count > 0:
                                     primary_cpu_limit = max(
                                         1,
