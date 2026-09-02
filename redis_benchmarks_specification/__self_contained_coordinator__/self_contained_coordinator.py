@@ -2247,6 +2247,22 @@ def process_self_contained_coordinator_stream(
                                         test_result = True
                                         continue
                                     # Feature flag ON: run the multi-tool suite.
+                                    # wait_for_bgsave isn't supported here -- only the
+                                    # single-tool branch below reads it -- so a suite that
+                                    # sets it would otherwise silently no-op: no wait, no
+                                    # confirmation, nothing injected, exporter pushes
+                                    # nothing new, test_result unaffected. Warn loudly
+                                    # rather than let that happen quietly.
+                                    if benchmark_config.get("dbconfig", {}).get(
+                                        "wait_for_bgsave", False
+                                    ):
+                                        logging.warning(
+                                            "dbconfig.wait_for_bgsave is set on multi-tool "
+                                            "suite %s, but wait_for_bgsave is not supported "
+                                            "on the multi-tool path -- it will be silently "
+                                            "ignored (no BGSAVE wait/confirm/injection).",
+                                            test_name,
+                                        )
                                     (
                                         start_time,
                                         start_time_ms,

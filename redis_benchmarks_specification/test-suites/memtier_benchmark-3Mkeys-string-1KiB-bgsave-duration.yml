@@ -19,13 +19,16 @@ description: |
   rdb_last_bgsave_time_sec's whole-second resolution is a real ~20%
   single-run quantization, not the few-percent this description
   originally (incorrectly) claimed. That resolution is still adequate
-  for what this spec exists to validate -- the referenced fix targets a
-  ~20-33% BGSAVE regression, well above the per-sample noise floor, and
-  the standard n>=3 fleet trigger practice averages the quantization
-  down further -- but a future investigation needing single-digit-percent
+  for the class of BGSAVE regression this spec was built to validate --
+  a reported lzf_compress cache-line-alignment sensitivity in the
+  ~20-33% range, well above the per-sample noise floor -- and the
+  standard n>=3 fleet trigger practice averages the quantization down
+  further, but a future investigation needing single-digit-percent
   resolution would need either a scaled-up dataset (proportionally
   larger than this one) or a coordinator-side sub-second timer instead
-  of relying on rdb_last_bgsave_time_sec alone.
+  of relying on rdb_last_bgsave_time_sec alone. (The specific fix that
+  prompted this spec lives in an internal repo, not linkable from here;
+  tracked in this workspace's own approach notes.)
 
   Built to give a clean, write-quiescent BGSAVE duration number --
   distinct from the existing 3Mkeys-set family, which intentionally
@@ -61,11 +64,13 @@ description: |
   unlike the crc64-isolation specs (140Kkeys/1400keys-...-randomdata-...)
   which deliberately disable it. Values use memtier's default data
   pattern (not -R random bytes), which is the highly-compressible
-  extreme -- the sibling 140Kkeys-...-randomdata-replica-only spec's own
-  profiling puts lzf_decompress at 62% of CPU on that exact shape -- not
-  a "representative" middle ground; -R would be the incompressible
-  extreme instead. This spec deliberately sits at the compressible end
-  since that is where LZF's own cost is largest and most visible.
+  extreme, not a "representative" middle ground; -R would be the
+  incompressible extreme instead. This spec deliberately sits at the
+  compressible end since that is where lzf_compress's own cost is
+  largest and most visible -- confirmed directly: the resulting RDB
+  measured 115MB on disk against a 3.75GB resident dataset (~32x),
+  so LZF is doing real, substantial work rather than a few bytes of
+  no-op compression attempts.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -110,6 +115,12 @@ tested-groups:
 - server
 exporter:
   redistimeseries:
+    # merge_default_and_config_metrics() EXTENDS defaults.yml rather than
+    # replacing it, so the standard Ops/sec / Latency / p50.00 / p99.00
+    # series also get pushed under this test name, off the single ~4ms
+    # BGSAVE fork-ack reply -- harmless (arguably a second read on fork-ack
+    # latency), but don't mistake that p50.00 for save duration; the
+    # metrics below are the actual save-duration numbers.
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
