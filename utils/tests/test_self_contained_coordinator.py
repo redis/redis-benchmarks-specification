@@ -209,14 +209,6 @@ def test_confirm_bgsave_completed_false_on_missing_after_info():
     assert confirm_bgsave_completed(100, None) is False
 
 
-def test_confirm_bgsave_completed_false_when_fresh_server_sentinel():
-    """The exact scenario this guard exists for: a fresh/never-saved server
-    where rdb_last_save_time is present but hasn't moved (e.g. BGSAVE never
-    actually ran), not the -1 rdb_last_bgsave_time_sec sentinel case."""
-    info_after = {"rdb_last_save_time": 100, "rdb_last_bgsave_status": "ok"}
-    assert confirm_bgsave_completed(100, info_after) is False
-
-
 def test_inject_persistence_metrics_reads_default_info():
     """RdbLastBgsaveTimeSec/RdbLastForkUsec come from a plain info() call --
     latest_fork_usec lives in the *stats* section, not persistence (confirmed

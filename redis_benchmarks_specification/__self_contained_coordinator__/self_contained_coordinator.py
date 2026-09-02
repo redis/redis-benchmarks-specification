@@ -2207,6 +2207,16 @@ def process_self_contained_coordinator_stream(
                                         server_name=server_name,
                                     )
 
+                                # Bound unconditionally before the multi-tool/single-tool
+                                # split below: the multi-tool branch (clientconfigs +
+                                # BENCHMARK_MULTITOOL_ENABLED) falls through into this same
+                                # shared tail rather than continue-ing, but only the
+                                # single-tool branch actually assigns these -- wait_for_bgsave
+                                # isn't supported on the multi-tool path (yet), so it should
+                                # just no-op there rather than NameError.
+                                bgsave_wait_enabled = False
+                                rdb_last_save_time_before = None
+
                                 # Multi-tool clientconfigs suites (e.g. memtier +
                                 # bcast-listener) are gated behind a feature flag and
                                 # routed through the shared multi_tool engine. The
@@ -2948,18 +2958,22 @@ def process_self_contained_coordinator_stream(
                                     elif inject_persistence_metrics(
                                         results_dict, primary_conns[0]
                                     ):
-                                        # Redis's own rdb_last_bgsave_time_sec is whole
-                                        # seconds -- coarse relative to a few-percent A/B
-                                        # delta. bgsave_wait_elapsed has 200ms resolution
-                                        # and is exported alongside as a finer-grained (but
-                                        # lower-bound-only, since polling starts after the
-                                        # client run returns) companion metric.
-                                        results_dict["ALL STATS"]["Totals"][
-                                            "RdbBgsaveWaitElapsedSeconds"
-                                        ] = bgsave_wait_elapsed
+                                        # bgsave_wait_elapsed is NOT exported: the poll
+                                        # loop only starts after the container-teardown
+                                        # tail (topdown wait, profiler stop, results
+                                        # parsing, table printing) that runs between
+                                        # benchmark_end_time and here, which can easily
+                                        # outlast a write-quiescent BGSAVE -- so it would
+                                        # measure coordinator teardown latency more than
+                                        # it measures BGSAVE, and TimeSeries would trend
+                                        # that noise as if it were signal. Redis's own
+                                        # rdb_last_bgsave_time_sec (whole seconds, but
+                                        # authoritative regardless of when we poll for it)
+                                        # is the metric of record; only logged here, not
+                                        # injected.
                                         logging.info(
                                             "Injected RdbLastBgsaveTimeSec={}s RdbLastForkUsec={}us "
-                                            "RdbBgsaveWaitElapsedSeconds={:.1f}s".format(
+                                            "(waited {:.1f}s for confirmation, not exported)".format(
                                                 results_dict["ALL STATS"]["Totals"][
                                                     "RdbLastBgsaveTimeSec"
                                                 ],
