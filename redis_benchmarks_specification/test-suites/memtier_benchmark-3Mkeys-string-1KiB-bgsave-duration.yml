@@ -61,8 +61,9 @@ description: |
   save is pinned to "" so periodic autosave never fires -- the only
   BGSAVE in the measured window is the one this spec explicitly issues.
   rdbcompression is left at its default (yes) so LZF actually runs,
-  unlike the crc64-isolation specs (140Kkeys/1400keys-...-randomdata-...)
-  which deliberately disable it. Values use memtier's default data
+  unlike the crc64-isolation spec
+  (140Kkeys-load-string-with-128KiB-values-randomdata-replica-only)
+  which deliberately disables it. Values use memtier's default data
   pattern (not -R random bytes), which is the highly-compressible
   extreme, not a "representative" middle ground; -R would be the
   incompressible extreme instead. This spec deliberately sits at the
@@ -85,7 +86,14 @@ dbconfig:
   resources:
     requests:
       memory: 6g
-  dataset_name: 3Mkeys-string-1KiB-size-compressible
+  # Distinct from the existing 3Mkeys-string-1KiB-size dataset (used by
+  # memtier_benchmark-3Mkeys-string-get-with-1KiB-values-400_conns.yml):
+  # that sibling also omits -R (equally compressible) and only differs in
+  # --data-size (1000 vs this spec's 1024) -- the "-1KiB-size" name would
+  # otherwise misleadingly suggest compressibility is what's different.
+  # dataset_name doubles as a preload-reuse key in __runner__/runner.py,
+  # so it must stay a distinct string regardless.
+  dataset_name: 3Mkeys-string-1024B-size
   dataset_description: |
     3 million string keys, each with a 1024-byte compressible value
     (memtier's default data pattern, not -R random bytes -- the
@@ -118,9 +126,18 @@ exporter:
     # merge_default_and_config_metrics() EXTENDS defaults.yml rather than
     # replacing it, so the standard Ops/sec / Latency / p50.00 / p99.00
     # series also get pushed under this test name, off the single ~4ms
-    # BGSAVE fork-ack reply -- harmless (arguably a second read on fork-ack
-    # latency), but don't mistake that p50.00 for save duration; the
-    # metrics below are the actual save-duration numbers.
+    # BGSAVE fork-ack reply. This is NOT just harmless dashboard noise:
+    # redis-benchmarks-spec-compare defaults --metric_name to
+    # ALL_STATS.Totals.Ops/sec, so a compare run against this spec WITHOUT
+    # an explicit --metric_name would regress-check a one-sample fork-ack
+    # number, not save duration. Always pass
+    # --metric_name RdbLastBgsaveTimeSec (or RdbLastForkUsec) explicitly
+    # when comparing this spec. Issuing BGSAVE directly from the
+    # coordinator instead of through a memtier client (dropping the
+    # degenerate Ops/sec entirely and getting a clean sub-second wait
+    # timer as a side effect) would fix this at the source, but is a
+    # larger change than this spec -- accepted as a known limitation of
+    # the memtier-client-issues-BGSAVE shape rather than expanding scope.
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
