@@ -645,6 +645,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     spin_docker_cluster_redis,
     start_redis_container,
     wait_for_bgsave_completion,
+    wait_for_bgsave_topology_unsafe,
 )
 
 
@@ -1846,47 +1847,16 @@ def process_self_contained_coordinator_stream(
                                 f"Running topology named {topology_spec_name} of type {setup_type}"
                             )
 
-                            # wait_for_bgsave assumes a single, replica-free,
-                            # AOF-free primary: the pre-run rdb_last_save_time
-                            # snapshot, confirm_bgsave_completed(), and
-                            # inject_persistence_metrics() all read
-                            # primary_conns[0] only (see those call sites
-                            # further down), and inject_persistence_metrics()'s
-                            # own docstring calls out "no AOF, no replicas" as
-                            # the reason latest_fork_usec is unambiguous. Two
-                            # confounds, both checked here: (1) a multi-primary
-                            # topology (oss-cluster; the only other `type` in
-                            # topologies.yml) would confirm and export just
-                            # node 0's save under the whole test's name while
-                            # every other primary's save stays unmeasured; (2)
-                            # any topology with replicas -- oss-standalone
-                            # variants exist with replicas > 0 in
-                            # topologies.yml, and setup_type alone doesn't
-                            # distinguish those from the plain oss-standalone
-                            # this spec actually targets -- would let a
-                            # replica full sync fork and overwrite
-                            # latest_fork_usec, or (on a --save-configured
-                            # variant) let a periodic autosave satisfy
-                            # confirm_bgsave_completed() on its own, neither of
-                            # which is the BGSAVE this spec issued. Positive
-                            # check (setup_type != "oss-standalone" rather than
-                            # == "oss-cluster") so a future third topology type
-                            # fails safe by default -- including topology_unmapped:
-                            # setup_type/topology_replica_count both default to
-                            # ("oss-standalone", 0) when topology_spec_name isn't
-                            # in topologies_map at all, which would otherwise
-                            # pass this guard despite nothing actually being
-                            # known about the topology's primaries/replicas, the
-                            # one case this positive-check framing was meant to
-                            # cover. Nothing bites today: this spec pins
-                            # redis-topologies: [oss-standalone] exactly, but the
-                            # guard is meant to be a fail-safe for wait_for_bgsave
-                            # generally, not just for this one spec's own
-                            # topology list.
-                            if (
-                                setup_type != "oss-standalone"
-                                or topology_replica_count > 0
-                                or topology_unmapped
+                            # See wait_for_bgsave_topology_unsafe()'s docstring for
+                            # why this check exists and what each argument covers;
+                            # unit-tested there (test_self_contained_coordinator.py)
+                            # rather than only in prose here, since this exact
+                            # condition has been revised multiple times. Nothing
+                            # bites today: this spec pins redis-topologies:
+                            # [oss-standalone] exactly, but the guard is meant to be
+                            # a fail-safe for wait_for_bgsave generally.
+                            if wait_for_bgsave_topology_unsafe(
+                                setup_type, topology_replica_count, topology_unmapped
                             ) and benchmark_config.get("dbconfig", {}).get(
                                 "wait_for_bgsave", False
                             ):

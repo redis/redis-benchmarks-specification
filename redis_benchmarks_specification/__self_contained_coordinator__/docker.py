@@ -146,6 +146,38 @@ def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
     )
 
 
+def wait_for_bgsave_topology_unsafe(setup_type, replica_count, topology_unmapped):
+    """Return True if a topology is unsafe for dbconfig.wait_for_bgsave.
+
+    confirm_bgsave_completed() and inject_persistence_metrics() only ever
+    read primary_conns[0], and inject_persistence_metrics()'s own docstring
+    calls out "no AOF, no replicas" as the reason latest_fork_usec is
+    unambiguous. Three cases make that assumption unsafe:
+
+    - Multi-primary (setup_type != "oss-standalone", e.g. oss-cluster):
+      would confirm and export just node 0's save under the whole test's
+      name while every other primary's save stays unmeasured.
+    - Has replicas (replica_count > 0): a replica full sync forks and
+      overwrites latest_fork_usec, or (on a --save-configured variant) a
+      periodic autosave can satisfy confirm_bgsave_completed() on its own
+      -- neither is the BGSAVE the spec issued.
+    - Unmapped (topology_unmapped=True, i.e. the topology name isn't in
+      topologies_map at all): nothing is actually known about its
+      primaries/replicas, so it can't be assumed safe just because the
+      caller's setup_type/replica_count defaults happen to look benign.
+
+    Positive framing (checking for known-unsafe conditions rather than a
+    known-safe allowlist of exactly "oss-standalone") so a future topology
+    type this function hasn't been taught about still fails safe -- which
+    is also why topology_unmapped is a separate, explicit argument rather
+    than folded into setup_type: the caller's own setup_type/replica_count
+    defaults (("oss-standalone", 0), matching what the actual
+    oss-standalone topology reports) would otherwise be indistinguishable
+    from a real oss-standalone topology and pass this check regardless.
+    """
+    return topology_unmapped or setup_type != "oss-standalone" or replica_count > 0
+
+
 def inject_persistence_metrics(results_dict, server_info):
     """Inject the most recent BGSAVE's duration/fork-time into a results_dict.
 

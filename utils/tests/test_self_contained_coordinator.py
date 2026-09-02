@@ -46,6 +46,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     wait_for_bgsave_completion,
+    wait_for_bgsave_topology_unsafe,
 )
 
 
@@ -313,6 +314,45 @@ def test_preload_before_replica_flag_in_20m_spec():
         assert (
             "replicas" in topology
         ), f"20M replica-only spec must use only replica topologies, got {topology}"
+
+
+def test_wait_for_bgsave_topology_unsafe_plain_oss_standalone_is_safe():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=0, topology_unmapped=False
+        )
+        is False
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_multi_primary():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-cluster", replica_count=0, topology_unmapped=False
+        )
+        is True
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_has_replicas():
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=1, topology_unmapped=False
+        )
+        is True
+    )
+
+
+def test_wait_for_bgsave_topology_unsafe_unmapped_fails_safe():
+    """The default (setup_type, replica_count) an unmapped topology name
+    reaches this function with -- ("oss-standalone", 0) -- must not be
+    treated as safe just because those defaults happen to look benign."""
+    assert (
+        wait_for_bgsave_topology_unsafe(
+            setup_type="oss-standalone", replica_count=0, topology_unmapped=True
+        )
+        is True
+    )
 
 
 def test_bgsave_duration_spec_wiring_matches_injector():
