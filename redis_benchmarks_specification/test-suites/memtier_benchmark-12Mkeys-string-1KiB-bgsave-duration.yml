@@ -117,8 +117,11 @@ dbconfig:
   # via a memtier client -- both larger, higher-risk changes than this PR
   # given this exact code path has no test coverage and can't be
   # exercised live in this environment. Manual comparison via
-  # --metric_name RdbLastBgsaveTimeSec (see the exporter block) remains
-  # the reliable way to check this spec for regressions.
+  # --metric_name RdbLastBgsaveTimeSec --metric_mode lower-better (see
+  # the exporter block) remains the reliable way to check this spec for
+  # regressions -- --metric_mode defaults to higher-better
+  # (__compare__/args.py), so omitting it sign-flips a slower BGSAVE
+  # into a reported "improvement."
 tested-commands:
 - bgsave
 redis-topologies:
@@ -156,9 +159,12 @@ exporter:
     # actual 12M-key scale -- fork() cost scales with resident memory, so
     # this is not a stable number). This affects both comparison paths:
     # - redis-benchmarks-spec-compare defaults --metric_name to
-    #   ALL_STATS.Totals.Ops/sec, so always pass
-    #   --metric_name RdbLastBgsaveTimeSec (or RdbLastForkUsec) explicitly
-    #   when comparing this spec manually.
+    #   ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
+    #   always pass both --metric_name RdbLastBgsaveTimeSec (or
+    #   RdbLastForkUsec) AND --metric_mode lower-better explicitly when
+    #   comparing this spec manually -- both exported metrics are
+    #   lower-better, so --metric_name alone silently reports a
+    #   regressed (slower) BGSAVE as an improvement.
     # - The coordinator's automated actionable-PR regression comment
     #   hardcodes the same metric/mode for every spec with no per-spec
     #   override (see dbconfig.bgsave_timeout_seconds's comment above for
