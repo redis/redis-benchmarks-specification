@@ -207,13 +207,18 @@ exporter:
     # alongside the two RdbLast* keys below, off the single degenerate
     # BGSAVE fork-ack reply (~4ms latency at 3M keys, ~349ms at 12M --
     # fork() cost scales with resident memory, not stable). The
-    # coordinator strips Totals down to just RdbLastBgsaveTimeSec/
-    # RdbLastForkUsec before export on this spec's wait_for_bgsave path
+    # coordinator strips Totals down to exactly what this spec's own
+    # metrics list below declares before export
     # (self_contained_coordinator.py, right before exporter_datasink_common()),
     # so neither TimeSeries nor the automated actionable-PR regression
-    # comment ever sees the degenerate Ops/sec for this spec -- scoped to
-    # this run's own results_dict, not the shared default_metrics list,
-    # so it doesn't affect any other spec. (Measured Ops/sec at 12M keys
+    # comment ever sees the degenerate Ops/sec for this spec. Gated on
+    # dbconfig.skip_throughput_floor specifically, not bare
+    # wait_for_bgsave -- a future BGSAVE-under-write-load spec variant
+    # would set wait_for_bgsave without skip_throughput_floor (real
+    # write throughput to guard) and must keep its own Ops/sec exported,
+    # so filtering on wait_for_bgsave alone would silently strip it too.
+    # Scoped to this run's own results_dict, not the shared
+    # default_metrics list, so it doesn't affect any other spec. (Measured Ops/sec at 12M keys
     # was 2.87, confirmed directly against validate_benchmark_metrics() --
     # above the <1 floor today, not below it, so dbconfig.skip_throughput_floor
     # is deliberately defensive rather than fixing an observed trip: the

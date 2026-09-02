@@ -3223,38 +3223,66 @@ def process_self_contained_coordinator_stream(
                                     # from a run this code just declared failed. That's worse
                                     # than a hole, so skip the export entirely rather than
                                     # push a misleading datapoint.
+                                    # Gated on skip_throughput_floor, NOT bare
+                                    # bgsave_wait_enabled: skip_throughput_floor is
+                                    # specifically the claim "this spec's
+                                    # client-observed throughput has no signal" (see
+                                    # its own dbconfig comment in the spec YAML,
+                                    # which exists as a *separate* key from
+                                    # wait_for_bgsave precisely because a future
+                                    # BGSAVE-under-write-load spec variant would set
+                                    # wait_for_bgsave without it, wanting its real
+                                    # write throughput exported). Filtering on
+                                    # bgsave_wait_enabled alone would strip that
+                                    # variant's real Ops/sec too, the exact coupling
+                                    # skip_throughput_floor was introduced to avoid
+                                    # elsewhere in this same diff.
+                                    skip_throughput_floor_enabled = bool(
+                                        benchmark_config.get("dbconfig", {}).get(
+                                            "skip_throughput_floor", False
+                                        )
+                                    )
                                     if (
                                         bgsave_wait_enabled
+                                        and skip_throughput_floor_enabled
                                         and not bgsave_metric_missing
                                     ):
-                                        # A *confirmed* wait_for_bgsave run still had
-                                        # the standard Ops/sec/Latency/Misses per
-                                        # sec/p50.00 series sitting in
-                                        # results_dict["ALL STATS"]["Totals"]
-                                        # alongside the two RdbLast* keys just
-                                        # injected -- merge_default_and_config_metrics()
-                                        # extends rather than replaces defaults.yml's
-                                        # metrics, so those would reach TimeSeries and
-                                        # the coordinator's automated regression
-                                        # comment too, off the single degenerate
-                                        # fork-ack reply. Restrict Totals to just the
-                                        # two keys this spec actually means to export --
-                                        # scoped to this one run's results_dict, not
-                                        # the shared default_metrics list, so it
-                                        # doesn't touch any other spec or reopen the
-                                        # #550 mutation issue. Runtime (the
-                                        # timemetric source) and everything else in
-                                        # results_dict is untouched.
+                                        # A *confirmed* run on a spec with no real
+                                        # throughput signal still had the standard
+                                        # Ops/sec/Latency/Misses per sec/p50.00 series
+                                        # sitting in results_dict["ALL STATS"]["Totals"]
+                                        # alongside the persistence keys just injected
+                                        # -- merge_default_and_config_metrics() extends
+                                        # rather than replaces defaults.yml's metrics,
+                                        # so those would reach TimeSeries and the
+                                        # coordinator's automated regression comment
+                                        # too, off the single degenerate fork-ack
+                                        # reply. Restrict Totals to exactly what this
+                                        # spec's own exporter block declares (the last
+                                        # dotted segment of each jsonpath) rather than
+                                        # a separately hardcoded key list -- keeps this
+                                        # self-consistent with inject_persistence_metrics()
+                                        # and the spec YAML by construction instead of
+                                        # needing to be kept in sync by hand. Scoped to
+                                        # this one run's results_dict, not the shared
+                                        # default_metrics list, so it doesn't touch any
+                                        # other spec or reopen the #550 mutation issue.
+                                        # Runtime (the timemetric source) and everything
+                                        # else in results_dict is untouched.
+                                        declared_metric_keys = {
+                                            path.rsplit(".", 1)[-1].strip('"')
+                                            for path in benchmark_config.get(
+                                                "exporter", {}
+                                            )
+                                            .get("redistimeseries", {})
+                                            .get("metrics", [])
+                                        }
                                         results_dict["ALL STATS"]["Totals"] = {
                                             k: v
                                             for k, v in results_dict["ALL STATS"][
                                                 "Totals"
                                             ].items()
-                                            if k
-                                            in (
-                                                "RdbLastBgsaveTimeSec",
-                                                "RdbLastForkUsec",
-                                            )
+                                            if k in declared_metric_keys
                                         }
                                     if not bgsave_metric_missing:
                                         exporter_datasink_common(
