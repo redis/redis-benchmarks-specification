@@ -19,6 +19,7 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_tool,
 )
 from redis_benchmarks_specification.__common__.timeseries import (
+    jsonpath_field_chain,
     jsonpath_last_field,
     merge_default_and_config_metrics,
 )
@@ -412,6 +413,31 @@ def test_jsonpath_last_field_quoted_segment_with_slash():
 
 def test_jsonpath_last_field_unparseable_returns_none():
     assert jsonpath_last_field("not a jsonpath [[[") is None
+
+
+def test_jsonpath_field_chain_flat_child():
+    assert jsonpath_field_chain('$."ALL STATS".Totals.RdbLastBgsaveTimeSec') == [
+        "ALL STATS",
+        "Totals",
+        "RdbLastBgsaveTimeSec",
+    ]
+
+
+def test_jsonpath_field_chain_nested_child_is_not_the_last_field():
+    """The immediate child of Totals for a nested metric is the dict key
+    ("Percentile Latencies"), not the leaf field ("p50.00") -- this is
+    the distinction the export-time Totals filter in
+    self_contained_coordinator.py needs jsonpath_field_chain() for
+    instead of jsonpath_last_field(): filtering on the leaf would delete
+    "Percentile Latencies" from results_dict["ALL STATS"]["Totals"]
+    entirely, since that's the key actually sitting there."""
+    chain = jsonpath_field_chain('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')
+    assert chain == ["ALL STATS", "Totals", "Percentile Latencies", "p50.00"]
+    assert chain[chain.index("Totals") + 1] == "Percentile Latencies"
+
+
+def test_jsonpath_field_chain_unparseable_returns_none():
+    assert jsonpath_field_chain("not a jsonpath [[[") is None
 
 
 def test_merge_default_and_config_metrics_does_not_mutate_default_metrics():

@@ -62,7 +62,7 @@ from redis_benchmarks_specification.__common__.runner import (
 )
 from redis_benchmarks_specification.__common__.timeseries import (
     datasink_profile_tabular_data,
-    jsonpath_last_field,
+    jsonpath_field_chain,
 )
 from redis_benchmarks_specification.__compare__.compare import (
     compute_regression_table,
@@ -3283,38 +3283,36 @@ def process_self_contained_coordinator_stream(
                                         # throughput signal still had the standard
                                         # Ops/sec/Latency/Misses per sec/p50.00 series
                                         # sitting in results_dict["ALL STATS"]["Totals"]
-                                        # alongside the persistence keys just injected
-                                        # -- merge_default_and_config_metrics() extends
-                                        # rather than replaces defaults.yml's metrics,
-                                        # so those would reach TimeSeries and the
-                                        # coordinator's automated regression comment
-                                        # too, off the single degenerate fork-ack
-                                        # reply. Restrict Totals to exactly what this
-                                        # spec's own exporter block declares (the
-                                        # final field each jsonpath resolves to,
-                                        # via jsonpath_last_field() -- a real
-                                        # jsonpath parse, not a naive rsplit(".", 1),
-                                        # since a field can itself contain a literal
-                                        # "." when quoted, e.g. "p50.00") rather
-                                        # than a separately hardcoded key list --
-                                        # keeps this self-consistent with
-                                        # inject_persistence_metrics() and the spec
-                                        # YAML by construction instead of needing to
-                                        # be kept in sync by hand. Scoped to this
-                                        # one run's results_dict, not the shared
-                                        # default_metrics list, so it doesn't touch
-                                        # any other spec or reopen the #550 mutation
-                                        # issue. Runtime (the timemetric source) and
-                                        # everything else in results_dict is
-                                        # untouched.
-                                        declared_metric_keys = {
-                                            jsonpath_last_field(path)
-                                            for path in benchmark_config.get(
-                                                "exporter", {}
-                                            )
+                                        # alongside the persistence keys just injected.
+                                        # Restrict Totals to exactly this spec's own
+                                        # declared exporter keys, scoped to this run's
+                                        # results_dict only (not the shared
+                                        # default_metrics list -- doesn't reopen #550).
+                                        # Uses the field immediately after "Totals" in
+                                        # each jsonpath's parsed field chain, NOT the
+                                        # path's last field: for a nested metric like
+                                        # $."ALL STATS".Totals."Percentile Latencies".
+                                        # "p50.00" the key actually sitting in Totals
+                                        # is "Percentile Latencies" (a dict), not
+                                        # "p50.00" -- taking the last field would
+                                        # delete it from declared_metric_keys and
+                                        # silently strip it from export. Not reachable
+                                        # by this spec's two flat metrics today, where
+                                        # last-field and Totals-child are the same
+                                        # string either way.
+                                        declared_metric_keys = set()
+                                        for path in (
+                                            benchmark_config.get("exporter", {})
                                             .get("redistimeseries", {})
                                             .get("metrics", [])
-                                        }
+                                        ):
+                                            chain = jsonpath_field_chain(path)
+                                            if chain and "Totals" in chain:
+                                                totals_idx = chain.index("Totals")
+                                                if totals_idx + 1 < len(chain):
+                                                    declared_metric_keys.add(
+                                                        chain[totals_idx + 1]
+                                                    )
                                         results_dict["ALL STATS"]["Totals"] = {
                                             k: v
                                             for k, v in results_dict["ALL STATS"][

@@ -14,23 +14,41 @@ def parse(string):
     return JsonPathParser().parse(string)
 
 
-def jsonpath_last_field(jsonpath: str):
-    """Return the final field name a jsonpath resolves to, or None if it
-    doesn't parse or doesn't end in a plain field access.
+def jsonpath_field_chain(jsonpath: str):
+    """Return the ordered list of field names a jsonpath resolves through,
+    root first (e.g. $."ALL STATS".Totals."p50.00" -> ["ALL STATS", "Totals",
+    "p50.00"]), or None if it doesn't parse into a plain field-access chain.
 
     Uses the same JsonPathParser() this module already parses exporter
-    jsonpaths with, rather than a naive string split -- a jsonpath field
-    can itself contain a literal "." (e.g. $."ALL STATS".Totals."Percentile
-    Latencies"."p50.00"), which a plain path.rsplit(".", 1)[-1] would
-    truncate to "00". A parsed Child(..., Fields(("p50.00",))) node's
-    right-hand Fields tuple gives the real last segment regardless of
-    quoting.
+    jsonpaths with, rather than a naive string split -- a jsonpath field can
+    itself contain a literal "." (e.g. "p50.00"), which splitting on "."
+    would break apart. jsonpath_ng represents a chain like $.a.b.c as
+    nested Child(Child(Child(Root, Fields(a)), Fields(b)), Fields(c)); walk
+    the left spine collecting each level's Fields tuple, then reverse.
     """
     try:
-        expr = parse(jsonpath)
-        return expr.right.fields[0]
+        node = parse(jsonpath)
     except Exception:
         return None
+    fields = []
+    while True:
+        if hasattr(node, "right") and hasattr(node.right, "fields"):
+            fields.append(node.right.fields[0])
+            node = node.left
+        elif hasattr(node, "fields"):
+            fields.append(node.fields[0])
+            break
+        else:
+            break
+    fields.reverse()
+    return fields or None
+
+
+def jsonpath_last_field(jsonpath: str):
+    """Return the final field name a jsonpath resolves to, or None if it
+    doesn't parse or doesn't end in a plain field access."""
+    chain = jsonpath_field_chain(jsonpath)
+    return chain[-1] if chain else None
 
 
 def parse_exporter_timemetric(metric_path: str, results_dict: dict):
