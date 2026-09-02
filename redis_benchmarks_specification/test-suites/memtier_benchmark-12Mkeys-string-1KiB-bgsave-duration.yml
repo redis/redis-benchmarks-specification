@@ -85,8 +85,14 @@ dbconfig:
     rdb_last_bgsave_time_sec's whole-second resolution (~3.8%
     quantization at this scale) sits comfortably inside the ~20-33%
     BGSAVE regression class this spec exists to detect.
-  # No bgsave_timeout_seconds override -- takes wait_for_bgsave_completion()'s
-  # 300s default. The ~26.2s/dataset_description measurement above is
+  # No bgsave_timeout_seconds override -- the coordinator's own call-site
+  # default (self_contained_coordinator.py's
+  # benchmark_config.get("dbconfig", {}).get("bgsave_timeout_seconds", 300))
+  # is what actually applies here, since it always passes an explicit
+  # value to wait_for_bgsave_completion() -- that function's own
+  # bgsave_timeout_seconds=300 default parameter is never reached from
+  # this path. Both happen to be 300s today. The ~26.2s/dataset_description
+  # measurement above is
   # local-server-only: oss-standalone pins the server (and its forked
   # BGSAVE child) to a single CPU (topologies.yml's
   # resources.requests.cpus: "1", read by cpuset.py) and writes to a

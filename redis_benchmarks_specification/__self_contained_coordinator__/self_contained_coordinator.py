@@ -1970,6 +1970,18 @@ def process_self_contained_coordinator_stream(
 
                             test_result = False
                             redis_container = None
+                            # Initialized here, before the try, rather than
+                            # deeper inside it (where the wait_for_bgsave logic
+                            # itself lives): the RDB-cleanup block in tear-down
+                            # below reads this unconditionally, and tear-down
+                            # runs even when the try raises before reaching the
+                            # deeper initialization (e.g. a preload failure) --
+                            # an uninitialized read there would be a NameError
+                            # for every spec, not just wait_for_bgsave ones,
+                            # and would itself skip the rest of tear-down
+                            # (client container removal, temp-dir handling,
+                            # stream bookkeeping), leaking client containers.
+                            bgsave_metric_missing = False
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -2310,7 +2322,10 @@ def process_self_contained_coordinator_stream(
                                 # wait_for_bgsave is not silently unsupported there in
                                 # practice, just on the standalone __runner__ CLI mode this
                                 # spec family has never targeted.
-                                # Set when wait_for_bgsave is on but no BGSAVE was confirmed.
+                                # bgsave_metric_missing (initialized to False before the
+                                # try, alongside test_result/redis_container -- see that
+                                # comment for why) gets set True below when
+                                # wait_for_bgsave is on but no BGSAVE was confirmed.
                                 # Folded into "test_result = not bgsave_metric_missing" a
                                 # few hundred lines below (rather than a separate
                                 # conditional override after an unconditional reset), so
@@ -2327,7 +2342,6 @@ def process_self_contained_coordinator_stream(
                                 # redis/redis-benchmarks-specification#551 for the broader,
                                 # pre-existing pattern of continue-past-teardown container
                                 # leaks this same reasoning applies to.
-                                bgsave_metric_missing = False
 
                                 # Multi-tool clientconfigs suites (e.g. memtier +
                                 # bcast-listener) are gated behind a feature flag and
