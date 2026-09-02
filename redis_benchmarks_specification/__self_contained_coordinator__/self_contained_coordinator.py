@@ -3316,6 +3316,23 @@ def process_self_contained_coordinator_stream(
                                                     declared_metric_keys.add(
                                                         chain[totals_idx + 1]
                                                     )
+                                                    continue
+                                            # A declared path that doesn't resolve
+                                            # to a Totals child (unparseable, or no
+                                            # "Totals" segment) is silently dropped
+                                            # from the allowlist -- not a failure by
+                                            # itself if at least one other declared
+                                            # path resolves (the empty-allowlist case
+                                            # below covers total failure), but worth
+                                            # a log even on partial failure so a
+                                            # malformed metric declaration doesn't
+                                            # disappear from export with nothing
+                                            # anywhere to explain why.
+                                            logging.warning(
+                                                f"Test {test_name}: exporter.redistimeseries.metrics "
+                                                f"entry {path!r} did not resolve to a Totals child -- "
+                                                "excluded from the export allowlist."
+                                            )
                                         if declared_metric_keys:
                                             results_dict["ALL STATS"]["Totals"] = {
                                                 k: v

@@ -171,16 +171,30 @@ build-variants:
 # QPS floor gated on) is architecture-sensitive and only measured on
 # amd64. That floor is now skipped entirely for this spec (see
 # dbconfig.skip_throughput_floor above), which retires the reason arm64
-# was excluded, so it's back. dockerhub was also excluded on a similar
-# precautionary basis, but its own architecture dispatch isn't
-# spec-specific -- the closest siblings by shape/size all ship it
-# alongside the same amd64/arm64 pair (3Mkeys-string-set-1KiB-pipeline-10,
-# 20Mkeys-load-string-with-1KiB-values-replica-only,
-# 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only), so
-# there's no remaining reason for this spec to be the exception.
+# was excluded, so it's back.
+#
+# dockerhub deliberately excluded, on a different and more specific
+# ground than arm64's: the dockerhub trigger path
+# (trigger_tests_dockerhub_cli_command_logic, __cli__/cli.py) sets
+# build_stream_fields["mnt_point"] = args.mnt_point unconditionally,
+# and --mnt_point's own CLI default is "" -- which overrides the
+# coordinator's own mnt_point="/mnt/redis/" default
+# (self_contained_coordinator.py). With mnt_point=="",
+# generate_standalone_redis_server_args() skips --dir/--logfile
+# entirely and start_redis_container() builds no volume at all
+# (docker.py), so the container's redis-server writes its RDB into the
+# image's own writable overlay layer instead of the bind-mounted
+# runner volume the gcc:* variants use. For the sibling specs this
+# variant set is otherwise consistent with (3Mkeys-string-set-1KiB-
+# pipeline-10, 20Mkeys-load-string-with-1KiB-values-replica-only,
+# 140Kkeys-load-string-with-128KiB-values-randomdata-replica-only)
+# that's incidental -- none of them measures the save path itself. For
+# this spec it isn't: rdb_last_bgsave_time_sec on a dockerhub run would
+# be timing overlay2 copy-up rather than the same disk write the gcc:*
+# variants measure, a different quantity under the same metric name,
+# not just a noisier version of the same one.
 - gcc:15.2.0-amd64-debian-bookworm-default
 - gcc:15.2.0-arm64-debian-bookworm-default
-- dockerhub
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
