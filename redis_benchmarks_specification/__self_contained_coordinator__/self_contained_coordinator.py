@@ -3223,6 +3223,39 @@ def process_self_contained_coordinator_stream(
                                     # from a run this code just declared failed. That's worse
                                     # than a hole, so skip the export entirely rather than
                                     # push a misleading datapoint.
+                                    if (
+                                        bgsave_wait_enabled
+                                        and not bgsave_metric_missing
+                                    ):
+                                        # A *confirmed* wait_for_bgsave run still had
+                                        # the standard Ops/sec/Latency/Misses per
+                                        # sec/p50.00 series sitting in
+                                        # results_dict["ALL STATS"]["Totals"]
+                                        # alongside the two RdbLast* keys just
+                                        # injected -- merge_default_and_config_metrics()
+                                        # extends rather than replaces defaults.yml's
+                                        # metrics, so those would reach TimeSeries and
+                                        # the coordinator's automated regression
+                                        # comment too, off the single degenerate
+                                        # fork-ack reply. Restrict Totals to just the
+                                        # two keys this spec actually means to export --
+                                        # scoped to this one run's results_dict, not
+                                        # the shared default_metrics list, so it
+                                        # doesn't touch any other spec or reopen the
+                                        # #550 mutation issue. Runtime (the
+                                        # timemetric source) and everything else in
+                                        # results_dict is untouched.
+                                        results_dict["ALL STATS"]["Totals"] = {
+                                            k: v
+                                            for k, v in results_dict["ALL STATS"][
+                                                "Totals"
+                                            ].items()
+                                            if k
+                                            in (
+                                                "RdbLastBgsaveTimeSec",
+                                                "RdbLastForkUsec",
+                                            )
+                                        }
                                     if not bgsave_metric_missing:
                                         exporter_datasink_common(
                                             benchmark_config,

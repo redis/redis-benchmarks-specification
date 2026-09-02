@@ -89,13 +89,18 @@ dbconfig:
   resources:
     requests:
       memory: 20g
-  # Distinct from the existing 3Mkeys-string-1KiB-size dataset (used by
-  # memtier_benchmark-3Mkeys-string-get-with-1KiB-values-400_conns.yml):
-  # that sibling also omits -R (equally compressible) and only differs in
-  # --data-size (1000 vs this spec's 1024) -- the "-1KiB-size" name would
-  # otherwise misleadingly suggest compressibility is what's different.
-  # dataset_name doubles as a preload-reuse key in __runner__/runner.py,
-  # so it must stay a distinct string regardless.
+  # Distinct from two existing datasets that would otherwise collide as a
+  # preload-reuse key (dataset_name doubles as that key in
+  # __runner__/runner.py, so it must stay unique regardless): the
+  # 3Mkeys-string-1KiB-size dataset (memtier_benchmark-3Mkeys-string-get-
+  # with-1KiB-values-400_conns.yml) also omits -R (equally compressible)
+  # and differs only in --data-size (1000 vs this spec's 1024); the
+  # closest sibling by preload shape, 20Mkeys-string-1KiB-size
+  # (memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml),
+  # uses the same --data-size 1024 this spec does, so the "-1024B-size"
+  # suffix doesn't disambiguate from that one on data size alone -- it's
+  # a third naming convention rather than a principled distinction, kept
+  # for uniqueness rather than to convey anything about the dataset shape.
   dataset_name: 12Mkeys-string-1024B-size
   dataset_description: |
     12 million string keys, each with a 1024-byte compressible value
@@ -137,17 +142,22 @@ dbconfig:
   # The coordinator's automated actionable-PR regression comment
   # (self_contained_coordinator.py, "regression part") hardcodes
   # ALL_STATS.Totals.Ops/sec/higher-better for every spec, with no
-  # per-spec override -- for this spec that's a single BGSAVE fork-ack
-  # sample, which scales with dataset RSS rather than anything this spec
-  # is meant to measure. There's no per-spec override here:
+  # per-spec override -- there's no per-spec override here:
   # compute_regression_table() is called with test=""/testname_regex=""
   # (all tests) on every test's own loop iteration, and
   # prepare_regression_comment() rebuilds the PR-level comment body from
   # scratch each call rather than merging -- so a per-spec metric_name
   # override would corrupt every OTHER spec's row in the shared comment,
-  # not just this one's. Real BGSAVE-duration regression detection needs
-  # either a genuinely per-spec-scoped regression table or the
-  # coordinator issuing BGSAVE directly instead of via a memtier client.
+  # not just this one's (an override was attempted and reverted for
+  # exactly this reason). This doesn't bite this spec today, though: the
+  # coordinator strips ALL_STATS.Totals down to just the two RdbLast* keys
+  # before export on this spec's confirmed-run path (see the exporter
+  # block's comment above), so ALL_STATS.Totals.Ops/sec never reaches
+  # TimeSeries for this spec at all -- there's simply no datapoint for
+  # the regression comment to find, flag or not. Real BGSAVE-duration
+  # regression detection still needs either a genuinely per-spec-scoped
+  # regression table or the coordinator issuing BGSAVE directly instead
+  # of via a memtier client; deferred as a larger change than this PR.
   # Manual comparison via --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
   # --metric_mode lower-better (see the exporter block) is the reliable
   # way to check this spec for regressions today -- the fully-qualified
@@ -190,46 +200,41 @@ tested-groups:
 - server
 exporter:
   redistimeseries:
-    # The standard Ops/sec / Latency / p50.00 / p99.00 series also get
-    # pushed under this test name, off the single BGSAVE fork-ack reply
-    # (~4ms latency at 3M keys, ~349ms at 12M -- fork() cost scales with
-    # resident memory, so this is not a stable number). Measured Ops/sec
-    # at 12M keys was 2.87, confirmed directly against
-    # validate_benchmark_metrics() -- above the <1 floor today on this
-    # exact hardware/dataset, not below it, so dbconfig.skip_throughput_floor
-    # is deliberately defensive rather than fixing an observed trip: the
-    # margin above 1 is only ~3x, and fork() cost is architecture-sensitive
-    # (the reason arm64 was excluded for a while) and could plausibly
-    # shrink further under oss-standalone's single-CPU fleet contention.
-    # Why: merge_default_and_config_metrics() (__common__/timeseries.py)
+    # merge_default_and_config_metrics() (__common__/timeseries.py)
     # deliberately extends defaults.yml's metrics rather than replacing
-    # them -- by design, unrelated to the shared-list mutation bug
-    # redis/redis-benchmarks-specification#550 tracked and this PR fixed
-    # at the source (that bug leaked each spec's extra metrics into every
-    # later spec's export for the rest of the coordinator process; this
-    # spec's own extend is the intended behavior, not that bug). This
-    # affects both comparison paths:
-    # - redis-benchmarks-spec-compare defaults --metric_name to
-    #   ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
-    #   always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
-    #   (or ALL_STATS.Totals.RdbLastForkUsec) AND --metric_mode lower-better
-    #   explicitly when comparing this spec manually -- both exported
-    #   metrics are lower-better, so --metric_name alone silently reports
-    #   a regressed (slower) BGSAVE as an improvement. The fully-qualified
-    #   form is required too: extract_results_table() writes the
-    #   TimeSeries metric label from the exporter jsonpath below (stripped
-    #   of $./quotes, spaces to _), not the bare key -- --metric_name
-    #   RdbLastBgsaveTimeSec on its own matches no series at all.
-    # - The coordinator's automated actionable-PR regression comment
-    #   hardcodes the same metric/mode for every spec with no per-spec
-    #   override (see the comment on dbconfig.skip_throughput_floor above
-    #   for why one wasn't added here), so this spec's Ops/sec may
-    #   occasionally surface there too -- treat any such flag on this
-    #   specific spec with skepticism and check
-    #   ALL_STATS.Totals.RdbLastBgsaveTimeSec manually before trusting it.
-    # Issuing BGSAVE directly from the coordinator instead of through a
-    # memtier client would remove the degenerate Ops/sec at the source;
-    # deferred as a larger change than this PR.
+    # them, so the standard Ops/sec/Latency/Misses per sec/p50.00 series
+    # would otherwise also land in results_dict["ALL STATS"]["Totals"]
+    # alongside the two RdbLast* keys below, off the single degenerate
+    # BGSAVE fork-ack reply (~4ms latency at 3M keys, ~349ms at 12M --
+    # fork() cost scales with resident memory, not stable). The
+    # coordinator strips Totals down to just RdbLastBgsaveTimeSec/
+    # RdbLastForkUsec before export on this spec's wait_for_bgsave path
+    # (self_contained_coordinator.py, right before exporter_datasink_common()),
+    # so neither TimeSeries nor the automated actionable-PR regression
+    # comment ever sees the degenerate Ops/sec for this spec -- scoped to
+    # this run's own results_dict, not the shared default_metrics list,
+    # so it doesn't affect any other spec. (Measured Ops/sec at 12M keys
+    # was 2.87, confirmed directly against validate_benchmark_metrics() --
+    # above the <1 floor today, not below it, so dbconfig.skip_throughput_floor
+    # is deliberately defensive rather than fixing an observed trip: the
+    # margin above 1 is only ~3x, and fork() cost is architecture-sensitive,
+    # the reason arm64 was excluded for a while, and could plausibly
+    # shrink further under oss-standalone's single-CPU fleet contention.)
+    # redis-benchmarks-spec-compare still needs the fully-qualified form
+    # for manual comparisons: it defaults --metric_name to
+    # ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
+    # always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
+    # (or ALL_STATS.Totals.RdbLastForkUsec) AND --metric_mode lower-better
+    # explicitly -- both exported metrics are lower-better, so
+    # --metric_name alone silently reports a regressed (slower) BGSAVE as
+    # an improvement, and extract_results_table() writes the TimeSeries
+    # metric label from the exporter jsonpath below (stripped of
+    # $./quotes, spaces to _), not the bare key, so the short form
+    # matches no series at all either way. Issuing BGSAVE directly from
+    # the coordinator instead of through a memtier client would remove
+    # the degenerate reply at the source entirely (this fix still routes
+    # a real memtier BGSAVE command, just filters its result before
+    # export); deferred as a larger change than this PR.
     metrics:
     - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
     - $."ALL STATS".Totals.RdbLastForkUsec
