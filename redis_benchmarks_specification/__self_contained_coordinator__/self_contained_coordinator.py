@@ -637,6 +637,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
     prepare_vector_db_benchmark_parameters,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    confirm_bgsave_completed,
     generate_standalone_redis_server_args,
     inject_persistence_metrics,
     inject_replication_sync_metrics,
@@ -2479,6 +2480,30 @@ def process_self_contained_coordinator_stream(
                                             benchmark_command_str,
                                         )
                                     )
+
+                                    # Snapshot rdb_last_save_time before the client run so
+                                    # we can later confirm a BGSAVE genuinely completed in
+                                    # the measured window -- rdb_bgsave_in_progress==0 alone
+                                    # doesn't prove that (it also reads 0 before any save has
+                                    # ever run), same reasoning as the sync_full delta above.
+                                    bgsave_wait_enabled = benchmark_config.get(
+                                        "dbconfig", {}
+                                    ).get("wait_for_bgsave", False)
+                                    rdb_last_save_time_before = None
+                                    if bgsave_wait_enabled:
+                                        try:
+                                            rdb_last_save_time_before = (
+                                                primary_conns[0]
+                                                .info()
+                                                .get("rdb_last_save_time")
+                                            )
+                                        except Exception as e:
+                                            logging.warning(
+                                                "Failed to snapshot rdb_last_save_time before BGSAVE benchmark: {}".format(
+                                                    e
+                                                )
+                                            )
+
                                     # run the benchmark
                                     benchmark_start_time = datetime.datetime.now()
 
@@ -2878,25 +2903,63 @@ def process_self_contained_coordinator_stream(
                                 # to block here until that BGSAVE actually finishes,
                                 # then inject the resulting duration/fork-time into
                                 # results_dict so it reaches TimeSeries.
-                                if benchmark_config.get("dbconfig", {}).get(
-                                    "wait_for_bgsave", False
-                                ):
+                                if bgsave_wait_enabled:
+                                    bgsave_timeout_seconds = benchmark_config.get(
+                                        "dbconfig", {}
+                                    ).get("bgsave_timeout_seconds", 300)
                                     bgsave_completed, bgsave_wait_elapsed = (
-                                        wait_for_bgsave_completion(primary_conns[0])
+                                        wait_for_bgsave_completion(
+                                            primary_conns[0], bgsave_timeout_seconds
+                                        )
                                     )
                                     if not bgsave_completed:
                                         logging.warning(
                                             "BGSAVE did not complete within the wait timeout "
-                                            "({:.1f}s elapsed) -- RdbLastBgsaveTimeSec/RdbLastForkUsec "
-                                            "will reflect whatever BGSAVE last completed, not this run's.".format(
+                                            "({:.1f}s elapsed)".format(
                                                 bgsave_wait_elapsed
                                             )
                                         )
-                                    if inject_persistence_metrics(
+
+                                    # Confirm a BGSAVE actually completed successfully in
+                                    # this window before trusting/exporting the resulting
+                                    # numbers -- see confirm_bgsave_completed()'s docstring
+                                    # for why rdb_bgsave_in_progress==0 alone isn't enough.
+                                    bgsave_confirmed = False
+                                    if bgsave_completed:
+                                        try:
+                                            info_after = primary_conns[0].info()
+                                            bgsave_confirmed = confirm_bgsave_completed(
+                                                rdb_last_save_time_before, info_after
+                                            )
+                                        except Exception as e:
+                                            logging.warning(
+                                                "Failed to confirm BGSAVE completion via rdb_last_save_time: {}".format(
+                                                    e
+                                                )
+                                            )
+
+                                    if not bgsave_confirmed:
+                                        logging.warning(
+                                            "Skipping RdbLastBgsaveTimeSec/RdbLastForkUsec injection: "
+                                            "no confirmed successful BGSAVE detected in the measured "
+                                            "window (rdb_last_save_time did not advance, "
+                                            "rdb_last_bgsave_status != ok, or the wait timed out)."
+                                        )
+                                    elif inject_persistence_metrics(
                                         results_dict, primary_conns[0]
                                     ):
+                                        # Redis's own rdb_last_bgsave_time_sec is whole
+                                        # seconds -- coarse relative to a few-percent A/B
+                                        # delta. bgsave_wait_elapsed has 200ms resolution
+                                        # and is exported alongside as a finer-grained (but
+                                        # lower-bound-only, since polling starts after the
+                                        # client run returns) companion metric.
+                                        results_dict["ALL STATS"]["Totals"][
+                                            "RdbBgsaveWaitElapsedSeconds"
+                                        ] = bgsave_wait_elapsed
                                         logging.info(
-                                            "Injected RdbLastBgsaveTimeSec={}s RdbLastForkUsec={}us (waited {:.1f}s for BGSAVE to finish)".format(
+                                            "Injected RdbLastBgsaveTimeSec={}s RdbLastForkUsec={}us "
+                                            "RdbBgsaveWaitElapsedSeconds={:.1f}s".format(
                                                 results_dict["ALL STATS"]["Totals"][
                                                     "RdbLastBgsaveTimeSec"
                                                 ],

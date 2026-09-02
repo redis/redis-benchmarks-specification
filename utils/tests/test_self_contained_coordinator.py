@@ -38,6 +38,7 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    confirm_bgsave_completed,
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
     inject_persistence_metrics,
@@ -145,6 +146,75 @@ def test_wait_for_bgsave_completion_tolerates_info_errors():
     ]
     completed, elapsed = wait_for_bgsave_completion(conn, bgsave_timeout_seconds=5)
     assert completed is True
+
+
+def test_wait_for_bgsave_completion_gives_up_after_consecutive_errors():
+    """A dead connection should bail out after max_consecutive_errors rather
+    than retrying silently for the full timeout."""
+    conn = Mock()
+    conn.info.side_effect = redis.exceptions.ConnectionError("dead")
+    completed, elapsed = wait_for_bgsave_completion(
+        conn, bgsave_timeout_seconds=300, max_consecutive_errors=3
+    )
+    assert completed is False
+    assert conn.info.call_count == 3
+
+
+def test_wait_for_bgsave_completion_error_streak_resets_on_success():
+    """A transient error followed by a real reading resets the error streak --
+    a single blip should not count toward the consecutive-error bail-out."""
+    conn = Mock()
+    conn.info.side_effect = [
+        redis.exceptions.ConnectionError("blip"),
+        {"rdb_bgsave_in_progress": 1},
+        redis.exceptions.ConnectionError("blip"),
+        {"rdb_bgsave_in_progress": 0},
+    ]
+    completed, elapsed = wait_for_bgsave_completion(
+        conn, bgsave_timeout_seconds=5, max_consecutive_errors=2
+    )
+    assert completed is True
+    assert conn.info.call_count == 4
+
+
+def test_confirm_bgsave_completed_when_save_time_advanced_and_status_ok():
+    """The happy path: rdb_last_save_time advanced and status is ok."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after) is True
+
+
+def test_confirm_bgsave_completed_false_when_save_time_unchanged():
+    """No BGSAVE ran in the window (e.g. the client command never landed) --
+    rdb_last_save_time stayed the same as the pre-run snapshot."""
+    info_after = {"rdb_last_save_time": 100, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_when_status_not_ok():
+    """rdb_last_save_time advancing alone is not enough -- a failed/killed
+    BGSAVE child can still leave rdb_bgsave_in_progress==0."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "err"}
+    assert confirm_bgsave_completed(100, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_on_missing_before_snapshot():
+    """A failed pre-run snapshot (before is None) must not silently pass --
+    there's nothing to compare rdb_last_save_time against."""
+    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(None, info_after) is False
+
+
+def test_confirm_bgsave_completed_false_on_missing_after_info():
+    """A failed post-run info() call (after is None) must not silently pass."""
+    assert confirm_bgsave_completed(100, None) is False
+
+
+def test_confirm_bgsave_completed_false_when_fresh_server_sentinel():
+    """The exact scenario this guard exists for: a fresh/never-saved server
+    where rdb_last_save_time is present but hasn't moved (e.g. BGSAVE never
+    actually ran), not the -1 rdb_last_bgsave_time_sec sentinel case."""
+    info_after = {"rdb_last_save_time": 100, "rdb_last_bgsave_status": "ok"}
+    assert confirm_bgsave_completed(100, info_after) is False
 
 
 def test_inject_persistence_metrics_reads_default_info():

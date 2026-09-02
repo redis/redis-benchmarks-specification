@@ -41,7 +41,9 @@ def inject_replication_sync_metrics(
         return False
 
 
-def wait_for_bgsave_completion(redis_conn, bgsave_timeout_seconds=300):
+def wait_for_bgsave_completion(
+    redis_conn, bgsave_timeout_seconds=300, max_consecutive_errors=10
+):
     """Poll INFO persistence until rdb_bgsave_in_progress clears, or timeout.
 
     BGSAVE forks and replies immediately -- the client-observed latency is
@@ -51,24 +53,76 @@ def wait_for_bgsave_completion(redis_conn, bgsave_timeout_seconds=300):
     latest_fork_usec reflect the save just triggered rather than a stale
     prior one (or a still-in-flight one).
 
+    NOTE: rdb_bgsave_in_progress==0 on its own does not prove a BGSAVE ran
+    during this call -- it also reads 0 before any save has ever started.
+    Callers that need to confirm a save actually happened in the measured
+    window should additionally compare rdb_last_save_time (or
+    rdb_last_bgsave_status) from before/after, the same way the
+    replication-sync path diffs sync_full.
+
     Returns:
         tuple: (completed: bool, elapsed_seconds: float)
     """
     start = time.monotonic()
     poll_interval = 0.2  # 200ms -- BGSAVE durations of interest are seconds+
+    consecutive_errors = 0
     while True:
         elapsed = time.monotonic() - start
         if elapsed >= bgsave_timeout_seconds:
             return False, elapsed
         try:
             persistence_info = redis_conn.info("persistence")
+            consecutive_errors = 0
             if int(persistence_info.get("rdb_bgsave_in_progress", 0)) == 0:
                 return True, elapsed
         except Exception as e:
+            consecutive_errors += 1
             logging.warning(
-                "Error polling INFO persistence while waiting for BGSAVE: {}".format(e)
+                "Error polling INFO persistence while waiting for BGSAVE "
+                "({}/{} consecutive): {}".format(
+                    consecutive_errors, max_consecutive_errors, e
+                )
             )
+            if consecutive_errors >= max_consecutive_errors:
+                logging.warning(
+                    "Giving up on BGSAVE wait after {} consecutive INFO errors "
+                    "(connection likely dead)".format(consecutive_errors)
+                )
+                return False, elapsed
         time.sleep(poll_interval)
+
+
+def confirm_bgsave_completed(rdb_last_save_time_before, info_after):
+    """Return True only if INFO shows a BGSAVE genuinely completed
+    successfully since the pre-run snapshot.
+
+    wait_for_bgsave_completion() returning True (rdb_bgsave_in_progress==0)
+    does not on its own prove a save ran in the measured window -- that
+    field also reads 0 before any save has ever started, e.g. a fresh
+    container with save "" and no BGSAVE issued yet. Without this check, a
+    missing/failed client run would still export Redis's own "no save yet"
+    sentinel (rdb_last_bgsave_time_sec==-1) as if it were a real datapoint.
+
+    Requires rdb_last_save_time to have strictly advanced past the pre-run
+    snapshot AND rdb_last_bgsave_status to be "ok" (not e.g. an OOM'd or
+    signal-killed child, which leaves rdb_bgsave_in_progress==0 too).
+
+    Args:
+        rdb_last_save_time_before: rdb_last_save_time captured before the
+            client run, or None if the snapshot itself failed.
+        info_after: dict from a post-run info() call (any section that
+            includes rdb_last_save_time and rdb_last_bgsave_status), or
+            None if that call failed.
+    """
+    if rdb_last_save_time_before is None or info_after is None:
+        return False
+    rdb_last_save_time_after = info_after.get("rdb_last_save_time")
+    if rdb_last_save_time_after is None:
+        return False
+    return (
+        rdb_last_save_time_after > rdb_last_save_time_before
+        and info_after.get("rdb_last_bgsave_status") == "ok"
+    )
 
 
 def inject_persistence_metrics(results_dict, redis_conn):
