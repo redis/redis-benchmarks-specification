@@ -1834,41 +1834,65 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
+                            topology_replica_count = 0
                             if topology_spec_name in topologies_map:
                                 topology_spec = topologies_map[topology_spec_name]
                                 setup_type = topology_spec["type"]
+                                topology_replica_count = extract_replica_count(
+                                    topologies_map, topology_spec_name
+                                )
                             logging.info(
                                 f"Running topology named {topology_spec_name} of type {setup_type}"
                             )
 
-                            # wait_for_bgsave assumes exactly one primary: the
-                            # pre-run rdb_last_save_time snapshot,
-                            # confirm_bgsave_completed(), and
+                            # wait_for_bgsave assumes a single, replica-free,
+                            # AOF-free primary: the pre-run rdb_last_save_time
+                            # snapshot, confirm_bgsave_completed(), and
                             # inject_persistence_metrics() all read
                             # primary_conns[0] only (see those call sites
-                            # further down). On a multi-primary topology
-                            # (oss-cluster; the only other type in
-                            # topologies.yml) that would confirm and export
-                            # just node 0's save under the whole test's name
-                            # while every other primary's save stays
-                            # unmeasured -- the same misleading-datapoint
-                            # outcome the two skips below exist to prevent.
-                            # Positive check (setup_type != "oss-standalone"
-                            # rather than == "oss-cluster") so a future third
-                            # topology type fails safe by default.
-                            if setup_type != "oss-standalone" and benchmark_config.get(
-                                "dbconfig", {}
-                            ).get("wait_for_bgsave", False):
+                            # further down), and inject_persistence_metrics()'s
+                            # own docstring calls out "no AOF, no replicas" as
+                            # the reason latest_fork_usec is unambiguous. Two
+                            # confounds, both checked here: (1) a multi-primary
+                            # topology (oss-cluster; the only other `type` in
+                            # topologies.yml) would confirm and export just
+                            # node 0's save under the whole test's name while
+                            # every other primary's save stays unmeasured; (2)
+                            # any topology with replicas -- oss-standalone
+                            # variants exist with replicas > 0 in
+                            # topologies.yml, and setup_type alone doesn't
+                            # distinguish those from the plain oss-standalone
+                            # this spec actually targets -- would let a
+                            # replica full sync fork and overwrite
+                            # latest_fork_usec, or (on a --save-configured
+                            # variant) let a periodic autosave satisfy
+                            # confirm_bgsave_completed() on its own, neither of
+                            # which is the BGSAVE this spec issued. Positive
+                            # check (setup_type != "oss-standalone" rather than
+                            # == "oss-cluster") so a future third topology type
+                            # fails safe by default. Nothing bites today: this
+                            # spec pins redis-topologies: [oss-standalone]
+                            # exactly, but the guard is meant to be a fail-safe
+                            # for wait_for_bgsave generally, not just for this
+                            # one spec's own topology list.
+                            if (
+                                setup_type != "oss-standalone"
+                                or topology_replica_count > 0
+                            ) and benchmark_config.get("dbconfig", {}).get(
+                                "wait_for_bgsave", False
+                            ):
                                 logging.warning(
                                     "dbconfig.wait_for_bgsave is set on %s, but "
                                     "wait_for_bgsave only measures "
-                                    "primary_conns[0] and %s is a multi-primary "
-                                    "topology (%s) -- skipping %s/%s rather than "
-                                    "exporting a single node's save under the "
-                                    "whole test's name.",
+                                    "primary_conns[0] with no replicas/AOF, and "
+                                    "%s is either multi-primary (%s) or has "
+                                    "replicas (%s) -- skipping %s/%s rather than "
+                                    "exporting a confounded or single-node save "
+                                    "under the whole test's name.",
                                     test_name,
                                     topology_spec_name,
                                     setup_type,
+                                    topology_replica_count,
                                     test_name,
                                     topology_spec_name,
                                 )
@@ -3216,43 +3240,6 @@ def process_self_contained_coordinator_stream(
                                 # wait_for_bgsave, so this collapses to the exact same
                                 # True for the ordinary case.
                                 test_result = not bgsave_metric_missing
-                                if bgsave_metric_missing:
-                                    # test_result is False here, so the tear-down
-                                    # block below preserves temporary_dir entirely
-                                    # (redis.log included, deliberately, for
-                                    # debugging) rather than shutil.rmtree-ing it.
-                                    # For this spec that directory is also the
-                                    # server's bind-mounted --dir, holding
-                                    # whatever RDB state the unconfirmed BGSAVE
-                                    # left behind: dump.rdb if it actually
-                                    # finished just after the wait gave up, or a
-                                    # temp-<pid>.rdb if it was still in flight
-                                    # when the container stopped -- either way,
-                                    # up to the full dataset size (~469MB for the
-                                    # 12Mkeys-bgsave-duration spec) that's dead
-                                    # weight for diagnosing "no BGSAVE confirmed"
-                                    # and would otherwise never get swept.
-                                    # Unlinking just the RDB files (not the whole
-                                    # directory) keeps the log available.
-                                    try:
-                                        for rdb_path in list(
-                                            Path(temporary_dir).glob("dump.rdb")
-                                        ) + list(
-                                            Path(temporary_dir).glob("temp-*.rdb")
-                                        ):
-                                            rdb_path.unlink()
-                                            logging.info(
-                                                "Removed unconfirmed-BGSAVE artifact %s "
-                                                "(kept redis.log for debugging)",
-                                                rdb_path,
-                                            )
-                                    except OSError as e:
-                                        logging.warning(
-                                            "Failed to clean up RDB artifacts in %s "
-                                            "after an unconfirmed BGSAVE: %s",
-                                            temporary_dir,
-                                            e,
-                                        )
                                 total_test_suite_runs = total_test_suite_runs + 1
 
                             except Exception as e:
@@ -3320,6 +3307,49 @@ def process_self_contained_coordinator_stream(
                                     stop_and_remove_container_safe(
                                         redis_container, "DB"
                                     )
+
+                                if bgsave_metric_missing:
+                                    # Deliberately placed AFTER the DB container is
+                                    # stopped above, not right after
+                                    # bgsave_metric_missing is set: the dominant way
+                                    # it gets set with an RDB actually on disk is a
+                                    # wait_for_bgsave_completion() timeout, meaning
+                                    # the forked child is by definition still
+                                    # writing temp-<pid>.rdb at that point.
+                                    # Unlinking it before the container (and thus
+                                    # that fd) is stopped wouldn't reclaim the
+                                    # ~469MB anyway, would make the child's final
+                                    # rename(temp-<pid>.rdb, dump.rdb) fail with
+                                    # ENOENT and log an error into the redis.log
+                                    # this block exists to keep clean for
+                                    # debugging, and races a fresh dump.rdb into
+                                    # existence (if the child finishes between the
+                                    # unlink and the container stop) that would
+                                    # never get swept at all. Doing it here, after
+                                    # the container is definitely stopped, is
+                                    # deterministic. Still test_result is False, so
+                                    # the temporary_dir rmtree below is skipped and
+                                    # redis.log is preserved -- only the RDB itself
+                                    # is unlinked.
+                                    try:
+                                        for rdb_path in list(
+                                            Path(temporary_dir).glob("dump.rdb")
+                                        ) + list(
+                                            Path(temporary_dir).glob("temp-*.rdb")
+                                        ):
+                                            rdb_path.unlink()
+                                            logging.info(
+                                                "Removed unconfirmed-BGSAVE artifact %s "
+                                                "(kept redis.log for debugging)",
+                                                rdb_path,
+                                            )
+                                    except OSError as e:
+                                        logging.warning(
+                                            "Failed to clean up RDB artifacts in %s "
+                                            "after an unconfirmed BGSAVE: %s",
+                                            temporary_dir,
+                                            e,
+                                        )
 
                                 for redis_container in client_containers:
                                     if type(redis_container) == Container:
