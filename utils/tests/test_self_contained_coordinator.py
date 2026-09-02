@@ -319,10 +319,12 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     """The BGSAVE-duration spec must set wait_for_bgsave: true (without it,
     RdbLastBgsaveTimeSec/RdbLastForkUsec are never injected and the exporter
     has nothing to push -- BGSAVE's client-observed latency is fork time,
-    not save time, so there's no other source for these metrics), and its
+    not save time, so there's no other source for these metrics), its
     exporter jsonpaths must end in the exact keys inject_persistence_metrics()
-    writes -- there's nothing else checking that contract, and a typo on
-    either side lands in a silent, no-exception empty export."""
+    writes, and bgsave_timeout_seconds must be the spec's intended 180 --
+    there's nothing else checking any of this, and a typo on any side lands
+    in a silent, no-exception fallback (300s default for the timeout; empty
+    export for the metric keys)."""
     spec_path = (
         "./redis_benchmarks_specification/test-suites/"
         "memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration.yml"
@@ -332,6 +334,9 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     assert (
         benchmark_config["dbconfig"].get("wait_for_bgsave") is True
     ), "BGSAVE-duration spec must set wait_for_bgsave: true"
+    assert (
+        benchmark_config["dbconfig"].get("bgsave_timeout_seconds") == 180
+    ), "BGSAVE-duration spec must set bgsave_timeout_seconds: 180 (a typo here silently falls back to the 300s default)"
     metrics = benchmark_config["exporter"]["redistimeseries"]["metrics"]
     assert any(
         m.endswith("RdbLastBgsaveTimeSec") for m in metrics
