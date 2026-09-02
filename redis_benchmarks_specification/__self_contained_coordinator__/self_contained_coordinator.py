@@ -3360,30 +3360,49 @@ def process_self_contained_coordinator_stream(
                                                 f'"ALL STATS".Totals child (chain={chain!r}) -- '
                                                 "excluded from the export allowlist."
                                             )
-                                        if declared_metric_keys:
-                                            results_dict["ALL STATS"]["Totals"] = {
-                                                k: v
-                                                for k, v in results_dict["ALL STATS"][
-                                                    "Totals"
-                                                ].items()
-                                                if k in declared_metric_keys
-                                            }
+                                        filtered_totals = {
+                                            k: v
+                                            for k, v in results_dict["ALL STATS"][
+                                                "Totals"
+                                            ].items()
+                                            if k in declared_metric_keys
+                                        }
+                                        if filtered_totals:
+                                            results_dict["ALL STATS"][
+                                                "Totals"
+                                            ] = filtered_totals
                                         else:
-                                            # Every declared exporter.redistimeseries.metrics
-                                            # entry failed to resolve to a Totals child
-                                            # (e.g. a malformed jsonpath) -- not this
-                                            # spec's own metrics today, both parse
-                                            # cleanly, but a future spec's authoring bug.
-                                            # Fail loud rather than replace Totals with
-                                            # {} and export a confirmed run with nothing
-                                            # in it: same "missing means unknown, not
-                                            # verified" principle this diff applies
+                                            # Two ways to land here: declared_metric_keys
+                                            # itself came out empty (every declared
+                                            # exporter.redistimeseries.metrics entry
+                                            # failed to resolve to an "ALL STATS".Totals
+                                            # child -- malformed jsonpath, or one declared
+                                            # under a different section), or it resolved
+                                            # to key name(s) that don't actually exist in
+                                            # this run's Totals (e.g. a rename on
+                                            # inject_persistence_metrics()'s side that the
+                                            # spec YAML's exporter block didn't follow --
+                                            # the same field-name-contract mismatch class
+                                            # stream-contract.yml exists to catch, just on
+                                            # this filter's own allowlist instead).
+                                            # extract_results_table() doesn't raise on a
+                                            # non-matching jsonpath -- find_res just comes
+                                            # back empty -- so either way this would
+                                            # otherwise export a confirmed run with an
+                                            # empty Totals, no exception, no log. Fail
+                                            # loud instead: same "missing means unknown,
+                                            # not verified" principle this diff applies
                                             # everywhere else, not a silent empty
-                                            # datapoint.
+                                            # datapoint. Not reachable by this spec's own
+                                            # two metrics today (both parse cleanly and
+                                            # match real Totals keys), but the same class
+                                            # of future-spec authoring bug this whole
+                                            # filter has been about.
                                             logging.error(
                                                 f"Test {test_name} failed: skip_throughput_floor "
-                                                "is set but none of exporter.redistimeseries.metrics "
-                                                "resolved to a Totals child -- nothing to export."
+                                                "is set but the export allowlist matched nothing "
+                                                "in this run's ALL STATS.Totals -- nothing to "
+                                                "export."
                                             )
                                             bgsave_metric_missing = True
                                     if not bgsave_metric_missing:

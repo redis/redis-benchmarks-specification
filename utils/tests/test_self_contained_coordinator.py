@@ -546,6 +546,38 @@ def test_bgsave_duration_spec_wiring_matches_injector():
     assert (
         '$."ALL STATS".Totals.RdbLastForkUsec' in metrics
     ), "exporter must export the exact jsonpath inject_persistence_metrics() writes RdbLastForkUsec under"
+    # The two asserts above pin the YAML side against hardcoded literals --
+    # they'd stay green through a rename on inject_persistence_metrics()'s
+    # side (e.g. RdbLastBgsaveTimeSec -> RdbLastBgSaveTimeSec) since nothing
+    # here calls it. Actually run it and derive the real keys it writes, so
+    # a rename on either side breaks this test rather than silently
+    # producing an empty export (the exact gap self_contained_coordinator.py's
+    # export-time Totals filter has its own hard-fail for, on the coordinator
+    # side -- this pins the same contract at the spec-authoring layer).
+    injected_results = {}
+    assert (
+        inject_persistence_metrics(
+            injected_results,
+            {"rdb_last_bgsave_time_sec": 26, "latest_fork_usec": 349000},
+        )
+        is True
+    )
+    injected_keys = set(injected_results["ALL STATS"]["Totals"].keys())
+    for jsonpath in metrics:
+        chain = jsonpath_field_chain(jsonpath)
+        assert chain and chain[0] == "ALL STATS" and "Totals" in chain, (
+            f'{jsonpath!r} must be rooted at "ALL STATS".Totals -- '
+            "the coordinator's export-time filter only ever keeps keys "
+            "matching that shape"
+        )
+        totals_idx = chain.index("Totals")
+        assert totals_idx + 1 < len(chain), f"{jsonpath!r} has no field after Totals"
+        declared_key = chain[totals_idx + 1]
+        assert declared_key in injected_keys, (
+            f"{jsonpath!r} declares Totals key {declared_key!r}, but "
+            f"inject_persistence_metrics() actually writes {injected_keys!r} -- "
+            "a real run would export nothing for this metric"
+        )
 
 
 def test_preload_before_replica_default_off():
