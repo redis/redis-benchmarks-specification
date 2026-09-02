@@ -210,6 +210,28 @@ def wait_for_bgsave_topology_unsafe(setup_type, replica_count, topology_unmapped
     return topology_unmapped or setup_type != "oss-standalone" or replica_count > 0
 
 
+def keyspacelen_mismatch(expected_keyspacelen, actual_keyspacelen):
+    """Return True if a declared dbconfig.check.keyspacelen doesn't match
+    an observed DBSIZE.
+
+    For most specs an under-loaded preload shows up as anomalous
+    throughput. It wouldn't for a wait_for_bgsave spec: rdb_last_bgsave_time_sec
+    is monotone in dataset size and little else, so a truncated preload
+    would just look like a smaller, "improved" BGSAVE, with
+    confirm_bgsave_completed()/inject_persistence_metrics() both still
+    succeeding. This closes that gap.
+
+    expected_keyspacelen=None (nothing declared) is never a mismatch.
+    actual_keyspacelen=None (DBSIZE couldn't be read) IS a mismatch
+    whenever a count was expected -- "unknown" doesn't pass as
+    "verified", the same principle wait_for_bgsave_completion() and
+    confirm_bgsave_completed() apply to their own missing-INFO-key cases.
+    """
+    if expected_keyspacelen is None:
+        return False
+    return actual_keyspacelen != expected_keyspacelen
+
+
 def inject_persistence_metrics(results_dict, server_info):
     """Inject the most recent BGSAVE's duration/fork-time into a results_dict.
 

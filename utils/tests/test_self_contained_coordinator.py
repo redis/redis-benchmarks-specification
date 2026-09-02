@@ -48,6 +48,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     generate_cluster_redis_server_args,
     inject_persistence_metrics,
     inject_replication_sync_metrics,
+    keyspacelen_mismatch,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     wait_for_bgsave_completion,
@@ -388,6 +389,25 @@ def test_wait_for_bgsave_topology_unsafe_unmapped_fails_safe():
         )
         is True
     )
+
+
+def test_keyspacelen_mismatch_nothing_declared_is_never_a_mismatch():
+    assert keyspacelen_mismatch(None, 42) is False
+    assert keyspacelen_mismatch(None, None) is False
+
+
+def test_keyspacelen_mismatch_matching_count_is_not_a_mismatch():
+    assert keyspacelen_mismatch(12000000, 12000000) is False
+
+
+def test_keyspacelen_mismatch_under_loaded_preload_is_a_mismatch():
+    assert keyspacelen_mismatch(12000000, 11999999) is True
+
+
+def test_keyspacelen_mismatch_unreadable_dbsize_is_a_mismatch_when_expected():
+    """actual=None (DBSIZE couldn't be read) must not silently pass as
+    verified when a count was declared -- "unknown" is not "matches"."""
+    assert keyspacelen_mismatch(12000000, None) is True
 
 
 def test_jsonpath_last_field_simple_unquoted_segment():

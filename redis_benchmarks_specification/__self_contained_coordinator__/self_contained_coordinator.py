@@ -642,6 +642,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     generate_standalone_redis_server_args,
     inject_persistence_metrics,
     inject_replication_sync_metrics,
+    keyspacelen_mismatch,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     start_redis_container,
@@ -1998,27 +1999,12 @@ def process_self_contained_coordinator_stream(
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
                                 )
-                                # Deliberately NOT reusing topology_replica_count
-                                # (computed before the try, for the wait_for_bgsave
-                                # topology guard) even though it's the same
-                                # underlying value for a mapped topology: that one
-                                # defaults to 0 for an unmapped topology_spec_name
-                                # rather than raising, because the guard needs a
-                                # value before any container work and treats
-                                # "unmapped" as unsafe via a separate flag
-                                # regardless of the count. This call site is
-                                # different -- it's what pre-existing (main, before
-                                # any of this PR's changes) code already ran here,
-                                # and extract_replica_count()'s bare
-                                # topologies_map[topology_spec_name] genuinely
-                                # KeyErrors on an unmapped name, which is caught by
-                                # the outer except and correctly fails the test
-                                # loudly. Reusing the guard's defensively-defaulted
-                                # value here would have silently turned that failure
-                                # into a normal-looking run with replica_count=0 for
-                                # every spec, not just wait_for_bgsave ones -- a
-                                # much larger blast radius than the one spec this PR
-                                # actually ships.
+                                # Pre-existing (main) call, kept independent of
+                                # topology_replica_count above: this one must
+                                # KeyError on an unmapped topology (caught by the
+                                # outer except, failing the test loudly) rather
+                                # than defaulting to 0 like that guard-only value
+                                # does.
                                 replica_count = extract_replica_count(
                                     topologies_map, topology_spec_name
                                 )
@@ -2337,44 +2323,17 @@ def process_self_contained_coordinator_stream(
                                         server_name=server_name,
                                     )
 
-                                # rdb_last_save_time_before bound unconditionally before
-                                # the multi-tool/single-tool split below (bgsave_wait_enabled
-                                # is bound even earlier now, before the try -- see that
-                                # comment): the multi-tool branch (clientconfigs +
-                                # BENCHMARK_MULTITOOL_ENABLED) falls through into this same
-                                # shared tail rather than continue-ing, but only the
-                                # single-tool branch actually assigns these -- wait_for_bgsave
-                                # isn't supported on the multi-tool path (yet), so it should
-                                # just no-op there rather than NameError.
+                                # Bound unconditionally: the multi-tool clientconfigs
+                                # branch below falls through into this same shared tail
+                                # rather than continue-ing, but wait_for_bgsave isn't
+                                # supported there (yet) -- this exists to avoid a
+                                # NameError on that path, not because it uses it.
+                                # bgsave_metric_missing (initialized before the try)
+                                # is set True on failure, never via `continue` -- the
+                                # only tear-down call site is further down this same
+                                # iteration; skipping it would leak DB/client
+                                # containers (see #551).
                                 rdb_last_save_time_before = None
-                                # wait_for_bgsave is __self_contained_coordinator__-only by
-                                # design, same as preload_before_replica/
-                                # inject_replication_sync_metrics (neither is referenced in
-                                # __runner__/runner.py either) -- this is the path that
-                                # actually executes fleet-triggered specs, so a spec setting
-                                # wait_for_bgsave is not silently unsupported there in
-                                # practice, just on the standalone __runner__ CLI mode this
-                                # spec family has never targeted.
-                                # bgsave_metric_missing (initialized to False before the
-                                # try, alongside test_result/redis_container -- see that
-                                # comment for why) gets set True below when
-                                # wait_for_bgsave is on but no BGSAVE was confirmed.
-                                # Folded into "test_result = not bgsave_metric_missing" a
-                                # few hundred lines below (rather than a separate
-                                # conditional override after an unconditional reset), so
-                                # the ordering hazard that pattern would otherwise have is
-                                # removed structurally, not just documented. Also
-                                # deliberately never a `continue` here: the only other
-                                # tear-down call site is teardown itself, further down;
-                                # jumping past it would leak the DB/client containers
-                                # (network_mode="host", so a leaked DB container keeps the
-                                # server port bound for every later test in this
-                                # coordinator process). process_self_contained_coordinator_
-                                # stream() as a whole still has no test coverage for its
-                                # control flow (only the pure functions it calls do). See
-                                # redis/redis-benchmarks-specification#551 for the broader,
-                                # pre-existing pattern of continue-past-teardown container
-                                # leaks this same reasoning applies to.
 
                                 # Multi-tool clientconfigs suites (e.g. memtier +
                                 # bcast-listener) are gated behind a feature flag and
@@ -2679,6 +2638,42 @@ def process_self_contained_coordinator_stream(
                                                     e
                                                 )
                                             )
+
+                                        # dbconfig.check.keyspacelen is documentation-only
+                                        # elsewhere in the coordinator
+                                        # (dbconfig_keyspacelen_check() is never called
+                                        # from this function) -- verified here instead,
+                                        # folded into bgsave_metric_missing the same way
+                                        # a failed wait/confirm is below. See
+                                        # keyspacelen_mismatch()'s docstring for why this
+                                        # matters more for this spec than most.
+                                        expected_keyspacelen = (
+                                            benchmark_config.get("dbconfig", {})
+                                            .get("check", {})
+                                            .get("keyspacelen")
+                                        )
+                                        if expected_keyspacelen is not None:
+                                            try:
+                                                actual_keyspacelen = primary_conns[
+                                                    0
+                                                ].dbsize()
+                                            except Exception as e:
+                                                logging.warning(
+                                                    "Failed to read DBSIZE for keyspacelen check: {}".format(
+                                                        e
+                                                    )
+                                                )
+                                                actual_keyspacelen = None
+                                            if keyspacelen_mismatch(
+                                                expected_keyspacelen,
+                                                actual_keyspacelen,
+                                            ):
+                                                logging.error(
+                                                    f"Test {test_name} failed: dbconfig.check.keyspacelen "
+                                                    f"expects {expected_keyspacelen} keys but DBSIZE "
+                                                    f"reports {actual_keyspacelen} -- nothing to export."
+                                                )
+                                                bgsave_metric_missing = True
 
                                     # run the benchmark
                                     benchmark_start_time = datetime.datetime.now()
