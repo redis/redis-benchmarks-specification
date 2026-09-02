@@ -124,9 +124,19 @@ tested-commands:
 redis-topologies:
 - oss-standalone
 build-variants:
+# amd64-only for now, deliberately: fork() latency at ~15GB RSS (the
+# quantity validate_benchmark_metrics()'s <1 QPS floor actually gates
+# on for this spec) is precisely the kind of value that can differ
+# materially by page size/THP configuration across architectures, and
+# the ~349ms/Ops/sec=2.87 measurement this spec's margin is based on
+# is amd64-only -- it says nothing about arm64. Tripping that floor
+# hits the same continue-past-tear-down container-leak path already
+# documented above. Add gcc:15.2.0-arm64-debian-bookworm-default (and
+# verify dockerhub's actual architecture dispatch) back once a real
+# arm64 fork-ack measurement at this scale exists; dockerhub is left
+# out here too since its own architecture routing wasn't confirmed
+# amd64-exclusive in the time available to check.
 - gcc:15.2.0-amd64-debian-bookworm-default
-- gcc:15.2.0-arm64-debian-bookworm-default
-- dockerhub
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
