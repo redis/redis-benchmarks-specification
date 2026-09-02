@@ -118,9 +118,12 @@ dbconfig:
   # not just this one's. Real BGSAVE-duration regression detection needs
   # either a genuinely per-spec-scoped regression table or the
   # coordinator issuing BGSAVE directly instead of via a memtier client.
-  # Manual comparison via --metric_name RdbLastBgsaveTimeSec
+  # Manual comparison via --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
   # --metric_mode lower-better (see the exporter block) is the reliable
-  # way to check this spec for regressions today.
+  # way to check this spec for regressions today -- the fully-qualified
+  # form is required: extract_results_table() writes the TimeSeries
+  # metric label from the exporter jsonpath (stripped/normalized), not
+  # the bare key, so the short form silently matches nothing.
 tested-commands:
 - bgsave
 redis-topologies:
@@ -157,18 +160,22 @@ exporter:
     # this is not a stable number). This affects both comparison paths:
     # - redis-benchmarks-spec-compare defaults --metric_name to
     #   ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
-    #   always pass both --metric_name RdbLastBgsaveTimeSec (or
-    #   RdbLastForkUsec) AND --metric_mode lower-better explicitly when
-    #   comparing this spec manually -- both exported metrics are
-    #   lower-better, so --metric_name alone silently reports a
-    #   regressed (slower) BGSAVE as an improvement.
+    #   always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec
+    #   (or ALL_STATS.Totals.RdbLastForkUsec) AND --metric_mode lower-better
+    #   explicitly when comparing this spec manually -- both exported
+    #   metrics are lower-better, so --metric_name alone silently reports
+    #   a regressed (slower) BGSAVE as an improvement. The fully-qualified
+    #   form is required too: extract_results_table() writes the
+    #   TimeSeries metric label from the exporter jsonpath below (stripped
+    #   of $./quotes, spaces to _), not the bare key -- --metric_name
+    #   RdbLastBgsaveTimeSec on its own matches no series at all.
     # - The coordinator's automated actionable-PR regression comment
     #   hardcodes the same metric/mode for every spec with no per-spec
     #   override (see the comment on dbconfig.skip_throughput_floor above
     #   for why one wasn't added here), so this spec's Ops/sec may
     #   occasionally surface there too -- treat any such flag on this
-    #   specific spec with skepticism and check RdbLastBgsaveTimeSec
-    #   manually before trusting it.
+    #   specific spec with skepticism and check
+    #   ALL_STATS.Totals.RdbLastBgsaveTimeSec manually before trusting it.
     # Issuing BGSAVE directly from the coordinator instead of through a
     # memtier client would remove the degenerate Ops/sec at the source;
     # deferred as a larger change than this PR.
