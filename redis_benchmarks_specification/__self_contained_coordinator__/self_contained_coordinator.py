@@ -3148,6 +3148,29 @@ def process_self_contained_coordinator_stream(
                                                 bgsave_wait_elapsed,
                                             )
                                         )
+                                        # print_results_table_stdout() already ran
+                                        # earlier (right after validate_benchmark_metrics(),
+                                        # before this wait/confirm/inject block), off a
+                                        # results_dict that didn't have
+                                        # RdbLastBgsaveTimeSec/RdbLastForkUsec yet -- for
+                                        # a wait_for_bgsave spec those are the only two
+                                        # metrics it actually declares, so that printed
+                                        # table showed nothing but the degenerate
+                                        # fork-ack Ops/sec/p50.00/p99.00 rows. Re-print
+                                        # now that results_dict actually has them, so the
+                                        # run log's human-facing table isn't pure noise
+                                        # for the one spec whose entire signal is these
+                                        # two values. TimeSeries itself was never
+                                        # affected either way -- exporter_datasink_common()
+                                        # runs after this block regardless.
+                                        print_results_table_stdout(
+                                            benchmark_config,
+                                            default_metrics,
+                                            results_dict,
+                                            setup_type,
+                                            test_name,
+                                            None,
+                                        )
                                     else:
                                         # BGSAVE was confirmed (a real rdb_last_save_time
                                         # advance + status ok), but inject_persistence_metrics()

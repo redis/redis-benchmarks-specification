@@ -171,8 +171,16 @@ exporter:
   redistimeseries:
     # The standard Ops/sec / Latency / p50.00 / p99.00 series also get
     # pushed under this test name, off the single BGSAVE fork-ack reply
-    # (measured ~4ms at 3M keys, ~349ms at 12M -- fork() cost scales with
-    # resident memory, so this is not a stable number). Why: see
+    # (~4ms latency at 3M keys, ~349ms at 12M -- fork() cost scales with
+    # resident memory, so this is not a stable number). Measured Ops/sec
+    # at 12M keys was 2.87, confirmed directly against
+    # validate_benchmark_metrics() -- above the <1 floor today on this
+    # exact hardware/dataset, not below it, so dbconfig.skip_throughput_floor
+    # is deliberately defensive rather than fixing an observed trip: the
+    # margin above 1 is only ~3x, and fork() cost is architecture-sensitive
+    # (the reason arm64 was excluded for a while) and could plausibly
+    # shrink further under oss-standalone's single-CPU fleet contention.
+    # Why: see
     # redis/redis-benchmarks-specification#550
     # (merge_default_and_config_metrics() extends rather than replaces
     # defaults.yml). This affects both comparison paths:
