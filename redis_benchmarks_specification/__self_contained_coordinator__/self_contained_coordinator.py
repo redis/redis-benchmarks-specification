@@ -2986,19 +2986,27 @@ def process_self_contained_coordinator_stream(
                                     if not bgsave_confirmed:
                                         # A spec that opts into wait_for_bgsave has no
                                         # metric of interest other than the ones injected
-                                        # below -- if nothing gets injected here, the
-                                        # exporter has nothing to push and the run would
-                                        # otherwise report success with zero datapoints,
-                                        # silently growing a hole in TimeSeries. Fail it
-                                        # loudly instead, the same way a metric-validation
-                                        # failure does a few lines above -- but WITHOUT a
-                                        # continue: tear-down (stop_and_remove_container_safe
-                                        # for both DB and client containers) lives further
-                                        # down in this same try block, and skipping it would
-                                        # leak this run's containers rather than just failing
-                                        # the datapoint. bgsave_metric_missing carries the
-                                        # failure through the unconditional
-                                        # "test_result = True" reset below instead.
+                                        # below. Without bgsave_metric_missing gating the
+                                        # exporter_datasink_common() call further down, this
+                                        # would NOT leave a clean hole in TimeSeries: that
+                                        # call has no concept of test_result and
+                                        # merge_default_and_config_metrics() extends
+                                        # defaults.yml rather than replacing it, so it would
+                                        # still push the standard Ops/sec/p50.00/p99.00
+                                        # series off the single BGSAVE fork-ack reply under
+                                        # this test name -- a misleading datapoint from a
+                                        # run this code just declared failed, worse than a
+                                        # hole. Fail it loudly instead, the same way a
+                                        # metric-validation failure does a few lines above --
+                                        # but WITHOUT a continue: tear-down
+                                        # (stop_and_remove_container_safe for both DB and
+                                        # client containers) lives further down in this same
+                                        # try block, and skipping it would leak this run's
+                                        # containers rather than just failing the datapoint.
+                                        # bgsave_metric_missing carries the failure through
+                                        # the unconditional "test_result = True" reset below,
+                                        # and separately gates the exporter_datasink_common()
+                                        # call itself so nothing gets pushed at all.
                                         logging.error(
                                             f"Test {test_name} failed: dbconfig.wait_for_bgsave "
                                             "is set but no confirmed successful BGSAVE was "
@@ -3050,30 +3058,43 @@ def process_self_contained_coordinator_stream(
                                         )
                                         bgsave_metric_missing = True
                                 try:
-                                    exporter_datasink_common(
-                                        benchmark_config,
-                                        benchmark_duration_seconds,
-                                        build_variant_name,
-                                        datapoint_time_ms,
-                                        dataset_load_duration_seconds,
-                                        datasink_conn,
-                                        datasink_push_results_redistimeseries,
-                                        git_branch,
-                                        git_version,
-                                        metadata,
-                                        redis_conns,
-                                        results_dict,
-                                        running_platform,
-                                        setup_name,
-                                        setup_type,
-                                        test_name,
-                                        tf_github_org,
-                                        tf_github_repo,
-                                        tf_triggering_env,
-                                        topology_spec_name,
-                                        default_metrics,
-                                        git_hash,
-                                    )
+                                    # exporter_datasink_common() has no concept of
+                                    # test_result -- it pushes whatever's in results_dict
+                                    # unconditionally, and merge_default_and_config_metrics()
+                                    # (__common__/timeseries.py) extends defaults.yml rather
+                                    # than replacing it. So on an unconfirmed BGSAVE, calling
+                                    # this unconditionally would NOT leave a hole -- it would
+                                    # push the standard Ops/sec/p50.00/p99.00 series (from the
+                                    # single fork-ack reply) under this test name, visible to
+                                    # redis-benchmarks-spec-compare's default --metric_name,
+                                    # from a run this code just declared failed. That's worse
+                                    # than a hole, so skip the export entirely rather than
+                                    # push a misleading datapoint.
+                                    if not bgsave_metric_missing:
+                                        exporter_datasink_common(
+                                            benchmark_config,
+                                            benchmark_duration_seconds,
+                                            build_variant_name,
+                                            datapoint_time_ms,
+                                            dataset_load_duration_seconds,
+                                            datasink_conn,
+                                            datasink_push_results_redistimeseries,
+                                            git_branch,
+                                            git_version,
+                                            metadata,
+                                            redis_conns,
+                                            results_dict,
+                                            running_platform,
+                                            setup_name,
+                                            setup_type,
+                                            test_name,
+                                            tf_github_org,
+                                            tf_github_repo,
+                                            tf_triggering_env,
+                                            topology_spec_name,
+                                            default_metrics,
+                                            git_hash,
+                                        )
 
                                     # Shut down all nodes in reverse order: replicas, then primary (idx 0).
                                     # ConnectionError is the expected success path (the server drops the
