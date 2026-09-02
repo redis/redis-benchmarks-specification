@@ -152,12 +152,13 @@ tested-groups:
 - server
 exporter:
   redistimeseries:
-    # merge_default_and_config_metrics() EXTENDS defaults.yml rather than
-    # replacing it, so the standard Ops/sec / Latency / p50.00 / p99.00
-    # series also get pushed under this test name, off the single BGSAVE
-    # fork-ack reply (measured ~4ms at 3M keys, ~349ms at this spec's
-    # actual 12M-key scale -- fork() cost scales with resident memory, so
-    # this is not a stable number). This affects both comparison paths:
+    # The standard Ops/sec / Latency / p50.00 / p99.00 series also get
+    # pushed under this test name, off the single BGSAVE fork-ack reply
+    # (measured ~4ms at 3M keys, ~349ms at 12M -- fork() cost scales with
+    # resident memory, so this is not a stable number). Why: see
+    # redis/redis-benchmarks-specification#550
+    # (merge_default_and_config_metrics() extends rather than replaces
+    # defaults.yml). This affects both comparison paths:
     # - redis-benchmarks-spec-compare defaults --metric_name to
     #   ALL_STATS.Totals.Ops/sec and --metric_mode to higher-better, so
     #   always pass both --metric_name ALL_STATS.Totals.RdbLastBgsaveTimeSec

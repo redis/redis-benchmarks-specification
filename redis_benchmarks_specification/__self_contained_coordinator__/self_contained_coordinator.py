@@ -1834,6 +1834,46 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
+                            if topology_spec_name in topologies_map:
+                                topology_spec = topologies_map[topology_spec_name]
+                                setup_type = topology_spec["type"]
+                            logging.info(
+                                f"Running topology named {topology_spec_name} of type {setup_type}"
+                            )
+
+                            # wait_for_bgsave assumes exactly one primary: the
+                            # pre-run rdb_last_save_time snapshot,
+                            # confirm_bgsave_completed(), and
+                            # inject_persistence_metrics() all read
+                            # primary_conns[0] only (see those call sites
+                            # further down). On a multi-primary topology
+                            # (oss-cluster; the only other type in
+                            # topologies.yml) that would confirm and export
+                            # just node 0's save under the whole test's name
+                            # while every other primary's save stays
+                            # unmeasured -- the same misleading-datapoint
+                            # outcome the two skips below exist to prevent.
+                            # Positive check (setup_type != "oss-standalone"
+                            # rather than == "oss-cluster") so a future third
+                            # topology type fails safe by default.
+                            if setup_type != "oss-standalone" and benchmark_config.get(
+                                "dbconfig", {}
+                            ).get("wait_for_bgsave", False):
+                                logging.warning(
+                                    "dbconfig.wait_for_bgsave is set on %s, but "
+                                    "wait_for_bgsave only measures "
+                                    "primary_conns[0] and %s is a multi-primary "
+                                    "topology (%s) -- skipping %s/%s rather than "
+                                    "exporting a single node's save under the "
+                                    "whole test's name.",
+                                    test_name,
+                                    topology_spec_name,
+                                    setup_type,
+                                    test_name,
+                                    topology_spec_name,
+                                )
+                                continue
+
                             # wait_for_bgsave is unsupported on the multi-tool
                             # (clientconfigs) path -- only the single-tool
                             # clientconfig branch further down reads it. Checked
@@ -1862,13 +1902,6 @@ def process_self_contained_coordinator_stream(
                                     topology_spec_name,
                                 )
                                 continue
-
-                            if topology_spec_name in topologies_map:
-                                topology_spec = topologies_map[topology_spec_name]
-                                setup_type = topology_spec["type"]
-                            logging.info(
-                                f"Running topology named {topology_spec_name} of type {setup_type}"
-                            )
 
                             # Update parca-agent labels if available
                             global _parca_agent_available, _parca_startup_labels
@@ -2254,20 +2287,19 @@ def process_self_contained_coordinator_stream(
                                 # practice, just on the standalone __runner__ CLI mode this
                                 # spec family has never targeted.
                                 # Set when wait_for_bgsave is on but no BGSAVE was confirmed.
-                                # Applied to test_result AFTER the unconditional
-                                # "test_result = True" a few hundred lines below (which would
-                                # otherwise clobber a False set any earlier than that point) --
-                                # deliberately NOT a `continue` here, since the only other
-                                # tear-down call site is teardown itself, a few lines after
-                                # that reset; jumping past it would leak the DB/client
-                                # containers (network_mode="host", so a leaked DB container
-                                # keeps the server port bound for every later test in this
-                                # coordinator process). This ordering constraint (apply
-                                # AFTER the reset, never `continue` before tear-down) is
-                                # enforced only by this comment -- process_self_contained_
-                                # coordinator_stream() as a whole has no test coverage for
-                                # its control flow (only the pure functions it calls do),
-                                # so a future refactor could silently break it. See
+                                # Folded into "test_result = not bgsave_metric_missing" a
+                                # few hundred lines below (rather than a separate
+                                # conditional override after an unconditional reset), so
+                                # the ordering hazard that pattern would otherwise have is
+                                # removed structurally, not just documented. Also
+                                # deliberately never a `continue` here: the only other
+                                # tear-down call site is teardown itself, further down;
+                                # jumping past it would leak the DB/client containers
+                                # (network_mode="host", so a leaked DB container keeps the
+                                # server port bound for every later test in this
+                                # coordinator process). process_self_contained_coordinator_
+                                # stream() as a whole still has no test coverage for its
+                                # control flow (only the pure functions it calls do). See
                                 # redis/redis-benchmarks-specification#551 for the broader,
                                 # pre-existing pattern of continue-past-teardown container
                                 # leaks this same reasoning applies to.
@@ -3169,13 +3201,15 @@ def process_self_contained_coordinator_stream(
                                     traceback.print_exc(file=sys.stdout)
                                     print("-" * 60)
 
-                                test_result = True
-                                if bgsave_metric_missing:
-                                    # wait_for_bgsave was set but no BGSAVE was confirmed
-                                    # in the measured window -- applied here, after the
-                                    # unconditional reset above, rather than earlier where
-                                    # it would just get overwritten back to True.
-                                    test_result = False
+                                # A single expression rather than "test_result = True"
+                                # followed by a conditional override: the ordering
+                                # constraint (bgsave_metric_missing must be applied
+                                # AFTER any earlier reset to True) was previously
+                                # enforced only by a comment, and bgsave_metric_missing
+                                # defaults to False for every spec that doesn't set
+                                # wait_for_bgsave, so this collapses to the exact same
+                                # True for the ordinary case.
+                                test_result = not bgsave_metric_missing
                                 total_test_suite_runs = total_test_suite_runs + 1
 
                             except Exception as e:
