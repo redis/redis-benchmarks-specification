@@ -1835,7 +1835,8 @@ def process_self_contained_coordinator_stream(
                                 continue
 
                             topology_replica_count = 0
-                            if topology_spec_name in topologies_map:
+                            topology_unmapped = topology_spec_name not in topologies_map
+                            if not topology_unmapped:
                                 topology_spec = topologies_map[topology_spec_name]
                                 setup_type = topology_spec["type"]
                                 topology_replica_count = extract_replica_count(
@@ -1870,14 +1871,22 @@ def process_self_contained_coordinator_stream(
                             # which is the BGSAVE this spec issued. Positive
                             # check (setup_type != "oss-standalone" rather than
                             # == "oss-cluster") so a future third topology type
-                            # fails safe by default. Nothing bites today: this
-                            # spec pins redis-topologies: [oss-standalone]
-                            # exactly, but the guard is meant to be a fail-safe
-                            # for wait_for_bgsave generally, not just for this
-                            # one spec's own topology list.
+                            # fails safe by default -- including topology_unmapped:
+                            # setup_type/topology_replica_count both default to
+                            # ("oss-standalone", 0) when topology_spec_name isn't
+                            # in topologies_map at all, which would otherwise
+                            # pass this guard despite nothing actually being
+                            # known about the topology's primaries/replicas, the
+                            # one case this positive-check framing was meant to
+                            # cover. Nothing bites today: this spec pins
+                            # redis-topologies: [oss-standalone] exactly, but the
+                            # guard is meant to be a fail-safe for wait_for_bgsave
+                            # generally, not just for this one spec's own
+                            # topology list.
                             if (
                                 setup_type != "oss-standalone"
                                 or topology_replica_count > 0
+                                or topology_unmapped
                             ) and benchmark_config.get("dbconfig", {}).get(
                                 "wait_for_bgsave", False
                             ):
@@ -1885,12 +1894,14 @@ def process_self_contained_coordinator_stream(
                                     "dbconfig.wait_for_bgsave is set on %s, but "
                                     "wait_for_bgsave only measures "
                                     "primary_conns[0] with no replicas/AOF, and "
-                                    "%s is either multi-primary (%s) or has "
-                                    "replicas (%s) -- skipping %s/%s rather than "
-                                    "exporting a confounded or single-node save "
-                                    "under the whole test's name.",
+                                    "%s is either unmapped (%s), multi-primary "
+                                    "(%s), or has replicas (%s) -- skipping "
+                                    "%s/%s rather than exporting a confounded, "
+                                    "unverified, or single-node save under the "
+                                    "whole test's name.",
                                     test_name,
                                     topology_spec_name,
+                                    topology_unmapped,
                                     setup_type,
                                     topology_replica_count,
                                     test_name,
