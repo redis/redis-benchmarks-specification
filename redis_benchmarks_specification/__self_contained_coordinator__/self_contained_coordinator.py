@@ -1896,6 +1896,16 @@ def process_self_contained_coordinator_stream(
                                     test_name,
                                     topology_spec_name,
                                 )
+                                # Same lrem the build-variant skip does above (and
+                                # the topology-level bookkeeping below does for the
+                                # normal path) -- without it this topology's entry
+                                # never leaves stream_topology_list_pending and
+                                # just sits there until REDIS_BINS_EXPIRE_SECS.
+                                github_event_conn.lrem(
+                                    stream_topology_list_pending,
+                                    1,
+                                    f"{test_name}::{topology_spec_name}",
+                                )
                                 continue
 
                             # wait_for_bgsave is unsupported on the multi-tool
@@ -1924,6 +1934,11 @@ def process_self_contained_coordinator_stream(
                                     test_name,
                                     test_name,
                                     topology_spec_name,
+                                )
+                                github_event_conn.lrem(
+                                    stream_topology_list_pending,
+                                    1,
+                                    f"{test_name}::{topology_spec_name}",
                                 )
                                 continue
 
@@ -1973,7 +1988,7 @@ def process_self_contained_coordinator_stream(
                             # Initialized here, before the try, rather than
                             # deeper inside it (where the wait_for_bgsave logic
                             # itself lives): the RDB-cleanup block in tear-down
-                            # below reads this unconditionally, and tear-down
+                            # below reads both unconditionally, and tear-down
                             # runs even when the try raises before reaching the
                             # deeper initialization (e.g. a preload failure) --
                             # an uninitialized read there would be a NameError
@@ -1982,6 +1997,7 @@ def process_self_contained_coordinator_stream(
                             # (client container removal, temp-dir handling,
                             # stream bookkeeping), leaking client containers.
                             bgsave_metric_missing = False
+                            bgsave_wait_enabled = False
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -2305,14 +2321,15 @@ def process_self_contained_coordinator_stream(
                                         server_name=server_name,
                                     )
 
-                                # Bound unconditionally before the multi-tool/single-tool
-                                # split below: the multi-tool branch (clientconfigs +
+                                # rdb_last_save_time_before bound unconditionally before
+                                # the multi-tool/single-tool split below (bgsave_wait_enabled
+                                # is bound even earlier now, before the try -- see that
+                                # comment): the multi-tool branch (clientconfigs +
                                 # BENCHMARK_MULTITOOL_ENABLED) falls through into this same
                                 # shared tail rather than continue-ing, but only the
                                 # single-tool branch actually assigns these -- wait_for_bgsave
                                 # isn't supported on the multi-tool path (yet), so it should
                                 # just no-op there rather than NameError.
-                                bgsave_wait_enabled = False
                                 rdb_last_save_time_before = None
                                 # wait_for_bgsave is __self_contained_coordinator__-only by
                                 # design, same as preload_before_replica/
@@ -3322,29 +3339,44 @@ def process_self_contained_coordinator_stream(
                                         redis_container, "DB"
                                     )
 
-                                if bgsave_metric_missing:
-                                    # Deliberately placed AFTER the DB container is
-                                    # stopped above, not right after
-                                    # bgsave_metric_missing is set: the dominant way
-                                    # it gets set with an RDB actually on disk is a
+                                if bgsave_wait_enabled and not test_result:
+                                    # bgsave_wait_enabled (not bgsave_metric_missing)
+                                    # is the gate: bgsave_metric_missing only covers
+                                    # "no BGSAVE confirmed", but a *confirmed* BGSAVE
+                                    # on a wait_for_bgsave spec still leaves the same
+                                    # ~469MB dump.rdb on disk if something downstream
+                                    # (topdown wait, exporter_datasink_common(), the
+                                    # connection-shutdown loop) then fails and lands
+                                    # in the outer except -- test_result goes False
+                                    # there too, via a different route, but the
+                                    # dump.rdb this spec just successfully wrote is
+                                    # just as permanent without this broader check.
+                                    # bgsave_metric_missing always implies
+                                    # not test_result (test_result = not
+                                    # bgsave_metric_missing), so this is strictly
+                                    # broader, not a different case. Deliberately
+                                    # placed AFTER the DB container is stopped above,
+                                    # not right after bgsave_metric_missing is set:
+                                    # the dominant way that gets True with an RDB
+                                    # actually on disk is a
                                     # wait_for_bgsave_completion() timeout, meaning
-                                    # the forked child is by definition still
-                                    # writing temp-<pid>.rdb at that point.
-                                    # Unlinking it before the container (and thus
-                                    # that fd) is stopped wouldn't reclaim the
-                                    # ~469MB anyway, would make the child's final
+                                    # the forked child is by definition still writing
+                                    # temp-<pid>.rdb at that point. Unlinking it
+                                    # before the container (and thus that fd) is
+                                    # stopped wouldn't reclaim the ~469MB anyway,
+                                    # would make the child's final
                                     # rename(temp-<pid>.rdb, dump.rdb) fail with
-                                    # ENOENT and log an error into the redis.log
-                                    # this block exists to keep clean for
-                                    # debugging, and races a fresh dump.rdb into
-                                    # existence (if the child finishes between the
-                                    # unlink and the container stop) that would
-                                    # never get swept at all. Doing it here, after
-                                    # the container is definitely stopped, is
-                                    # deterministic. Still test_result is False, so
-                                    # the temporary_dir rmtree below is skipped and
-                                    # redis.log is preserved -- only the RDB itself
-                                    # is unlinked.
+                                    # ENOENT and log an error into the redis.log this
+                                    # block exists to keep clean for debugging, and
+                                    # races a fresh dump.rdb into existence (if the
+                                    # child finishes between the unlink and the
+                                    # container stop) that would never get swept at
+                                    # all. Doing it here, after the container is
+                                    # definitely stopped, is deterministic. Still
+                                    # test_result is False here (that's the
+                                    # condition), so the temporary_dir rmtree below
+                                    # is skipped and redis.log is preserved -- only
+                                    # the RDB itself is unlinked.
                                     try:
                                         for rdb_path in list(
                                             Path(temporary_dir).glob("dump.rdb")
