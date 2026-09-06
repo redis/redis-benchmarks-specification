@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-600K-elements-zrangestore-300K-elements-bylex
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key preloaded with exactly
+  600,001 elements (integer members 1..600001, all with a constant score of 0 -- a single-__key__ preload,
+  so unlike the dual-draw by-score datasets there is no #508 shortfall), and we copy its first 300,000
+  lexicographical elements into a second key using ZRANGESTORE ... - + BYLEX LIMIT 0 300000. This is the
+  by-lex mirror of memtier_benchmark-1key-zset-600K-elements-zrangestore-300K-elements (the by-score hero
+  test that currently dominates throughput deltas across zset POC comparisons): same source size, same
+  copied-element count, same destination overwrite-per-call shape -- but the range is resolved through
+  zslParseLexRange / sdscmplen member comparisons and lex-ordered skiplist iteration instead of double
+  score compares. LIMIT (only valid with BYSCORE/BYLEX) makes the copied count exact: without it, unpadded-integer
+  members have no lex value at the numeric halfway point, so a bare - + range would copy all 600,001 elements.
+  A constant score is required for BYLEX semantics: with equal scores the ordering is purely lexicographical
+  (verified live: ZRANGEBYLEX returns "1", "10", "100", ... and ZRANGESTORE BYLEX LIMIT 0 300000 yields
+  exactly 300,000 elements). Encoding: skiplist+hashtable (600,001 elements, exceeds zset-max-listpack-entries
+  128). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: -n allkeys "--data-size" "10" --key-prefix "" "--command" "ZADD zset 0 __key__" "--command-key-pattern"
+      "P" "-c" "1" "-t" "1" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "600001" --pipeline
+      50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-600K-elements-const-score
+  dataset_description: This dataset contains 1 sorted set key with exactly 600,001 elements (integer members
+    1..600001), each with a constant score of 0 -- the by-lex counterpart of the 1key-zset-600K-elements-float
+    dataset, which uses distinct float scores and therefore cannot serve BYLEX range queries.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangestore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 120 -c 1 -t 1 --command "ZRANGESTORE zset1 zset - + BYLEX LIMIT 0 300000" --command-key-pattern="P"
+    --key-minimum=1 --key-maximum 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 12

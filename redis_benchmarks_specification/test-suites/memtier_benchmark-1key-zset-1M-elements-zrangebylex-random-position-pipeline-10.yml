@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-zrangebylex-random-position-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains
+  exactly 1,000,000 elements (integer members 1..1,000,000, constant score of 1 -- reuses the 1key-zset-1M-elements-const-score
+  dataset whose single-__key__ preload has no #508 shortfall) and we query a 100-element lexicographical
+  slice starting from a lex lower bound drawn uniformly at random from the same 1..1,000,000 domain (ZRANGEBYLEX
+  lb [__key__ + LIMIT 0 100, R key-pattern, --key-prefix "" so no memtier- prefix corrupts the integer
+  lex domain), pipelined 10-deep -- so every call seeks a fresh, arbitrary lex position rather than always
+  starting from the head. The random start is deliberate: with the "-" min sentinel, zslLexValueGteMin
+  is unconditionally true, so zslFirstInLexRange short-circuits to the leftmost node and a "- + LIMIT
+  0 100" query would scan the same head-of-skiplist 100 elements on every call (cache-hot after the first
+  few ops, independent of cardinality) -- reading more like the 100-element listpack sibling than a large-set
+  seek. This is the by-lex mirror of the existing 1key-zset-1M-elements-zrangebyscore-random-position
+  spec: same domain, same arbitrary-seek intent, but the position is resolved through zslFirstInLexRange
+  lex descent + sdscmplen member comparisons instead of a double score seek. Near the lex tail the slice
+  returns fewer than 100 elements (the remaining domain is shorter), which is expected for a uniform random
+  start. Encoding: skiplist+hashtable (1,000,000 elements, exceeds zset-max-listpack-entries 128). Metric
+  of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb 1 __key__" --command-key-pattern=P --key-minimum 1 --key-maximum
+      1000000 --key-prefix "" -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-const-score
+  dataset_description: This dataset contains 1 sorted set key with 1,000,000 elements (integer members
+    1..1,000,000, verified via live ZCARD), each with a constant score of 1.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangebylex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANGEBYLEX lb [__key__ + LIMIT 0 100" --key-minimum 1 --key-maximum 1000000 --command-key-pattern=R
+    --key-prefix "" --hide-histogram --test-time 180 --pipeline 10 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 8

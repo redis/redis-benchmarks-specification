@@ -1,0 +1,62 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-100-elements-zrangebylex-all-elements
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET contains
+  100 members (random 10-character lowercase strings, all with a constant score of 0) and we query it
+  using ZRANGEBYLEX with the full lex range - +, returning all 100 elements in lexicographical order.
+  A constant score is required for BYLEX semantics: with equal scores the ordering is purely lexicographical
+  (with the distinct float scores of the sibling by-score dataset, ZRANGEBYLEX would filter in (score,member)
+  order and the lex ordering would be meaningless). This is the by-lex mirror of memtier_benchmark-1key-zset-100-elements-zrangebyscore-all-elements:
+  same element count, same full-range scan shape, but the range endpoints are parsed through zslParseLexRange
+  and elements are compared with sdscmplen instead of double score compares. Encoding: listpack (100 elements,
+  below zset-max-listpack-entries 128) -- so this spec covers the listpack linear-scan lex path; the skiplist
+  lex path at scale is covered by the 1M-elements by-lex siblings. Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"ZADD" "zset:100" "0" "lysbgqqfqw" "0" "mtccjerdon" "0" "jekkafodvk" "0" "nmgxcctxpn" "0" "vyqqkuszzh"
+    "0" "pytrnqdhvs" "0" "oguwnmniig" "0" "gekntrykfh" "0" "nhfnbxqgol" "0" "cgoeihlnei" "0" "kgqrovsxce"
+    "0" "imyizmhzjk" "0" "urvgxwbiiz" "0" "onzjrteqmu" "0" "alqlzsvuuz" "0" "lgrkndhekf" "0" "tcjvjofxtd"
+    "0" "ouuybhtvyb" "0" "owbbdezgxn" "0" "ksqpdywgdd" "0" "qrosceblyo" "0" "agsdggdghc" "0" "gfdqdrondm"
+    "0" "oapbvnisyq" "0" "htvbwmfyic" "0" "vyoomgwuzv" "0" "pcxdhdjwnf" "0" "ibhohmfxzt" "0" "erxulvebrj"
+    "0" "qwxrsgafzy" "0" "whmotknaff" "0" "ueyrvldzwl" "0" "nsxaigrnje" "0" "xsepfhdizi" "0" "exvhmqxvvp"
+    "0" "owtkxlzaci" "0" "ypfeltycpy" "0" "qbiwbqiubb" "0" "wqiwdbncmt" "0" "dapacykoah" "0" "hhjclfbbka"
+    "0" "ujrxcmpvsq" "0" "lbtpbknelm" "0" "wvcnqbvlnf" "0" "mibvtmqxcy" "0" "aovfsvbwjg" "0" "qbyhorvill"
+    "0" "ypekeuutef" "0" "xamjodnbpf" "0" "hhniikmtsx" "0" "sahqeskveq" "0" "bqntlsaqjb" "0" "luemuetmia"
+    "0" "zwnitejtpg" "0" "ncjfckgkcl" "0" "qjyeqcfhjj" "0" "wkbasfyzqz" "0" "ccagtnjilc" "0" "pqyurbvifk"
+    "0" "djetcyfxuc" "0" "vpmpffdoqz" "0" "hlpdstpvzw" "0" "imdqxmkzdj" "0" "eouliovvra" "0" "gxephxbdru"
+    "0" "dlsjwmqzhx" "0" "uapsgmizgh" "0" "gorgpnnqwr" "0" "rojeolnopp" "0" "mbxohpancs" "0" "upodnpqenn"
+    "0" "dlbqcynhrn" "0" "ichqzmiyot" "0" "ulbrotlhze" "0" "licotqplim" "0" "mxwgdcutnb" "0" "vpbkvwgxsf"
+    "0" "ijsmoyesvd" "0" "mbgehjiauu" "0" "vymjzlzqcn" "0" "rjkknoigmu" "0" "jxoxtnzujs" "0" "eqlgkwosie"
+    "0" "ljcgdooafo" "0" "cwaveajmcz" "0" "ssjqrsluod" "0" "fhuvzpxjbc" "0" "perfwnpvkl" "0" "mjjuylgssm"
+    "0" "vxcbagyymm" "0" "nxcdcaqgit" "0" "ewomnmugfa" "0" "rkaznetutk" "0" "rqvryfvlie" "0" "holjcdpijr"
+    "0" "pquewclxuy" "0" "ocrcszcznp" "0" "xczfmrxrja" "0" "nxzsnkmxvi" "0" "hhjchwjlmc"'
+  dataset_name: 1key-zset-100-elements-const-score
+  dataset_description: 'This dataset contains 1 sorted set key with 100 random 10-character lowercase
+    members, all with a constant score of 0. A constant score is required for BYLEX range semantics to
+    be meaningful: with equal scores the ordering is purely lexicographical. Same member list as the 1key-zset-100-elements-float
+    dataset used by the by-score specs.'
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangebylex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANGEBYLEX zset:100 - +"  --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 7
