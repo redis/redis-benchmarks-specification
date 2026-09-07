@@ -1,0 +1,42 @@
+version: 0.4
+name: memtier_benchmark-1key-set-100-elements-sscan-match-count-100
+description: 'Listpack-encoded counterpart to the hashtable SSCAN MATCH spec: a 100-member set (below
+  set-max-listpack-entries=128, so listpack). SSCAN walks the listpack and filters every member through
+  stringmatchlen(); `member:1*` matches member:1, member:10-19 and member:100, i.e. 12 of 100 (verified
+  locally -- member:100 also begins with `member:1`). Covers the matcher on the listpack scan path.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command "SADD test_sadd100 member:__key__" --command-key-pattern P --key-prefix "" --key-minimum
+      1 --key-maximum 101 -n allkeys -c 1 -t 1 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1key-set-listpack-100-elements-member-named
+  dataset_description: Single set key `test_sadd100` with 100 members named `member:1`..`member:100`;
+    below set-max-listpack-entries=128, so listpack encoded.
+tested-commands:
+- sscan
+tested-groups:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "SSCAN test_sadd100 0 MATCH member:1* COUNT 100" --command-key-pattern R --hide-histogram
+    --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 23

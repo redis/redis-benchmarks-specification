@@ -1,0 +1,44 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-generic-keys-selective-prefix-match
+description: Runs KEYS with a selective prefix glob pattern against a 1M-key keyspace. KEYS walks the
+  entire keyspace calling stringmatchlen() on every key, but the bare `*` pattern is special-cased and
+  skips the matcher entirely -- so only a non-trivial pattern exercises the recursive matcher. `memtier-12345*`
+  matches 11 of 1,000,000 keys (verified locally), keeping the reply small so the measurement reflects
+  matcher plus traversal cost rather than reply construction. A prefix-anchored pattern (literal characters
+  then a trailing `*`) takes stringmatchlen's low-backtracking path; pairs with the leading-wildcard variant
+  that takes the backtracking path.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram"
+      "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+tested-commands:
+- keys
+tested-groups:
+- generic
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "KEYS memtier-12345*" --command-key-pattern R --hide-histogram --test-time 180
+    --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 44

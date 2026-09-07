@@ -1,0 +1,43 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-generic-keys-leading-wildcard-match
+description: Runs KEYS with a leading-wildcard glob pattern against the same 1M-key keyspace as the selective-prefix
+  variant. A pattern that begins with `*` forces stringmatchlen() to attempt the suffix match at every
+  position of every key -- the recursive backtracking path -- so the per-key matcher cost differs sharply
+  from a prefix-anchored pattern even though both walk all 1M keys. `*2345` matches 100 of 1,000,000 keys
+  (verified locally). Together the two KEYS specs price the two recursion behaviours of the shared matcher
+  that KEYS, SCAN MATCH, HSCAN, SSCAN and pattern pubsub all depend on.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--hide-histogram"
+      "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys" --pipeline 50'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1Mkeys-string-10B-size
+  dataset_description: This dataset contains 1 million string keys, each with a data size of 10 bytes.
+tested-commands:
+- keys
+tested-groups:
+- generic
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "KEYS *2345" --command-key-pattern R --hide-histogram --test-time 180 --pipeline
+    1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 44

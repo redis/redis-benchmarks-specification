@@ -1,0 +1,43 @@
+version: 0.4
+name: memtier_benchmark-1key-set-1K-elements-sscan-match-count-100
+description: Runs SSCAN with MATCH on a hashtable-encoded set (1000 members, exceeds set-max-listpack-entries=128).
+  Members are named member:1..member:1000 -- structured naming following the ZSCAN MATCH spec's precedent,
+  since the random-token members of the registered SSCAN specs do not admit a predictable MATCH pattern.
+  `member:1*` matches 112 of 1000 (verified locally). The registered SSCAN specs issue `SSCAN key 0` with
+  no MATCH and never reach stringmatchlen(); this pairs with the listpack variant.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command "SADD test_sadd member:__key__" --command-key-pattern P --key-prefix "" --key-minimum
+      1 --key-maximum 1001 -n allkeys -c 1 -t 1 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1key-set-hashtable-1K-elements-member-named
+  dataset_description: Single set key `test_sadd` with 1000 members named `member:1`..`member:1000`; exceeds
+    set-max-listpack-entries=128, so hashtable encoded.
+tested-commands:
+- sscan
+tested-groups:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "SSCAN test_sadd 0 MATCH member:1* COUNT 100" --command-key-pattern R --hide-histogram
+    --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 23

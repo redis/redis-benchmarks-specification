@@ -1,0 +1,46 @@
+version: 0.4
+name: memtier_benchmark-1key-hash-hscan-1K-fields-match-count-100
+description: Runs HSCAN with MATCH on a hashtable-encoded hash (1000 fields, exceeds hash-max-listpack-entries=128).
+  Fields are named field:1..field:1000 so the pattern `field:1*` is selective -- it matches field:1, field:10-19,
+  field:100-199 and field:1000, i.e. 112 of 1000 (verified locally) -- exercising stringmatchlen() per
+  visited field on the hashtable scan path. The registered HSCAN specs issue `HSCAN key 0` with no MATCH
+  and never reach the matcher; this pairs with the listpack-encoded variant to cover both hash encodings
+  separately.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" --command "HSET test_hset field:__key__ __data__" --command-key-pattern
+      P --key-prefix "" --key-minimum 1 --key-maximum 1001 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1key-hash-hashtable-1K-fields-field-named
+  dataset_description: 'Single hash key `test_hset` with 1000 fields named `field:1`..`field:1000` (each
+    a 10-byte value); exceeds hash-max-listpack-entries=128, so hashtable encoded. Field-name distribution
+    is what matters: HSCAN walks the dict and filters each name through stringmatchlen.'
+tested-commands:
+- hscan
+tested-groups:
+- hash
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "HSCAN test_hset 0 MATCH field:1* COUNT 100" --command-key-pattern R --hide-histogram
+    --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 96

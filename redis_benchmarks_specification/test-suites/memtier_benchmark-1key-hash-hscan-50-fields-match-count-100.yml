@@ -1,0 +1,45 @@
+version: 0.4
+name: memtier_benchmark-1key-hash-hscan-50-fields-match-count-100
+description: 'Listpack-encoded counterpart to the hashtable HSCAN MATCH spec: a 50-field hash (below hash-max-listpack-entries=128
+  and hash-max-listpack-value=64, so listpack). HSCAN walks the listpack in full and filters every field
+  through stringmatchlen(); `field:1*` matches field:1 and field:10-19, i.e. 11 of 50 (verified locally).
+  Covers the matcher on the listpack scan path, which is a different iteration from the hashtable scan
+  path.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" --command "HSET test_hset50 field:__key__ __data__" --command-key-pattern
+      P --key-prefix "" --key-minimum 1 --key-maximum 51 -n allkeys -c 1 -t 1 --hide-histogram --pipeline
+      50'
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1key-hash-listpack-50-fields-field-named
+  dataset_description: Single hash key `test_hset50` with 50 fields named `field:1`..`field:50` (each
+    a 10-byte value); below hash-max-listpack-entries=128 and hash-max-listpack-value=64, so listpack
+    encoded.
+tested-commands:
+- hscan
+tested-groups:
+- hash
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "HSCAN test_hset50 0 MATCH field:1* COUNT 100" --command-key-pattern R --hide-histogram
+    --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 96
