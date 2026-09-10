@@ -92,6 +92,19 @@ description: |
   exported for completeness but p50 is what an A/B comparison should
   read.
 
+  low-throughput-benchmark opts this spec out of the coordinator's
+  hardcoded 1-QPS metric-validation floor. An earlier revision of this
+  spec measured 2-6 ops/sec locally and judged that margin sufficient to
+  skip the opt-out; on fleet hardware (EBS-backed volumes, not local
+  NVMe instance storage) the same 183.5MB flush-then-load cycle measured
+  under 1 op/sec and the spec failed validation on every commit tried,
+  including plain unstable with no relevant code change -- proving the
+  floor, not the server, was what broke. A single-connection command
+  that flushes and reloads a fixed multi-hundred-megabyte dataset from
+  disk is a case the floor was never meant to catch; it exists to flag
+  a benchmark that stalled or errored, not one that is working exactly
+  as designed at a few ops/sec.
+
   Two scope limits worth stating plainly. First, the DEBUG-disabled
   fail-loud probe (above) only fails loud when execute_init_commands()
   is called with a Redis-semantics server_name; the
@@ -116,6 +129,7 @@ dbconfig:
     enable-debug-command: 'yes'
   check:
     keyspacelen: 1400
+  low-throughput-benchmark: 'yes'
   init_commands:
   - '"CONFIG" "SET" "rdbcompression" "no"'
   - '"SAVE"'
