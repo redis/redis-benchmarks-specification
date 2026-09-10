@@ -1,0 +1,78 @@
+version: 0.4
+name: memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10-c50
+description: >
+  Runs memtier_benchmark BITOP XOR over 10 short (50-byte) string source keys with pipeline 10
+  at 50 client connections, so the single-threaded main loop is CPU-saturated and the measured
+  Ops/sec is dominated by the per-command cost of BITOP itself.
+
+  Why a second BITOP XOR spec: the existing
+  memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10 is identical except that it runs at
+  -c 1 -t 1. One connection with pipeline 10 leaves the server idle between batches, so
+  round-trip time -- not command cost -- sets the throughput, and a few-percent change in the
+  per-command path is diluted well below fleet run-to-run noise. Measured across the
+  391e3452 -> 8dfb823c boundary on a dev box (not the fleet), interleaved 3 trials per side:
+  at -c 1 the two sides were about 2% apart with overlapping ranges, while at -c 50 the gap
+  widened to roughly 4-5% with non-overlapping ranges. Same binaries, same pipeline depth --
+  only the connection count changed. The -c 1 spec is therefore the wrong instrument for a
+  BITOP command-cost question, and this spec is the right one.
+
+  50 connections matches the redis-benchmark default used in the report this scopes
+  (redis/redis#15289), spread over 2 client threads so the client is not the bottleneck.
+
+  Source data: key:1..key:10 each hold a 50-byte value -- deliberately not a multiple of 32,
+  so an 18-byte scalar tail remains after the first AVX2 block and the workload exercises the
+  short-tail path shared by the AND/OR/XOR and the newer DIFF/DIFF1/ANDOR/ONE operations.
+
+  Encoding: RAW strings (50B > the 44-byte EMBSTR threshold). Metric of interest: Ops/sec
+  (higher is better).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 10
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "SET __key__ __data__"
+      --command-key-pattern P
+      --data-size 50
+      --key-prefix "key:"
+      --key-minimum 1
+      --key-maximum 10
+      -n 10
+      -c 1
+      -t 1
+      --hide-histogram
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 10keys-bitmap-50B-strings
+  dataset_description: 10 string keys (key:1..key:10), each holding a 50-byte RAW value
+    (32-byte AVX2 block + 18-byte scalar tail).
+tested-commands:
+- bitop
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "BITOP XOR tmp key:1 key:2 key:3 key:4 key:5 key:6 key:7 key:8 key:9 key:10"
+    --command-key-pattern R
+    --hide-histogram
+    --test-time 180
+    --pipeline 10
+    -c 25
+    -t 2
+  resources:
+    requests:
+      cpus: '3'
+      memory: 2g
+priority: 67
