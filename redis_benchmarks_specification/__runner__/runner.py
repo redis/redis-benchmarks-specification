@@ -32,6 +32,7 @@ from redisbench_admin.run.common import (
 from redis_benchmarks_specification.__common__.runner import (
     export_redis_metrics,
 )
+from redis_benchmarks_specification.__common__.env import parse_bool
 
 from redisbench_admin.profilers.profilers_local import (
     local_profilers_platform_checks,
@@ -196,6 +197,20 @@ def validate_benchmark_metrics(
                 cmd.lower() for cmd in benchmark_config["tested-commands"]
             ]
 
+        # Some specs are legitimately sub-1-QPS by design -- a single-connection,
+        # disk-bound command (e.g. DEBUG RELOAD on a large dataset) blocks for
+        # hundreds of milliseconds per call, so a handful of ops/sec is the
+        # expected, correct measurement, not a sign the benchmark broke. Opt out
+        # of the throughput floor per-spec via dbconfig.low-throughput-benchmark.
+        # parse_bool (not bool()) because "no" is a non-empty string and bool("no")
+        # is True -- the exact bug that sank the first attempt at this flag.
+        low_throughput_benchmark = False
+        if benchmark_config and "dbconfig" in benchmark_config:
+            low_throughput_benchmark = parse_bool(
+                benchmark_config["dbconfig"].get("low-throughput-benchmark", False),
+                default=False,
+            )
+
         # Define validation rules
         throughput_patterns = [
             "ops/sec",
@@ -259,7 +274,7 @@ def validate_benchmark_metrics(
                 # Check throughput metrics
                 for pattern in throughput_patterns:
                     if pattern in metric_path_lower:
-                        if data < 1:  # Below 1 QPS threshold
+                        if data < 1 and not low_throughput_benchmark:
                             validation_errors.append(
                                 f"Throughput metric '{path}' has invalid value: {data} "
                                 f"(below 1 QPS threshold)"
