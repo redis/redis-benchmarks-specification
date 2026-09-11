@@ -2,7 +2,7 @@ version: 0.4
 name: memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10-50_conns
 description: >
   Runs memtier_benchmark BITOP XOR over 10 short (50-byte) string source keys with pipeline 10
-  across 50 client connections (-c 25 -t 2), so that the measured Ops/sec reflects the
+  across 50 client connections (-c 5 -t 10), so that the measured Ops/sec reflects the
   per-command cost of BITOP rather than client-server round-trip time.
 
   Why a second BITOP XOR spec: the existing
@@ -17,7 +17,13 @@ description: >
   BITOP command-cost question, and this spec is the right one.
 
   50 connections matches the redis-benchmark default used in the report this scopes
-  (redis/redis#15289), spread over 2 client threads so the client is not the bottleneck.
+  (redis/redis#15289), spread over 10 memtier threads (-c 5 -t 10) with cpus: '10' -- the same
+  thread-per-CPU sizing every other _conns spec in this suite uses. This matters here more than
+  usual: the saturated run reaches ~600k ops/sec, and concentrating that on 2 threads risks the
+  load generator clipping before the server does. A clipped client caps both sides of a
+  comparison equally and hides the server-side delta, which is the same false-negative this spec
+  was created to avoid, only reached from the client side instead of via -c 1. #485/#486/#487
+  measured memtier running at 81-91% of its own thread budget, so the margin is not large.
 
   Source data: key:1..key:10 each hold a 50-byte value -- deliberately not a multiple of 32,
   so an 18-byte scalar tail remains after the first AVX2 block and the workload exercises the
@@ -69,10 +75,10 @@ clientconfig:
     --hide-histogram
     --test-time 180
     --pipeline 10
-    -c 25
-    -t 2
+    -c 5
+    -t 10
   resources:
     requests:
-      cpus: '3'
+      cpus: '10'
       memory: 2g
 priority: 67
