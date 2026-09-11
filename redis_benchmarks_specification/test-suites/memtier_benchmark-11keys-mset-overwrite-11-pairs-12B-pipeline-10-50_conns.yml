@@ -1,0 +1,66 @@
+version: 0.4
+name: memtier_benchmark-11keys-mset-overwrite-11-pairs-12B-pipeline-10-50_conns
+description: >
+  Runs memtier_benchmark MSET with 11 key/value pairs per command, at pipeline 10 across 50
+  client connections (-c 25 -t 2), repeatedly overwriting a hot keyspace of just 11 STRING
+  keys. Values are 12 bytes (EMBSTR). Metric of interest: p50 latency (lower is better).
+
+  Why this spec, given memtier_benchmark-100keys-mset-overwrite-10B-pipeline-1 already exists:
+  that sibling spec is -c 1 -t 1 --pipeline 1 with 3 pairs per command over 100 keys, and it
+  is the wrong instrument for a per-command-cost question in two independent ways.
+
+  1. Concurrency. At one connection and pipeline 1 the server is idle between requests, so
+     round-trip time sets the throughput and a few-percent change in the command path is
+     diluted below run-to-run noise.
+  2. Metric resolution. At that shape p50 lands around 0.031 ms, and memtier reports three
+     decimals, so the smallest expressible step is 0.001 ms -- about 3.2% relative. A p50
+     change smaller than one step cannot be represented at all, and "p50 identical on both
+     sides" is then quantization rather than evidence of no change. At -c 25 -t 2 --pipeline 10
+     p50 sits near 1.0 ms, where 0.001 ms is about 0.1% and a few-percent effect is resolvable.
+
+  Key length is load-bearing here, not incidental. This spec scopes redis/redis#15320, which
+  concerns a dictFind key-length fast path, so the key-name length distribution is matched to
+  the report rather than normalized: test_MSET1..test_MSET11 gives nine 10-byte names and two
+  11-byte names, against the report's ten 10-byte names and one 11-byte name.
+
+  The 11-key keyspace keeps the main dict and every key object resident in L1/L2 with no
+  rehashing and effectively no collisions, so dictFind is cache-latency dominated rather than
+  DRAM-latency dominated -- unlike the 1M-10M distinct-key MSET load specs, which cannot show
+  a key-comparison difference at all.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 11
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SET __key__ __data__" --command-key-pattern=P --key-prefix
+      "test_MSET" --key-minimum 1 --key-maximum 11 --data-size 12 -n 11
+      --hide-histogram -t 1 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 11keys-string-12B-embstr-hot
+  dataset_description: 11 string keys named test_MSET1..test_MSET11 (nine 10-byte names,
+    two 11-byte names) holding 12-byte EMBSTR values. The whole keyspace fits in L1/L2,
+    making dictFind cache-latency dominated with no rehashing.
+tested-groups:
+- string
+tested-commands:
+- mset
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="MSET __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__" --command-key-pattern=R --key-prefix "test_MSET" --key-minimum 1 --key-maximum 11 --data-size 12 --hide-histogram --test-time 180 --pipeline 10 -c 25 -t 2
+  resources:
+    requests:
+      cpus: '3'
+      memory: 2g
+priority: 69
