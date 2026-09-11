@@ -1,9 +1,9 @@
 version: 0.4
-name: memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10-c50
+name: memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10-50_conns
 description: >
   Runs memtier_benchmark BITOP XOR over 10 short (50-byte) string source keys with pipeline 10
-  at 50 client connections, so the single-threaded main loop is CPU-saturated and the measured
-  Ops/sec is dominated by the per-command cost of BITOP itself.
+  across 50 client connections (-c 25 -t 2), so that the measured Ops/sec reflects the
+  per-command cost of BITOP rather than client-server round-trip time.
 
   Why a second BITOP XOR spec: the existing
   memtier_benchmark-10keys-bitmap-50B-bitop-xor-pipeline-10 is identical except that it runs at
