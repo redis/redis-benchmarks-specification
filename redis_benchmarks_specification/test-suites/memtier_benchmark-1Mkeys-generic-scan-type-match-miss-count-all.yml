@@ -1,0 +1,85 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-generic-scan-type-match-miss-count-all
+description: >
+  Measures Ops/sec of SCAN with a TYPE filter combined with a MATCH pattern that matches
+  nothing, over a keyspace of 1M STRING keys holding 24-byte EMBSTR values, sweeping the whole
+  keyspace in a single call (COUNT 20000000 > keyspacelen, so every call starts and finishes
+  at cursor 0 and walks every bucket).
+
+  What it isolates: the TYPE filter is applied inside the per-element scan callback, which
+  reads each value's object header to learn its type. When MATCH excludes every key that type
+  read is the only work the call performs, and it is one dereference per key into an object
+  the traversal would otherwise never touch. Two choices make that dereference the dominant
+  term, and neither is expressed by the existing
+  memtier_benchmark-1Mkeys-generic-scan-type-pipeline-10 spec:
+    * COUNT 20000000 sweeps all 1M keys per call, so every key object is touched once per
+      call and the working set is far larger than L3 -- a DRAM-latency-bound regime. The
+      existing spec uses the default COUNT (10) and so re-walks the same few resident buckets
+      on every call, which is cache-hot and dilutes a per-key dereference to nothing.
+    * MATCH x matches no key (memtier's default 'memtier-' key prefix contains no 'x'), so
+      the reply is always empty and reply-encoding cost cannot mask traversal cost.
+
+  DO NOT RAISE --data-size (the instrument is encoding-sensitive): the effect under test is
+  present for EMBSTR values and absent for RAW ones. An EMBSTR object is one ~48-64 byte
+  allocation, so each object header sits on its own cache line and every type read is a
+  separate miss. A RAW value is two allocations, and the 16-byte headers then pack densely
+  (several per cache line), which gives the type reads enough spatial locality that the cost
+  disappears. Measured on a 1M-key sweep across the 7f0a7f0a boundary: clearly negative and
+  sigma-disjoint at 24B and 44B (EMBSTR), and flat-to-positive at 64B (RAW). A future
+  "let's use a rounder value size" edit above the EMBSTR budget silently disarms this spec
+  and turns it into a source of confident false negatives.
+
+  24 bytes is chosen so every key in the range is EMBSTR on BOTH old and current Redis.
+  Current Redis embeds the key in the value allocation, so the ~42-byte EMBSTR budget is
+  shared between key and value; memtier keys here run 9-16 bytes, and 16+24 still fits, while
+  26B values already flip the longest keys to RAW. On pre-embedded-key versions the budget is
+  the value alone (<=44B), so 24B is EMBSTR there too. Verified on unstable and across the
+  7f0a7f0a boundary.
+
+  Load model: one unpipelined connection. This is deliberate and is NOT an under-saturated
+  latency probe -- a single call is a full-keyspace sweep that occupies the single-threaded
+  main loop for its entire duration, so one connection already saturates the server and extra
+  connections would only queue behind it. Over --test-time 180 this yields on the order of a
+  thousand calls, ample for a stable Ops/sec mean.
+
+  Metric of interest: Ops/sec (higher is better). Adds coverage for redis/redis#13855, where
+  SCAN with a TYPE filter is reported slower after 7f0a7f0a moved the type check into the
+  scan callback ahead of the MATCH check, so that path is measurable on the fleet.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "24" "--command" "SET __key__ __data__" "--command-key-pattern"
+      "P" "-c" "50" "-t" "2" "--hide-histogram" "--key-minimum" "1" --pipeline 50'
+  resources:
+    requests:
+      memory: 2g
+  dataset_name: 1Mkeys-string-24B-embstr
+  dataset_description: This dataset contains 1 million string keys, each holding a 24-byte
+    value. 24 bytes keeps every value EMBSTR for the whole 9-16 byte memtier key-length
+    range, on both current Redis (where the embedded key shares the EMBSTR budget) and on
+    older versions (where the budget applies to the value alone).
+tested-commands:
+- scan
+tested-groups:
+- generic
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "SCAN 0 MATCH x COUNT 20000000 TYPE string" --command-key-pattern="R"
+    --pipeline 1 -c 1 -t 1 --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 45
