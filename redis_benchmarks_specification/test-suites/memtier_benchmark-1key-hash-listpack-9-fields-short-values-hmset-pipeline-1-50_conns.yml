@@ -2,7 +2,7 @@ version: 0.4
 name: memtier_benchmark-1key-hash-listpack-9-fields-short-values-hmset-pipeline-1-50_conns
 description: >
   Runs memtier_benchmark HMSET overwrite on a single listpack-encoded hash with 9 short
-  field/value pairs, at pipeline 1 across 50 client connections (-c 25 -t 2). Scopes
+  field/value pairs, at pipeline 1 across 50 client connections (-c 5 -t 10). Scopes
   redis/redis#13876 (HMSET regression bisected to a25b153 / PR #13279). Every HMSET call
   rewrites all 9 fields on the same key, so each command performs 9 lpFindCmp field-name
   comparisons -- the path the report identifies as regressed after the callback/arg->
@@ -18,11 +18,23 @@ description: >
      throughput and a per-command change of a few percent is diluted below run-to-run noise.
      Pipeline stays at 1 because the report passes no -P.
   2. Field names. The sibling uses field4..field9 (6-byte names); the report uses
-     HGET_HASH_FIELD1..HGET_HASH_FIELD6 (16-byte names). Field-name length is load-bearing
-     for this issue, not cosmetic: lpFindCmp compares field-name bytes on every traversal
-     step, so a 6-byte name exercises a materially cheaper comparison than the 16-byte name
-     the report actually used. This spec uses the reported names, and the reported key name
-     (test_HMSET).
+     HGET_HASH_FIELD1..HGET_HASH_FIELD6 (16-byte names). This spec adopts the reported names
+     for those six fields and the reported key name (test_HMSET); the first three
+     (username/age/location) are the report's as well, so all nine pairs now match it.
+
+     Field-name length is load-bearing for this issue rather than cosmetic, though the
+     mechanism is narrower than "every byte is compared": lpFindCmp short-circuits on the
+     encoded length first (slen == arg->slen) and only runs memcmp when the lengths match.
+     Two things still follow. All six HGET_HASH_FIELD* names share a length, so the memcmps
+     that do run compare 16 bytes rather than 6; and the longer entries make the listpack
+     itself larger, so each lookup walks more bytes to reach the same field.
+
+  Client sizing: 50 connections are spread over 10 memtier threads (-c 5 -t 10) with
+  cpus: '10', matching every other _conns spec in this suite. The report reaches 280-290k
+  ops/sec at pipeline 1; concentrating that on 2 threads risks the load generator clipping
+  first, which would mask a server-side delta on both sides of a comparison -- the same
+  false-negative failure mode as -c 1, reached from the client side (see #485/#486/#487,
+  where memtier ran at 81-91% of its thread budget).
 
   Values are 3-20 bytes and there are 9 fields, so the hash stays under
   hash-max-listpack-entries=128 and hash-max-listpack-value=64 and remains listpack-encoded
@@ -68,10 +80,10 @@ clientconfig:
     --hide-histogram
     --test-time 180
     --pipeline 1
-    -c 25
-    -t 2
+    -c 5
+    -t 10
   resources:
     requests:
-      cpus: '3'
+      cpus: '10'
       memory: 2g
 priority: 67
