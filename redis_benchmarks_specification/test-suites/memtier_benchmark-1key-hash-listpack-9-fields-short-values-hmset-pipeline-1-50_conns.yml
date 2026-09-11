@@ -1,0 +1,77 @@
+version: 0.4
+name: memtier_benchmark-1key-hash-listpack-9-fields-short-values-hmset-pipeline-1-50_conns
+description: >
+  Runs memtier_benchmark HMSET overwrite on a single listpack-encoded hash with 9 short
+  field/value pairs, at pipeline 1 across 50 client connections (-c 25 -t 2). Scopes
+  redis/redis#13876 (HMSET regression bisected to a25b153 / PR #13279). Every HMSET call
+  rewrites all 9 fields on the same key, so each command performs 9 lpFindCmp field-name
+  comparisons -- the path the report identifies as regressed after the callback/arg->
+  indirection was introduced.
+
+  Two differences from the existing
+  memtier_benchmark-1key-hash-listpack-9-fields-short-values-hmset-pipeline-1, both chosen
+  to match the reporter's command rather than to vary the workload:
+
+  1. Connections. The sibling spec is -c 1 -t 1. The report uses redis-benchmark with its
+     default -c 50, and measures 280-290k ops/sec; the -c 1 sibling measures around 40k. At
+     one connection the server is idle between requests, so round-trip time sets the
+     throughput and a per-command change of a few percent is diluted below run-to-run noise.
+     Pipeline stays at 1 because the report passes no -P.
+  2. Field names. The sibling uses field4..field9 (6-byte names); the report uses
+     HGET_HASH_FIELD1..HGET_HASH_FIELD6 (16-byte names). Field-name length is load-bearing
+     for this issue, not cosmetic: lpFindCmp compares field-name bytes on every traversal
+     step, so a 6-byte name exercises a materially cheaper comparison than the 16-byte name
+     the report actually used. This spec uses the reported names, and the reported key name
+     (test_HMSET).
+
+  Values are 3-20 bytes and there are 9 fields, so the hash stays under
+  hash-max-listpack-entries=128 and hash-max-listpack-value=64 and remains listpack-encoded
+  throughout. Metric of interest: Ops/sec (higher is better).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "HMSET test_HMSET username alice age 30 location Paris HGET_HASH_FIELD1 weugfuwebgfiwebviu HGET_HASH_FIELD2 ewuvbgevhberihvneirn HGET_HASH_FIELD3 weufgewihiwer HGET_HASH_FIELD4 4tvnreiknveir HGET_HASH_FIELD5 23rgwnrighnkwn2 HGET_HASH_FIELD6 23jrb234jbg34ibgi3"
+      --command-key-pattern P
+      -n 1
+      -c 1
+      -t 1
+      --hide-histogram
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-hash-listpack-9-fields-short-values-reported-names
+  dataset_description: Single listpack-encoded hash key `test_HMSET` with 9 fields using the
+    reported 16-byte field names (HGET_HASH_FIELD1..6) alongside username/age/location, values
+    3-20 bytes.
+tested-commands:
+- hmset
+tested-groups:
+- hash
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "HMSET test_HMSET username alice age 30 location Paris HGET_HASH_FIELD1 weugfuwebgfiwebviu HGET_HASH_FIELD2 ewuvbgevhberihvneirn HGET_HASH_FIELD3 weufgewihiwer HGET_HASH_FIELD4 4tvnreiknveir HGET_HASH_FIELD5 23rgwnrighnkwn2 HGET_HASH_FIELD6 23jrb234jbg34ibgi3"
+    --command-key-pattern R
+    --hide-histogram
+    --test-time 180
+    --pipeline 1
+    -c 25
+    -t 2
+  resources:
+    requests:
+      cpus: '3'
+      memory: 2g
+priority: 67
