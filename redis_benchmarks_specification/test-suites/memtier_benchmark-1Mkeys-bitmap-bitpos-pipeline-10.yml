@@ -5,7 +5,10 @@ description: Runs memtier_benchmark, for a keyspace length of 1M small bitmap ke
   with a single bit set at position 7. Workload alternates "BITPOS key 1" (returns 7)
   and "BITPOS key 0" (returns 0), pipelined at 10. Per-call overhead dominates this
   shape — every BITPOS hits the first-word fast path the PR optimizes by replacing a
-  per-bit shift loop with a single __builtin_clzl().
+  per-bit shift loop with a single __builtin_clzl(). Both phases span the same
+  1..1000000 key range, so "BITPOS key 1" really does return 7 on every call; the
+  preload's -n of 100000 requests per client is sized so that both P-pattern SETBITs
+  land on every key of each client's block.
 dbconfig:
   configuration-parameters:
     save: '""'

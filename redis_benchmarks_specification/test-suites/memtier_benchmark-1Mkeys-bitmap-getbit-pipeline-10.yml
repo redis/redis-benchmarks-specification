@@ -2,7 +2,9 @@ version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-getbit-pipeline-10
 description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
   GETBIT performance. Each key is a 1-bit bitmap preloaded via SETBIT; the client
-  issues GETBIT at offsets 1 and 100 across the keyspace.
+  issues GETBIT at offsets 1 and 100 across the keyspace. Both phases span the same
+  1..1000000 key range, so every GETBIT addresses a preloaded key; the preload's -n
+  of 10000 requests per client is what fills each client's P-pattern block exactly.
 dbconfig:
   configuration-parameters:
     save: '""'
