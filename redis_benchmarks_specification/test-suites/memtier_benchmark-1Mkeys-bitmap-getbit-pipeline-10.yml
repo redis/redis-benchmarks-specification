@@ -11,8 +11,8 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2
-      --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 1000000 -n 10000 -c 50
+      -t 2 --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
   resources:
     requests:
       cpus: '2'
@@ -34,8 +34,8 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
-    "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time
-    180
+    "GETBIT __key__ 100" --command-key-pattern="R" --key-minimum 1 --key-maximum 1000000
+    -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'

@@ -36,7 +36,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "BITCOUNT users __key__ -1" --key-maximum 100000000 --key-minimum
+  arguments: --command "BITCOUNT users __key__ -1" --key-maximum 12500000 --key-minimum
     1 --key-prefix "" --command-key-pattern R --distinct-client-seed --test-time 120
   resources:
     requests:
