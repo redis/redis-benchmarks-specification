@@ -227,6 +227,49 @@ def spin_docker_standalone_redis(
     return current_cpu_pos
 
 
+# Upstream redis added the `cluster-bus-port-protected-mode` boolean config
+# (default 1). When cluster mode is on and `tls-cluster` is off, the server now
+# refuses to start:
+#
+#     *** FATAL CONFIG FILE ERROR ***
+#     cluster-bus-port-protected-mode is enabled but tls-cluster is disabled [...]
+#
+# No test-suite sets `tls-cluster`, so every cluster node we launch trips it and
+# the only symptom is a bare ConnectionError from r.ping(): the fatal goes to
+# stderr, the `--logfile` we pass stays 0 bytes, and start_redis_container()
+# runs with auto_remove=True so the container is gone before anyone can look.
+#
+# The waiver (`--cluster-bus-port-protected-mode no`) cannot be passed
+# unconditionally, because we benchmark commits on BOTH sides of that change:
+# a build predating the config treats the unknown directive as a module config
+# and aborts with "Unresolved Configuration(s) Detected [...] aborting". So
+# resolve it per artifact instead of per branch.
+CLUSTER_BUS_PORT_PROTECTED_MODE = "cluster-bus-port-protected-mode"
+
+
+def server_knows_config(binary_path, config_name):
+    """True if `binary_path` has `config_name` in its config table.
+
+    Config names reach the binary as string literals via createBoolConfig() and
+    friends, so a byte scan of the artifact answers this without starting a
+    server -- no throwaway container, no port to allocate, no startup race. We
+    are handed the host-side path, before the binary is bind-mounted into the
+    run image.
+
+    Unreadable artifact => False, i.e. omit the waiver and keep the behaviour
+    we have today on builds that predate the config.
+    """
+    try:
+        with open(binary_path, "rb") as f:
+            return config_name.encode() in f.read()
+    except OSError as e:
+        logging.warning(
+            "Could not probe {} for config {!r} ({}); assuming the config is "
+            "absent.".format(binary_path, config_name, e)
+        )
+        return False
+
+
 def generate_cluster_redis_server_args(
     binary,
     port,
@@ -234,8 +277,15 @@ def generate_cluster_redis_server_args(
     configuration_parameters=None,
     redis_arguments="",
     password=None,
+    waive_cluster_bus_port_protection=False,
 ):
-    """Generate redis-server args with cluster mode enabled."""
+    """Generate redis-server args with cluster mode enabled.
+
+    `waive_cluster_bus_port_protection` should be the result of
+    server_knows_config(<host-side binary>, CLUSTER_BUS_PORT_PROTECTED_MODE).
+    Kept as a parameter rather than probed here so this stays a pure function of
+    its arguments, and so the probe runs once per run instead of once per node.
+    """
     command = generate_standalone_redis_server_args(
         binary, port, dbdir, configuration_parameters, redis_arguments, password
     )
@@ -249,6 +299,15 @@ def generate_cluster_redis_server_args(
             "5000",
         ]
     )
+    # Never override what a test-suite asked for: an explicit
+    # cluster-bus-port-protected-mode would be duplicated, and an explicit
+    # `tls-cluster yes` already satisfies the server's check.
+    explicit = configuration_parameters or {}
+    already_set = CLUSTER_BUS_PORT_PROTECTED_MODE in explicit or str(
+        explicit.get("tls-cluster", "")
+    ).lower() in ("yes", "1", "true")
+    if waive_cluster_bus_port_protection and not already_set:
+        command.extend(["--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE), "no"])
     return command
 
 
@@ -323,6 +382,17 @@ def spin_docker_cluster_redis(
             )
         )
     executable = "{}{}-server".format(mnt_point, server_name)
+    # mnt_point is the in-container path; the artifact itself lives in
+    # temporary_dir on the host, which is what we can actually read here.
+    waive_cluster_bus_port_protection = server_knows_config(
+        "{}/{}-server".format(temporary_dir.rstrip("/"), server_name),
+        CLUSTER_BUS_PORT_PROTECTED_MODE,
+    )
+    if waive_cluster_bus_port_protection:
+        logging.info(
+            "This build knows {}; passing the waiver so cluster nodes can start "
+            "without tls-cluster.".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+        )
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
 
@@ -348,6 +418,7 @@ def spin_docker_cluster_redis(
             redis_configuration_parameters,
             node_redis_arguments,
             password,
+            waive_cluster_bus_port_protection,
         )
         command_str = " ".join(command)
         db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(

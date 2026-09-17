@@ -39,6 +39,8 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
+    server_knows_config,
+    CLUSTER_BUS_PORT_PROTECTED_MODE,
     inject_replication_sync_metrics,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
@@ -885,9 +887,7 @@ def test_stop_and_remove_container_safe_409_already_in_progress():
             super().__init__(
                 "409 Client Error: Conflict",
                 response=None,
-                explanation=(
-                    "removal of container abc123 is already in progress"
-                ),
+                explanation=("removal of container abc123 is already in progress"),
             )
 
         def __str__(self):
@@ -943,3 +943,77 @@ def test_stop_and_remove_container_safe_other_api_error_is_swallowed():
 
     # Must not raise — teardown must never abort the stream.
     stop_and_remove_container_safe(FakeContainer(), "Client")
+
+
+def test_server_knows_config_detects_the_literal(tmp_path):
+    """The probe is a byte scan of the artifact -- config names reach the binary
+    as string literals, so this answers without starting a server."""
+    knows = tmp_path / "redis-server"
+    knows.write_bytes(
+        b"\x7fELF padding" + CLUSTER_BUS_PORT_PROTECTED_MODE.encode() + b"\x00more"
+    )
+    predates = tmp_path / "old-redis-server"
+    predates.write_bytes(b"\x7fELF padding cluster-enabled protected-mode\x00more")
+
+    assert server_knows_config(str(knows), CLUSTER_BUS_PORT_PROTECTED_MODE) is True
+    assert server_knows_config(str(predates), CLUSTER_BUS_PORT_PROTECTED_MODE) is False
+
+
+def test_server_knows_config_missing_artifact_is_false(tmp_path):
+    """An unreadable artifact must not fail the run, and must not add the
+    waiver: absent-config behaviour is the safe default."""
+    assert (
+        server_knows_config(
+            str(tmp_path / "does-not-exist"), CLUSTER_BUS_PORT_PROTECTED_MODE
+        )
+        is False
+    )
+
+
+def test_generate_cluster_redis_server_args_waiver_off_by_default():
+    """Default must be byte-identical to the pre-change output, so commits that
+    predate the config keep starting (they abort on unknown directives)."""
+    without = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None
+    )
+    explicit_off = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None, False
+    )
+    assert without == explicit_off
+    assert "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE) not in without
+
+
+def test_generate_cluster_redis_server_args_waiver_on():
+    """With the waiver the node can start without tls-cluster, which is what
+    every test-suite needs (none of them set tls-cluster)."""
+    command = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None, True
+    )
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+    assert flag in command
+    assert command[command.index(flag) + 1] == "no"
+    # still a cluster node
+    assert command[command.index("--cluster-enabled") + 1] == "yes"
+
+
+def test_generate_cluster_redis_server_args_waiver_respects_explicit_config():
+    """A test-suite that sets the config itself must not get a duplicate flag,
+    and an explicit tls-cluster yes already satisfies the server's check."""
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+
+    explicit_config = generate_cluster_redis_server_args(
+        "redis-server",
+        6379,
+        "",
+        {CLUSTER_BUS_PORT_PROTECTED_MODE: "yes"},
+        "",
+        None,
+        True,
+    )
+    assert explicit_config.count(flag) == 1
+    assert explicit_config[explicit_config.index(flag) + 1] == "yes"
+
+    with_tls = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", {"tls-cluster": "yes"}, "", None, True
+    )
+    assert flag not in with_tls
