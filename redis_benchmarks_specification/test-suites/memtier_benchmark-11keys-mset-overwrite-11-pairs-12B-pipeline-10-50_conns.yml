@@ -2,7 +2,7 @@ version: 0.4
 name: memtier_benchmark-11keys-mset-overwrite-11-pairs-12B-pipeline-10-50_conns
 description: >
   Runs memtier_benchmark MSET with 11 key/value pairs per command, at pipeline 10 across 50
-  client connections (-c 25 -t 2), repeatedly overwriting a hot keyspace of just 11 STRING
+  client connections (-c 5 -t 10), repeatedly overwriting a hot keyspace of just 11 STRING
   keys. Values are 12 bytes (EMBSTR). Metric of interest: p50 latency (lower is better).
 
   Why this spec, given memtier_benchmark-100keys-mset-overwrite-10B-pipeline-1 already exists:
@@ -15,7 +15,7 @@ description: >
   2. Metric resolution. At that shape p50 lands around 0.031 ms, and memtier reports three
      decimals, so the smallest expressible step is 0.001 ms -- about 3.2% relative. A p50
      change smaller than one step cannot be represented at all, and "p50 identical on both
-     sides" is then quantization rather than evidence of no change. At -c 25 -t 2 --pipeline 10
+     sides" is then quantization rather than evidence of no change. At -c 5 -t 10 --pipeline 10
      p50 sits near 1.0 ms, where 0.001 ms is about 0.1% and a few-percent effect is resolvable.
 
   Key length is load-bearing here, not incidental. This spec scopes redis/redis#15320, which
@@ -27,6 +27,27 @@ description: >
   rehashing and effectively no collisions, so dictFind is cache-latency dominated rather than
   DRAM-latency dominated -- unlike the 1M-10M distinct-key MSET load specs, which cannot show
   a key-comparison difference at all.
+
+  Two knobs here are deliberate and must not be "normalized" later.
+
+  Key pattern is S, not P and not R. Each __key__ placeholder in an arbitrary command draws
+  its own index (memtier client.cpp, the key_type branch), so with S every client walks the
+  shared inclusive range 1..11 and one MSET consumes exactly test_MSET1..test_MSET11, one
+  each, before wrapping -- the report's shape, with zero per-command variance. R would sample
+  all 11 placeholders independently (~7.1 distinct keys per command, last-write-wins on the
+  rest). P is actively wrong at this size: P partitions the range per client as
+  range = (key_maximum - key_minimum) / total_clients + 1, which at 11 keys over 50
+  connections is 1 key per client -- clients 0-10 take keys 1..11, clients 11-48 take keys
+  12..49 which were never preloaded (so the dict grows past 11 and the hot-set premise is
+  gone), client 49 gets the inverted range [50,11], and every command degenerates to one key
+  repeated 11 times. Only 11 of 50 connections would touch the intended keyspace.
+
+  --key-maximum 11 is correct for 11 keys because -n is explicit. The generator is inclusive
+  of key_maximum (obj_gen.cpp wraps on next > m_key_max), so a sequential walk of [1,11]
+  yields 11 keys. The N+1 convention seen elsewhere in this tree belongs to -n allkeys, where
+  the request count is derived as key_maximum - key_minimum and therefore needs the extra 1
+  to cover the range; see #509. With an explicit -n 11 nothing is derived and 12 would load a
+  twelfth key.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -35,7 +56,7 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --command="SET __key__ __data__" --command-key-pattern=P --key-prefix
+    arguments: --command="SET __key__ __data__" --command-key-pattern=S --key-prefix
       "test_MSET" --key-minimum 1 --key-maximum 11 --data-size 12 -n 11
       --hide-histogram -t 1 -c 1
   resources:
@@ -58,7 +79,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="MSET __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__" --command-key-pattern=P --key-prefix "test_MSET" --key-minimum 1 --key-maximum 11 --data-size 12 --hide-histogram --test-time 180 --pipeline 10 -c 5 -t 10
+  arguments: --command="MSET __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__ __key__ __data__" --command-key-pattern=S --key-prefix "test_MSET" --key-minimum 1 --key-maximum 11 --data-size 12 --hide-histogram --test-time 180 --pipeline 10 -c 5 -t 10
   resources:
     requests:
       cpus: '10'
