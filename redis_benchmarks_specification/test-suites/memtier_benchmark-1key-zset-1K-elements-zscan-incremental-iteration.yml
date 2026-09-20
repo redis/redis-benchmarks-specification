@@ -302,8 +302,9 @@ dbconfig:
     "uncqdpbhwb" "0.231924" "bdtbaxnuko" "0.138864" "fsthobmdxk" "0.309461" "auwfujaoya"
     "0.288084" "hertbwuzyw" "0.452947" "azpwrzovza" "0.987974" "yilvzcevlj" "0.374557"
     "kpfqxroqbs" "0.224445" "dlomhvkoxg" "0.205225" "vjhpmffzxc" "0.863114" "klwqsggtob"'
-  dataset_name: 1key-sorted-set-32B-size
-  dataset_description: 1 key. containing redis set data structures.
+  dataset_name: 1key-zset-1K-elements-fractional-scores
+  dataset_description: This dataset contains 1 sorted set key with 1,000 elements, each member
+    a 10-byte alphanumeric string with a non-integral 6-decimal score in [0, 1).
 tested-groups:
 - sorted-set
 tested-commands:
@@ -317,7 +318,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "ZSCAN zset:1000 0 COUNT 10" --scan-incremental-iteration --pipeline 1
+  arguments: --command "ZSCAN zset:1000 0" --scan-incremental-iteration --pipeline 1
     -c 50 -t 4 --hide-histogram --test-time 180
   resources:
     requests:
