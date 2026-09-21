@@ -610,6 +610,10 @@ def test_preload_before_replica_default_off():
             enabled_specs.append(os.path.basename(path))
     expected = {
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-no-rdbcomp.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-02.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-04.yml",
