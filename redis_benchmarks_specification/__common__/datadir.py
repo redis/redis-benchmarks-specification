@@ -98,6 +98,20 @@ def backing_device(path):
     return source.split("[", 1)[0] if source else ""
 
 
+def parent_disk(device):
+    """Whole-disk name behind a device node, e.g. /dev/nvme0n1p2 -> nvme0n1.
+
+    Comparing SOURCE device nodes alone accepts two partitions on one disk, or
+    two logical volumes in one volume group -- distinct nodes, distinct st_dev,
+    one throughput budget, which is exactly the confound this flag exists to
+    catch.
+    """
+    if not device or not device.startswith("/dev/"):
+        return ""
+    pkname = _run(["lsblk", "-ndo", "PKNAME", device])
+    return pkname or os.path.basename(os.path.realpath(device))
+
+
 def _same_filesystem_as_root(path):
     try:
         return os.stat(path).st_dev == os.stat("/").st_dev
@@ -169,11 +183,32 @@ def resolve_datadir(args):
 
     _probe_writable(datadir)
 
+    # private_run_root validates an inode, but callers re-resolve the PATH on
+    # every mkdtemp. On a world-writable directory without the sticky bit
+    # another uid can swap our run root afterwards, so refuse that shape up
+    # front. 1777 (/tmp-like) is fine: sticky stops non-owners unlinking.
+    mode = os.stat(datadir).st_mode
+    if (mode & stat.S_IWOTH) and not (mode & stat.S_ISVTX):
+        raise DatadirError(
+            "--datadir {} is world-writable without the sticky bit ({:o}). "
+            "Another local user could replace directories under it between "
+            "benchmarks. Use 0755, or 1777 if it must be shared.".format(
+                datadir, stat.S_IMODE(mode)
+            )
+        )
+
     # The server binary is executed from a bind mount under the datadir, so a
     # noexec data volume fails deep inside docker, per test, after work has
     # been claimed. Catch it here instead.
     options = _findmnt("OPTIONS", datadir)
     fstype = _findmnt("FSTYPE", datadir)
+    if not options:
+        # Symmetry with the require_separate branch below: an unanswerable
+        # check must not read as a passed one.
+        raise DatadirError(
+            "cannot read the mount options for --datadir {} (is findmnt "
+            "installed?). Refusing to skip the noexec check silently.".format(datadir)
+        )
     if "noexec" in options.split(","):
         raise DatadirError(
             "--datadir {} is on a noexec mount. The server binary is executed "
@@ -189,12 +224,21 @@ def resolve_datadir(args):
                 "benchmark pointed there does not measure the storage under "
                 "test.".format(datadir, fstype)
             )
-        if backing_device(datadir) and backing_device(datadir) == backing_device("/"):
+        datadir_dev = backing_device(datadir)
+        root_dev = backing_device("/")
+        if datadir_dev and datadir_dev == root_dev:
             raise DatadirError(
                 "--datadir {} is backed by the same device as '/' ({}). A "
-                "separate subvolume or partition on the same device has its "
-                "own st_dev but shares the throughput budget.".format(
-                    datadir, backing_device(datadir)
+                "subvolume or bind mount has its own st_dev but shares the "
+                "throughput budget.".format(datadir, datadir_dev)
+            )
+        datadir_disk = parent_disk(datadir_dev)
+        if datadir_disk and datadir_disk == parent_disk(root_dev):
+            raise DatadirError(
+                "--datadir {} ({}) is on the same physical disk as '/' ({}). "
+                "Separate partitions or logical volumes on one disk share the "
+                "throughput budget under test.".format(
+                    datadir, datadir_dev, datadir_disk
                 )
             )
         if not fstype:

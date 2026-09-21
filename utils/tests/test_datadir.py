@@ -101,6 +101,25 @@ def test_private_run_root_refuses_a_planted_symlink():
         assert stat.S_IMODE(os.stat(victim).st_mode) == 0o755
 
 
+def test_private_run_root_refuses_a_directory_owned_by_another_uid(
+    monkeypatch, tmp_path
+):
+    """The non-symlink half of the same attack.
+
+    A local uid can pre-create the predictable name as a REAL directory they
+    own. O_NOFOLLOW does not catch that -- only the st_uid check does -- and
+    the 0700 parent is the only barrier protecting the 0777 client output dir
+    created inside it.
+    """
+    fake_uid = os.geteuid() + 12345
+    monkeypatch.setattr(os, "geteuid", lambda: fake_uid)
+    planted = tmp_path / "redis-benchmarks-{}".format(fake_uid)
+    planted.mkdir(mode=0o777)
+    with pytest.raises(DatadirError, match="owned by uid"):
+        private_run_root(str(tmp_path))
+    assert stat.S_IMODE(os.stat(planted).st_mode) != 0o700
+
+
 def test_require_separate_filesystem_rejects_an_unknown_fstype():
     """Allowlist, not denylist: an unrecognised filesystem must abort."""
     if (
@@ -311,8 +330,14 @@ def test_no_module_still_derives_its_temp_dir_from_home():
     Mirrors the AST guard test_builder.py already uses for
     override_deployment_regexp. Without this, a future edit can reintroduce a
     home-derived temp dir and every other test stays green.
+
+    It is a tripwire, not a proof. It catches Path.home(), expanduser("~..."),
+    the no-arg Path("~").expanduser() form and os.environ["HOME"]. It does NOT
+    catch a rebound alias (`_h = Path.home; _h()`), which would need dataflow
+    analysis; verified as a known gap rather than assumed absent.
     """
     offenders = []
+    scanned = 0
     for dirpath, _, filenames in os.walk(PKG_ROOT):
         for fn in filenames:
             if not fn.endswith(".py"):
@@ -321,23 +346,44 @@ def test_no_module_still_derives_its_temp_dir_from_home():
             rel = os.path.relpath(path, PKG_ROOT)
             if rel == os.path.join("__common__", "datadir.py"):
                 continue
-            src = open(path).read()
-            for node in ast.walk(ast.parse(src)):
+            with open(path, encoding="utf-8") as fh:
+                src = fh.read()
+            scanned += 1
+            tree = ast.parse(src)
+            for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
                 f = node.func
                 # Path.home()
                 if isinstance(f, ast.Attribute) and f.attr == "home":
                     offenders.append(rel)
-                # os.path.expanduser("~")
+                # expanduser("~") and expanduser("~/anything"); also the
+                # no-arg Path("~").expanduser() form.
+                if isinstance(f, ast.Attribute) and f.attr == "expanduser":
+                    if not node.args:
+                        offenders.append(rel)
+                    else:
+                        a = node.args[0]
+                        if isinstance(a, ast.Constant) and str(a.value).startswith("~"):
+                            offenders.append(rel)
+            # os.environ["HOME"] / os.environ.get("HOME")
+            for node in ast.walk(tree):
                 if (
-                    isinstance(f, ast.Attribute)
-                    and f.attr == "expanduser"
-                    and node.args
-                    and isinstance(node.args[0], ast.Constant)
-                    and node.args[0].value == "~"
+                    isinstance(node, ast.Subscript)
+                    and isinstance(node.slice, ast.Constant)
+                    and node.slice.value == "HOME"
                 ):
                     offenders.append(rel)
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "get"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == "HOME"
+                ):
+                    offenders.append(rel)
+    assert scanned > 40, "guard only scanned {} files; PKG_ROOT wrong?".format(scanned)
     assert offenders == [], "still derive temp dirs from home: {}".format(
         sorted(set(offenders))
     )
@@ -418,9 +464,13 @@ def test_require_separate_filesystem_fails_closed_without_findmnt(
     fake_findmnt, tmp_path, monkeypatch
 ):
     """A missing util-linux must not silently downgrade the guarantee."""
+    # fake_findmnt answers "" for every field, i.e. findmnt is unavailable.
     monkeypatch.setattr(datadir_mod, "_same_filesystem_as_root", lambda p: False)
     monkeypatch.setattr(datadir_mod, "backing_device", lambda p: "")
-    with pytest.raises(DatadirError, match="cannot determine the filesystem"):
+    # Either unanswerable check may fire first; both are correct fail-closed.
+    with pytest.raises(
+        DatadirError, match="cannot determine the filesystem|cannot read the mount"
+    ):
         resolve_datadir(
             _args(datadir=str(tmp_path), datadir_require_separate_filesystem=True)
         )

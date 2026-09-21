@@ -762,7 +762,6 @@ def main():
         # deployments keep byte-identical behaviour and gain no new startup
         # failure mode.
         home = private_run_root(datadir) if datadir_is_explicit(args) else datadir
-        datadir_explicit = datadir_is_explicit(args)
     except DatadirError as e:
         logging.error(str(e))
         exit(1)
@@ -992,7 +991,6 @@ def main():
             datasink_push_results_redistimeseries=datasink_push_results_redistimeseries,
             docker_client=docker_client,
             home=home,
-            datadir_explicit=datadir_explicit,
             stream_id=stream_id,
             datasink_conn=datasink_conn,
             testsuite_spec_files=testsuite_spec_files,
@@ -1139,9 +1137,6 @@ def self_contained_coordinator_blocking_read(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     explicit_only=False,
-    # Keyword with a default: every existing caller (14 in the
-    # test-suite alone) passes these lists positionally.
-    datadir_explicit=False,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -1236,7 +1231,6 @@ def self_contained_coordinator_blocking_read(
                 restore_build_artifacts_default,
                 args,
                 explicit_only=explicit_only,
-                datadir_explicit=datadir_explicit,
             )
             num_process_streams = num_process_streams + 1
             num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -1346,9 +1340,6 @@ def process_self_contained_coordinator_stream(
     args=None,
     redis_password="redis_coordinator_password_2024",
     explicit_only=False,
-    # Keyword with a default: every existing caller (14 in the
-    # test-suite alone) passes these lists positionally.
-    datadir_explicit=False,
 ):
     global _heartbeat_current_test
     stream_id = "n/a"
@@ -1431,21 +1422,6 @@ def process_self_contained_coordinator_stream(
                 mnt_point = testDetails[b"mnt_point"].decode()
                 logging.info(
                     f"detected a mnt_point definition on the streamdata: {mnt_point}."
-                )
-
-            # An empty mnt_point disables the bind mount entirely, so redis
-            # writes its dataset into the container's writable layer on the
-            # docker graph driver -- the root volume -- while temp dirs are
-            # still created under the datadir. An operator inspecting the host
-            # would see the datadir in use and conclude --datadir worked. Only
-            # enforced when --datadir was explicitly requested, so untargeted
-            # deployments keep their current behaviour.
-            if mnt_point == "" and datadir_explicit:
-                raise DatadirError(
-                    "--datadir was requested but this test carries an empty "
-                    "mnt_point, so no bind mount is created and the dataset "
-                    "would land on the root volume instead. Refusing to "
-                    "produce a datapoint attributed to the wrong storage."
                 )
 
             executable = f"{mnt_point}redis-server"
