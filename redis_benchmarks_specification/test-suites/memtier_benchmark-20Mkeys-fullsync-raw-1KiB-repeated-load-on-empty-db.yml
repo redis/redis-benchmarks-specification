@@ -16,6 +16,8 @@ description: 'Initial full sync of 20M keys with repeated 1024-byte RAW string v
 
   its throughput and profiles do not measure the sync phase.
 
+  Requires a server build supporting repl-rdb-channel; older builds are outside this suite.
+
   See docs/fullsync-benchmark-qualification.md before accepting performance results.
 
   '
@@ -40,9 +42,9 @@ dbconfig:
       P:P --key-minimum 1 --hide-histogram -t 8 -c 25
   resources:
     requests:
-      memory: 25g
+      memory: 80g
   dataset_name: 20Mkeys-raw-string-1KiB-repeated
-  dataset_description: 20M RAW strings with repeated 1024-byte RAW string values; exact primary and replica
+  dataset_description: 20M RAW strings with repeated 1024-byte values; exact primary and replica
     counts required.
 tested-commands:
 - set

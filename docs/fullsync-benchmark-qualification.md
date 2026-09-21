@@ -19,6 +19,27 @@ both arms; `disabled` means the receiver stages the RDB on disk. The subsequent
 GET workload is outside the sync window. Its throughput, latency and profiles
 must not be presented as measurements of the initial sync.
 
+The primary rdbcompression setting remains enabled in every cell deliberately.
+When the negotiated path uses compression, random values still incur attempted
+LZF compression with little byte reduction, while repeated
+values can move substantial work into compression/decompression and reduce
+transfer/storage bytes. These are consequences of changing entropy under one
+fixed configuration, not codec-isolation tests. Disabling compression in only
+the random cells would introduce another treatment. Keep those costs visible
+when interpreting both timing and variability.
+
+These specs require server builds that recognize `repl-rdb-channel`; confirm
+capability with `CONFIG GET repl-rdb-channel` during runner qualification before
+launching the full dataset. Unsupported revisions are outside this suite's
+scope. The directive is pinned to `no` because newer builds can default to the
+separate RDB channel, which would change the transfer route between revisions.
+
+The 80g memory request budgets both 20M-key copies and additional overhead, not
+just the primary. A 1024-byte RAW payload can occupy a larger allocator size
+class; key/dictionary overhead, buffers and file cache also consume memory.
+Measure actual host/cgroup peaks and increase capacity before running if needed;
+the request is not evidence of an enforced container memory limit.
+
 Before accepting a performance result:
 
 1. Record server commit, build options, allocator, coordinator version, client
