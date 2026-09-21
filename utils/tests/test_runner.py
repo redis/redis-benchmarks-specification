@@ -1815,6 +1815,48 @@ def test_extract_testsuites():
     assert len(tests) == 2
 
 
+def test_validate_benchmark_metrics_throughput_floor_rejects_low_ops():
+    """Below-1-QPS throughput is invalid for an ordinary spec -- the
+    behavior the floor exists to catch (a benchmark tool that silently
+    produced ~0 throughput, e.g. from a connection failure)."""
+    results_dict = {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}}
+    is_valid, error = validate_benchmark_metrics(
+        results_dict, "some-test", benchmark_config={}
+    )
+    assert is_valid is False
+    assert "below 1 QPS threshold" in error
+
+
+def test_validate_benchmark_metrics_skips_floor_for_skip_throughput_floor():
+    """The same below-1-QPS result must pass validation when
+    dbconfig.skip_throughput_floor is set -- that Ops/sec is a single
+    BGSAVE fork-ack reply (see the 12Mkeys-bgsave-duration spec), which
+    scales with resident memory and has no principled floor, unlike an
+    ordinary spec's throughput."""
+    results_dict = {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}}
+    is_valid, error = validate_benchmark_metrics(
+        results_dict,
+        "bgsave-duration-test",
+        benchmark_config={"dbconfig": {"skip_throughput_floor": True}},
+    )
+    assert is_valid is True
+    assert error is None
+
+
+def test_validate_benchmark_metrics_wait_for_bgsave_alone_does_not_skip_floor():
+    """wait_for_bgsave and skip_throughput_floor are deliberately separate
+    keys: a future BGSAVE-under-write-load spec could set wait_for_bgsave
+    without wanting its real write throughput exempted from the floor."""
+    results_dict = {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}}
+    is_valid, error = validate_benchmark_metrics(
+        results_dict,
+        "some-test",
+        benchmark_config={"dbconfig": {"wait_for_bgsave": True}},
+    )
+    assert is_valid is False
+    assert "below 1 QPS threshold" in error
+
+
 def test_validate_benchmark_metrics_low_throughput_optout():
     sub_1_qps_result = {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}}
 
@@ -1847,3 +1889,13 @@ def test_validate_benchmark_metrics_low_throughput_optout():
     # No benchmark_config / no dbconfig at all: still validates (opt-out is opt-in).
     is_valid, error = validate_benchmark_metrics(sub_1_qps_result, "some-test")
     assert is_valid is False
+
+
+def test_skip_throughput_floor_string_no_keeps_validation():
+    valid, error = validate_benchmark_metrics(
+        {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}},
+        "some-test",
+        benchmark_config={"dbconfig": {"skip_throughput_floor": "no"}},
+    )
+    assert not valid
+    assert "below 1 QPS threshold" in error
