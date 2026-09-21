@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 
 import docker
@@ -15,7 +16,7 @@ def inject_replication_sync_metrics(
     """Inject replication full-sync metrics into a memtier-style results_dict.
 
     Adds two metrics under results_dict["ALL STATS"]["Totals"]:
-    - ReplicationFullSyncSeconds: max sync time across replicas (initial topology setup)
+    - ReplicationFullSyncSecondsV2: max sync time across replicas (initial topology setup)
     - ReplicationFullSyncCountDuringBench: count of full syncs during benchmark window
 
     Returns True on success, False on failure. Safe to call with None or
@@ -29,7 +30,7 @@ def inject_replication_sync_metrics(
         if "Totals" not in results_dict["ALL STATS"]:
             results_dict["ALL STATS"]["Totals"] = {}
         if replica_sync_times_seconds:
-            results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] = max(
+            results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncSecondsV2"] = max(
                 replica_sync_times_seconds
             )
         results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] = (
@@ -39,6 +40,52 @@ def inject_replication_sync_metrics(
     except Exception as e:
         logging.warning("Failed to inject sync metrics: {}".format(e))
         return False
+
+
+def measure_replica_full_sync(
+    replica_conn, primary_port, timeout=600, poll_interval=0.05
+):
+    """Time an explicit REPLICAOF through the first observed usable link.
+
+    Startup/PING is outside the interval. The measurement includes the command,
+    handshake, configured diskless delay, transfer and loading. Observation delay
+    includes polling, INFO latency and any timeout/reconnect gaps; this is not
+    an exact server event timestamp.
+    A fresh, empty standalone replica prevents reuse of a previous replication ID.
+    The caller must configure finite socket timeouts on this connection.
+    """
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Replication timeout must be finite and positive")
+    if not math.isfinite(poll_interval) or poll_interval <= 0:
+        raise ValueError("Replication poll interval must be finite and positive")
+    if (
+        replica_conn.info("replication").get("role") != "master"
+        or replica_conn.dbsize() != 0
+    ):
+        raise ValueError(
+            "Initial full-sync timing requires a fresh empty standalone replica"
+        )
+    start = time.monotonic()
+    replica_conn.execute_command("REPLICAOF", "localhost", primary_port)
+    while True:
+        if time.monotonic() - start >= timeout:
+            raise TimeoutError("Initial replica full sync exceeded its deadline")
+        try:
+            info = replica_conn.info("replication")
+        except (redis.TimeoutError, redis.BusyLoadingError):
+            # Loading a large RDB can temporarily delay or reject INFO. Keep the
+            # original deadline; a late response must not create a valid sample.
+            info = {}
+        elapsed = time.monotonic() - start
+        if elapsed >= timeout:
+            raise TimeoutError("Initial replica full sync exceeded its deadline")
+        if (
+            info.get("role") == "slave"
+            and info.get("master_link_status") == "up"
+            and info.get("master_sync_in_progress") == 0
+        ):
+            return elapsed
+        time.sleep(min(poll_interval, timeout - elapsed))
 
 
 def generate_standalone_dragonfly_server_args(
@@ -436,6 +483,7 @@ def spin_up_redis_replicas(
     password,
     replication_sync_timeout=600,
     server_name="redis",
+    expected_keyspacelen=None,
 ):
     """Start replica Redis containers and configure replication to the primary.
 
@@ -443,8 +491,9 @@ def spin_up_redis_replicas(
         tuple: (replica_conns, current_cpu_pos, sync_times_seconds)
 
     sync_times_seconds is a list of float seconds, one per replica, measuring
-    the wall-clock time from container start to master_link_status=up.
-    Use this as a benchmark metric for full-sync performance testing.
+    elapsed time from explicit REPLICAOF to the first observed usable link.
+    Replicas synchronize serially; this is not a concurrent fan-out measurement.
+    Failures raise and must never be exported as durations.
     """
     # gflags-based servers (e.g. dragonfly) are standalone-only for now; replica topologies
     # pass redis-style --replicaof/--masterauth flags such a server aborts on. Fail loudly.
@@ -459,11 +508,12 @@ def spin_up_redis_replicas(
     sync_times_seconds = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
-        # Append --replicaof and --masterauth to redis_arguments so the replica
-        # can authenticate to the primary and parca-agent can label it as a replica.
-        # Use per-replica filenames to avoid conflicts with the primary.
-        replica_redis_arguments = "{} --replicaof localhost {}".format(
-            redis_arguments, primary_port
+        # Defer replication until the process is ready, so container startup
+        # cannot hide the beginning (or all) of a short full sync.
+        # Keep the replicaof argv marker used by process-role classifiers while
+        # disabling replication until the timed REPLICAOF command below.
+        replica_redis_arguments = "{} --replicaof no one".format(
+            redis_arguments
         ).strip()
         if password is not None and password != "":
             replica_redis_arguments += " --masterauth {}".format(password)
@@ -500,38 +550,47 @@ def spin_up_redis_replicas(
             auto_remove=True,
         )
         replica_r = redis.StrictRedis(port=replica_port, password=password)
-        replica_r.ping()
-        logging.info(
-            "Replica {} started with --replicaof localhost {}".format(i, primary_port)
+        timing_conn = redis.StrictRedis(
+            port=replica_port,
+            password=password,
+            socket_timeout=1,
+            socket_connect_timeout=1,
         )
-        # Wait for replication link to come up. Use monotonic clock for
-        # high-resolution measurement of full-sync time.
-        sync_start = time.monotonic()
-        poll_interval = (
-            0.1  # 100ms — fast enough to be accurate, slow enough not to thrash
+        primary_timing_conn = redis.StrictRedis(
+            port=primary_port,
+            password=password,
+            socket_timeout=1,
+            socket_connect_timeout=1,
         )
-        sync_seconds = None
-        while True:
-            elapsed = time.monotonic() - sync_start
-            if elapsed >= replication_sync_timeout:
-                break
-            repl_info = replica_r.info("replication")
-            if repl_info.get("master_link_status") == "up":
-                sync_seconds = elapsed
-                logging.info(
-                    "Replica {} replication link is up (full sync took {:.3f}s)".format(
-                        i, sync_seconds
-                    )
+        try:
+            timing_conn.ping()
+            if (
+                expected_keyspacelen is not None
+                and primary_timing_conn.dbsize() != expected_keyspacelen
+            ):
+                raise ValueError(
+                    "Primary key count does not match the declared full-sync dataset"
                 )
-                break
-            time.sleep(poll_interval)
-        if sync_seconds is None:
-            logging.warning(
-                "Replica {} replication link did not come up within {}s".format(
-                    i, replication_sync_timeout
-                )
+            full_syncs_before = primary_timing_conn.info("stats")["sync_full"]
+            sync_seconds = measure_replica_full_sync(
+                timing_conn, primary_port, replication_sync_timeout
             )
-            sync_seconds = float(replication_sync_timeout)
+            full_syncs_after = primary_timing_conn.info("stats")["sync_full"]
+            if full_syncs_after - full_syncs_before != 1:
+                raise ValueError(
+                    "Initial-sync sample did not contain exactly one full sync"
+                )
+            if (
+                expected_keyspacelen is not None
+                and timing_conn.dbsize() != expected_keyspacelen
+            ):
+                raise ValueError(
+                    "Replica key count does not match the declared full-sync dataset"
+                )
+        finally:
+            timing_conn.close()
+            primary_timing_conn.close()
+        logging.info("Replica %s initial full sync completed in %.3fs", i, sync_seconds)
         sync_times_seconds.append(sync_seconds)
         replica_conns.append(replica_r)
     return replica_conns, current_cpu_pos, sync_times_seconds

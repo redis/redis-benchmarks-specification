@@ -2110,6 +2110,13 @@ def process_self_contained_coordinator_stream(
                                         redis_arguments,
                                         redis_password,
                                         server_name=server_name,
+                                        expected_keyspacelen=(
+                                            benchmark_config["dbconfig"]
+                                            .get("check", {})
+                                            .get("keyspacelen")
+                                            if preload_already_done
+                                            else None
+                                        ),
                                     )
                                     replica_conns.extend(new_replica_conns)
                                 else:
@@ -2857,7 +2864,7 @@ def process_self_contained_coordinator_stream(
                                 ):
                                     if replica_sync_times_seconds:
                                         logging.info(
-                                            "Injected ReplicationFullSyncSeconds={:.3f}s ({} replica(s))".format(
+                                            "Injected ReplicationFullSyncSecondsV2={:.3f}s ({} replica(s))".format(
                                                 max(replica_sync_times_seconds),
                                                 len(replica_sync_times_seconds),
                                             )
