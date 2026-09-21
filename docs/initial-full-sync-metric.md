@@ -26,3 +26,15 @@ Replicas still start and synchronize serially. The reported aggregate is the
 maximum individual duration, not concurrent fan-out wall time. Benchmark clients
 and profilers still start after initial synchronization; their results describe
 the later workload. This change makes no performance improvement claim.
+
+The existing `parallel-fullsync-*` specs each have one replica; their names refer
+to parallel encoder streams, not simultaneous replicas. The serial-start caveat
+applies to topologies with more than one replica.
+
+Dataset checks intentionally require exact counts. A truncated or oversized
+preload must fail rather than become an apparent timing improvement; do not add a
+tolerance to compensate for data-generator differences. Qualify the actual
+preload arguments and resolved client image before collecting comparisons.
+Primary validation probes fail closed on timeout or missing counters. A timing
+sample that cannot be verified is rejected even if the link became usable;
+qualification must retain these failures instead of selecting successful runs.

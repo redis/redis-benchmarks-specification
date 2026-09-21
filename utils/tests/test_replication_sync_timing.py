@@ -111,3 +111,79 @@ def test_replica_readiness_timeout_is_bounded_and_preserves_cleanup_tracking():
     normal.ping.assert_not_called()
     timing.close.assert_called_once()
     primary.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "primary_keys, replica_keys, sync_delta",
+    [(19, 20, 1), (20, 19, 1), (20, 20, 0), (20, 20, 2)],
+)
+def test_full_sync_rejects_dataset_or_sync_count_mismatch(
+    primary_keys, replica_keys, sync_delta
+):
+    from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+        spin_up_redis_replicas,
+    )
+
+    normal, timing, primary = Mock(), Mock(), Mock()
+    primary.dbsize.return_value = primary_keys
+    timing.dbsize.return_value = replica_keys
+    primary.info.side_effect = [{"sync_full": 0}, {"sync_full": sync_delta}]
+    with patch(
+        MODULE + ".redis.StrictRedis", side_effect=[normal, timing, primary]
+    ), patch(MODULE + ".start_redis_container"), patch(
+        MODULE + ".measure_replica_full_sync", return_value=0.25
+    ) as measure:
+        with pytest.raises(ValueError):
+            spin_up_redis_replicas(
+                1,
+                6399,
+                0,
+                Mock(),
+                [],
+                "redis:8.6",
+                "",
+                "",
+                1,
+                {},
+                "",
+                None,
+                expected_keyspacelen=20,
+            )
+    if primary_keys != 20:
+        measure.assert_not_called()
+    timing.close.assert_called_once()
+    primary.close.assert_called_once()
+
+
+def test_full_sync_returns_duration_only_after_dataset_and_sync_count_validation():
+    from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+        spin_up_redis_replicas,
+    )
+
+    normal, timing, primary = Mock(), Mock(), Mock()
+    primary.dbsize.return_value = timing.dbsize.return_value = 20
+    primary.info.side_effect = [{"sync_full": 0}, {"sync_full": 1}]
+    with patch(
+        MODULE + ".redis.StrictRedis", side_effect=[normal, timing, primary]
+    ), patch(MODULE + ".start_redis_container"), patch(
+        MODULE + ".measure_replica_full_sync", return_value=0.25
+    ):
+        conns, _, times = spin_up_redis_replicas(
+            1,
+            6399,
+            0,
+            Mock(),
+            [],
+            "redis:8.6",
+            "",
+            "",
+            1,
+            {},
+            "",
+            None,
+            expected_keyspacelen=20,
+        )
+    assert conns == [normal]
+    assert times == [0.25]
+    timing.close.assert_called_once()
+    primary.close.assert_called_once()
