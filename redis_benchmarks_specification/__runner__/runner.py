@@ -210,6 +210,13 @@ def validate_benchmark_metrics(
                 benchmark_config["dbconfig"].get("low-throughput-benchmark", False),
                 default=False,
             )
+        # Persistence-only clients report fork acknowledgement throughput.
+        skip_throughput_floor = parse_bool(
+            (benchmark_config or {})
+            .get("dbconfig", {})
+            .get("skip_throughput_floor", False),
+            default=False,
+        )
 
         # Define validation rules
         throughput_patterns = [
@@ -274,7 +281,9 @@ def validate_benchmark_metrics(
                 # Check throughput metrics
                 for pattern in throughput_patterns:
                     if pattern in metric_path_lower:
-                        if data < 1 and not low_throughput_benchmark:
+                        if data < 1 and not (
+                            low_throughput_benchmark or skip_throughput_floor
+                        ):
                             validation_errors.append(
                                 f"Throughput metric '{path}' has invalid value: {data} "
                                 f"(below 1 QPS threshold)"
@@ -2024,6 +2033,43 @@ def process_self_contained_coordinator_stream(
                                 "Skipping test {} in memory comparison mode as it does not contain dbconfig".format(
                                     test_name
                                 )
+                            )
+                            delete_temporary_files(
+                                temporary_dir_client=temporary_dir_client,
+                                full_result_path=None,
+                                benchmark_tool_global=benchmark_tool_global,
+                            )
+                            continue
+
+                        # wait_for_bgsave is __self_contained_coordinator__-only
+                        # (poll rdb_bgsave_in_progress / confirm_bgsave_completed /
+                        # inject_persistence_metrics all live there) -- this path
+                        # has none of that. Ignoring wait_for_bgsave here would be
+                        # actively misleading: the client would still run BGSAVE
+                        # via memtier and this path would still export the merged
+                        # defaults.yml metrics (Ops/sec/p50.00/p99.00 off a single
+                        # fork-ack reply) under the spec's test name, with nothing
+                        # to signal that number isn't save duration -- the same
+                        # "misleading datapoint, worse than a hole" outcome
+                        # bgsave_metric_missing exists to prevent on the
+                        # coordinator path. Checked here, alongside the other
+                        # dbconfig-driven skips and before the preload runs, so an
+                        # unsupported spec doesn't pay for a full (here, ~15GB)
+                        # dataset load only to be discarded afterward.
+                        if parse_bool(
+                            benchmark_config["dbconfig"].get("wait_for_bgsave", False),
+                            default=False,
+                        ):
+                            logging.warning(
+                                "dbconfig.wait_for_bgsave is set on %s, but "
+                                "wait_for_bgsave is not supported on the "
+                                "__runner__ CLI path -- no BGSAVE "
+                                "wait/confirm/injection is available here, and "
+                                "the exported Ops/sec/p50.00/p99.00 would "
+                                "reflect a single BGSAVE fork-ack reply, not "
+                                "save duration. Skipping this test rather than "
+                                "exporting a misleading datapoint.",
+                                test_name,
                             )
                             delete_temporary_files(
                                 temporary_dir_client=temporary_dir_client,

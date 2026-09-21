@@ -1,3 +1,5 @@
+from redis_benchmarks_specification.__common__.env import parse_bool
+
 # Import warning suppression first
 from redis_benchmarks_specification.__common__.suppress_warnings import *
 
@@ -638,10 +640,13 @@ from redis_benchmarks_specification.__self_contained_coordinator__.clients impor
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     generate_standalone_redis_server_args,
+    prepare_bgsave_results,
     inject_replication_sync_metrics,
+    keyspacelen_mismatch,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     start_redis_container,
+    wait_for_bgsave_topology_unsafe,
 )
 
 
@@ -1786,6 +1791,22 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                        # Normalize these opt-ins once for guards, validation and export.
+                        for flag in ("wait_for_bgsave", "skip_throughput_floor"):
+                            if flag in benchmark_config.get("dbconfig", {}):
+                                benchmark_config["dbconfig"][flag] = parse_bool(
+                                    benchmark_config["dbconfig"][flag], default=False
+                                )
+                        bgsave_wait_requested = benchmark_config.get(
+                            "dbconfig", {}
+                        ).get("wait_for_bgsave", False)
+                        benchmark_profilers_enabled = (
+                            profilers_enabled and not bgsave_wait_requested
+                        )
+                        if bgsave_wait_requested:
+                            logging.info(
+                                "BGSAVE duration profiling is disabled until save-phase collection is supported"
+                            )
                         # Initialize test_result before topology loop.
                         # If all topologies are filtered out, test is considered passed (nothing to run).
                         test_result = True
@@ -1831,12 +1852,110 @@ def process_self_contained_coordinator_stream(
                                 )
                                 continue
 
-                            if topology_spec_name in topologies_map:
+                            # topology_replica_count and topology_unmapped exist
+                            # only for the pre-container wait_for_bgsave guard a
+                            # few lines below -- deliberately defensive (defaults
+                            # rather than raises for an unmapped topology, since
+                            # the guard needs a value before any container work
+                            # starts) and deliberately NOT reused later for the
+                            # real replica-spin-up replica_count, which still calls
+                            # extract_replica_count() itself and is allowed to
+                            # KeyError on an unmapped topology exactly like it did
+                            # before this PR -- reusing this defaulted value there
+                            # would silently turn that pre-existing loud failure
+                            # into a normal-looking run for every spec, not just
+                            # ones using wait_for_bgsave.
+                            topology_replica_count = 0
+                            topology_unmapped = topology_spec_name not in topologies_map
+                            if not topology_unmapped:
                                 topology_spec = topologies_map[topology_spec_name]
                                 setup_type = topology_spec["type"]
+                                topology_replica_count = extract_replica_count(
+                                    topologies_map, topology_spec_name
+                                )
                             logging.info(
                                 f"Running topology named {topology_spec_name} of type {setup_type}"
                             )
+
+                            # See wait_for_bgsave_topology_unsafe()'s docstring for
+                            # why this check exists and what each argument covers;
+                            # unit-tested there (test_self_contained_coordinator.py)
+                            # rather than only in prose here, since this exact
+                            # condition has been revised multiple times. Nothing
+                            # bites today: this spec pins redis-topologies:
+                            # [oss-standalone] exactly, but the guard is meant to be
+                            # a fail-safe for wait_for_bgsave generally.
+                            if benchmark_config.get("dbconfig", {}).get(
+                                "wait_for_bgsave", False
+                            ) and wait_for_bgsave_topology_unsafe(
+                                setup_type, topology_replica_count, topology_unmapped
+                            ):
+                                logging.warning(
+                                    "dbconfig.wait_for_bgsave is set on %s, but "
+                                    "wait_for_bgsave only measures "
+                                    "primary_conns[0] with no replicas/AOF, and "
+                                    "%s is either unmapped (%s), multi-primary "
+                                    "(%s), or has replicas (%s) -- skipping "
+                                    "%s/%s rather than exporting a confounded, "
+                                    "unverified, or single-node save under the "
+                                    "whole test's name.",
+                                    test_name,
+                                    topology_spec_name,
+                                    topology_unmapped,
+                                    setup_type,
+                                    topology_replica_count,
+                                    test_name,
+                                    topology_spec_name,
+                                )
+                                # Same lrem the build-variant skip does above (and
+                                # the topology-level bookkeeping below does for the
+                                # normal path) -- without it this topology's entry
+                                # never leaves stream_topology_list_pending and
+                                # just sits there until REDIS_BINS_EXPIRE_SECS.
+                                github_event_conn.lrem(
+                                    stream_topology_list_pending,
+                                    1,
+                                    f"{test_name}::{topology_spec_name}",
+                                )
+                                test_result = False
+                                overall_result = False
+                                continue
+
+                            # wait_for_bgsave is unsupported on the multi-tool
+                            # (clientconfigs) path -- only the single-tool
+                            # clientconfig branch further down reads it. Checked
+                            # here, before any container/preload/client work for
+                            # this topology starts (mirrors the __runner__ CLI
+                            # path's pre-preload skip), so an unsupported
+                            # combination doesn't pay for a ~15GB preload and a
+                            # client run whose export would be suppressed
+                            # anyway. Independent of BENCHMARK_MULTITOOL_ENABLED:
+                            # the combination is invalid whether or not the
+                            # multi-tool engine itself is enabled.
+                            if "clientconfigs" in benchmark_config and (
+                                benchmark_config.get("dbconfig", {}).get(
+                                    "wait_for_bgsave", False
+                                )
+                            ):
+                                logging.warning(
+                                    "dbconfig.wait_for_bgsave is set on multi-tool "
+                                    "suite %s, but wait_for_bgsave is not supported "
+                                    "on the multi-tool path (no BGSAVE "
+                                    "wait/confirm/injection is available there). "
+                                    "Skipping %s/%s entirely rather than exporting "
+                                    "a misleading datapoint.",
+                                    test_name,
+                                    test_name,
+                                    topology_spec_name,
+                                )
+                                github_event_conn.lrem(
+                                    stream_topology_list_pending,
+                                    1,
+                                    f"{test_name}::{topology_spec_name}",
+                                )
+                                test_result = False
+                                overall_result = False
+                                continue
 
                             # Update parca-agent labels if available
                             global _parca_agent_available, _parca_startup_labels
@@ -1881,11 +2000,31 @@ def process_self_contained_coordinator_stream(
 
                             test_result = False
                             redis_container = None
+                            # Initialized here, before the try, rather than
+                            # deeper inside it (where the wait_for_bgsave logic
+                            # itself lives): the RDB-cleanup block in tear-down
+                            # below reads both unconditionally, and tear-down
+                            # runs even when the try raises before reaching the
+                            # deeper initialization (e.g. a preload failure) --
+                            # an uninitialized read there would be a NameError
+                            # for every spec, not just wait_for_bgsave ones,
+                            # and would itself skip the rest of tear-down
+                            # (client container removal, temp-dir handling,
+                            # stream bookkeeping), leaking client containers.
+                            bgsave_metric_missing = False
+                            bgsave_wait_enabled = False
+                            bgsave_probe_conn = None
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
                                     topologies_map, topology_spec_name
                                 )
+                                # Pre-existing (main) call, kept independent of
+                                # topology_replica_count above: this one must
+                                # KeyError on an unmapped topology (caught by the
+                                # outer except, failing the test loudly) rather
+                                # than defaulting to 0 like that guard-only value
+                                # does.
                                 replica_count = extract_replica_count(
                                     topologies_map, topology_spec_name
                                 )
@@ -1927,7 +2066,7 @@ def process_self_contained_coordinator_stream(
                                 profilers_artifacts_matrix = []
 
                                 collection_summary_str = ""
-                                if profilers_enabled:
+                                if benchmark_profilers_enabled:
                                     collection_summary_str = (
                                         local_profilers_platform_checks(
                                             dso,
@@ -2211,6 +2350,18 @@ def process_self_contained_coordinator_stream(
                                         server_name=server_name,
                                     )
 
+                                # Bound unconditionally: the multi-tool clientconfigs
+                                # branch below falls through into this same shared tail
+                                # rather than continue-ing, but wait_for_bgsave isn't
+                                # supported there (yet) -- this exists to avoid a
+                                # NameError on that path, not because it uses it.
+                                # bgsave_metric_missing (initialized before the try)
+                                # is set True on failure, never via `continue` -- the
+                                # only tear-down call site is further down this same
+                                # iteration; skipping it would leak DB/client
+                                # containers (see #551).
+                                rdb_last_save_time_before = None
+
                                 # Multi-tool clientconfigs suites (e.g. memtier +
                                 # bcast-listener) are gated behind a feature flag and
                                 # routed through the shared multi_tool engine. The
@@ -2230,6 +2381,13 @@ def process_self_contained_coordinator_stream(
                                         test_result = True
                                         continue
                                     # Feature flag ON: run the multi-tool suite.
+                                    # wait_for_bgsave is unsupported here (only the
+                                    # single-tool branch below reads it), but that
+                                    # combination is already caught before this
+                                    # topology's container/preload work even started
+                                    # -- see the pre-container skip up near the
+                                    # topology-filter continue, a few hundred lines
+                                    # above.
                                     (
                                         start_time,
                                         start_time_ms,
@@ -2435,7 +2593,7 @@ def process_self_contained_coordinator_stream(
                                         profiler_name,
                                         profilers_map,
                                     ) = profilers_start_if_required(
-                                        profilers_enabled,
+                                        benchmark_profilers_enabled,
                                         profilers_list,
                                         redis_pids,
                                         setup_name,
@@ -2453,7 +2611,11 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                     # Start topdown-profiler collection alongside benchmark
-                                    if _topdown_available and topdown_labels:
+                                    if (
+                                        _topdown_available
+                                        and topdown_labels
+                                        and not bgsave_wait_requested
+                                    ):
                                         topdown_duration = 30  # default
                                         if test_time_match:
                                             topdown_duration = min(
@@ -2484,6 +2646,74 @@ def process_self_contained_coordinator_stream(
                                             benchmark_command_str,
                                         )
                                     )
+
+                                    # Snapshot rdb_last_save_time before the client run so
+                                    # we can later confirm a BGSAVE genuinely completed in
+                                    # the measured window -- rdb_bgsave_in_progress==0 alone
+                                    # doesn't prove that (it also reads 0 before any save has
+                                    # ever run), same reasoning as the sync_full delta above.
+                                    bgsave_wait_enabled = benchmark_config.get(
+                                        "dbconfig", {}
+                                    ).get("wait_for_bgsave", False)
+                                    rdb_last_save_time_before = None
+                                    if bgsave_wait_enabled:
+                                        # Probe deadlines must not constrain setup or
+                                        # SHUTDOWN on the shared primary connection.
+                                        bgsave_probe_conn = redis.StrictRedis(
+                                            port=redis_proc_start_port,
+                                            password=redis_password,
+                                            socket_timeout=1,
+                                            socket_connect_timeout=1,
+                                        )
+                                        try:
+                                            rdb_last_save_time_before = (
+                                                bgsave_probe_conn.info().get(
+                                                    "rdb_last_save_time"
+                                                )
+                                            )
+                                        except Exception as e:
+                                            logging.warning(
+                                                "Failed to snapshot rdb_last_save_time before BGSAVE benchmark: {}".format(
+                                                    e
+                                                )
+                                            )
+
+                                        # dbconfig.check.keyspacelen is documentation-only
+                                        # elsewhere in the coordinator
+                                        # (dbconfig_keyspacelen_check() is never called
+                                        # from this function) -- verified here instead,
+                                        # folded into bgsave_metric_missing the same way
+                                        # a failed wait/confirm is below. See
+                                        # keyspacelen_mismatch()'s docstring for why this
+                                        # matters more for this spec than most.
+                                        expected_keyspacelen = (
+                                            benchmark_config.get("dbconfig", {})
+                                            .get("check", {})
+                                            .get("keyspacelen")
+                                        )
+                                        if expected_keyspacelen is not None:
+                                            try:
+                                                actual_keyspacelen = (
+                                                    bgsave_probe_conn.dbsize()
+                                                )
+                                            except Exception as e:
+                                                logging.warning(
+                                                    "Failed to read DBSIZE for keyspacelen check: {}".format(
+                                                        e
+                                                    )
+                                                )
+                                                actual_keyspacelen = None
+                                            if keyspacelen_mismatch(
+                                                expected_keyspacelen,
+                                                actual_keyspacelen,
+                                            ):
+                                                logging.error(
+                                                    f"Test {test_name} failed: dbconfig.check.keyspacelen "
+                                                    f"expects {expected_keyspacelen} keys but DBSIZE "
+                                                    f"reports {actual_keyspacelen} -- nothing to export."
+                                                )
+                                                bgsave_metric_missing = True
+
                                     # run the benchmark
                                     benchmark_start_time = datetime.datetime.now()
 
@@ -2662,14 +2892,14 @@ def process_self_contained_coordinator_stream(
                                     tf_github_repo,
                                     profiler_name,
                                     profilers_artifacts_matrix,
-                                    profilers_enabled,
+                                    benchmark_profilers_enabled,
                                     profilers_map,
                                     redis_pids,
                                     S3_BUCKET_NAME,
                                     test_name,
                                 )
                                 if (
-                                    profilers_enabled
+                                    benchmark_profilers_enabled
                                     and datasink_push_results_redistimeseries
                                 ):
                                     datasink_profile_tabular_data(
@@ -2775,6 +3005,8 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                     if not is_valid:
+                                        if bgsave_wait_enabled:
+                                            raise ValueError(validation_error)
                                         logging.error(
                                             f"Test {test_name} failed metric validation: {validation_error}"
                                         )
@@ -2821,6 +3053,8 @@ def process_self_contained_coordinator_stream(
                                             )
                                         )
                                         if not is_valid:
+                                            if bgsave_wait_enabled:
+                                                raise ValueError(validation_error)
                                             logging.error(
                                                 f"Test {test_name} failed metric validation: {validation_error}"
                                             )
@@ -2828,14 +3062,15 @@ def process_self_contained_coordinator_stream(
                                             failed_tests += 1
                                             continue
 
-                                        print_results_table_stdout(
-                                            benchmark_config,
-                                            default_metrics,
-                                            results_dict,
-                                            setup_type,
-                                            test_name,
-                                            None,
-                                        )
+                                        if not bgsave_wait_enabled:
+                                            print_results_table_stdout(
+                                                benchmark_config,
+                                                default_metrics,
+                                                results_dict,
+                                                setup_type,
+                                                test_name,
+                                                None,
+                                            )
 
                                 dataset_load_duration_seconds = 0
                                 # Capture sync_full delta during the benchmark window.
@@ -2843,7 +3078,11 @@ def process_self_contained_coordinator_stream(
                                 # may trigger multiple full syncs at runtime. Note:
                                 # sync_full is in the "stats" section, not "replication".
                                 sync_full_after = 0
-                                for redis_conn in primary_conns:
+                                for redis_conn in (
+                                    [bgsave_probe_conn]
+                                    if bgsave_wait_enabled
+                                    else primary_conns
+                                ):
                                     try:
                                         stats_info_after = redis_conn.info("stats")
                                         sync_full_after += int(
@@ -2875,31 +3114,51 @@ def process_self_contained_coordinator_stream(
                                                 sync_full_during_benchmark
                                             )
                                         )
-                                try:
-                                    exporter_datasink_common(
-                                        benchmark_config,
-                                        benchmark_duration_seconds,
-                                        build_variant_name,
-                                        datapoint_time_ms,
-                                        dataset_load_duration_seconds,
-                                        datasink_conn,
-                                        datasink_push_results_redistimeseries,
-                                        git_branch,
-                                        git_version,
-                                        metadata,
-                                        redis_conns,
+
+                                # A failed or unattributed save must never export the
+                                # client's fork acknowledgement as benchmark throughput.
+                                if bgsave_wait_enabled and not bgsave_metric_missing:
+                                    bgsave_metric_missing = not prepare_bgsave_results(
+                                        bgsave_probe_conn,
                                         results_dict,
-                                        running_platform,
-                                        setup_name,
-                                        setup_type,
-                                        test_name,
-                                        tf_github_org,
-                                        tf_github_repo,
-                                        tf_triggering_env,
-                                        topology_spec_name,
-                                        default_metrics,
-                                        git_hash,
+                                        benchmark_config,
+                                        rdb_last_save_time_before,
                                     )
+                                    if not bgsave_metric_missing:
+                                        print_results_table_stdout(
+                                            benchmark_config,
+                                            default_metrics,
+                                            results_dict,
+                                            setup_type,
+                                            test_name,
+                                            None,
+                                        )
+                                try:
+                                    if not bgsave_metric_missing:
+                                        exporter_datasink_common(
+                                            benchmark_config,
+                                            benchmark_duration_seconds,
+                                            build_variant_name,
+                                            datapoint_time_ms,
+                                            dataset_load_duration_seconds,
+                                            datasink_conn,
+                                            datasink_push_results_redistimeseries,
+                                            git_branch,
+                                            git_version,
+                                            metadata,
+                                            redis_conns,
+                                            results_dict,
+                                            running_platform,
+                                            setup_name,
+                                            setup_type,
+                                            test_name,
+                                            tf_github_org,
+                                            tf_github_repo,
+                                            tf_triggering_env,
+                                            topology_spec_name,
+                                            default_metrics,
+                                            git_hash,
+                                        )
 
                                     # Shut down all nodes in reverse order: replicas, then primary (idx 0).
                                     # ConnectionError is the expected success path (the server drops the
@@ -2909,7 +3168,12 @@ def process_self_contained_coordinator_stream(
                                     # expects and raises a generic "SHUTDOWN seems to have failed") tolerate
                                     # it — results are already pushed and the container is force-stopped in
                                     # teardown.
-                                    for redis_conn in reversed(redis_conns):
+                                    # An unresponsive save must reach Docker teardown
+                                    # without waiting on graceful Redis shutdown.
+                                    shutdown_conns = (
+                                        [] if bgsave_metric_missing else redis_conns
+                                    )
+                                    for redis_conn in reversed(shutdown_conns):
                                         try:
                                             redis_conn.shutdown(save=False)
                                         except redis.exceptions.ConnectionError:
@@ -2925,6 +3189,8 @@ def process_self_contained_coordinator_stream(
                                             )
 
                                 except redis.exceptions.ConnectionError as e:
+                                    if bgsave_wait_enabled:
+                                        bgsave_metric_missing = True
                                     logging.critical(
                                         "Some unexpected exception was caught during metric fetching. Skipping it..."
                                     )
@@ -2938,7 +3204,15 @@ def process_self_contained_coordinator_stream(
                                     traceback.print_exc(file=sys.stdout)
                                     print("-" * 60)
 
-                                test_result = True
+                                # A single expression rather than "test_result = True"
+                                # followed by a conditional override: the ordering
+                                # constraint (bgsave_metric_missing must be applied
+                                # AFTER any earlier reset to True) was previously
+                                # enforced only by a comment, and bgsave_metric_missing
+                                # defaults to False for every spec that doesn't set
+                                # wait_for_bgsave, so this collapses to the exact same
+                                # True for the ordinary case.
+                                test_result = not bgsave_metric_missing
                                 total_test_suite_runs = total_test_suite_runs + 1
 
                             except Exception as e:
@@ -2991,6 +3265,8 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 test_result = False
+                            if bgsave_probe_conn is not None:
+                                bgsave_probe_conn.close()
                             # Clean up topdown collector if still running
                             if topdown_collector is not None:
                                 try:
@@ -3006,6 +3282,71 @@ def process_self_contained_coordinator_stream(
                                     stop_and_remove_container_safe(
                                         redis_container, "DB"
                                     )
+
+                                if bgsave_wait_enabled and not test_result:
+                                    # bgsave_wait_enabled (not bgsave_metric_missing)
+                                    # is the gate: bgsave_metric_missing only covers
+                                    # "no BGSAVE confirmed", but a *confirmed* BGSAVE
+                                    # on a wait_for_bgsave spec still leaves the same
+                                    # ~469MB dump.rdb on disk if something downstream
+                                    # (topdown wait, exporter_datasink_common(), the
+                                    # connection-shutdown loop) then fails and lands
+                                    # in the outer except -- test_result goes False
+                                    # there too, via a different route, but the
+                                    # dump.rdb this spec just successfully wrote is
+                                    # just as permanent without this broader check.
+                                    # bgsave_metric_missing always implies
+                                    # not test_result (test_result = not
+                                    # bgsave_metric_missing), so this is strictly
+                                    # broader, not a different case. Deliberately
+                                    # placed AFTER the DB container is stopped above,
+                                    # not right after bgsave_metric_missing is set:
+                                    # the dominant way that gets True with an RDB
+                                    # actually on disk is a
+                                    # wait_for_bgsave_completion() timeout, meaning
+                                    # the forked child is by definition still writing
+                                    # temp-<pid>.rdb at that point. Unlinking it
+                                    # before the container (and thus that fd) is
+                                    # stopped wouldn't reclaim the ~469MB anyway,
+                                    # would make the child's final
+                                    # rename(temp-<pid>.rdb, dump.rdb) fail with
+                                    # ENOENT and log an error into the redis.log this
+                                    # block exists to keep clean for debugging, and
+                                    # races a fresh dump.rdb into existence (if the
+                                    # child finishes between the unlink and the
+                                    # container stop) that would never get swept at
+                                    # all. Doing it here, after the container is
+                                    # definitely stopped, is deterministic. Still
+                                    # test_result is False here (that's the
+                                    # condition), so the temporary_dir rmtree below
+                                    # is skipped and redis.log is preserved -- only
+                                    # the RDB itself is unlinked.
+                                    # try inside the loop, not wrapping it: the
+                                    # dominant case this block exists for (a
+                                    # wait_for_bgsave_completion() timeout) leaves
+                                    # temp-<pid>.rdb on disk, not dump.rdb, and
+                                    # dump.rdb is globbed first -- an OSError on a
+                                    # dump.rdb that doesn't even exist in that case
+                                    # would otherwise abort the whole sweep before
+                                    # ever reaching the temp-*.rdb files that are
+                                    # actually there. Best-effort per file instead.
+                                    for rdb_path in list(
+                                        Path(temporary_dir).glob("dump.rdb")
+                                    ) + list(Path(temporary_dir).glob("temp-*.rdb")):
+                                        try:
+                                            rdb_path.unlink()
+                                            logging.info(
+                                                "Removed unconfirmed-BGSAVE artifact %s "
+                                                "(kept redis.log for debugging)",
+                                                rdb_path,
+                                            )
+                                        except OSError as e:
+                                            logging.warning(
+                                                "Failed to remove RDB artifact %s "
+                                                "after an unconfirmed BGSAVE: %s",
+                                                rdb_path,
+                                                e,
+                                            )
 
                                 for redis_container in client_containers:
                                     if type(redis_container) == Container:
