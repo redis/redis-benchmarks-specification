@@ -1,6 +1,6 @@
 version: 0.4
 name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
-description: 'Measure one BGSAVE after preloading 12M keys with repeated 1024-byte
+description: 'Measure one BGSAVE after preloading 12M RAW string keys with repeated 1024-byte
 
   values. No concurrent writes, automatic saves, AOF or replicas are enabled.
 

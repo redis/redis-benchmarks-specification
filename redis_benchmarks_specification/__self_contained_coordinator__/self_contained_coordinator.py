@@ -1797,13 +1797,13 @@ def process_self_contained_coordinator_stream(
                                 benchmark_config["dbconfig"][flag] = parse_bool(
                                     benchmark_config["dbconfig"][flag], default=False
                                 )
-                        bgsave_profile_unsupported = benchmark_config.get(
+                        bgsave_wait_requested = benchmark_config.get(
                             "dbconfig", {}
                         ).get("wait_for_bgsave", False)
                         benchmark_profilers_enabled = (
-                            profilers_enabled and not bgsave_profile_unsupported
+                            profilers_enabled and not bgsave_wait_requested
                         )
-                        if bgsave_profile_unsupported:
+                        if bgsave_wait_requested:
                             logging.info(
                                 "BGSAVE duration profiling is disabled until save-phase collection is supported"
                             )
@@ -2013,6 +2013,7 @@ def process_self_contained_coordinator_stream(
                             # stream bookkeeping), leaking client containers.
                             bgsave_metric_missing = False
                             bgsave_wait_enabled = False
+                            bgsave_probe_conn = None
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -2150,12 +2151,6 @@ def process_self_contained_coordinator_stream(
                                     redis_conn = redis.StrictRedis(
                                         port=redis_proc_start_port,
                                         password=redis_password,
-                                        socket_timeout=(
-                                            1 if bgsave_profile_unsupported else None
-                                        ),
-                                        socket_connect_timeout=(
-                                            1 if bgsave_profile_unsupported else None
-                                        ),
                                     )
                                     # Retry PING after the fixed container sleep — some
                                     # servers (e.g. io_uring-based) accept connections a
@@ -2612,7 +2607,7 @@ def process_self_contained_coordinator_stream(
                                     if (
                                         _topdown_available
                                         and topdown_labels
-                                        and not bgsave_profile_unsupported
+                                        and not bgsave_wait_requested
                                     ):
                                         topdown_duration = 30  # default
                                         if test_time_match:
@@ -2655,11 +2650,19 @@ def process_self_contained_coordinator_stream(
                                     ).get("wait_for_bgsave", False)
                                     rdb_last_save_time_before = None
                                     if bgsave_wait_enabled:
+                                        # Probe deadlines must not constrain setup or
+                                        # SHUTDOWN on the shared primary connection.
+                                        bgsave_probe_conn = redis.StrictRedis(
+                                            port=redis_proc_start_port,
+                                            password=redis_password,
+                                            socket_timeout=1,
+                                            socket_connect_timeout=1,
+                                        )
                                         try:
                                             rdb_last_save_time_before = (
-                                                primary_conns[0]
-                                                .info()
-                                                .get("rdb_last_save_time")
+                                                bgsave_probe_conn.info().get(
+                                                    "rdb_last_save_time"
+                                                )
                                             )
                                         except Exception as e:
                                             logging.warning(
@@ -2683,9 +2686,9 @@ def process_self_contained_coordinator_stream(
                                         )
                                         if expected_keyspacelen is not None:
                                             try:
-                                                actual_keyspacelen = primary_conns[
-                                                    0
-                                                ].dbsize()
+                                                actual_keyspacelen = (
+                                                    bgsave_probe_conn.dbsize()
+                                                )
                                             except Exception as e:
                                                 logging.warning(
                                                     "Failed to read DBSIZE for keyspacelen check: {}".format(
@@ -2995,6 +2998,8 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                     if not is_valid:
+                                        if bgsave_wait_enabled:
+                                            raise ValueError(validation_error)
                                         logging.error(
                                             f"Test {test_name} failed metric validation: {validation_error}"
                                         )
@@ -3041,6 +3046,8 @@ def process_self_contained_coordinator_stream(
                                             )
                                         )
                                         if not is_valid:
+                                            if bgsave_wait_enabled:
+                                                raise ValueError(validation_error)
                                             logging.error(
                                                 f"Test {test_name} failed metric validation: {validation_error}"
                                             )
@@ -3063,7 +3070,11 @@ def process_self_contained_coordinator_stream(
                                 # may trigger multiple full syncs at runtime. Note:
                                 # sync_full is in the "stats" section, not "replication".
                                 sync_full_after = 0
-                                for redis_conn in primary_conns:
+                                for redis_conn in (
+                                    [bgsave_probe_conn]
+                                    if bgsave_wait_enabled
+                                    else primary_conns
+                                ):
                                     try:
                                         stats_info_after = redis_conn.info("stats")
                                         sync_full_after += int(
@@ -3100,7 +3111,7 @@ def process_self_contained_coordinator_stream(
                                 # client's fork acknowledgement as benchmark throughput.
                                 if bgsave_wait_enabled and not bgsave_metric_missing:
                                     bgsave_metric_missing = not prepare_bgsave_results(
-                                        primary_conns[0],
+                                        bgsave_probe_conn,
                                         results_dict,
                                         benchmark_config,
                                         rdb_last_save_time_before,
@@ -3140,7 +3151,12 @@ def process_self_contained_coordinator_stream(
                                     # expects and raises a generic "SHUTDOWN seems to have failed") tolerate
                                     # it — results are already pushed and the container is force-stopped in
                                     # teardown.
-                                    for redis_conn in reversed(redis_conns):
+                                    # An unresponsive save must reach Docker teardown
+                                    # without waiting on graceful Redis shutdown.
+                                    shutdown_conns = (
+                                        [] if bgsave_metric_missing else redis_conns
+                                    )
+                                    for redis_conn in reversed(shutdown_conns):
                                         try:
                                             redis_conn.shutdown(save=False)
                                         except redis.exceptions.ConnectionError:
@@ -3232,6 +3248,8 @@ def process_self_contained_coordinator_stream(
                                     )
 
                                 test_result = False
+                            if bgsave_probe_conn is not None:
+                                bgsave_probe_conn.close()
                             # Clean up topdown collector if still running
                             if topdown_collector is not None:
                                 try:

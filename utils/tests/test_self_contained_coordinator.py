@@ -20,7 +20,6 @@ from redis_benchmarks_specification.__common__.spec import (
 )
 from redis_benchmarks_specification.__common__.timeseries import (
     jsonpath_field_chain,
-    jsonpath_last_field,
     merge_default_and_config_metrics,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
@@ -435,31 +434,6 @@ def test_keyspacelen_mismatch_unreadable_dbsize_is_a_mismatch_when_expected():
     assert keyspacelen_mismatch(12000000, None) is True
 
 
-def test_jsonpath_last_field_simple_unquoted_segment():
-    assert (
-        jsonpath_last_field('$."ALL STATS".Totals.RdbLastBgsaveTimeSec')
-        == "RdbLastBgsaveTimeSec"
-    )
-
-
-def test_jsonpath_last_field_quoted_segment_with_literal_dot():
-    """A naive path.rsplit(".", 1)[-1] would truncate a quoted "p50.00"
-    segment to "00" -- this is exactly why jsonpath_last_field() parses
-    with JsonPathParser() instead of splitting on "." as a string."""
-    assert (
-        jsonpath_last_field('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')
-        == "p50.00"
-    )
-
-
-def test_jsonpath_last_field_quoted_segment_with_slash():
-    assert jsonpath_last_field('$."BEST RUN RESULTS".Totals."Ops/sec"') == "Ops/sec"
-
-
-def test_jsonpath_last_field_unparseable_returns_none():
-    assert jsonpath_last_field("not a jsonpath [[[") is None
-
-
 def test_jsonpath_field_chain_flat_child():
     assert jsonpath_field_chain('$."ALL STATS".Totals.RdbLastBgsaveTimeSec') == [
         "ALL STATS",
@@ -473,7 +447,7 @@ def test_jsonpath_field_chain_nested_child_is_not_the_last_field():
     ("Percentile Latencies"), not the leaf field ("p50.00") -- this is
     the distinction the export-time Totals filter in
     self_contained_coordinator.py needs jsonpath_field_chain() for
-    instead of jsonpath_last_field(): filtering on the leaf would delete
+    instead of filtering on the last field: filtering on the leaf would delete
     "Percentile Latencies" from results_dict["ALL STATS"]["Totals"]
     entirely, since that's the key actually sitting there."""
     chain = jsonpath_field_chain('$."ALL STATS".Totals."Percentile Latencies"."p50.00"')

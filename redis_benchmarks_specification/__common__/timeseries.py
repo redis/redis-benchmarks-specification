@@ -53,13 +53,6 @@ def jsonpath_field_chain(jsonpath):
     return fields or None
 
 
-def jsonpath_last_field(jsonpath: str):
-    """Return the final field name a jsonpath resolves to, or None if it
-    doesn't parse or doesn't end in a plain field access."""
-    chain = jsonpath_field_chain(jsonpath)
-    return chain[-1] if chain else None
-
-
 def parse_exporter_timemetric(metric_path: str, results_dict: dict):
     datapoints_timestamp = None
     try:
