@@ -3055,14 +3055,15 @@ def process_self_contained_coordinator_stream(
                                             failed_tests += 1
                                             continue
 
-                                        print_results_table_stdout(
-                                            benchmark_config,
-                                            default_metrics,
-                                            results_dict,
-                                            setup_type,
-                                            test_name,
-                                            None,
-                                        )
+                                        if not bgsave_wait_enabled:
+                                            print_results_table_stdout(
+                                                benchmark_config,
+                                                default_metrics,
+                                                results_dict,
+                                                setup_type,
+                                                test_name,
+                                                None,
+                                            )
 
                                 dataset_load_duration_seconds = 0
                                 # Capture sync_full delta during the benchmark window.
@@ -3116,6 +3117,15 @@ def process_self_contained_coordinator_stream(
                                         benchmark_config,
                                         rdb_last_save_time_before,
                                     )
+                                    if not bgsave_metric_missing:
+                                        print_results_table_stdout(
+                                            benchmark_config,
+                                            default_metrics,
+                                            results_dict,
+                                            setup_type,
+                                            test_name,
+                                            None,
+                                        )
                                 try:
                                     if not bgsave_metric_missing:
                                         exporter_datasink_common(
