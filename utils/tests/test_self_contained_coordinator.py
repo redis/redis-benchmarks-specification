@@ -57,27 +57,27 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
 
 
 def test_inject_replication_sync_metrics_with_replicas():
-    """Both ReplicationFullSyncSeconds and ReplicationFullSyncCountDuringBench
+    """Both ReplicationFullSyncSecondsV2 and ReplicationFullSyncCountDuringBench
     should be injected when replicas exist and sync times are non-empty."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 100000.0}}}
     ok = inject_replication_sync_metrics(results, [3.5, 4.2, 2.1], 2)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
     # Max sync time across replicas (slowest replica gates the topology)
-    assert totals["ReplicationFullSyncSeconds"] == 4.2
+    assert totals["ReplicationFullSyncSecondsV2"] == 4.2
     assert totals["ReplicationFullSyncCountDuringBench"] == 2
     # Existing metrics not clobbered
     assert totals["Ops/sec"] == 100000.0
 
 
 def test_inject_replication_sync_metrics_no_replicas():
-    """When no replicas were spun up, ReplicationFullSyncSeconds is omitted
+    """When no replicas were spun up, ReplicationFullSyncSecondsV2 is omitted
     but ReplicationFullSyncCountDuringBench is still set to 0."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 50000.0}}}
     ok = inject_replication_sync_metrics(results, [], 0)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert "ReplicationFullSyncSeconds" not in totals
+    assert "ReplicationFullSyncSecondsV2" not in totals
     assert totals["ReplicationFullSyncCountDuringBench"] == 0
     assert totals["Ops/sec"] == 50000.0
 
@@ -89,7 +89,7 @@ def test_inject_replication_sync_metrics_creates_missing_keys():
     assert ok is True
     assert "ALL STATS" in results
     assert "Totals" in results["ALL STATS"]
-    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] == 1.5
+    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSecondsV2"] == 1.5
     assert results["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] == 1
 
 
@@ -108,7 +108,7 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     ok = inject_replication_sync_metrics(results, [2.0], 5)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert totals["ReplicationFullSyncSeconds"] == 2.0
+    assert totals["ReplicationFullSyncSecondsV2"] == 2.0
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
