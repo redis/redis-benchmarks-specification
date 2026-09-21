@@ -66,6 +66,17 @@ Before accepting a performance result:
 7. Verify actual exported TimeSeries samples, their units, revision and run
    identities. A successful trigger or YAML schema check is insufficient.
 
+A low CV establishes repeatability on the measured storage path, not sensitivity
+to CPU or serialization improvements. A stable storage throughput limit can mask
+a change in Redis. Record the actual device backing the data mount: an NVMe
+interface can expose EBS and does not establish that storage is physically local.
+For disk-backed loading, retain EBS and local-NVMe results as separate strata.
+A useful storage comparison runs both mounts on the same host with identical
+CPU affinity, binary, filesystem and configuration. Record provisioned EBS
+IOPS/throughput, physical I/O counters, I/O pressure, CPU utilization and cache
+policy. Receiver file staging can be followed by reads from page cache.
+Do not change storage or drop caches partway through a qualification cohort.
+
 The specs remain unqualified until this protocol has been run on each target
 runner. Small-scale argument and digest checks establish functionality only.
 They are not evidence for a speedup or an acceptable noise floor.
@@ -74,3 +85,7 @@ Separate follow-ups are needed for moderately compressible fixtures,
 bandwidth/RTT control, concurrent replica fan-out, writes during synchronization,
 and profiling of the initial sync phase. The current coordinator starts replicas
 serially and starts its load client and profilers after initial synchronization.
+
+## Recorded qualifications
+
+- [2026-09-21: one x86 EBS runner](fullsync-qualification-20260921.md). Four cells meet the repeatability budget. The random/disk-backed cell shows a storage throughput constraint; CPU/serialization sensitivity and other storage paths remain unqualified.
