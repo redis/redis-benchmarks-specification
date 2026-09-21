@@ -1,8 +1,12 @@
 import logging
+import math
 import time
 
 import docker
 import redis
+
+from redis_benchmarks_specification.__common__.env import parse_bool
+from redis_benchmarks_specification.__common__.timeseries import jsonpath_field_chain
 
 from redis_benchmarks_specification.__self_contained_coordinator__.cpuset import (
     generate_cpuset_cpus,
@@ -63,6 +67,8 @@ def wait_for_bgsave_completion(
     Returns:
         tuple: (completed: bool, elapsed_seconds: float)
     """
+    if not math.isfinite(bgsave_timeout_seconds) or bgsave_timeout_seconds <= 0:
+        raise ValueError("BGSAVE timeout must be finite and positive")
     start = time.monotonic()
     poll_interval = 0.2  # 200ms -- BGSAVE durations of interest are seconds+
     consecutive_errors = 0
@@ -72,6 +78,9 @@ def wait_for_bgsave_completion(
             return False, elapsed
         try:
             persistence_info = redis_conn.info("persistence")
+            elapsed = time.monotonic() - start
+            if elapsed >= bgsave_timeout_seconds:
+                return False, elapsed
             consecutive_errors = 0
             # Deliberately NOT persistence_info.get("rdb_bgsave_in_progress", 0)
             # -- the same .get()-defaulting shape inject_persistence_metrics()
@@ -99,7 +108,12 @@ def wait_for_bgsave_completion(
                     "(connection likely dead)".format(consecutive_errors)
                 )
                 return False, elapsed
-        time.sleep(poll_interval)
+        time.sleep(
+            min(
+                poll_interval,
+                max(0, bgsave_timeout_seconds - (time.monotonic() - start)),
+            )
+        )
 
 
 def confirm_bgsave_completed(
@@ -125,30 +139,23 @@ def confirm_bgsave_completed(
     AOF, no replicas" -- the caller is responsible for the replica half via
     wait_for_bgsave_topology_unsafe(), checked before this ever runs):
 
-    - aof_enabled must be falsy. AOF rewrites call redisFork() same as
+    - aof_enabled must be explicitly present and zero. AOF rewrites call redisFork() same as
       BGSAVE, so an AOF rewrite landing in the measured window could be the
       fork latest_fork_usec actually reflects, misattributed as "the BGSAVE
       fork". (AOF rewrites do NOT touch rdb_last_save_time -- only
       RDB-writing events do -- so this confound is specific to
       RdbLastForkUsec's correctness, not this function's other check.)
-    - save_points_config must be falsy (None or empty/whitespace-only, i.e.
-      Redis's own "save points disabled" representation). A non-empty
+    - save_points_config must be a fetched empty/whitespace-only string
+      (Redis's own "save points disabled" representation). A non-empty
       config means periodic autosave is active and could have written the
       RDB (and therefore satisfied the rdb_last_save_time check above) on
       its own schedule, independent of the client's explicit BGSAVE --
       exactly the same "some other trigger, not the client's BGSAVE"
       confound the replica check exists to rule out.
 
-    NOTE: rdb_last_save_time is whole-second unix time, so this assumes the
-    save takes at least a couple of seconds -- a save fast enough to finish
-    within the same wall-clock second as the pre-run snapshot would fail
-    this check (and, since dbconfig.wait_for_bgsave treats that as a hard
-    test failure rather than a skipped export, fail the whole test) even
-    though a real BGSAVE did happen. Fine for multi-second saves like the
-    memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration spec's ~26s save
-    (measured, ~15GB resident dataset); a spec built around a save fast
-    enough to risk landing in the same second should not opt into
-    wait_for_bgsave.
+    The completion timestamp has whole-second resolution. Saves completing in
+    the same second as the pre-run value fail closed; use multi-second datasets.
+    The caller must use bounded socket reads for all persistence probes.
 
     Args:
         rdb_last_save_time_before: rdb_last_save_time captured before the
@@ -158,7 +165,7 @@ def confirm_bgsave_completed(
             aof_enabled -- an unscoped info() call has all three), or None
             if that call failed.
         save_points_config: the server's live `save` config value (e.g.
-            from CONFIG GET save), or None/empty if not fetched or disabled.
+            from CONFIG GET save), or an empty string if disabled; missing data fails confirmation.
             Not part of INFO output, so callers must fetch it separately
             (e.g. alongside info_after, since save points aren't expected
             to change mid-run for a wait_for_bgsave spec).
@@ -168,9 +175,9 @@ def confirm_bgsave_completed(
     rdb_last_save_time_after = info_after.get("rdb_last_save_time")
     if rdb_last_save_time_after is None:
         return False
-    if info_after.get("aof_enabled"):
+    if info_after.get("aof_enabled") != 0:
         return False
-    if save_points_config is not None and save_points_config.strip():
+    if not isinstance(save_points_config, str) or save_points_config.strip():
         return False
     return (
         rdb_last_save_time_after > rdb_last_save_time_before
@@ -215,8 +222,7 @@ def keyspacelen_mismatch(expected_keyspacelen, actual_keyspacelen):
     an observed DBSIZE.
 
     For most specs an under-loaded preload shows up as anomalous
-    throughput. It wouldn't for a wait_for_bgsave spec: rdb_last_bgsave_time_sec
-    is monotone in dataset size and little else, so a truncated preload
+    throughput. It wouldn't for a wait_for_bgsave spec: a reduced dataset may save faster, so a truncated preload
     would just look like a smaller, "improved" BGSAVE, with
     confirm_bgsave_completed()/inject_persistence_metrics() both still
     succeeding. This closes that gap.
@@ -283,19 +289,72 @@ def inject_persistence_metrics(results_dict, server_info):
         )
         return False
     try:
+        duration = int(server_info["rdb_last_bgsave_time_sec"])
+        fork_usec = int(server_info["latest_fork_usec"])
+        if duration < 0 or fork_usec < 0:
+            return False
         if "ALL STATS" not in results_dict:
             results_dict["ALL STATS"] = {}
         if "Totals" not in results_dict["ALL STATS"]:
             results_dict["ALL STATS"]["Totals"] = {}
-        results_dict["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] = int(
-            server_info["rdb_last_bgsave_time_sec"]
-        )
-        results_dict["ALL STATS"]["Totals"]["RdbLastForkUsec"] = int(
-            server_info["latest_fork_usec"]
-        )
+        results_dict["ALL STATS"]["Totals"]["RdbLastBgsaveTimeSec"] = duration
+        results_dict["ALL STATS"]["Totals"]["RdbLastForkUsec"] = fork_usec
         return True
     except Exception as e:
         logging.warning("Failed to inject persistence metrics: {}".format(e))
+        return False
+
+
+def prepare_bgsave_results(
+    redis_conn, results_dict, benchmark_config, save_time_before
+):
+    """Return whether this save has trustworthy, explicitly selected metrics.
+
+    The caller exports only on True and always tears down the run's containers.
+    Probe connections must have finite socket timeouts.
+    """
+    config = benchmark_config.get("dbconfig", {})
+    completed, _ = wait_for_bgsave_completion(
+        redis_conn, config.get("bgsave_timeout_seconds", 300)
+    )
+    if not completed:
+        return False
+    try:
+        info = redis_conn.info()
+        save_points = redis_conn.config_get("save").get("save")
+        if not confirm_bgsave_completed(save_time_before, info, save_points):
+            return False
+        if not inject_persistence_metrics(results_dict, info):
+            return False
+        if parse_bool(config.get("skip_throughput_floor", False), default=False):
+            declared = (
+                benchmark_config.get("exporter", {})
+                .get("redistimeseries", {})
+                .get("metrics", [])
+            )
+            allowed = set()
+            for path in declared:
+                chain = jsonpath_field_chain(path)
+                if chain and len(chain) > 2 and chain[:2] == ["ALL STATS", "Totals"]:
+                    allowed.add(chain[2])
+            totals = results_dict["ALL STATS"]["Totals"]
+            filtered = {key: value for key, value in totals.items() if key in allowed}
+            if not filtered:
+                return False
+            # A repeated memtier client may produce additional default throughput
+            # sections. This opt-in supports the single-save result shape only.
+            if any(
+                key in results_dict
+                for key in (
+                    "BEST RUN RESULTS",
+                    "WORST RUN RESULTS",
+                    "AGGREGATED AVERAGE RESULTS",
+                )
+            ):
+                return False
+            results_dict["ALL STATS"]["Totals"] = filtered
+        return True
+    except (redis.RedisError, KeyError, TypeError, ValueError):
         return False
 
 

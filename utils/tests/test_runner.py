@@ -1855,3 +1855,47 @@ def test_validate_benchmark_metrics_wait_for_bgsave_alone_does_not_skip_floor():
     )
     assert is_valid is False
     assert "below 1 QPS threshold" in error
+
+
+def test_validate_benchmark_metrics_low_throughput_optout():
+    sub_1_qps_result = {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}}
+
+    # Default behaviour: sub-1-QPS throughput fails validation.
+    is_valid, error = validate_benchmark_metrics(
+        sub_1_qps_result, "some-test", benchmark_config={"dbconfig": {}}
+    )
+    assert is_valid is False
+    assert "below 1 QPS threshold" in error
+
+    # dbconfig.low-throughput-benchmark: 'yes' opts the same result out.
+    is_valid, error = validate_benchmark_metrics(
+        sub_1_qps_result,
+        "some-test",
+        benchmark_config={"dbconfig": {"low-throughput-benchmark": "yes"}},
+    )
+    assert is_valid is True
+    assert error is None
+
+    # 'no' -- and only 'no', not any non-empty string -- must NOT opt out.
+    # bool("no") is True in plain Python; this is the regression this test guards.
+    is_valid, error = validate_benchmark_metrics(
+        sub_1_qps_result,
+        "some-test",
+        benchmark_config={"dbconfig": {"low-throughput-benchmark": "no"}},
+    )
+    assert is_valid is False
+    assert "below 1 QPS threshold" in error
+
+    # No benchmark_config / no dbconfig at all: still validates (opt-out is opt-in).
+    is_valid, error = validate_benchmark_metrics(sub_1_qps_result, "some-test")
+    assert is_valid is False
+
+
+def test_skip_throughput_floor_string_no_keeps_validation():
+    valid, error = validate_benchmark_metrics(
+        {"ALL STATS": {"Totals": {"Ops/sec": 0.5}}},
+        "some-test",
+        benchmark_config={"dbconfig": {"skip_throughput_floor": "no"}},
+    )
+    assert not valid
+    assert "below 1 QPS threshold" in error

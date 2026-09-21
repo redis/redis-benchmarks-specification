@@ -32,6 +32,7 @@ from redisbench_admin.run.common import (
 from redis_benchmarks_specification.__common__.runner import (
     export_redis_metrics,
 )
+from redis_benchmarks_specification.__common__.env import parse_bool
 
 from redisbench_admin.profilers.profilers_local import (
     local_profilers_platform_checks,
@@ -196,19 +197,25 @@ def validate_benchmark_metrics(
                 cmd.lower() for cmd in benchmark_config["tested-commands"]
             ]
 
-        # dbconfig.skip_throughput_floor is a separate key from
-        # wait_for_bgsave deliberately: "poll for a BGSAVE to finish" and
-        # "this spec's client-observed throughput has no meaning" aren't
-        # the same claim. A BGSAVE-under-write-load variant (the
-        # 3Mkeys-set family's territory) would want the wait but would
-        # still want the floor guarding its real write throughput -- only
-        # a spec whose client run is nothing but the BGSAVE command
-        # itself (like memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration)
-        # has an Ops/sec that's just 1/fork-ack-latency, a number that
-        # scales with resident memory and has no principled floor.
-        skip_throughput_floor = bool(
-            benchmark_config
-            and benchmark_config.get("dbconfig", {}).get("skip_throughput_floor")
+        # Some specs are legitimately sub-1-QPS by design -- a single-connection,
+        # disk-bound command (e.g. DEBUG RELOAD on a large dataset) blocks for
+        # hundreds of milliseconds per call, so a handful of ops/sec is the
+        # expected, correct measurement, not a sign the benchmark broke. Opt out
+        # of the throughput floor per-spec via dbconfig.low-throughput-benchmark.
+        # parse_bool (not bool()) because "no" is a non-empty string and bool("no")
+        # is True -- the exact bug that sank the first attempt at this flag.
+        low_throughput_benchmark = False
+        if benchmark_config and "dbconfig" in benchmark_config:
+            low_throughput_benchmark = parse_bool(
+                benchmark_config["dbconfig"].get("low-throughput-benchmark", False),
+                default=False,
+            )
+        # Persistence-only clients report fork acknowledgement throughput.
+        skip_throughput_floor = parse_bool(
+            (benchmark_config or {})
+            .get("dbconfig", {})
+            .get("skip_throughput_floor", False),
+            default=False,
         )
 
         # Define validation rules
@@ -272,15 +279,16 @@ def validate_benchmark_metrics(
                         return
 
                 # Check throughput metrics
-                if not skip_throughput_floor:
-                    for pattern in throughput_patterns:
-                        if pattern in metric_path_lower:
-                            if data < 1:  # Below 1 QPS threshold
-                                validation_errors.append(
-                                    f"Throughput metric '{path}' has invalid value: {data} "
-                                    f"(below 1 QPS threshold)"
-                                )
-                            break
+                for pattern in throughput_patterns:
+                    if pattern in metric_path_lower:
+                        if data < 1 and not (
+                            low_throughput_benchmark or skip_throughput_floor
+                        ):
+                            validation_errors.append(
+                                f"Throughput metric '{path}' has invalid value: {data} "
+                                f"(below 1 QPS threshold)"
+                            )
+                        break
 
                 # Check latency metrics
                 for pattern in latency_patterns:
@@ -2048,7 +2056,10 @@ def process_self_contained_coordinator_stream(
                         # dbconfig-driven skips and before the preload runs, so an
                         # unsupported spec doesn't pay for a full (here, ~15GB)
                         # dataset load only to be discarded afterward.
-                        if benchmark_config["dbconfig"].get("wait_for_bgsave", False):
+                        if parse_bool(
+                            benchmark_config["dbconfig"].get("wait_for_bgsave", False),
+                            default=False,
+                        ):
                             logging.warning(
                                 "dbconfig.wait_for_bgsave is set on %s, but "
                                 "wait_for_bgsave is not supported on the "

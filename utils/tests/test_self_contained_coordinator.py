@@ -44,6 +44,7 @@ from utils.tests.test_data.api_builder_common import flow_1_and_2_api_builder_ch
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
     confirm_bgsave_completed,
+    prepare_bgsave_results,
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
     inject_persistence_metrics,
@@ -200,29 +201,45 @@ def test_wait_for_bgsave_completion_error_streak_resets_on_success():
 
 def test_confirm_bgsave_completed_when_save_time_advanced_and_status_ok():
     """The happy path: rdb_last_save_time advanced and status is ok."""
-    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
-    assert confirm_bgsave_completed(100, info_after) is True
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+    }
+    assert confirm_bgsave_completed(100, info_after, "") is True
 
 
 def test_confirm_bgsave_completed_false_when_save_time_unchanged():
     """No BGSAVE ran in the window (e.g. the client command never landed) --
     rdb_last_save_time stayed the same as the pre-run snapshot."""
-    info_after = {"rdb_last_save_time": 100, "rdb_last_bgsave_status": "ok"}
-    assert confirm_bgsave_completed(100, info_after) is False
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 100,
+        "rdb_last_bgsave_status": "ok",
+    }
+    assert confirm_bgsave_completed(100, info_after, "") is False
 
 
 def test_confirm_bgsave_completed_false_when_status_not_ok():
     """rdb_last_save_time advancing alone is not enough -- a failed/killed
     BGSAVE child can still leave rdb_bgsave_in_progress==0."""
-    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "err"}
-    assert confirm_bgsave_completed(100, info_after) is False
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "err",
+    }
+    assert confirm_bgsave_completed(100, info_after, "") is False
 
 
 def test_confirm_bgsave_completed_false_on_missing_before_snapshot():
     """A failed pre-run snapshot (before is None) must not silently pass --
     there's nothing to compare rdb_last_save_time against."""
-    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
-    assert confirm_bgsave_completed(None, info_after) is False
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+    }
+    assert confirm_bgsave_completed(None, info_after, "") is False
 
 
 def test_confirm_bgsave_completed_false_on_missing_after_info():
@@ -239,7 +256,7 @@ def test_confirm_bgsave_completed_false_when_aof_enabled():
         "rdb_last_bgsave_status": "ok",
         "aof_enabled": 1,
     }
-    assert confirm_bgsave_completed(100, info_after) is False
+    assert confirm_bgsave_completed(100, info_after, "") is False
 
 
 def test_confirm_bgsave_completed_false_when_save_points_configured():
@@ -247,7 +264,11 @@ def test_confirm_bgsave_completed_false_when_save_points_configured():
     written the RDB (and satisfied the rdb_last_save_time check) on its own
     schedule, independent of the client's explicit BGSAVE. Otherwise-happy-
     path inputs."""
-    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+    }
     assert confirm_bgsave_completed(100, info_after, "3600 1 300 100") is False
 
 
@@ -256,7 +277,11 @@ def test_confirm_bgsave_completed_true_with_explicit_empty_save_points():
     points disabled" representation) must not be treated as unsafe -- this
     is the expected value for a spec that pins save: '""' and is the
     normal, safe case, not a missing-data one."""
-    info_after = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    info_after = {
+        "aof_enabled": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+    }
     assert confirm_bgsave_completed(100, info_after, "") is True
 
 
@@ -1392,3 +1417,100 @@ def test_stop_and_remove_container_safe_other_api_error_is_swallowed():
 
     # Must not raise — teardown must never abort the stream.
     stop_and_remove_container_safe(FakeContainer(), "Client")
+
+
+def test_bgsave_confirmation_rejects_missing_attribution_data():
+    info = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
+    assert not confirm_bgsave_completed(100, info, "")
+    info["aof_enabled"] = 0
+    assert not confirm_bgsave_completed(100, info, None)
+    assert confirm_bgsave_completed(100, info, "")
+
+
+def test_persistence_injection_rejects_sentinels_without_partial_mutation():
+    for duration, fork_usec in [(-1, 2), (1, -1), (1, "bad"), (float("nan"), 1)]:
+        result = {"ALL STATS": {"Totals": {"existing": 1}}}
+        assert not inject_persistence_metrics(
+            result,
+            {
+                "rdb_last_bgsave_time_sec": duration,
+                "latest_fork_usec": fork_usec,
+            },
+        )
+        assert result == {"ALL STATS": {"Totals": {"existing": 1}}}
+
+
+def test_prepare_bgsave_results_success_failure_and_filtering():
+    from copy import deepcopy
+
+    conn = Mock()
+    conn.info.return_value = {
+        "rdb_bgsave_in_progress": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+        "aof_enabled": 0,
+        "rdb_last_bgsave_time_sec": 25,
+        "latest_fork_usec": 100,
+    }
+    conn.config_get.return_value = {"save": ""}
+    config = {
+        "dbconfig": {"skip_throughput_floor": True},
+        "exporter": {
+            "redistimeseries": {
+                "metrics": ['$."ALL STATS".Totals.RdbLastBgsaveTimeSec']
+            }
+        },
+    }
+    original = {"ALL STATS": {"Totals": {"Ops/sec": 10}}}
+    result = deepcopy(original)
+    assert prepare_bgsave_results(conn, result, config, 100)
+    assert result == {"ALL STATS": {"Totals": {"RdbLastBgsaveTimeSec": 25}}}
+    for flag in (False, "false", "no", "0"):
+        config["dbconfig"]["skip_throughput_floor"] = flag
+        result = deepcopy(original)
+        assert prepare_bgsave_results(conn, result, config, 100)
+        assert result["ALL STATS"]["Totals"]["Ops/sec"] == 10
+    conn.info.return_value["rdb_last_bgsave_status"] = "err"
+    result = deepcopy(original)
+    assert not prepare_bgsave_results(conn, result, config, 100)
+    assert result == original
+    conn.info.return_value["rdb_last_bgsave_status"] = "ok"
+    conn.config_get.return_value = {}
+    assert not prepare_bgsave_results(conn, result, config, 100)
+    conn.config_get.side_effect = redis.ConnectionError("unavailable")
+    assert not prepare_bgsave_results(conn, result, config, 100)
+
+
+def test_prepare_bgsave_results_empty_or_nonmatching_allowlist_rejected():
+    conn = Mock()
+    conn.info.return_value = {
+        "rdb_bgsave_in_progress": 0,
+        "rdb_last_save_time": 200,
+        "rdb_last_bgsave_status": "ok",
+        "aof_enabled": 0,
+        "rdb_last_bgsave_time_sec": 25,
+        "latest_fork_usec": 100,
+    }
+    conn.config_get.return_value = {"save": ""}
+    for metrics in (
+        [],
+        ['$."ALL STATS".Totals.missing'],
+        ['$."BEST RUN RESULTS".Totals."Ops/sec"'],
+    ):
+        config = {
+            "dbconfig": {"skip_throughput_floor": True},
+            "exporter": {"redistimeseries": {"metrics": metrics}},
+        }
+        assert not prepare_bgsave_results(conn, {}, config, 100)
+
+
+def test_wait_for_bgsave_late_info_cannot_pass_deadline():
+    from unittest.mock import patch
+
+    conn = Mock()
+    conn.info.return_value = {"rdb_bgsave_in_progress": 0}
+    with patch(
+        "redis_benchmarks_specification.__self_contained_coordinator__.docker.time.monotonic",
+        side_effect=[0, 0, 2],
+    ):
+        assert wait_for_bgsave_completion(conn, 1) == (False, 2)
