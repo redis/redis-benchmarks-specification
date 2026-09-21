@@ -145,6 +145,12 @@ from redis_benchmarks_specification.__self_contained_coordinator__.topdown_profi
     TopdownCollector,
     extract_topdown_labels_from_benchmark,
 )
+from redis_benchmarks_specification.__common__.datadir import (
+    DatadirError,
+    datadir_is_explicit,
+    private_run_root,
+    resolve_datadir,
+)
 
 # Global variables for HTTP server control
 _reset_queue_requested = False
@@ -170,7 +176,7 @@ HEARTBEAT_INTERVAL_SECS = 30
 HEARTBEAT_EXPIRE_SECS = 120  # expire after 4 missed heartbeats
 
 
-def _start_heartbeat(conn, platform, arch, version, args):
+def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
     """Start a background thread that writes runner state to Redis every HEARTBEAT_INTERVAL_SECS."""
     import threading
 
@@ -204,6 +210,10 @@ def _start_heartbeat(conn, platform, arch, version, args):
                         getattr(args, "exclusive_hardware", False)
                     ),
                     "explicit_only": str(getattr(args, "explicit_only", False)),
+                    # The resolved path, not the raw flag: the flag is empty
+                    # for every runner that never set it, which is exactly when
+                    # an operator needs to know where data is going.
+                    "datadir": datadir or "",
                 }
                 conn.hset(key, mapping=fields)
                 conn.expire(key, HEARTBEAT_EXPIRE_SECS)
@@ -740,6 +750,21 @@ def main():
         start_http_server(args.http_port)
     else:
         logging.info("HTTP server disabled - no authentication credentials provided")
+
+    # Resolved before ANY stream mutation. A bad --datadir must abort while the
+    # process is still inert: the consumer-group reset below ACKs pending
+    # messages and skips to the stream tail, so validating after it would
+    # discard the fleet's queued work on every supervisor restart.
+    try:
+        datadir = resolve_datadir(args)
+        # The private 0700 parent is interposed ONLY for an explicitly requested
+        # datadir. $HOME is already 0700 and already worked, so defaulting
+        # deployments keep byte-identical behaviour and gain no new startup
+        # failure mode.
+        home = private_run_root(datadir) if datadir_is_explicit(args) else datadir
+    except DatadirError as e:
+        logging.error(str(e))
+        exit(1)
     logging.info(get_version_string(project_name, project_version))
     topologies_folder = os.path.abspath(args.setups_folder + "/topologies")
     logging.info("Using topologies folder dir {}".format(topologies_folder))
@@ -838,7 +863,6 @@ def main():
     # runs failing with UnixHTTPConnectionPool ReadTimeout errors even though
     # the underlying redis-server and its container were healthy.
     docker_client = docker.from_env(timeout=300)
-    home = str(Path.home())
     cpuset_start_pos = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
     redis_proc_start_port = args.redis_proc_start_port
@@ -945,6 +969,7 @@ def main():
         arch,
         project_version,
         args,
+        home,
     )
 
     explicit_only = args.explicit_only

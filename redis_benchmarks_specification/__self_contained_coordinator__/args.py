@@ -19,6 +19,7 @@ from redis_benchmarks_specification.__common__.env import (
     PROFILERS_DEFAULT,
     ALLOWED_PROFILERS,
 )
+from redis_benchmarks_specification.__common__.datadir import add_datadir_arguments
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
@@ -216,4 +217,5 @@ def create_self_contained_coordinator_args(project_name):
         "Untargeted entries (no target_platform field) are skipped. "
         "Useful for dedicated runners that should only run on-demand work.",
     )
+    add_datadir_arguments(parser)
     return parser
