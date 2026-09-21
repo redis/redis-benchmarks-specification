@@ -13,6 +13,7 @@ from redis_benchmarks_specification.__common__.env import (
     PROFILERS_ENABLED,
     SPECS_PATH_TEST_SUITES,
 )
+from redis_benchmarks_specification.__common__.datadir import add_datadir_arguments
 
 
 def create_client_runner_args(project_name):
@@ -331,4 +332,5 @@ def create_client_runner_args(project_name):
         default="oss-standalone",
         help="Override the redis-topologies from the benchmark config and use only the specified topology name instead.",
     )
+    add_datadir_arguments(parser)
     return parser

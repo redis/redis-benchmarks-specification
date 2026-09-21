@@ -51,6 +51,10 @@ from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
     get_version_string,
 )
+from redis_benchmarks_specification.__common__.datadir import (
+    add_datadir_arguments,
+    resolve_datadir,
+)
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
@@ -192,6 +196,7 @@ def main():
         action="store_true",
         help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
     )
+    add_datadir_arguments(parser)
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -273,6 +278,11 @@ def main():
 
     if args.github_token is not None:
         logging.info("detected a github token. will update as much as possible!!! =)")
+
+    # Resolved once: a bad --datadir must stop the builder at startup, not once
+    # per message after work has already been claimed.
+    builder_datadir = resolve_datadir(args)
+
     previous_id = args.consumer_start_id
     while True:
         try:
@@ -286,6 +296,7 @@ def main():
                 args.github_token,
                 builder_group,
                 builder_id,
+                builder_datadir,
             )
         except Exception as e:
             logging.error(f"Builder stream processing error: {e}")
@@ -332,7 +343,10 @@ def builder_process_stream(
     github_token=None,
     builder_group=None,
     builder_id=None,
+    builder_datadir=None,
 ):
+    if builder_datadir is None:
+        builder_datadir = os.path.expanduser("~")
     new_builds_count = 0
     auto_approve_github_comments = True
     build_stream_fields_arr = []
@@ -365,7 +379,6 @@ def builder_process_stream(
         # Docker host can exceed 60s for an ordinary, fast call, so a longer
         # client-wide default avoids spurious ReadTimeout failures under load.
         docker_client = docker.from_env(timeout=300)
-        from pathlib import Path
 
         build_request_arch = None
         if b"arch" in testDetails:
@@ -410,7 +423,7 @@ def builder_process_stream(
             )
             build_request_arch = arch
 
-        home = str(Path.home())
+        home = builder_datadir
         if b"git_hash" in testDetails:
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))

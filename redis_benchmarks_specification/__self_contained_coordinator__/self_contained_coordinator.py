@@ -145,6 +145,11 @@ from redis_benchmarks_specification.__self_contained_coordinator__.topdown_profi
     TopdownCollector,
     extract_topdown_labels_from_benchmark,
 )
+from redis_benchmarks_specification.__common__.datadir import (
+    collect_storage_metadata,
+    resolve_datadir,
+    storage_backend_label,
+)
 
 # Global variables for HTTP server control
 _reset_queue_requested = False
@@ -176,6 +181,16 @@ def _start_heartbeat(conn, platform, arch, version, args):
 
     start_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
+    # Resolved once: it shells out to findmnt/lsblk and the answer cannot change
+    # without restarting the coordinator anyway.
+    try:
+        _heartbeat_storage_backend = storage_backend_label(
+            collect_storage_metadata(resolve_datadir(args))
+        )
+    except Exception as e:
+        logging.debug(f"Could not determine storage backend: {e}")
+        _heartbeat_storage_backend = "unknown"
+
     def _heartbeat_loop():
         key = f"{HEARTBEAT_KEY_PREFIX}:{platform}"
         while True:
@@ -204,6 +219,11 @@ def _start_heartbeat(conn, platform, arch, version, args):
                         getattr(args, "exclusive_hardware", False)
                     ),
                     "explicit_only": str(getattr(args, "explicit_only", False)),
+                    # So the fleet can tell which storage a runner writes to
+                    # without shelling into it. Two runners publishing results
+                    # from different backends are not interchangeable.
+                    "datadir": getattr(args, "datadir", None) or "",
+                    "storage_backend": _heartbeat_storage_backend,
                 }
                 conn.hset(key, mapping=fields)
                 conn.expire(key, HEARTBEAT_EXPIRE_SECS)
@@ -838,7 +858,7 @@ def main():
     # runs failing with UnixHTTPConnectionPool ReadTimeout errors even though
     # the underlying redis-server and its container were healthy.
     docker_client = docker.from_env(timeout=300)
-    home = str(Path.home())
+    home = resolve_datadir(args)
     cpuset_start_pos = args.cpuset_start_pos
     logging.info("Start CPU pinning at position {}".format(cpuset_start_pos))
     redis_proc_start_port = args.redis_proc_start_port
