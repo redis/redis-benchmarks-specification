@@ -6,10 +6,12 @@ import tempfile
 
 import pytest
 
+from redis_benchmarks_specification.__common__ import datadir as datadir_mod
 from redis_benchmarks_specification.__common__.datadir import (
     DatadirError,
     add_datadir_arguments,
     backing_device,
+    datadir_is_explicit,
     private_run_root,
     resolve_datadir,
 )
@@ -57,13 +59,59 @@ def test_missing_attributes_do_not_break_callers():
     assert resolve_datadir(argparse.Namespace()) == os.path.expanduser("~")
 
 
-def test_home_default_is_not_validated():
-    """Adding the flag must not turn a working deployment into a crash.
+def test_default_deployment_layout_is_byte_identical():
+    """The composition the entrypoints actually use, not resolve_datadir alone.
 
-    The home fallback is returned unchecked, exactly as before -- only an
-    explicitly requested path is validated.
+    Each entrypoint does `private_run_root(d) if datadir_is_explicit(args) else d`.
+    Interposing the private parent unconditionally would move every existing
+    runner's temp dirs from $HOME to $HOME/redis-benchmarks-<uid> and add a new
+    startup failure mode on a read-only or full $HOME -- under a claim that
+    nothing changes for deployments that never set the flag.
     """
-    assert resolve_datadir(_args()) == os.path.expanduser("~")
+    args = _args()
+    d = resolve_datadir(args)
+    home = private_run_root(d) if datadir_is_explicit(args) else d
+    assert home == os.path.expanduser("~")
+    assert not datadir_is_explicit(args)
+
+
+def test_an_explicit_datadir_does_get_the_private_parent():
+    with tempfile.TemporaryDirectory() as d:
+        os.chmod(d, 0o1777)
+        args = _args(datadir=d)
+        assert datadir_is_explicit(args)
+        root = private_run_root(resolve_datadir(args))
+        assert root.startswith(os.path.realpath(d))
+        assert stat.S_IMODE(os.stat(root).st_mode) == 0o700
+
+
+def test_private_run_root_refuses_a_planted_symlink():
+    """The attack the 1777 datadir in the docstring invites.
+
+    makedirs/stat/chmod all follow symlinks, so a local uid could pre-create
+    this predictable name pointing anywhere and have us -- often root -- chmod
+    the target to 0700.
+    """
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as victim:
+        os.chmod(d, 0o1777)
+        os.chmod(victim, 0o755)
+        os.symlink(victim, os.path.join(d, "redis-benchmarks-{}".format(os.geteuid())))
+        with pytest.raises(DatadirError, match="not a real directory"):
+            private_run_root(d)
+        assert stat.S_IMODE(os.stat(victim).st_mode) == 0o755
+
+
+def test_require_separate_filesystem_rejects_an_unknown_fstype():
+    """Allowlist, not denylist: an unrecognised filesystem must abort."""
+    if (
+        not os.path.isdir("/dev/shm")
+        or os.stat("/dev/shm").st_dev == os.stat("/").st_dev
+    ):
+        pytest.skip("no tmpfs available")
+    with pytest.raises(DatadirError, match="not durable local storage"):
+        resolve_datadir(
+            _args(datadir="/dev/shm", datadir_require_separate_filesystem=True)
+        )
 
 
 # --------------------------------------------------------------------------
@@ -170,7 +218,10 @@ def test_require_separate_filesystem_rejects_a_plain_subdirectory_of_root():
     with tempfile.TemporaryDirectory() as d:
         if os.stat(d).st_dev != os.stat("/").st_dev:
             pytest.skip("temp dir is not on the root filesystem here")
-        with pytest.raises(DatadirError, match="shares a filesystem with"):
+        # Either gate may catch it first: same st_dev, or same backing device.
+        with pytest.raises(
+            DatadirError, match="same device as|shares a filesystem with"
+        ):
             resolve_datadir(_args(datadir=d, datadir_require_separate_filesystem=True))
 
 
@@ -181,7 +232,7 @@ def test_require_separate_filesystem_rejects_tmpfs():
         or os.stat("/dev/shm").st_dev == os.stat("/").st_dev
     ):
         pytest.skip("no tmpfs available")
-    with pytest.raises(DatadirError, match="not durable storage"):
+    with pytest.raises(DatadirError, match="not durable local storage"):
         resolve_datadir(
             _args(datadir="/dev/shm", datadir_require_separate_filesystem=True)
         )
@@ -296,3 +347,80 @@ def test_backing_device_strips_the_bind_mount_subpath():
     """findmnt prints SOURCE[subpath]; the suffix is not part of the device."""
     dev = backing_device("/")
     assert "[" not in dev
+
+
+# --------------------------------------------------------------------------
+# Stubbed findmnt: these pin behaviour that real mounts cannot exercise on an
+# ordinary CI box without root. Mutation testing showed the noexec check and
+# the accept-direction of --datadir-require-separate-filesystem were both
+# deletable with the suite still green.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_findmnt(monkeypatch):
+    table = {}
+
+    def _fake(field, path):
+        return table.get(field, "")
+
+    monkeypatch.setattr(datadir_mod, "_findmnt", _fake)
+    return table
+
+
+def test_noexec_datadir_is_rejected(fake_findmnt, tmp_path):
+    """The server binary is executed from a bind mount under the datadir."""
+    fake_findmnt["OPTIONS"] = "rw,noexec,nosuid,relatime"
+    fake_findmnt["FSTYPE"] = "ext4"
+    with pytest.raises(DatadirError, match="noexec"):
+        resolve_datadir(_args(datadir=str(tmp_path)))
+
+
+def test_noexec_substring_does_not_false_positive(fake_findmnt, tmp_path):
+    """'noexec' must match an option, not a substring of one."""
+    fake_findmnt["OPTIONS"] = "rw,relatime,x-noexec-lookalike"
+    fake_findmnt["FSTYPE"] = "ext4"
+    assert resolve_datadir(_args(datadir=str(tmp_path))) == os.path.realpath(tmp_path)
+
+
+def test_require_separate_filesystem_accepts_a_durable_separate_device(
+    fake_findmnt, tmp_path, monkeypatch
+):
+    """The ACCEPT direction. Without this, 'reject everything' passes the suite."""
+    fake_findmnt["OPTIONS"] = "rw,relatime"
+    fake_findmnt["FSTYPE"] = "ext4"
+    monkeypatch.setattr(
+        datadir_mod,
+        "backing_device",
+        lambda p: "/dev/nvme9n1" if str(p) != "/" else "/dev/root",
+    )
+    monkeypatch.setattr(datadir_mod, "_same_filesystem_as_root", lambda p: False)
+    assert resolve_datadir(
+        _args(datadir=str(tmp_path), datadir_require_separate_filesystem=True)
+    ) == os.path.realpath(tmp_path)
+
+
+def test_require_separate_filesystem_rejects_the_same_backing_device(
+    fake_findmnt, tmp_path, monkeypatch
+):
+    """A btrfs subvolume or second partition has its own st_dev but shares the disk."""
+    fake_findmnt["OPTIONS"] = "rw,relatime"
+    fake_findmnt["FSTYPE"] = "btrfs"
+    monkeypatch.setattr(datadir_mod, "backing_device", lambda p: "/dev/nvme0n1p2")
+    monkeypatch.setattr(datadir_mod, "_same_filesystem_as_root", lambda p: False)
+    with pytest.raises(DatadirError, match="same device"):
+        resolve_datadir(
+            _args(datadir=str(tmp_path), datadir_require_separate_filesystem=True)
+        )
+
+
+def test_require_separate_filesystem_fails_closed_without_findmnt(
+    fake_findmnt, tmp_path, monkeypatch
+):
+    """A missing util-linux must not silently downgrade the guarantee."""
+    monkeypatch.setattr(datadir_mod, "_same_filesystem_as_root", lambda p: False)
+    monkeypatch.setattr(datadir_mod, "backing_device", lambda p: "")
+    with pytest.raises(DatadirError, match="cannot determine the filesystem"):
+        resolve_datadir(
+            _args(datadir=str(tmp_path), datadir_require_separate_filesystem=True)
+        )

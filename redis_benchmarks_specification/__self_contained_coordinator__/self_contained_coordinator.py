@@ -147,6 +147,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.topdown_profi
 )
 from redis_benchmarks_specification.__common__.datadir import (
     DatadirError,
+    datadir_is_explicit,
     private_run_root,
     resolve_datadir,
 )
@@ -755,7 +756,13 @@ def main():
     # messages and skips to the stream tail, so validating after it would
     # discard the fleet's queued work on every supervisor restart.
     try:
-        home = private_run_root(resolve_datadir(args))
+        datadir = resolve_datadir(args)
+        # The private 0700 parent is interposed ONLY for an explicitly requested
+        # datadir. $HOME is already 0700 and already worked, so defaulting
+        # deployments keep byte-identical behaviour and gain no new startup
+        # failure mode.
+        home = private_run_root(datadir) if datadir_is_explicit(args) else datadir
+        datadir_explicit = datadir_is_explicit(args)
     except DatadirError as e:
         logging.error(str(e))
         exit(1)
@@ -985,6 +992,7 @@ def main():
             datasink_push_results_redistimeseries=datasink_push_results_redistimeseries,
             docker_client=docker_client,
             home=home,
+            datadir_explicit=datadir_explicit,
             stream_id=stream_id,
             datasink_conn=datasink_conn,
             testsuite_spec_files=testsuite_spec_files,
@@ -1131,6 +1139,9 @@ def self_contained_coordinator_blocking_read(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     explicit_only=False,
+    # Keyword with a default: every existing caller (14 in the
+    # test-suite alone) passes these lists positionally.
+    datadir_explicit=False,
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -1225,6 +1236,7 @@ def self_contained_coordinator_blocking_read(
                 restore_build_artifacts_default,
                 args,
                 explicit_only=explicit_only,
+                datadir_explicit=datadir_explicit,
             )
             num_process_streams = num_process_streams + 1
             num_process_test_suites = num_process_test_suites + total_test_suite_runs
@@ -1334,6 +1346,9 @@ def process_self_contained_coordinator_stream(
     args=None,
     redis_password="redis_coordinator_password_2024",
     explicit_only=False,
+    # Keyword with a default: every existing caller (14 in the
+    # test-suite alone) passes these lists positionally.
+    datadir_explicit=False,
 ):
     global _heartbeat_current_test
     stream_id = "n/a"
@@ -1425,7 +1440,7 @@ def process_self_contained_coordinator_stream(
             # would see the datadir in use and conclude --datadir worked. Only
             # enforced when --datadir was explicitly requested, so untargeted
             # deployments keep their current behaviour.
-            if mnt_point == "" and getattr(args, "datadir", None):
+            if mnt_point == "" and datadir_explicit:
                 raise DatadirError(
                     "--datadir was requested but this test carries an empty "
                     "mnt_point, so no bind mount is created and the dataset "

@@ -54,6 +54,8 @@ from redis_benchmarks_specification.__common__.package import (
 from redis_benchmarks_specification.__common__.datadir import (
     DatadirError,
     add_datadir_arguments,
+    datadir_is_explicit,
+    private_run_root,
     resolve_datadir,
 )
 
@@ -197,7 +199,7 @@ def main():
         action="store_true",
         help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
     )
-    add_datadir_arguments(parser)
+    add_datadir_arguments(parser, holds_server_data=False)
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -221,7 +223,14 @@ def main():
     # messages and skips to the stream tail, so validating after it would
     # discard the fleet's queued work on every supervisor restart.
     try:
-        builder_datadir = resolve_datadir(args)
+        datadir = resolve_datadir(args)
+        # The private 0700 parent is interposed ONLY for an explicitly requested
+        # datadir. $HOME is already 0700 and already worked, so defaulting
+        # deployments keep byte-identical behaviour and gain no new startup
+        # failure mode.
+        builder_datadir = (
+            private_run_root(datadir) if datadir_is_explicit(args) else datadir
+        )
     except DatadirError as e:
         logging.error(str(e))
         exit(1)

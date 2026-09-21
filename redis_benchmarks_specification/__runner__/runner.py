@@ -88,6 +88,8 @@ from redis_benchmarks_specification.__runner__.args import create_client_runner_
 from redis_benchmarks_specification.__runner__.remote_profiling import RemoteProfiler
 from redis_benchmarks_specification.__common__.datadir import (
     DatadirError,
+    datadir_is_explicit,
+    private_run_root,
     resolve_datadir,
 )
 
@@ -828,7 +830,12 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     # default avoids spurious ReadTimeout failures under load.
     docker_client = docker.from_env(timeout=300)
     try:
-        home = resolve_datadir(args)
+        datadir = resolve_datadir(args)
+        # The private 0700 parent is interposed ONLY for an explicitly requested
+        # datadir. $HOME is already 0700 and already worked, so defaulting
+        # deployments keep byte-identical behaviour and gain no new startup
+        # failure mode.
+        home = private_run_root(datadir) if datadir_is_explicit(args) else datadir
     except DatadirError as e:
         logging.error(str(e))
         exit(1)

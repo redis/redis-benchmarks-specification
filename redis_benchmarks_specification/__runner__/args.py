@@ -332,5 +332,5 @@ def create_client_runner_args(project_name):
         default="oss-standalone",
         help="Override the redis-topologies from the benchmark config and use only the specified topology name instead.",
     )
-    add_datadir_arguments(parser)
+    add_datadir_arguments(parser, holds_server_data=False)
     return parser

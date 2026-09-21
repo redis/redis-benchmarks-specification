@@ -29,9 +29,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-# A datadir on one of these measures something other than the storage under
-# test. tmpfs and ramfs are memory; overlay and squashfs are container layers.
-NON_DURABLE_FSTYPES = ("tmpfs", "ramfs", "overlay", "overlayfs", "squashfs")
+# Allowlist rather than denylist: a datadir on an unrecognised filesystem is
+# not proven to be durable local storage, and for a flag whose contract is
+# fail-closed an unknown answer must abort rather than pass. Memory
+# (tmpfs/ramfs), container layers (overlay, fuse.fuse-overlayfs), VM passthrough
+# (9p, virtiofs) and network filesystems all fail this by omission.
+DURABLE_FSTYPES = ("ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs")
 
 
 class DatadirError(Exception):
@@ -98,8 +101,10 @@ def backing_device(path):
 def _same_filesystem_as_root(path):
     try:
         return os.stat(path).st_dev == os.stat("/").st_dev
-    except OSError:
-        return False
+    except OSError as e:
+        raise DatadirError(
+            "cannot stat {} or '/' to compare filesystems: {}".format(path, e)
+        )
 
 
 def _probe_writable(datadir):
@@ -114,6 +119,11 @@ def _probe_writable(datadir):
         os.rmdir(probe)
     except OSError as e:
         raise DatadirError("--datadir {} is not usable: {}".format(datadir, e))
+
+
+def datadir_is_explicit(args):
+    """True when --datadir was actually passed, as opposed to defaulted."""
+    return getattr(args, "datadir", None) is not None
 
 
 def resolve_datadir(args):
@@ -163,6 +173,7 @@ def resolve_datadir(args):
     # noexec data volume fails deep inside docker, per test, after work has
     # been claimed. Catch it here instead.
     options = _findmnt("OPTIONS", datadir)
+    fstype = _findmnt("FSTYPE", datadir)
     if "noexec" in options.split(","):
         raise DatadirError(
             "--datadir {} is on a noexec mount. The server binary is executed "
@@ -172,13 +183,28 @@ def resolve_datadir(args):
         )
 
     if require_separate:
-        fstype = _findmnt("FSTYPE", datadir)
-        if fstype in NON_DURABLE_FSTYPES:
+        if fstype and fstype not in DURABLE_FSTYPES:
             raise DatadirError(
-                "--datadir {} is on {}, which is not durable storage. A "
-                "benchmark pointed there measures memory, not storage.".format(
-                    datadir, fstype
+                "--datadir {} is on {}, which is not durable local storage. A "
+                "benchmark pointed there does not measure the storage under "
+                "test.".format(datadir, fstype)
+            )
+        if backing_device(datadir) and backing_device(datadir) == backing_device("/"):
+            raise DatadirError(
+                "--datadir {} is backed by the same device as '/' ({}). A "
+                "separate subvolume or partition on the same device has its "
+                "own st_dev but shares the throughput budget.".format(
+                    datadir, backing_device(datadir)
                 )
+            )
+        if not fstype:
+            # Without findmnt the durability check cannot run at all. For a flag
+            # whose whole contract is fail-closed, degrading to the st_dev test
+            # alone would silently weaken the guarantee.
+            raise DatadirError(
+                "cannot determine the filesystem backing --datadir {} (is "
+                "findmnt installed?). Refusing to assert a storage guarantee "
+                "that was not verified.".format(datadir)
             )
         if _same_filesystem_as_root(datadir):
             raise DatadirError(
@@ -192,25 +218,54 @@ def resolve_datadir(args):
         "Using {} for benchmark data (device {}, fstype {})".format(
             datadir,
             backing_device(datadir) or "unknown",
-            _findmnt("FSTYPE", datadir) or "unknown",
+            fstype or "unknown",
         )
     )
     return datadir
 
 
 def private_run_root(datadir):
-    """Return a 0700 directory under ``datadir`` to hold per-run temp dirs.
+    """Return a 0700, self-owned directory under ``datadir`` for per-run temp dirs.
 
     Client output dirs are chmod 0777 so non-root client images can write their
     results. Under $HOME that was safe because $HOME is 0700. A datadir can be
-    any operator-chosen mount -- often 1777 like /tmp -- so interpose a
-    private, uid-scoped parent to keep the barrier the 0777 dir relies on.
+    any operator-chosen mount -- often 1777 like /tmp -- so interpose a private,
+    uid-scoped parent to keep the barrier the 0777 dir relies on.
+
+    Every step here refuses to follow a symlink and refuses a directory this
+    process does not own. A naive makedirs()/stat()/chmod() on a world-writable
+    datadir lets a local uid pre-create this path as a symlink and have us --
+    typically root -- chmod the target, or hand us a directory they still own
+    and can rewrite under us.
     """
     root = os.path.join(datadir, "redis-benchmarks-{}".format(os.geteuid()))
     try:
-        os.makedirs(root, mode=0o700, exist_ok=True)
-        if stat.S_IMODE(os.stat(root).st_mode) != 0o700:
-            os.chmod(root, 0o700)
+        os.mkdir(root, 0o700)
+    except FileExistsError:
+        pass
     except OSError as e:
-        raise DatadirError("cannot prepare {}: {}".format(root, e))
+        raise DatadirError("cannot create {}: {}".format(root, e))
+
+    # O_NOFOLLOW fails on the final component if it is a symlink, so every
+    # check and repair below acts on the directory itself, not on a link target.
+    try:
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as e:
+        raise DatadirError(
+            "{} is not a real directory (a symlink here would redirect every "
+            "benchmark write): {}".format(root, e)
+        )
+    try:
+        st = os.fstat(fd)
+        if st.st_uid != os.geteuid():
+            raise DatadirError(
+                "{} is owned by uid {}, not {}. Refusing to reuse a directory "
+                "another user can rewrite under us.".format(
+                    root, st.st_uid, os.geteuid()
+                )
+            )
+        if stat.S_IMODE(st.st_mode) != 0o700:
+            os.fchmod(fd, 0o700)
+    finally:
+        os.close(fd)
     return root
