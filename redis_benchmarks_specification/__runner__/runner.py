@@ -86,7 +86,10 @@ from redis_benchmarks_specification.__common__.multi_tool import (
 )
 from redis_benchmarks_specification.__runner__.args import create_client_runner_args
 from redis_benchmarks_specification.__runner__.remote_profiling import RemoteProfiler
-from redis_benchmarks_specification.__common__.datadir import resolve_datadir
+from redis_benchmarks_specification.__common__.datadir import (
+    DatadirError,
+    resolve_datadir,
+)
 
 
 # Global flag to track if user wants to exit
@@ -824,7 +827,11 @@ def run_client_runner_logic(args, project_name, project_name_suffix, project_ver
     # host can exceed 60s for an ordinary, fast call, so a longer client-wide
     # default avoids spurious ReadTimeout failures under load.
     docker_client = docker.from_env(timeout=300)
-    home = resolve_datadir(args)
+    try:
+        home = resolve_datadir(args)
+    except DatadirError as e:
+        logging.error(str(e))
+        exit(1)
     profilers_list = []
     profilers_enabled = args.enable_profilers
     if profilers_enabled:

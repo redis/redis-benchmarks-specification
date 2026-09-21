@@ -52,6 +52,7 @@ from redis_benchmarks_specification.__common__.package import (
     get_version_string,
 )
 from redis_benchmarks_specification.__common__.datadir import (
+    DatadirError,
     add_datadir_arguments,
     resolve_datadir,
 )
@@ -214,6 +215,16 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
+
+    # Resolved before ANY stream mutation. A bad --datadir must abort while the
+    # process is still inert: the consumer-group reset below ACKs pending
+    # messages and skips to the stream tail, so validating after it would
+    # discard the fleet's queued work on every supervisor restart.
+    try:
+        builder_datadir = resolve_datadir(args)
+    except DatadirError as e:
+        logging.error(str(e))
+        exit(1)
     logging.info(get_version_string(project_name, project_version))
     builders_folder = os.path.abspath(args.setups_folder + "/builders")
     logging.info("Using package dir {} for inner file paths".format(builders_folder))
@@ -279,10 +290,6 @@ def main():
     if args.github_token is not None:
         logging.info("detected a github token. will update as much as possible!!! =)")
 
-    # Resolved once: a bad --datadir must stop the builder at startup, not once
-    # per message after work has already been claimed.
-    builder_datadir = resolve_datadir(args)
-
     previous_id = args.consumer_start_id
     while True:
         try:
@@ -346,7 +353,13 @@ def builder_process_stream(
     builder_datadir=None,
 ):
     if builder_datadir is None:
-        builder_datadir = os.path.expanduser("~")
+        # No silent fallback to the home directory: that is the exact behaviour
+        # --datadir exists to remove, and a caller reaching here has skipped
+        # resolve_datadir() entirely.
+        raise DatadirError(
+            "builder_process_stream requires builder_datadir; call "
+            "resolve_datadir(args) and pass the result."
+        )
     new_builds_count = 0
     auto_approve_github_comments = True
     build_stream_fields_arr = []
