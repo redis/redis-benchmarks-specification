@@ -1,0 +1,67 @@
+version: 0.4
+name: memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-rdb-channel-load-disabled
+description: |
+  Initial full sync of 20M random 1024-byte RAW string values with the
+  RDB channel enabled and replica repl-diskless-load=disabled.
+  The RDB channel uses direct child-to-replica transfer, which has a different
+  CPU distribution from the parent-forwarding path. Keep both paths as
+  separate benchmark cells.
+
+  The on-empty-db policy may negotiate away compression and checksum work;
+  compare complete configuration policies, not just loader implementations.
+  Requires corrected ReplicationFullSyncSecondsV2 boundaries and exact
+  preload/replica key-count checks. The 30-second GET phase occurs after sync;
+  its throughput and profiles do not describe the full-sync phase.
+
+  Requires a server supporting repl-rdb-channel. See
+  docs/fullsync-channel-benchmarks.md for qualification requirements.
+dbconfig:
+  preload_before_replica: true
+  configuration-parameters:
+    save: '""'
+    appendonly: 'no'
+    maxmemory-policy: noeviction
+    rdbcompression: 'yes'
+    rdbchecksum: 'yes'
+    repl-diskless-sync: 'yes'
+    repl-diskless-sync-delay: '0'
+    repl-diskless-load: disabled
+    repl-rdb-channel: 'yes'
+  check:
+    keyspacelen: 20000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum 20000000 --key-pattern
+      P:P --key-minimum 1 --hide-histogram -t 8 -c 25 --random-data
+  resources:
+    requests:
+      memory: 80g
+  dataset_name: 20Mkeys-raw-string-1KiB-random
+  dataset_description: 20M RAW strings with random 1024-byte values; exact primary and replica counts
+    required.
+tested-commands:
+- set
+- get
+redis-topologies:
+- oss-standalone-01-replicas
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+  tool: memtier_benchmark
+  arguments: '"--data-size" "1024" --pipeline 10 --distinct-client-seed --ratio 0:1 --key-pattern
+    R:R --key-minimum=1 --key-maximum 20000000 --test-time 30 -c 50 -t 4 --hide-histogram'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+tested-groups:
+- string
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.ReplicationFullSyncSecondsV2
+    - $."ALL STATS".Totals.ReplicationFullSyncCountDuringBench
+priority: 17
