@@ -1,0 +1,96 @@
+version: 0.4
+name: memtier_benchmark-1key-hash-194-fields-50B-listpack-hdel-all-miss-pipeline-32
+description: 'Runs memtier_benchmark against a SINGLE hash key holding 194 fields with 50-byte
+  values, listpack-encoded, and issues HDEL commands in which every one of the nine requested
+  fields is absent. Encoding: listpack — 194 fields is below hash-max-listpack-entries 512 and
+  the 50-byte values are below hash-max-listpack-value 64, so this hash is listpack-encoded
+  under stock defaults; both settings are pinned explicitly here so the spec keeps measuring
+  the listpack path even if a future default changes. The all-miss property
+  is what the spec is for: because no field ever matches, the hash never shrinks, never converts,
+  and the workload has no state drift across the 180-second run — every request is the same
+  full-listpack traversal, making this a steady-state measurement rather than a decaying one.
+  It is also the most callback-dense shape the hash type can produce: hashTypeDelete() -> lpFind()
+  must walk all 194 entries and invoke the comparison callback on each before it can report a
+  miss, and it does that nine times per command. That makes the spec sensitive to the listpack
+  scan and comparison path (lpFind, lpGetWithSize, the field-comparison callback) in a way that
+  no existing HDEL coverage is. Why it is needed: the registered HDEL specs are all hashtable-
+  encoded and all hit. memtier_benchmark-1key-hash-5K-fields-hdel-pipeline-1 loads 5,000 fields,
+  which exceeds hash-max-listpack-entries 512 and therefore measures the dict path, and it deletes
+  fields that exist, so it is a shrinking dict workload rather than a listpack scan.
+  memtier_benchmark-1Mkeys-hash-transactions-multi-exec-pipeline-20 uses 100-byte values, which
+  exceed hash-max-listpack-value 64, so it is hashtable-encoded too. The listpack scan path in
+  HDEL consequently had no fleet coverage at all, which is why changes that move its cost --
+  redis/redis#13503 removed an indirect call from lpFind, and the HFE work around commit c33c91d
+  reorganised the surrounding hash code -- were invisible to us. Shape notes: the keyspace is
+  exactly one key, so --command-key-pattern R over a one-key keyspace is degenerate and every
+  request necessarily targets that key. The nine field arguments are drawn from an
+  "HGET_HASH_ABSENT" prefix while the preloaded fields all carry an "HGET_HASH_FIELD" prefix, so
+  the misses are guaranteed by construction rather than by chance; __key__ varies one of the nine
+  across the absent range so the request stream is not a single constant buffer. Field names are
+  16-19 bytes, matching the length regime of the fixture this was reported on, because lpFind
+  compares entry length before it calls memcmp: shortening the names would change how many of the
+  194 entries reach the byte comparison and would make our absolute usec/call incomparable to the
+  reported figure. Pipeline 32 at one connection is chosen to
+  match the shape this was reported on: a ~194-entry traversal costs on the order of 10
+  microseconds of server time, so at pipeline 32 the round-trip is amortised away and the single
+  server core is the bottleneck, which means Ops/sec and the p50 both carry the per-command
+  signal. Metrics of interest: Ops/sec (higher-better) and Percentile_Latencies.p50.00
+  (lower-better); the two should move together here, and a divergence between them is itself a
+  signal that the run was not server-CPU-bound.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    hash-max-listpack-entries: '512'
+    hash-max-listpack-value: '64'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --command "HSET hash1 __key__ __data__"
+      --command-key-pattern P
+      --key-maximum 194
+      --key-minimum 1
+      --key-prefix "HGET_HASH_FIELD"
+      --data-size 50
+      -n 194 -c 1 -t 1 --pipeline 50
+    timeout: 600
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-hash-194-fields-50B-listpack
+  dataset_description: A single hash key, listpack-encoded, with 194 fields named
+    HGET_HASH_FIELD1 through HGET_HASH_FIELD194, each holding a 50-byte value. 194 fields stays
+    below hash-max-listpack-entries 512 and 50-byte values stay below hash-max-listpack-value
+    64, so the hash is listpack-encoded.
+tested-groups:
+- hash
+tested-commands:
+- hdel
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "HDEL hash1 __key__ HGET_HASH_ABSENT_A HGET_HASH_ABSENT_B HGET_HASH_ABSENT_C HGET_HASH_ABSENT_D HGET_HASH_ABSENT_E HGET_HASH_ABSENT_F HGET_HASH_ABSENT_G HGET_HASH_ABSENT_H"
+    --command-key-pattern R
+    --key-maximum 194
+    --key-minimum 1
+    --key-prefix "HGET_HASH_ABSENT"
+    --hide-histogram
+    --test-time 180
+    --pipeline 32
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 69
