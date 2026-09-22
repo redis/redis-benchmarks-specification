@@ -7,8 +7,8 @@ description: |
   CPU distribution from the parent-forwarding path. Keep both paths as
   separate benchmark cells.
 
-  The on-empty-db policy may negotiate away compression and checksum work;
-  compare complete configuration policies, not just loader implementations.
+  Across this pair, on-empty-db may negotiate away compression and checksum
+  work; compare complete policies, not just loader implementations.
   Requires corrected ReplicationFullSyncSecondsV2 boundaries and exact
   preload/replica key-count checks. The 30-second GET phase occurs after sync;
   its throughput and profiles do not describe the full-sync phase.

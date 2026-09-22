@@ -5,6 +5,11 @@ These two specifications add the direct child-to-replica RDB channel to the
 changing it changes both the transfer path and where CPU work occurs. Preserve
 the parent-forwarding specifications as separate controls.
 
+Run these cases only against server builds supporting `repl-rdb-channel`.
+An older build rejects the parameter at startup; it is deliberately not silently
+skipped or measured with a different transfer path. The compiler variant name
+does not guarantee that the selected server commit supports this setting.
+
 The two replica loading policies (`disabled` and `on-empty-db`) are complete
 configuration comparisons. Diskless loading may negotiate compression/checksum
 bypass even when those settings are enabled in the parent's configuration.

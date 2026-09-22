@@ -618,6 +618,8 @@ def test_preload_before_replica_default_off():
         "memtier_benchmark-3Mkeys-string-set-1KiB-pipeline-10.yml",
         "memtier_benchmark-3Mkeys-string-set-1KiB-pipeline-10-rate-limited-40Kops.yml",
         "memtier_benchmark-140Kkeys-load-string-with-128KiB-values-randomdata-replica-only.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-rdb-channel-load-disabled.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-rdb-channel-load-on-empty-db.yml",
     }
     assert (
         set(enabled_specs) == expected
