@@ -2,7 +2,14 @@ version: 0.4
 name: memtier_benchmark-1key-100M-bits-bitmap-bitcount
 description: Runs memtier_benchmark, for a keyspace length of 1 keys focusing on BITCOUNT
   performance. The bitmap has a size of 100M bits and approximately 2M bits are set.
-  The size of it is ~15MB
+  The size of it is ~15MB. BITCOUNT start/end are byte offsets, so the client draws its
+  start offset uniformly from 1..12500000, the bitmap length in bytes, and every call
+  counts from that offset to the end of the bitmap, scanning ~6.25MB on average. This
+  spec previously drew that offset from 1..100000000, a bit count, so 87.5% of calls
+  returned 0 without scanning anything; correcting the ceiling raises reported per-call
+  cost ~7.9x, which is the step visible in the stored time series. At memtier's default
+  concurrency (200 connections) the client-side latency percentiles are queueing-dominated,
+  so read this suite on server-side usec_per_call rather than on reported latency.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -36,7 +43,7 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command "BITCOUNT users __key__ -1" --key-maximum 100000000 --key-minimum
+  arguments: --command "BITCOUNT users __key__ -1" --key-maximum 12500000 --key-minimum
     1 --key-prefix "" --command-key-pattern R --distinct-client-seed --test-time 120
   resources:
     requests:
