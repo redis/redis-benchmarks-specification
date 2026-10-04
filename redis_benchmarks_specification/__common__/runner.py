@@ -271,6 +271,45 @@ def commandstats_latencystats_process_name(
             )
 
 
+# Subset of the `cpu` and `stats` INFO sections worth keeping as time series.
+#
+# `cpu` gives the main-thread-versus-rest split, which is the only way to tell
+# work done inside the command from work done on the io threads.
+#
+# `stats` has ~60 fields; most are uninteresting and the `instantaneous_*` ones
+# are point-in-time gauges, meaningless when sampled once at the end of a run.
+# What is kept describes what actually went out on the wire (bytes and
+# reads/writes), whether a read workload hit the dataset it thinks it did
+# (hits/misses), whether an expiry or maxmemory workload did any work, and
+# whether a replication run actually synced.
+CPU_STATS_SECTION_FILTER = {
+    "cpu": [
+        "used_cpu_sys",
+        "used_cpu_user",
+        "used_cpu_sys_children",
+        "used_cpu_user_children",
+        "used_cpu_sys_main_thread",
+        "used_cpu_user_main_thread",
+    ],
+    "stats": [
+        "total_net_input_bytes",
+        "total_net_output_bytes",
+        "total_reads_processed",
+        "total_writes_processed",
+        "total_commands_processed",
+        "total_connections_received",
+        "rejected_connections",
+        "keyspace_hits",
+        "keyspace_misses",
+        "expired_keys",
+        "evicted_keys",
+        "sync_full",
+        "sync_partial_ok",
+        "sync_partial_err",
+    ],
+}
+
+
 def collect_redis_metrics(
     redis_conns,
     sections=["memory", "cpu", "commandstats", "latencystats"],
@@ -296,7 +335,12 @@ def collect_redis_metrics(
                     if section in section_filter:
                         if k not in section_filter[section]:
                             collect = False
-                if collect and type(v) is float or type(v) is int:
+                # NOTE: this used to read
+                #   `if collect and type(v) is float or type(v) is int:`
+                # which parses as `(collect and float) or (int)`, so any integer
+                # value bypassed `collect` entirely. Every INFO counter is an
+                # integer, so `section_filter` only ever constrained floats.
+                if collect and type(v) in (int, float):
                     if k not in overall[section]:
                         overall[section][k] = 0
                     overall[section][k] += v
@@ -454,6 +498,7 @@ def exporter_datasink_common(
     git_hash=None,
     collect_commandstats=True,
     collect_memory_metrics=True,
+    collect_cpu_stats=True,
 ):
     logging.info(
         f"Using datapoint_time_ms: {datapoint_time_ms}. git_hash={git_hash}, git_branch={git_branch}, git_version={git_version}. gh_org={tf_github_org}, gh_repo={tf_github_repo}"
@@ -483,6 +528,9 @@ def exporter_datasink_common(
         git_hash,
         disable_target_tables=True,
     )
+    # 7 days from now. Hoisted out of the memory branch below: all three export
+    # blocks use it, so with collect_memory_metrics=False it was an unbound local.
+    expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
     if collect_memory_metrics:
         logging.info("Collecting memory metrics")
         (
@@ -492,16 +540,17 @@ def exporter_datasink_common(
         ) = collect_redis_metrics(
             redis_conns,
             ["memory"],
-            {
-                "memory": [
-                    "used_memory",
-                    "used_memory_dataset",
-                ]
-            },
+            # Deliberately unfiltered. This call site used to pass a filter of
+            # ["used_memory", "used_memory_dataset"], but it never took effect:
+            # the filter was a no-op for integers (see collect_redis_metrics), so
+            # every integer-valued `memory` field has always been exported. Now
+            # that the filter works, applying it as written would silently drop
+            # series that already exist (used_memory_rss, used_memory_peak, ...).
+            # Keeping it unfiltered preserves what we export today; narrowing it
+            # is a separate decision.
+            None,
         )
         print(overall_end_time_metrics)
-        # 7 days from now
-        expire_redis_metrics_ms = 7 * 24 * 60 * 60 * 1000
         export_redis_metrics(
             git_version,
             datapoint_time_ms,
@@ -539,6 +588,34 @@ def exporter_datasink_common(
             tf_github_repo,
             tf_triggering_env,
             {"metric-type": "commandstats"},
+            expire_redis_metrics_ms,
+            git_hash,
+            running_platform,
+        )
+    if collect_cpu_stats:
+        logging.info("Collecting cpu and stats metrics")
+        (
+            _,
+            _,
+            overall_cpu_stats_metrics,
+        ) = collect_redis_metrics(
+            redis_conns,
+            ["cpu", "stats"],
+            CPU_STATS_SECTION_FILTER,
+        )
+        export_redis_metrics(
+            git_version,
+            datapoint_time_ms,
+            overall_cpu_stats_metrics,
+            datasink_conn,
+            setup_name,
+            setup_type,
+            test_name,
+            git_branch,
+            tf_github_org,
+            tf_github_repo,
+            tf_triggering_env,
+            {"metric-type": "cpu-stats"},
             expire_redis_metrics_ms,
             git_hash,
             running_platform,
