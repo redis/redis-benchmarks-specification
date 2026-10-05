@@ -4,8 +4,9 @@ description: 'Runs memtier_benchmark against a SINGLE hash key holding 194 field
   values, listpack-encoded, and issues HDEL commands in which every one of the nine requested
   fields is absent. Encoding: listpack — 194 fields is below hash-max-listpack-entries 512 and
   the 50-byte values are below hash-max-listpack-value 64, so this hash is listpack-encoded
-  under stock defaults; both settings are pinned explicitly here so the spec keeps measuring
-  the listpack path even if a future default changes. The all-miss property
+  under the stock default (hash-max-listpack-entries defaults to 512 in src/config.c; the
+  hash-max-listpack-value default is 64); both settings are pinned explicitly here so the
+  spec keeps measuring the listpack path even if a future default changes. The all-miss property
   is what the spec is for: because no field ever matches, the hash never shrinks, never converts,
   and the workload has no state drift across the 180-second run — every request is the same
   full-listpack traversal, making this a steady-state measurement rather than a decaying one.
@@ -22,8 +23,8 @@ description: 'Runs memtier_benchmark against a SINGLE hash key holding 194 field
   HDEL consequently had no fleet coverage at all, which is why changes that move its cost --
   redis/redis#13503 removed an indirect call from lpFind, and the HFE work around commit c33c91d
   reorganised the surrounding hash code -- were invisible to us. Shape notes: the keyspace is
-  exactly one key, so --command-key-pattern R over a one-key keyspace is degenerate and every
-  request necessarily targets that key. The nine field arguments are drawn from an
+  exactly one key (the literal hash1), so every request targets it; --command-key-pattern R
+  does not select the hash, it only randomises the __key__ field argument. The nine field arguments are drawn from an
   "HGET_HASH_ABSENT" prefix while the preloaded fields all carry an "HGET_HASH_FIELD" prefix, so
   the misses are guaranteed by construction rather than by chance; __key__ varies one of the nine
   across the absent range so the request stream is not a single constant buffer. Field names are
