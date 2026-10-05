@@ -2456,8 +2456,11 @@ def process_self_contained_coordinator_stream(
                                 topology_spec_name,
                                 default_metrics,
                                 git_hash,
-                                False,
-                                True,
+                                collect_commandstats=False,
+                                collect_memory_metrics=True,
+                                # Load-only run: its counters would land under the
+                                # same test_name as the real benchmark's.
+                                collect_cpu_stats=False,
                             )
 
                         # Send MEMORY PURGE after memory comparison (if FLUSHALL at test end is not enabled)

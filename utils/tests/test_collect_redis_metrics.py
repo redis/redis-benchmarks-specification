@@ -141,3 +141,60 @@ def test_integers_only_leaves_dict_valued_fields_alone():
         "commandstats_cmdstat_get_usec_per_call": 1.5,
         "commandstats_total": 7,
     }
+
+
+def _run_exporter(**flags):
+    """Call exporter_datasink_common with every collaborator mocked; return the
+    list of INFO section sets that were collected."""
+    from unittest.mock import MagicMock, patch
+
+    from redis_benchmarks_specification.__common__ import runner
+
+    collected = []
+
+    def fake_collect(conns, sections, *args, **kwargs):
+        collected.append(list(sections))
+        return [], {}, {}
+
+    with patch.object(runner, "timeseries_test_sucess_flow"), patch.object(
+        runner, "collect_redis_metrics", side_effect=fake_collect
+    ), patch.object(runner, "export_redis_metrics"):
+        runner.exporter_datasink_common(
+            {},
+            0,
+            "variant",
+            1,
+            0,
+            MagicMock(),
+            True,
+            "branch",
+            "version",
+            {},
+            [MagicMock()],
+            {},
+            "platform",
+            "setup",
+            "type",
+            "test",
+            "org",
+            "repo",
+            "env",
+            "topology",
+            **flags,
+        )
+    return collected
+
+
+def test_exporter_collects_cpu_stats_by_default():
+    assert ["cpu", "stats"] in _run_exporter()
+
+
+def test_memory_only_export_skips_cpu_stats():
+    """The memory-comparison (load-only) export must not write cpu-stats series
+    under the same test_name as the real benchmark run."""
+    collected = _run_exporter(
+        collect_commandstats=False,
+        collect_memory_metrics=True,
+        collect_cpu_stats=False,
+    )
+    assert collected == [["memory"]]
