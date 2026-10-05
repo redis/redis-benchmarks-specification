@@ -117,3 +117,27 @@ def test_integers_only_drops_float_gauges_but_keeps_integers():
     _, _, overall = collect_redis_metrics([conn], ["memory"], None, integers_only=True)
 
     assert overall == {"memory_used_memory": 1024, "memory_used_memory_rss": 2048}
+
+
+def test_integers_only_leaves_dict_valued_fields_alone():
+    """integers_only constrains top-level scalars only; commandstats-style dicts
+    keep their inner float fields (usec_per_call)."""
+    conn = FakeConn(
+        {
+            "commandstats": {
+                "cmdstat_get": {"calls": 10, "usec_per_call": 1.5},
+                "total": 7,
+                "ratio": 0.5,
+            }
+        }
+    )
+
+    _, _, overall = collect_redis_metrics(
+        [conn], ["commandstats"], None, integers_only=True
+    )
+
+    assert overall == {
+        "commandstats_cmdstat_get_calls": 10,
+        "commandstats_cmdstat_get_usec_per_call": 1.5,
+        "commandstats_total": 7,
+    }
