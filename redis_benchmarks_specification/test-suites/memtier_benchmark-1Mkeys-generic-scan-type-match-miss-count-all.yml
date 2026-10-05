@@ -45,6 +45,13 @@ description: >
   Metric of interest: Ops/sec (higher is better). Adds coverage for redis/redis#13855, where
   SCAN with a TYPE filter is reported slower after 7f0a7f0a moved the type check into the
   scan callback ahead of the MATCH check, so that path is measurable on the fleet.
+
+  Scoping caveats. (1) The isolation depends on the callback's CURRENT check order (type read
+  first, then MATCH). If redis/redis#13855 is fixed by testing the pattern before the type,
+  this spec goes quiet by design: MATCH x discards every key before any header is read. That
+  is the expected outcome of a fix, not a broken spec. (2) db.c is not mapped in
+  files-to-groups.json, so a PR touching only the scan callback will not scope to this spec
+  automatically; run it via a full-suite run or an explicit --tests-regexp.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -82,4 +89,4 @@ clientconfig:
     requests:
       cpus: '2'
       memory: 2g
-priority: 45
+priority: 44
