@@ -2,7 +2,9 @@ version: 0.4
 name: memtier_benchmark-1Mkeys-bitmap-getbit-pipeline-10
 description: Runs memtier_benchmark, for a keyspace length of 1M keys focusing on
   GETBIT performance. Each key is a 1-bit bitmap preloaded via SETBIT; the client
-  issues GETBIT at offsets 1 and 100 across the keyspace.
+  issues GETBIT at offsets 1 and 100 across the keyspace. Both phases span the same
+  1..1000000 key range, so every GETBIT addresses a preloaded key; the preload's -n
+  of 10000 requests per client is what fills each client's P-pattern block exactly.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -11,8 +13,8 @@ dbconfig:
   preload_tool:
     run_image: redislabs/memtier_benchmark:edge
     tool: memtier_benchmark
-    arguments: --hide-histogram --key-minimum 1 --key-maximum 10000000 -c 50 -t 2
-      --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 1000000 -n 10000 -c 50
+      -t 2 --pipeline 50 --command "SETBIT __key__ 1 1" --command-key-pattern "P"
   resources:
     requests:
       cpus: '2'
@@ -34,8 +36,8 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: --pipeline 10 --command="GETBIT __key__ 1" --command-key-pattern="R"  --command
-    "GETBIT __key__ 100" --command-key-pattern="R" -c 50 -t 2 --hide-histogram --test-time
-    180
+    "GETBIT __key__ 100" --command-key-pattern="R" --key-minimum 1 --key-maximum 1000000
+    -c 50 -t 2 --hide-histogram --test-time 180
   resources:
     requests:
       cpus: '2'
