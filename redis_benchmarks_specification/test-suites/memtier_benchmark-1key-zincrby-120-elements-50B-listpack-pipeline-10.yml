@@ -13,7 +13,7 @@ description: 'Runs memtier_benchmark against a SINGLE sorted-set key holding 120
   — every ZINCRBY there pays an object+listpack cache miss that swamps a
   tens-of-nanoseconds difference in the listpack update path itself. Relative to that spec
   this one changes two things deliberately, keyspace (1,000,000 -> 1 key) and concurrency
-  (-t 1 -c 1 -> -c 5 -t 10, matching redis-benchmark''s default 50 connections), so it is a
+  (-t 1 -c 1 -> -c 5 -t 10, matching redis-benchmark''s default 50 connections; cpus is set equal to the 10 threads, the thread-per-CPU sizing the other multi-thread _conns and saturation specs in this suite use), so it is a
   different regime rather than a drop-in variant. Exercises the existing-member update path
   in zsetAdd() (find the member, delete the old member/score pair, reinsert at the new score)
   touched by commit 391e3452 (redis/redis#15288). Two shape notes: the keyspace is exactly one
