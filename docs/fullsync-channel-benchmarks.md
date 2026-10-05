@@ -1,53 +1,39 @@
 # Full-sync RDB-channel coverage
 
-These two specifications add the direct child-to-replica RDB channel to the
-20M-key random 1KiB full-sync workload. The channel setting is explicit because
-changing it changes both the transfer path and where CPU work occurs. Preserve
-the parent-forwarding specifications as separate controls.
+These two specifications add the direct child-to-replica RDB channel
+(`repl-rdb-channel: 'yes'`) to the 20M-key random 1KiB full-sync workload. They
+are the random cells of the parent-forwarding matrix in #577 with only the
+channel setting flipped, so the transfer path is the single changed variable.
+Preserve the #577 specifications as separate controls.
 
-Run these cases only against server builds supporting `repl-rdb-channel`.
-An older build rejects the parameter at startup; it is deliberately not silently
-skipped or measured with a different transfer path. The compiler variant name
-does not guarantee that the selected server commit supports this setting.
+Run these cases only against server builds that recognize `repl-rdb-channel`
+(Redis 8.0 or later). An older build rejects the parameter at startup; the run
+fails rather than being skipped or measured with a different transfer path.
 
-The two replica loading policies (`disabled` and `on-empty-db`) are complete
-configuration comparisons. Diskless loading may negotiate compression/checksum
-bypass even when those settings are enabled in the parent's configuration.
-Configuration alone is insufficient evidence of the operations performed.
+## Procedure
 
-## Coordinator prerequisite
+Qualification, repeatability and reporting rules are shared with the parent
+matrix: follow `docs/fullsync-benchmark-qualification.md` from #577 (identity
+recording, exact key counts on both instances, five retained observations in
+alternating order, rehash-transition caveat, phase-specific profiling, memory
+reservation). Do not duplicate or fork that checklist here.
 
-These specifications require the corrected full-sync timing boundaries and exact
-primary/replica preload count checks from #576. Do not accept numbers generated
-by the earlier wait-only timing path. Confirm the deployed coordinator commit,
-not just the package version. Data-directory selection also requires the
-coordinator support introduced in #581.
+Channel-specific additions:
 
-## Qualification
+- Verify the primary log reports transfer to the replica sockets by the child,
+  and record the actual compression/checksum negotiation; configuration alone
+  is insufficient evidence of the operations performed.
+- Profile parent, child and replica CPU separately; the channel moves work
+  between them.
+- Random values are an incompressible control, not a representative
+  compression-ratio benchmark.
 
-Before comparing a source change:
+## Prerequisites and limits
 
-- Record exact server, coordinator and client image identities, architecture,
-  CPU placement and filesystem/storage type. Keep the selected storage fixed.
-- Verify all 20M keys on both instances and matching logical contents. The
-  preload must finish before replication begins.
-- Verify the primary log reports transfer to replica sockets. Record the
-  actual compression/checksum negotiation; parent configuration alone is
-  insufficient.
-- Record whether dictionary rehashing is still active after preload. A cohort
-  crossing that transition is not a settled-dataset comparison. Stabilize
-  outside timing or report the transition explicitly.
-- Run at least five retained observations per condition in alternating order.
-  Report all attempts, variability and paired effects; investigate order trends
-  instead of excluding them after seeing the result.
-- Profile the actual transfer interval and distinguish parent, child and replica
-  CPU. The 30-second GET phase runs after full sync and cannot supply those
-  profiles.
-- Record physical reads/writes and memory pressure. Loading a just-received RDB
-  from page cache is not a cold-storage restore benchmark.
-
-The specifications reserve enough memory for both instances and use a pinned
-client image. Random values are an incompressible control, not a representative
-compression-ratio benchmark. Moderately compressible data, constrained networks,
-foreground-write latency, multi-replica fan-out and slow-replica behavior require
-separate workloads; these two files do not claim that coverage.
+- Requires the corrected full-sync timing boundaries and exact primary/replica
+  count checks from #576. Do not accept numbers from the earlier wait-only
+  timing path; confirm the deployed coordinator commit, not just the package
+  version. Data-directory selection also requires the support from #581.
+- The coordinator's 600 second sync deadline is not spec-settable. The
+  disk-backed cell measured a 94.6 second median on local NVMe; slower storage
+  leaves a smaller margin, and a deadline expiry is a failed run, not a sample.
