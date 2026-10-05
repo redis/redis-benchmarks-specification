@@ -45,6 +45,36 @@ def inject_replication_sync_metrics(
         return False
 
 
+def declared_sync_keyspacelen(dbconfig, preload_already_done):
+    """Key count the full-sync validation should enforce, or None.
+
+    The count is only meaningful when the dataset was preloaded before the
+    replica was started (preload_before_replica); otherwise the primary is
+    empty at sync time and the declared dbconfig.check.keyspacelen (which
+    describes the post-preload dataset) must not be enforced.
+    """
+    if not preload_already_done:
+        return None
+    return (dbconfig.get("check") or {}).get("keyspacelen")
+
+
+def retry_primary_probe(probe, attempts=3):
+    """Run a primary-side validation read, retrying transient timeouts.
+
+    The probes are issued outside the timed REPLICAOF..link-up interval, so
+    retrying cannot change a measured duration. A busy primary (e.g. INFO right
+    after shipping a ~20 GB RDB) may exceed the 1 s socket bound once; the last
+    error is re-raised so an unreadable primary still fails the sample.
+    """
+    for attempt in range(attempts):
+        try:
+            return probe()
+        except (redis.TimeoutError, redis.BusyLoadingError):
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2)
+
+
 def measure_replica_full_sync(
     replica_conn, primary_port, timeout=600, poll_interval=0.05
 ):
@@ -810,6 +840,14 @@ def spin_up_redis_replicas(
     elapsed time from explicit REPLICAOF to the first observed usable link.
     Replicas synchronize serially; this is not a concurrent fan-out measurement.
     Failures raise and must never be exported as durations.
+
+    The primary's sync_full counter is primary-wide, not per-replica. It is
+    sampled immediately before and after each replica's timed sync, so the
+    window only ever contains that replica's sync; any other full sync in the
+    window (an earlier replica re-syncing, a failed PSYNC retry, another
+    client) makes the delta differ from 1 and fails the sample. That is
+    deliberately conservative: with more than one replica a spurious extra
+    full sync fails the run rather than being attributed to one replica.
     """
     # gflags-based servers (e.g. dragonfly) are standalone-only for now; replica topologies
     # pass redis-style --replicaof/--masterauth flags such a server aborts on. Fail loudly.
@@ -880,25 +918,28 @@ def spin_up_redis_replicas(
         )
         try:
             timing_conn.ping()
-            if (
-                expected_keyspacelen is not None
-                and primary_timing_conn.dbsize() != expected_keyspacelen
+            if expected_keyspacelen is not None and keyspacelen_mismatch(
+                expected_keyspacelen,
+                retry_primary_probe(primary_timing_conn.dbsize),
             ):
                 raise ValueError(
                     "Primary key count does not match the declared full-sync dataset"
                 )
-            full_syncs_before = primary_timing_conn.info("stats")["sync_full"]
+            full_syncs_before = retry_primary_probe(
+                lambda: primary_timing_conn.info("stats")["sync_full"]
+            )
             sync_seconds = measure_replica_full_sync(
                 timing_conn, primary_port, replication_sync_timeout
             )
-            full_syncs_after = primary_timing_conn.info("stats")["sync_full"]
+            full_syncs_after = retry_primary_probe(
+                lambda: primary_timing_conn.info("stats")["sync_full"]
+            )
             if full_syncs_after - full_syncs_before != 1:
                 raise ValueError(
                     "Initial-sync sample did not contain exactly one full sync"
                 )
-            if (
-                expected_keyspacelen is not None
-                and timing_conn.dbsize() != expected_keyspacelen
+            if expected_keyspacelen is not None and keyspacelen_mismatch(
+                expected_keyspacelen, timing_conn.dbsize()
             ):
                 raise ValueError(
                     "Replica key count does not match the declared full-sync dataset"

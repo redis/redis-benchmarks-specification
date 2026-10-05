@@ -4,7 +4,9 @@ import pytest
 import redis
 
 from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+    declared_sync_keyspacelen,
     measure_replica_full_sync,
+    retry_primary_probe,
 )
 
 MODULE = "redis_benchmarks_specification.__self_contained_coordinator__.docker"
@@ -67,6 +69,14 @@ def test_full_sync_connection_failure_cannot_create_duration():
 def test_full_sync_rejects_invalid_deadline(timeout):
     with pytest.raises(ValueError):
         measure_replica_full_sync(Mock(), 6379, timeout=timeout)
+
+
+@pytest.mark.parametrize("poll_interval", [0, -1, float("inf"), float("nan")])
+def test_full_sync_rejects_invalid_poll_interval(poll_interval):
+    conn = Mock()
+    with pytest.raises(ValueError):
+        measure_replica_full_sync(conn, 6379, poll_interval=poll_interval)
+    conn.execute_command.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -187,3 +197,110 @@ def test_full_sync_returns_duration_only_after_dataset_and_sync_count_validation
     assert times == [0.25]
     timing.close.assert_called_once()
     primary.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "dbconfig, preload_done, expected",
+    [
+        ({"check": {"keyspacelen": 20000000}}, False, None),
+        ({"check": {"keyspacelen": 20000000}}, True, 20000000),
+        ({"check": {}}, True, None),
+        ({"check": None}, True, None),
+        ({}, True, None),
+        ({}, False, None),
+    ],
+)
+def test_declared_sync_keyspacelen_only_when_preloaded_before_replica(
+    dbconfig, preload_done, expected
+):
+    assert declared_sync_keyspacelen(dbconfig, preload_done) == expected
+
+
+def test_coordinator_passes_helper_result_to_spin_up_replicas():
+    import inspect
+
+    from redis_benchmarks_specification.__self_contained_coordinator__ import (
+        self_contained_coordinator as coordinator,
+    )
+
+    source = inspect.getsource(coordinator)
+    assert "expected_keyspacelen=declared_sync_keyspacelen(" in source
+    assert "preload_already_done," in source
+
+
+def test_primary_probe_retries_transient_timeout_then_succeeds():
+    probe = Mock(side_effect=[redis.TimeoutError("slow"), 7])
+    with patch(MODULE + ".time.sleep"):
+        assert retry_primary_probe(probe) == 7
+    assert probe.call_count == 2
+
+
+def test_primary_probe_is_bounded_and_reraises():
+    probe = Mock(side_effect=redis.TimeoutError("stalled"))
+    with patch(MODULE + ".time.sleep"):
+        with pytest.raises(redis.TimeoutError):
+            retry_primary_probe(probe, attempts=3)
+    assert probe.call_count == 3
+
+
+def test_primary_probe_does_not_retry_other_errors():
+    probe = Mock(side_effect=redis.ResponseError("denied"))
+    with pytest.raises(redis.ResponseError):
+        retry_primary_probe(probe)
+    assert probe.call_count == 1
+
+
+def test_valid_sample_survives_one_slow_primary_info():
+    from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+        spin_up_redis_replicas,
+    )
+
+    normal, timing, primary = Mock(), Mock(), Mock()
+    primary.dbsize.return_value = timing.dbsize.return_value = 20
+    primary.info.side_effect = [
+        {"sync_full": 0},
+        redis.TimeoutError("busy after transfer"),
+        {"sync_full": 1},
+    ]
+    with patch(
+        MODULE + ".redis.StrictRedis", side_effect=[normal, timing, primary]
+    ), patch(MODULE + ".start_redis_container"), patch(
+        MODULE + ".measure_replica_full_sync", return_value=0.25
+    ), patch(
+        MODULE + ".time.sleep"
+    ):
+        _, _, times = spin_up_redis_replicas(
+            1,
+            6399,
+            0,
+            Mock(),
+            [],
+            "redis:8.6",
+            "",
+            "",
+            1,
+            {},
+            "",
+            None,
+            expected_keyspacelen=20,
+        )
+    assert times == [0.25]
+
+
+def test_no_declared_keyspacelen_skips_dbsize_checks():
+    from redis_benchmarks_specification.__self_contained_coordinator__.docker import (
+        spin_up_redis_replicas,
+    )
+
+    normal, timing, primary = Mock(), Mock(), Mock()
+    primary.info.side_effect = [{"sync_full": 0}, {"sync_full": 1}]
+    with patch(
+        MODULE + ".redis.StrictRedis", side_effect=[normal, timing, primary]
+    ), patch(MODULE + ".start_redis_container"), patch(
+        MODULE + ".measure_replica_full_sync", return_value=0.25
+    ):
+        spin_up_redis_replicas(
+            1, 6399, 0, Mock(), [], "redis:8.6", "", "", 1, {}, "", None
+        )
+    primary.dbsize.assert_not_called()
+    timing.dbsize.assert_not_called()

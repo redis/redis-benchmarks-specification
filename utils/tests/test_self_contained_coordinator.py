@@ -579,6 +579,48 @@ def test_bgsave_duration_spec_wiring_matches_injector():
         )
 
 
+def test_replication_sync_spec_wiring_matches_injector():
+    """Every spec exporting a ReplicationFullSync* jsonpath must use a Totals
+    key inject_replication_sync_metrics() actually writes. A rename on either
+    side otherwise exports an empty series with no exception, and a spec that
+    exports the sync-seconds key must be a replica topology spec that
+    preloads before the replica starts (otherwise it times an empty sync)."""
+    import glob
+
+    injected = {}
+    assert inject_replication_sync_metrics(injected, [1.0], 0) is True
+    injected_keys = set(injected["ALL STATS"]["Totals"].keys())
+    assert "ReplicationFullSyncSecondsV2" in injected_keys
+
+    checked = []
+    for path in sorted(glob.glob("./redis_benchmarks_specification/test-suites/*.yml")):
+        with open(path, "r") as yml_file:
+            try:
+                cfg = yaml.safe_load(yml_file)
+            except yaml.YAMLError:
+                continue
+        if not isinstance(cfg, dict):
+            continue
+        metrics = ((cfg.get("exporter") or {}).get("redistimeseries") or {}).get(
+            "metrics"
+        ) or []
+        sync_metrics = [m for m in metrics if "ReplicationFullSync" in m]
+        if not sync_metrics:
+            continue
+        checked.append(path)
+        for jsonpath in sync_metrics:
+            chain = jsonpath_field_chain(jsonpath)
+            assert chain and chain[0] == "ALL STATS" and "Totals" in chain, jsonpath
+            declared_key = chain[chain.index("Totals") + 1]
+            assert declared_key in injected_keys, (
+                f"{path}: {jsonpath!r} declares {declared_key!r} but the "
+                f"injector writes {injected_keys!r}"
+            )
+        if any("ReplicationFullSyncSecondsV2" in m for m in sync_metrics):
+            assert cfg["dbconfig"].get("preload_before_replica") is True, path
+    assert checked, "no spec declares a ReplicationFullSync* metric"
+
+
 def test_preload_before_replica_default_off():
     """Existing replica test specs must not have preload_before_replica set.
 

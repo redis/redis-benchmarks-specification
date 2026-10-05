@@ -35,6 +35,12 @@ Dataset checks intentionally require exact counts. A truncated or oversized
 preload must fail rather than become an apparent timing improvement; do not add a
 tolerance to compensate for data-generator differences. Qualify the actual
 preload arguments and resolved client image before collecting comparisons.
-Primary validation probes fail closed on timeout or missing counters. A timing
+Primary validation probes (key count and `sync_full`) run outside the timed
+interval and are retried up to three times on socket timeouts or busy-loading
+replies, so one slow INFO on a freshly drained primary does not discard a valid
+sample. They still fail closed once retries are exhausted or a counter is
+missing. The `sync_full` counter is primary-wide: it is read right before and
+right after each replica's timed sync, and any additional full sync in that
+window (including one caused by another replica) fails the sample. A timing
 sample that cannot be verified is rejected even if the link became usable;
 qualification must retain these failures instead of selecting successful runs.
