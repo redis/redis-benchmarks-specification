@@ -46,6 +46,8 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     prepare_bgsave_results,
     generate_standalone_redis_server_args,
     generate_cluster_redis_server_args,
+    server_knows_config,
+    CLUSTER_BUS_PORT_PROTECTED_MODE,
     inject_persistence_metrics,
     inject_replication_sync_metrics,
     keyspacelen_mismatch,
@@ -57,27 +59,27 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
 
 
 def test_inject_replication_sync_metrics_with_replicas():
-    """Both ReplicationFullSyncSeconds and ReplicationFullSyncCountDuringBench
+    """Both ReplicationFullSyncSecondsV2 and ReplicationFullSyncCountDuringBench
     should be injected when replicas exist and sync times are non-empty."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 100000.0}}}
     ok = inject_replication_sync_metrics(results, [3.5, 4.2, 2.1], 2)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
     # Max sync time across replicas (slowest replica gates the topology)
-    assert totals["ReplicationFullSyncSeconds"] == 4.2
+    assert totals["ReplicationFullSyncSecondsV2"] == 4.2
     assert totals["ReplicationFullSyncCountDuringBench"] == 2
     # Existing metrics not clobbered
     assert totals["Ops/sec"] == 100000.0
 
 
 def test_inject_replication_sync_metrics_no_replicas():
-    """When no replicas were spun up, ReplicationFullSyncSeconds is omitted
+    """When no replicas were spun up, ReplicationFullSyncSecondsV2 is omitted
     but ReplicationFullSyncCountDuringBench is still set to 0."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 50000.0}}}
     ok = inject_replication_sync_metrics(results, [], 0)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert "ReplicationFullSyncSeconds" not in totals
+    assert "ReplicationFullSyncSecondsV2" not in totals
     assert totals["ReplicationFullSyncCountDuringBench"] == 0
     assert totals["Ops/sec"] == 50000.0
 
@@ -89,7 +91,7 @@ def test_inject_replication_sync_metrics_creates_missing_keys():
     assert ok is True
     assert "ALL STATS" in results
     assert "Totals" in results["ALL STATS"]
-    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] == 1.5
+    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSecondsV2"] == 1.5
     assert results["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] == 1
 
 
@@ -108,7 +110,7 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     ok = inject_replication_sync_metrics(results, [2.0], 5)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert totals["ReplicationFullSyncSeconds"] == 2.0
+    assert totals["ReplicationFullSyncSecondsV2"] == 2.0
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
@@ -579,6 +581,48 @@ def test_bgsave_duration_spec_wiring_matches_injector():
         )
 
 
+def test_replication_sync_spec_wiring_matches_injector():
+    """Every spec exporting a ReplicationFullSync* jsonpath must use a Totals
+    key inject_replication_sync_metrics() actually writes. A rename on either
+    side otherwise exports an empty series with no exception, and a spec that
+    exports the sync-seconds key must be a replica topology spec that
+    preloads before the replica starts (otherwise it times an empty sync)."""
+    import glob
+
+    injected = {}
+    assert inject_replication_sync_metrics(injected, [1.0], 0) is True
+    injected_keys = set(injected["ALL STATS"]["Totals"].keys())
+    assert "ReplicationFullSyncSecondsV2" in injected_keys
+
+    checked = []
+    for path in sorted(glob.glob("./redis_benchmarks_specification/test-suites/*.yml")):
+        with open(path, "r") as yml_file:
+            try:
+                cfg = yaml.safe_load(yml_file)
+            except yaml.YAMLError:
+                continue
+        if not isinstance(cfg, dict):
+            continue
+        metrics = ((cfg.get("exporter") or {}).get("redistimeseries") or {}).get(
+            "metrics"
+        ) or []
+        sync_metrics = [m for m in metrics if "ReplicationFullSync" in m]
+        if not sync_metrics:
+            continue
+        checked.append(path)
+        for jsonpath in sync_metrics:
+            chain = jsonpath_field_chain(jsonpath)
+            assert chain and chain[0] == "ALL STATS" and "Totals" in chain, jsonpath
+            declared_key = chain[chain.index("Totals") + 1]
+            assert declared_key in injected_keys, (
+                f"{path}: {jsonpath!r} declares {declared_key!r} but the "
+                f"injector writes {injected_keys!r}"
+            )
+        if any("ReplicationFullSyncSecondsV2" in m for m in sync_metrics):
+            assert cfg["dbconfig"].get("preload_before_replica") is True, path
+    assert checked, "no spec declares a ReplicationFullSync* metric"
+
+
 def test_preload_before_replica_default_off():
     """Existing replica test specs must not have preload_before_replica set.
 
@@ -610,6 +654,10 @@ def test_preload_before_replica_default_off():
             enabled_specs.append(os.path.basename(path))
     expected = {
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled.yml",
+        "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-no-rdbcomp.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-02.yml",
         "memtier_benchmark-20Mkeys-load-string-with-1KiB-values-replica-only-parallel-fullsync-04.yml",
@@ -1395,6 +1443,80 @@ def test_stop_and_remove_container_safe_other_api_error_is_swallowed():
     stop_and_remove_container_safe(FakeContainer(), "Client")
 
 
+def test_server_knows_config_detects_the_literal(tmp_path):
+    """The probe is a byte scan of the artifact -- config names reach the binary
+    as string literals, so this answers without starting a server."""
+    knows = tmp_path / "redis-server"
+    knows.write_bytes(
+        b"\x7fELF padding" + CLUSTER_BUS_PORT_PROTECTED_MODE.encode() + b"\x00more"
+    )
+    predates = tmp_path / "old-redis-server"
+    predates.write_bytes(b"\x7fELF padding cluster-enabled protected-mode\x00more")
+
+    assert server_knows_config(str(knows), CLUSTER_BUS_PORT_PROTECTED_MODE) is True
+    assert server_knows_config(str(predates), CLUSTER_BUS_PORT_PROTECTED_MODE) is False
+
+
+def test_server_knows_config_missing_artifact_is_false(tmp_path):
+    """An unreadable artifact must not fail the run, and must not add the
+    waiver: absent-config behaviour is the safe default."""
+    assert (
+        server_knows_config(
+            str(tmp_path / "does-not-exist"), CLUSTER_BUS_PORT_PROTECTED_MODE
+        )
+        is False
+    )
+
+
+def test_generate_cluster_redis_server_args_waiver_off_by_default():
+    """Default must be byte-identical to the pre-change output, so commits that
+    predate the config keep starting (they abort on unknown directives)."""
+    without = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None
+    )
+    explicit_off = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None, False
+    )
+    assert without == explicit_off
+    assert "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE) not in without
+
+
+def test_generate_cluster_redis_server_args_waiver_on():
+    """With the waiver the node can start without tls-cluster, which is what
+    every test-suite needs (none of them set tls-cluster)."""
+    command = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", None, "", None, True
+    )
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+    assert flag in command
+    assert command[command.index(flag) + 1] == "no"
+    # still a cluster node
+    assert command[command.index("--cluster-enabled") + 1] == "yes"
+
+
+def test_generate_cluster_redis_server_args_waiver_respects_explicit_config():
+    """A test-suite that sets the config itself must not get a duplicate flag,
+    and an explicit tls-cluster yes already satisfies the server's check."""
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+
+    explicit_config = generate_cluster_redis_server_args(
+        "redis-server",
+        6379,
+        "",
+        {CLUSTER_BUS_PORT_PROTECTED_MODE: "yes"},
+        "",
+        None,
+        True,
+    )
+    assert explicit_config.count(flag) == 1
+    assert explicit_config[explicit_config.index(flag) + 1] == "yes"
+
+    with_tls = generate_cluster_redis_server_args(
+        "redis-server", 6379, "", {"tls-cluster": "yes"}, "", None, True
+    )
+    assert flag not in with_tls
+
+
 def test_bgsave_confirmation_rejects_missing_attribution_data():
     info = {"rdb_last_save_time": 200, "rdb_last_bgsave_status": "ok"}
     assert not confirm_bgsave_completed(100, info, "")
@@ -1490,3 +1612,51 @@ def test_wait_for_bgsave_late_info_cannot_pass_deadline():
         side_effect=[0, 0, 2],
     ):
         assert wait_for_bgsave_completion(conn, 1) == (False, 2)
+
+
+def _spin_single_node_cluster(tmp_path, artifact_bytes):
+    """Run spin_docker_cluster_redis against a fake artifact; return the command
+    handed to the container."""
+    from unittest.mock import MagicMock, patch
+
+    (tmp_path / "redis-server").write_bytes(artifact_bytes)
+    node = MagicMock()
+    node.execute_command.return_value = "cluster_state:ok"
+    with patch(
+        "redis_benchmarks_specification.__self_contained_coordinator__.docker.start_redis_container"
+    ) as start, patch(
+        "redis_benchmarks_specification.__self_contained_coordinator__.docker.redis.StrictRedis",
+        return_value=node,
+    ):
+        spin_docker_cluster_redis(
+            1,
+            1,
+            0,
+            Mock(),
+            {},
+            [],
+            6379,
+            "redis:latest",
+            str(tmp_path),
+        )
+    return start.call_args[0][0]
+
+
+def test_spin_docker_cluster_redis_waives_only_when_the_build_knows_the_config(
+    tmp_path,
+):
+    """End to end through the probe: the waiver reaches the container command
+    line for a build that has the config, and is absent for one that predates it."""
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+
+    newer = tmp_path / "newer"
+    newer.mkdir()
+    cmd = _spin_single_node_cluster(
+        newer, b"\x7fELF" + CLUSTER_BUS_PORT_PROTECTED_MODE.encode() + b"\x00"
+    )
+    assert flag in cmd
+
+    older = tmp_path / "older"
+    older.mkdir()
+    cmd = _spin_single_node_cluster(older, b"\x7fELF cluster-enabled\x00")
+    assert flag not in cmd

@@ -19,7 +19,7 @@ def inject_replication_sync_metrics(
     """Inject replication full-sync metrics into a memtier-style results_dict.
 
     Adds two metrics under results_dict["ALL STATS"]["Totals"]:
-    - ReplicationFullSyncSeconds: max sync time across replicas (initial topology setup)
+    - ReplicationFullSyncSecondsV2: max sync time across replicas (initial topology setup)
     - ReplicationFullSyncCountDuringBench: count of full syncs during benchmark window
 
     Returns True on success, False on failure. Safe to call with None or
@@ -33,7 +33,7 @@ def inject_replication_sync_metrics(
         if "Totals" not in results_dict["ALL STATS"]:
             results_dict["ALL STATS"]["Totals"] = {}
         if replica_sync_times_seconds:
-            results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] = max(
+            results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncSecondsV2"] = max(
                 replica_sync_times_seconds
             )
         results_dict["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] = (
@@ -43,6 +43,82 @@ def inject_replication_sync_metrics(
     except Exception as e:
         logging.warning("Failed to inject sync metrics: {}".format(e))
         return False
+
+
+def declared_sync_keyspacelen(dbconfig, preload_already_done):
+    """Key count the full-sync validation should enforce, or None.
+
+    The count is only meaningful when the dataset was preloaded before the
+    replica was started (preload_before_replica); otherwise the primary is
+    empty at sync time and the declared dbconfig.check.keyspacelen (which
+    describes the post-preload dataset) must not be enforced.
+    """
+    if not preload_already_done:
+        return None
+    return (dbconfig.get("check") or {}).get("keyspacelen")
+
+
+def retry_primary_probe(probe, attempts=3):
+    """Run a primary-side validation read, retrying transient timeouts.
+
+    The probes are issued outside the timed REPLICAOF..link-up interval, so
+    retrying cannot change a measured duration. A busy primary (e.g. INFO right
+    after shipping a ~20 GB RDB) may exceed the 1 s socket bound once; the last
+    error is re-raised so an unreadable primary still fails the sample.
+    """
+    for attempt in range(attempts):
+        try:
+            return probe()
+        except (redis.TimeoutError, redis.BusyLoadingError):
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2)
+
+
+def measure_replica_full_sync(
+    replica_conn, primary_port, timeout=600, poll_interval=0.05
+):
+    """Time an explicit REPLICAOF through the first observed usable link.
+
+    Startup/PING is outside the interval. The measurement includes the command,
+    handshake, configured diskless delay, transfer and loading. Observation delay
+    includes polling, INFO latency and any timeout/reconnect gaps; this is not
+    an exact server event timestamp.
+    A fresh, empty standalone replica prevents reuse of a previous replication ID.
+    The caller must configure finite socket timeouts on this connection.
+    """
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Replication timeout must be finite and positive")
+    if not math.isfinite(poll_interval) or poll_interval <= 0:
+        raise ValueError("Replication poll interval must be finite and positive")
+    if (
+        replica_conn.info("replication").get("role") != "master"
+        or replica_conn.dbsize() != 0
+    ):
+        raise ValueError(
+            "Initial full-sync timing requires a fresh empty standalone replica"
+        )
+    start = time.monotonic()
+    replica_conn.execute_command("REPLICAOF", "localhost", primary_port)
+    while True:
+        if time.monotonic() - start >= timeout:
+            raise TimeoutError("Initial replica full sync exceeded its deadline")
+        try:
+            info = replica_conn.info("replication")
+        except (redis.TimeoutError, redis.BusyLoadingError):
+            # Loading a large RDB can temporarily delay or reject INFO. Keep the
+            # original deadline; a late response must not create a valid sample.
+            info = {}
+        elapsed = time.monotonic() - start
+        if elapsed >= timeout:
+            raise TimeoutError("Initial replica full sync exceeded its deadline")
+        if (
+            info.get("role") == "slave"
+            and info.get("master_link_status") == "up"
+            and info.get("master_sync_in_progress") == 0
+        ):
+            return elapsed
+        time.sleep(min(poll_interval, timeout - elapsed))
 
 
 def wait_for_bgsave_completion(
@@ -544,6 +620,49 @@ def spin_docker_standalone_redis(
     return current_cpu_pos
 
 
+# Upstream redis added the `cluster-bus-port-protected-mode` boolean config
+# (default 1). When cluster mode is on and `tls-cluster` is off, the server now
+# refuses to start:
+#
+#     *** FATAL CONFIG FILE ERROR ***
+#     cluster-bus-port-protected-mode is enabled but tls-cluster is disabled [...]
+#
+# No test-suite sets `tls-cluster`, so every cluster node we launch trips it and
+# the only symptom is a bare ConnectionError from r.ping(): the fatal goes to
+# stderr, the `--logfile` we pass stays 0 bytes, and start_redis_container()
+# runs with auto_remove=True so the container is gone before anyone can look.
+#
+# The waiver (`--cluster-bus-port-protected-mode no`) cannot be passed
+# unconditionally, because we benchmark commits on BOTH sides of that change:
+# a build predating the config treats the unknown directive as a module config
+# and aborts with "Unresolved Configuration(s) Detected [...] aborting". So
+# resolve it per artifact instead of per branch.
+CLUSTER_BUS_PORT_PROTECTED_MODE = "cluster-bus-port-protected-mode"
+
+
+def server_knows_config(binary_path, config_name):
+    """True if `binary_path` has `config_name` in its config table.
+
+    Config names reach the binary as string literals via createBoolConfig() and
+    friends, so a byte scan of the artifact answers this without starting a
+    server -- no throwaway container, no port to allocate, no startup race. We
+    are handed the host-side path, before the binary is bind-mounted into the
+    run image.
+
+    Unreadable artifact => False, i.e. omit the waiver and keep the behaviour
+    we have today on builds that predate the config.
+    """
+    try:
+        with open(binary_path, "rb") as f:
+            return config_name.encode() in f.read()
+    except OSError as e:
+        logging.warning(
+            "Could not probe {} for config {!r} ({}); assuming the config is "
+            "absent.".format(binary_path, config_name, e)
+        )
+        return False
+
+
 def generate_cluster_redis_server_args(
     binary,
     port,
@@ -551,8 +670,15 @@ def generate_cluster_redis_server_args(
     configuration_parameters=None,
     redis_arguments="",
     password=None,
+    waive_cluster_bus_port_protection=False,
 ):
-    """Generate redis-server args with cluster mode enabled."""
+    """Generate redis-server args with cluster mode enabled.
+
+    `waive_cluster_bus_port_protection` should be the result of
+    server_knows_config(<host-side binary>, CLUSTER_BUS_PORT_PROTECTED_MODE).
+    Kept as a parameter rather than probed here so this stays a pure function of
+    its arguments, and so the probe runs once per run instead of once per node.
+    """
     command = generate_standalone_redis_server_args(
         binary, port, dbdir, configuration_parameters, redis_arguments, password
     )
@@ -566,6 +692,15 @@ def generate_cluster_redis_server_args(
             "5000",
         ]
     )
+    # Never override what a test-suite asked for: an explicit
+    # cluster-bus-port-protected-mode would be duplicated, and an explicit
+    # `tls-cluster yes` already satisfies the server's check.
+    explicit = configuration_parameters or {}
+    already_set = CLUSTER_BUS_PORT_PROTECTED_MODE in explicit or str(
+        explicit.get("tls-cluster", "")
+    ).lower() in ("yes", "1", "true")
+    if waive_cluster_bus_port_protection and not already_set:
+        command.extend(["--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE), "no"])
     return command
 
 
@@ -640,6 +775,17 @@ def spin_docker_cluster_redis(
             )
         )
     executable = "{}{}-server".format(mnt_point, server_name)
+    # mnt_point is the in-container path; the artifact itself lives in
+    # temporary_dir on the host, which is what we can actually read here.
+    waive_cluster_bus_port_protection = server_knows_config(
+        "{}/{}-server".format(temporary_dir.rstrip("/"), server_name),
+        CLUSTER_BUS_PORT_PROTECTED_MODE,
+    )
+    if waive_cluster_bus_port_protection:
+        logging.info(
+            "This build knows {}; passing the waiver so cluster nodes can start "
+            "without tls-cluster.".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+        )
     per_node_cpu = max(1, ceil_db_cpu_limit // primary_count)
     cluster_conns = []
 
@@ -665,6 +811,7 @@ def spin_docker_cluster_redis(
             redis_configuration_parameters,
             node_redis_arguments,
             password,
+            waive_cluster_bus_port_protection,
         )
         command_str = " ".join(command)
         db_cpuset_cpus, current_cpu_pos = generate_cpuset_cpus(
@@ -753,6 +900,7 @@ def spin_up_redis_replicas(
     password,
     replication_sync_timeout=600,
     server_name="redis",
+    expected_keyspacelen=None,
 ):
     """Start replica Redis containers and configure replication to the primary.
 
@@ -760,8 +908,17 @@ def spin_up_redis_replicas(
         tuple: (replica_conns, current_cpu_pos, sync_times_seconds)
 
     sync_times_seconds is a list of float seconds, one per replica, measuring
-    the wall-clock time from container start to master_link_status=up.
-    Use this as a benchmark metric for full-sync performance testing.
+    elapsed time from explicit REPLICAOF to the first observed usable link.
+    Replicas synchronize serially; this is not a concurrent fan-out measurement.
+    Failures raise and must never be exported as durations.
+
+    The primary's sync_full counter is primary-wide, not per-replica. It is
+    sampled immediately before and after each replica's timed sync, so the
+    window only ever contains that replica's sync; any other full sync in the
+    window (an earlier replica re-syncing, a failed PSYNC retry, another
+    client) makes the delta differ from 1 and fails the sample. That is
+    deliberately conservative: with more than one replica a spurious extra
+    full sync fails the run rather than being attributed to one replica.
     """
     # gflags-based servers (e.g. dragonfly) are standalone-only for now; replica topologies
     # pass redis-style --replicaof/--masterauth flags such a server aborts on. Fail loudly.
@@ -776,11 +933,12 @@ def spin_up_redis_replicas(
     sync_times_seconds = []
     for i in range(1, replica_count + 1):
         replica_port = primary_port + i
-        # Append --replicaof and --masterauth to redis_arguments so the replica
-        # can authenticate to the primary and parca-agent can label it as a replica.
-        # Use per-replica filenames to avoid conflicts with the primary.
-        replica_redis_arguments = "{} --replicaof localhost {}".format(
-            redis_arguments, primary_port
+        # Defer replication until the process is ready, so container startup
+        # cannot hide the beginning (or all) of a short full sync.
+        # Keep the replicaof argv marker used by process-role classifiers while
+        # disabling replication until the timed REPLICAOF command below.
+        replica_redis_arguments = "{} --replicaof no one".format(
+            redis_arguments
         ).strip()
         if password is not None and password != "":
             replica_redis_arguments += " --masterauth {}".format(password)
@@ -817,38 +975,50 @@ def spin_up_redis_replicas(
             auto_remove=True,
         )
         replica_r = redis.StrictRedis(port=replica_port, password=password)
-        replica_r.ping()
-        logging.info(
-            "Replica {} started with --replicaof localhost {}".format(i, primary_port)
+        timing_conn = redis.StrictRedis(
+            port=replica_port,
+            password=password,
+            socket_timeout=1,
+            socket_connect_timeout=1,
         )
-        # Wait for replication link to come up. Use monotonic clock for
-        # high-resolution measurement of full-sync time.
-        sync_start = time.monotonic()
-        poll_interval = (
-            0.1  # 100ms — fast enough to be accurate, slow enough not to thrash
+        primary_timing_conn = redis.StrictRedis(
+            port=primary_port,
+            password=password,
+            socket_timeout=1,
+            socket_connect_timeout=1,
         )
-        sync_seconds = None
-        while True:
-            elapsed = time.monotonic() - sync_start
-            if elapsed >= replication_sync_timeout:
-                break
-            repl_info = replica_r.info("replication")
-            if repl_info.get("master_link_status") == "up":
-                sync_seconds = elapsed
-                logging.info(
-                    "Replica {} replication link is up (full sync took {:.3f}s)".format(
-                        i, sync_seconds
-                    )
+        try:
+            timing_conn.ping()
+            if expected_keyspacelen is not None and keyspacelen_mismatch(
+                expected_keyspacelen,
+                retry_primary_probe(primary_timing_conn.dbsize),
+            ):
+                raise ValueError(
+                    "Primary key count does not match the declared full-sync dataset"
                 )
-                break
-            time.sleep(poll_interval)
-        if sync_seconds is None:
-            logging.warning(
-                "Replica {} replication link did not come up within {}s".format(
-                    i, replication_sync_timeout
-                )
+            full_syncs_before = retry_primary_probe(
+                lambda: primary_timing_conn.info("stats")["sync_full"]
             )
-            sync_seconds = float(replication_sync_timeout)
+            sync_seconds = measure_replica_full_sync(
+                timing_conn, primary_port, replication_sync_timeout
+            )
+            full_syncs_after = retry_primary_probe(
+                lambda: primary_timing_conn.info("stats")["sync_full"]
+            )
+            if full_syncs_after - full_syncs_before != 1:
+                raise ValueError(
+                    "Initial-sync sample did not contain exactly one full sync"
+                )
+            if expected_keyspacelen is not None and keyspacelen_mismatch(
+                expected_keyspacelen, timing_conn.dbsize()
+            ):
+                raise ValueError(
+                    "Replica key count does not match the declared full-sync dataset"
+                )
+        finally:
+            timing_conn.close()
+            primary_timing_conn.close()
+        logging.info("Replica %s initial full sync completed in %.3fs", i, sync_seconds)
         sync_times_seconds.append(sync_seconds)
         replica_conns.append(replica_r)
     return replica_conns, current_cpu_pos, sync_times_seconds
