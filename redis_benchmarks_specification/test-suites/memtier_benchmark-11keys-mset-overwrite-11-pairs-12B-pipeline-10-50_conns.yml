@@ -3,7 +3,10 @@ name: memtier_benchmark-11keys-mset-overwrite-11-pairs-12B-pipeline-10-50_conns
 description: >
   Runs memtier_benchmark MSET with 11 key/value pairs per command, at pipeline 10 across 50
   client connections (-c 5 -t 10), repeatedly overwriting a hot keyspace of just 11 STRING
-  keys. Values are 12 bytes (EMBSTR). Metric of interest: p50 latency (lower is better).
+  keys. Values are 12 bytes (EMBSTR). Primary metric: Ops/sec (higher is better), the
+  per-command-cost signal. Secondary metric: p50 latency (lower is better) -- with 500 requests
+  in flight (50 connections x pipeline 10) p50 is largely queueing delay, so read it as a
+  corroborating signal, not the headline.
 
   Why this spec, given memtier_benchmark-100keys-mset-overwrite-10B-pipeline-1 already exists:
   that sibling spec is -c 1 -t 1 --pipeline 1 with 3 pairs per command over 100 keys, and it
@@ -48,6 +51,15 @@ description: >
   the request count is derived as key_maximum - key_minimum and therefore needs the extra 1
   to cover the range; see #509. With an explicit -n 11 nothing is derived and 12 would load a
   twelfth key.
+
+  First fleet run: check DBSIZE == 11 (keyspacelen: 11 enforces it after preload). The S pattern
+  is expected to yield exactly 11 distinct keys on the memtier :edge image; if it does not, the
+  hot-set premise is void and the numbers must not be used.
+
+  Client sizing: -t 10 on cpus: '10' (one CPU per memtier thread, no spare) is deliberate and
+  follows the suite's other _conns specs, e.g. the 40/400_conns GET and mixed specs, which use
+  -t 10 with cpus '10'. It keeps a load of this size from clipping on the client side (see
+  #485/#486/#487).
 dbconfig:
   configuration-parameters:
     save: '""'
