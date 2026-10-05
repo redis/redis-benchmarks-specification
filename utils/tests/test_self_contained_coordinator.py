@@ -59,27 +59,27 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
 
 
 def test_inject_replication_sync_metrics_with_replicas():
-    """Both ReplicationFullSyncSeconds and ReplicationFullSyncCountDuringBench
+    """Both ReplicationFullSyncSecondsV2 and ReplicationFullSyncCountDuringBench
     should be injected when replicas exist and sync times are non-empty."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 100000.0}}}
     ok = inject_replication_sync_metrics(results, [3.5, 4.2, 2.1], 2)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
     # Max sync time across replicas (slowest replica gates the topology)
-    assert totals["ReplicationFullSyncSeconds"] == 4.2
+    assert totals["ReplicationFullSyncSecondsV2"] == 4.2
     assert totals["ReplicationFullSyncCountDuringBench"] == 2
     # Existing metrics not clobbered
     assert totals["Ops/sec"] == 100000.0
 
 
 def test_inject_replication_sync_metrics_no_replicas():
-    """When no replicas were spun up, ReplicationFullSyncSeconds is omitted
+    """When no replicas were spun up, ReplicationFullSyncSecondsV2 is omitted
     but ReplicationFullSyncCountDuringBench is still set to 0."""
     results = {"ALL STATS": {"Totals": {"Ops/sec": 50000.0}}}
     ok = inject_replication_sync_metrics(results, [], 0)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert "ReplicationFullSyncSeconds" not in totals
+    assert "ReplicationFullSyncSecondsV2" not in totals
     assert totals["ReplicationFullSyncCountDuringBench"] == 0
     assert totals["Ops/sec"] == 50000.0
 
@@ -91,7 +91,7 @@ def test_inject_replication_sync_metrics_creates_missing_keys():
     assert ok is True
     assert "ALL STATS" in results
     assert "Totals" in results["ALL STATS"]
-    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSeconds"] == 1.5
+    assert results["ALL STATS"]["Totals"]["ReplicationFullSyncSecondsV2"] == 1.5
     assert results["ALL STATS"]["Totals"]["ReplicationFullSyncCountDuringBench"] == 1
 
 
@@ -110,7 +110,7 @@ def test_inject_replication_sync_metrics_count_only_during_bench():
     ok = inject_replication_sync_metrics(results, [2.0], 5)
     assert ok is True
     totals = results["ALL STATS"]["Totals"]
-    assert totals["ReplicationFullSyncSeconds"] == 2.0
+    assert totals["ReplicationFullSyncSecondsV2"] == 2.0
     assert totals["ReplicationFullSyncCountDuringBench"] == 5
 
 
@@ -579,6 +579,48 @@ def test_bgsave_duration_spec_wiring_matches_injector():
             f"inject_persistence_metrics() actually writes {injected_keys!r} -- "
             "a real run would export nothing for this metric"
         )
+
+
+def test_replication_sync_spec_wiring_matches_injector():
+    """Every spec exporting a ReplicationFullSync* jsonpath must use a Totals
+    key inject_replication_sync_metrics() actually writes. A rename on either
+    side otherwise exports an empty series with no exception, and a spec that
+    exports the sync-seconds key must be a replica topology spec that
+    preloads before the replica starts (otherwise it times an empty sync)."""
+    import glob
+
+    injected = {}
+    assert inject_replication_sync_metrics(injected, [1.0], 0) is True
+    injected_keys = set(injected["ALL STATS"]["Totals"].keys())
+    assert "ReplicationFullSyncSecondsV2" in injected_keys
+
+    checked = []
+    for path in sorted(glob.glob("./redis_benchmarks_specification/test-suites/*.yml")):
+        with open(path, "r") as yml_file:
+            try:
+                cfg = yaml.safe_load(yml_file)
+            except yaml.YAMLError:
+                continue
+        if not isinstance(cfg, dict):
+            continue
+        metrics = ((cfg.get("exporter") or {}).get("redistimeseries") or {}).get(
+            "metrics"
+        ) or []
+        sync_metrics = [m for m in metrics if "ReplicationFullSync" in m]
+        if not sync_metrics:
+            continue
+        checked.append(path)
+        for jsonpath in sync_metrics:
+            chain = jsonpath_field_chain(jsonpath)
+            assert chain and chain[0] == "ALL STATS" and "Totals" in chain, jsonpath
+            declared_key = chain[chain.index("Totals") + 1]
+            assert declared_key in injected_keys, (
+                f"{path}: {jsonpath!r} declares {declared_key!r} but the "
+                f"injector writes {injected_keys!r}"
+            )
+        if any("ReplicationFullSyncSecondsV2" in m for m in sync_metrics):
+            assert cfg["dbconfig"].get("preload_before_replica") is True, path
+    assert checked, "no spec declares a ReplicationFullSync* metric"
 
 
 def test_preload_before_replica_default_off():

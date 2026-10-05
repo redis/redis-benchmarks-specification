@@ -10,21 +10,13 @@ description: |
   the coordinator records for "replication link is up" — this is the
   end-to-end full sync time.
 
-  Sizing note: the coordinator's sync-time clock only starts after
-  spin_docker_redis()'s unconditional 5s post-start sleep, and polls at
-  100ms granularity. At the PR's own literal 183MB, the sync would very
-  likely finish inside that 5s window on modern hardware, so every run
-  (baseline and comparison alike) would read close to zero — swallowing
-  the signal rather than measuring it. Scaling to the sibling spec's
-  proven ~20GB order of magnitude (140K x 128KiB here) keeps the sync in
-  the tens-of-seconds range where the 100ms-polled clock can actually
-  resolve a percentage change, while preserving the per-value byte count
-  and incompressibility that are the properties this dataset shape needs
-  to test. That 5s sleep is also a near-constant ~5s undercount baked
-  into every ReplicationFullSyncSeconds datapoint on this spec (and its
-  1KiB sibling) — harmless for A/B direction, but it inflates any
-  percentage delta computed from the exported value; keep that in mind
-  when reading results rather than taking the percentage at face value.
+  ReplicationFullSyncSecondsV2 starts immediately before an explicit REPLICAOF
+  on a ready empty replica and ends after INFO confirms its link is usable.
+  Startup is outside this interval; polling adds up to 50ms plus INFO latency.
+  The legacy ReplicationFullSyncSeconds metric started after a five-second
+  startup wait and may have missed part or all of the sync. Do not mix legacy
+  and V2 samples, or attempt to correct the old samples by adding a constant.
+  The larger dataset retains the established value-heavy memory regime.
 
   Value size is 131062 bytes, not a round 131072 (128KiB): sds's header
   (9 bytes) plus NUL terminator push a raw 131072-byte payload one byte
@@ -84,7 +76,7 @@ dbconfig:
     class after sds header/NUL overhead) — same per-value shape as
     redis/redis#15732's own "value-heavy" benchmark cell, scaled up in key
     count so the full-sync duration is long enough for the coordinator's
-    100ms-polled clock to resolve a percentage-level change.
+    V2 observation interval to resolve a percentage-level change.
 tested-commands:
 - set
 redis-topologies:
@@ -108,6 +100,6 @@ tested-groups:
 exporter:
   redistimeseries:
     metrics:
-    - $."ALL STATS".Totals.ReplicationFullSyncSeconds
+    - $."ALL STATS".Totals.ReplicationFullSyncSecondsV2
     - $."ALL STATS".Totals.ReplicationFullSyncCountDuringBench
 priority: 17

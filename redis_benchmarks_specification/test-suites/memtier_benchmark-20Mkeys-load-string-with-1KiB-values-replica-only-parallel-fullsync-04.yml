@@ -51,6 +51,6 @@ tested-groups:
 exporter:
   redistimeseries:
     metrics:
-    - $."ALL STATS".Totals.ReplicationFullSyncSeconds
+    - $."ALL STATS".Totals.ReplicationFullSyncSecondsV2
     - $."ALL STATS".Totals.ReplicationFullSyncCountDuringBench
 priority: 17

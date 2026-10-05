@@ -653,6 +653,7 @@ from redis_benchmarks_specification.__self_contained_coordinator__.docker import
     prepare_bgsave_results,
     inject_replication_sync_metrics,
     keyspacelen_mismatch,
+    declared_sync_keyspacelen,
     spin_up_redis_replicas,
     spin_docker_cluster_redis,
     start_redis_container,
@@ -2274,6 +2275,10 @@ def process_self_contained_coordinator_stream(
                                         redis_arguments,
                                         redis_password,
                                         server_name=server_name,
+                                        expected_keyspacelen=declared_sync_keyspacelen(
+                                            benchmark_config["dbconfig"],
+                                            preload_already_done,
+                                        ),
                                     )
                                     replica_conns.extend(new_replica_conns)
                                 else:
@@ -3121,7 +3126,7 @@ def process_self_contained_coordinator_stream(
                                 ):
                                     if replica_sync_times_seconds:
                                         logging.info(
-                                            "Injected ReplicationFullSyncSeconds={:.3f}s ({} replica(s))".format(
+                                            "Injected ReplicationFullSyncSecondsV2={:.3f}s ({} replica(s))".format(
                                                 max(replica_sync_times_seconds),
                                                 len(replica_sync_times_seconds),
                                             )
