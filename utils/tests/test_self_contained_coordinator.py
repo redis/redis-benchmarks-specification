@@ -1564,3 +1564,51 @@ def test_wait_for_bgsave_late_info_cannot_pass_deadline():
         side_effect=[0, 0, 2],
     ):
         assert wait_for_bgsave_completion(conn, 1) == (False, 2)
+
+
+def _spin_single_node_cluster(tmp_path, artifact_bytes):
+    """Run spin_docker_cluster_redis against a fake artifact; return the command
+    handed to the container."""
+    from unittest.mock import MagicMock, patch
+
+    (tmp_path / "redis-server").write_bytes(artifact_bytes)
+    node = MagicMock()
+    node.execute_command.return_value = "cluster_state:ok"
+    with patch(
+        "redis_benchmarks_specification.__self_contained_coordinator__.docker.start_redis_container"
+    ) as start, patch(
+        "redis_benchmarks_specification.__self_contained_coordinator__.docker.redis.StrictRedis",
+        return_value=node,
+    ):
+        spin_docker_cluster_redis(
+            1,
+            1,
+            0,
+            Mock(),
+            {},
+            [],
+            6379,
+            "redis:latest",
+            str(tmp_path),
+        )
+    return start.call_args[0][0]
+
+
+def test_spin_docker_cluster_redis_waives_only_when_the_build_knows_the_config(
+    tmp_path,
+):
+    """End to end through the probe: the waiver reaches the container command
+    line for a build that has the config, and is absent for one that predates it."""
+    flag = "--{}".format(CLUSTER_BUS_PORT_PROTECTED_MODE)
+
+    newer = tmp_path / "newer"
+    newer.mkdir()
+    cmd = _spin_single_node_cluster(
+        newer, b"\x7fELF" + CLUSTER_BUS_PORT_PROTECTED_MODE.encode() + b"\x00"
+    )
+    assert flag in cmd
+
+    older = tmp_path / "older"
+    older.mkdir()
+    cmd = _spin_single_node_cluster(older, b"\x7fELF cluster-enabled\x00")
+    assert flag not in cmd
