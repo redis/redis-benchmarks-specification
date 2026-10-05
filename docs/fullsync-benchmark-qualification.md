@@ -30,8 +30,13 @@ when interpreting both timing and variability.
 
 These specs require server builds that recognize `repl-rdb-channel`; confirm
 capability with `CONFIG GET repl-rdb-channel` during runner qualification before
-launching the full dataset. Unsupported revisions are outside this suite's
-scope. The directive is pinned to `no` because newer builds can default to the
+launching the full dataset. The minimum supported revision is Redis 8.0 (the
+directive was added by redis/redis#13732). The coordinator has no spec-level
+minimum-version gate and passes `configuration-parameters` verbatim as command-line
+flags, so an older build exits at startup on the unknown directive and the run
+fails instead of being skipped. Trigger these specs only against 8.0+ revisions,
+including the baseline side of a comparison. Unsupported revisions are outside
+this suite's scope. The directive is pinned to `no` because newer builds can default to the
 separate RDB channel, which would change the transfer route between revisions.
 
 The 80g memory request budgets both 20M-key copies and additional overhead, not

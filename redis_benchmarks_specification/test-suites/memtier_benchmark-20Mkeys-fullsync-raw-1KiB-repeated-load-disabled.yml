@@ -16,7 +16,12 @@ description: 'Initial full sync of 20M keys with repeated 1024-byte RAW string v
 
   its throughput and profiles do not measure the sync phase.
 
-  Requires a server build supporting repl-rdb-channel; older builds are outside this suite.
+  Requires a server build that recognizes repl-rdb-channel (Redis 8.0 or later;
+
+  added by redis/redis#13732). Older revisions abort at startup on the unknown
+
+  directive, so neither side of a comparison may be a pre-8.0 build.
+
 
   See docs/fullsync-benchmark-qualification.md before accepting performance results.
 
@@ -48,7 +53,6 @@ dbconfig:
     counts required.
 tested-commands:
 - set
-- get
 redis-topologies:
 - oss-standalone-01-replicas
 build-variants:

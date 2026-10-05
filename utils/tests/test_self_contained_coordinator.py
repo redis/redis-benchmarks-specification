@@ -889,7 +889,9 @@ def test_stop_and_remove_container_safe_409_already_in_progress():
             super().__init__(
                 "409 Client Error: Conflict",
                 response=None,
-                explanation=("removal of container abc123 is already in progress"),
+                explanation=(
+                    "removal of container abc123 is already in progress"
+                ),
             )
 
         def __str__(self):
