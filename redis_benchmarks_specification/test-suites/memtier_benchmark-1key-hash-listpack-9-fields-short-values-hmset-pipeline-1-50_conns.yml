@@ -30,18 +30,21 @@ description: >
      itself larger, so each lookup walks more bytes to reach the same field.
 
   Client sizing: 50 connections are spread over 10 memtier threads (-c 5 -t 10) with
-  cpus: '10', matching every other _conns spec in this suite. The report reaches 280-290k
-  ops/sec at pipeline 1; concentrating that on 2 threads risks the load generator clipping
-  first, which would mask a server-side delta on both sides of a comparison -- the same
-  false-negative failure mode as -c 1, reached from the client side (see #485/#486/#487,
-  where memtier ran at 81-91% of its thread budget).
+  cpus: '10', the same thread-per-CPU sizing as the suite's other _conns specs. The report
+  reaches 280-290k ops/sec at pipeline 1; with fewer client threads the load generator could
+  clip before the server does, which would mask a server-side delta on both sides of a
+  comparison -- the same false-negative failure mode as -c 1, reached from the client side
+  (see #485/#486/#487, where memtier ran at 81-91% of its thread budget).
 
   Values are 3-20 bytes and there are 9 fields, so the hash stays under
-  hash-max-listpack-entries=128 and hash-max-listpack-value=64 and remains listpack-encoded
-  throughout. Metric of interest: Ops/sec (higher is better).
+  hash-max-listpack-entries=512 and hash-max-listpack-value=64, both pinned explicitly in
+  dbconfig so a future default change cannot silently flip the encoding, and remains
+  listpack-encoded throughout. Metric of interest: Ops/sec (higher is better).
 dbconfig:
   configuration-parameters:
     save: '""'
+    hash-max-listpack-entries: '512'
+    hash-max-listpack-value: '64'
   check:
     keyspacelen: 1
   preload_tool:
