@@ -1,0 +1,1084 @@
+{
+  "date": "2026-09-21",
+  "scope": "Single-revision repeatability on one x86 AWS m7i.metal-24xl host with EBS-backed data; no performance improvement, CPU sensitivity or cross-platform claim.",
+  "metric": "ReplicationFullSyncSecondsV2",
+  "unit": "seconds",
+  "server_commit_from_build_metadata": "16e021b465fbbc73d5f070b4da5ce9f5ee4baea1",
+  "server_binary_sha256": "9eaa6dc7db23c2d49471e21da7fa853a11b6b6ba755105788a01207775f956a3",
+  "server_info": {
+    "redis_version": "8.9.241",
+    "redis_git_sha1": 0,
+    "redis_git_dirty": 1,
+    "redis_build_id": "306be35c3cf91877",
+    "gcc_version": "15.2.0",
+    "mem_allocator": "jemalloc-5.3.0"
+  },
+  "source": {
+    "pr576": "88b4f0bd1e0fcf82b93a91585636c9df625cce14",
+    "pr577": "83fc17033cf3942c2b13fdb0bf0485a660b43650"
+  },
+  "runtime_module_sha256": {
+    "docker.py": "90f8c1bf0c50aa6114a6ddaed50a22941de7abadc324dbfcd6afb4ace1621f38",
+    "self_contained_coordinator.py": "525add7a833ff23fbd6f00d670c6e1fb5f0b37e502c64d0261b251a5549bf8d7"
+  },
+  "client_image": "redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761",
+  "server_container_image_id": "sha256:9ca91b05c7b07d2979f16413e8b2cd6ec8a7c80ffca4121ccab0aeba33f90460",
+  "environment": {
+    "cpu": "Intel Xeon Platinum 8488C",
+    "logical_cpus": 96,
+    "primary_cpuset": "8",
+    "replica_cpuset": "13",
+    "client_cpuset": "9-12",
+    "kernel": "6.14.0-1010-aws",
+    "filesystem": "ext4",
+    "data_storage": "host bind mount on a 256 GiB Amazon EBS device; provisioned IOPS and throughput not independently queried",
+    "cpu_governor": "performance",
+    "primary_smt_siblings": "8,56",
+    "replica_smt_siblings": "13,61",
+    "network": "same-host Docker host networking",
+    "memory_request": "80g",
+    "container_memory_limit_bytes": 0,
+    "swap_enabled": false
+  },
+  "storage_diagnostics": {
+    "scope": "Late-added whole-device observations. Only adjacent samples both in the same initial-sync phase are included. This phase includes replica startup outside the V2 clock. Boundary intervals and earlier runs are absent. No provisioned EBS performance tier is inferred.",
+    "runs": {
+      "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": {
+        "seconds": 32.01159477233887,
+        "read_bytes": 0,
+        "write_bytes": 667648,
+        "read_ios": 0,
+        "write_ios": 125,
+        "read_ms": 0,
+        "write_ms": 72,
+        "weighted_io_ms": 72,
+        "io_ticks_ms": 9,
+        "intervals": 16,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 0.01989025396979556,
+        "median_interval_write_mib_s": 0.0,
+        "max_interval_write_mib_s": 0.3182363082666377,
+        "average_write_await_ms": 0.576,
+        "weighted_average_queue": 0.002249185037860563
+      },
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": {
+        "seconds": 30.01119589805603,
+        "read_bytes": 0,
+        "write_bytes": 581632,
+        "read_ios": 0,
+        "write_ios": 116,
+        "read_ms": 0,
+        "write_ms": 102,
+        "weighted_io_ms": 102,
+        "io_ticks_ms": 18,
+        "intervals": 15,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 0.018482685657852434,
+        "median_interval_write_mib_s": 0.0,
+        "max_interval_write_mib_s": 0.2460001429967349,
+        "average_write_await_ms": 0.8793103448275862,
+        "weighted_average_queue": 0.0033987316049143854
+      },
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": {
+        "seconds": 192.0680730342865,
+        "read_bytes": 532480,
+        "write_bytes": 20886315008,
+        "read_ios": 130,
+        "write_ios": 165042,
+        "read_ms": 1005,
+        "write_ms": 2552096,
+        "weighted_io_ms": 2553101,
+        "io_ticks_ms": 149713,
+        "intervals": 96,
+        "mean_read_mib_s": 0.0026439193770083236,
+        "mean_write_mib_s": 103.7066799954007,
+        "median_interval_write_mib_s": 125.0293923621587,
+        "max_interval_write_mib_s": 145.4856626563884,
+        "average_write_await_ms": 15.463312368972746,
+        "weighted_average_queue": 13.292688158246063
+      },
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": {
+        "seconds": 32.0115909576416,
+        "read_bytes": 0,
+        "write_bytes": 1568768,
+        "read_ios": 0,
+        "write_ios": 261,
+        "read_ms": 0,
+        "write_ms": 169,
+        "weighted_io_ms": 169,
+        "io_ticks_ms": 26,
+        "intervals": 16,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 0.046736001093468364,
+        "median_interval_write_mib_s": 0.0,
+        "max_interval_write_mib_s": 0.4158696746442136,
+        "average_write_await_ms": 0.6475095785440613,
+        "weighted_average_queue": 0.005279337731874192
+      },
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": {
+        "seconds": 72.02397727966309,
+        "read_bytes": 4096,
+        "write_bytes": 790982656,
+        "read_ios": 1,
+        "write_ios": 6493,
+        "read_ms": 3,
+        "write_ms": 21178,
+        "weighted_io_ms": 21180,
+        "io_ticks_ms": 1149,
+        "intervals": 36,
+        "mean_read_mib_s": 5.4235410866472394e-05,
+        "mean_write_mib_s": 10.47345442783535,
+        "median_interval_write_mib_s": 0.014643856942572132,
+        "max_interval_write_mib_s": 40.024882084184384,
+        "average_write_await_ms": 3.2616664099799784,
+        "weighted_average_queue": 0.2940687365508826
+      },
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": {
+        "seconds": 192.066965341568,
+        "read_bytes": 237568,
+        "write_bytes": 20886720512,
+        "read_ios": 58,
+        "write_ios": 165132,
+        "read_ms": 534,
+        "write_ms": 2668994,
+        "weighted_io_ms": 2669527,
+        "io_ticks_ms": 151145,
+        "intervals": 96,
+        "mean_read_mib_s": 0.0011796016019573479,
+        "mean_write_mib_s": 103.7092915526948,
+        "median_interval_write_mib_s": 125.03690516162038,
+        "max_interval_write_mib_s": 137.0464031236284,
+        "average_write_await_ms": 16.162790979337743,
+        "weighted_average_queue": 13.89893881674325
+      },
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": {
+        "seconds": 30.010611295700073,
+        "read_bytes": 0,
+        "write_bytes": 69632,
+        "read_ios": 0,
+        "write_ios": 2,
+        "read_ms": 0,
+        "write_ms": 2,
+        "weighted_io_ms": 3,
+        "io_ticks_ms": 2,
+        "intervals": 15,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 0.0022127589920007628,
+        "median_interval_write_mib_s": 0.0,
+        "max_interval_write_mib_s": 0.03319088704423573,
+        "average_write_await_ms": 1.0,
+        "weighted_average_queue": 9.996464152097564e-05
+      },
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": {
+        "seconds": 70.02289271354675,
+        "read_bytes": 0,
+        "write_bytes": 792526848,
+        "read_ios": 0,
+        "write_ios": 6607,
+        "read_ms": 0,
+        "write_ms": 18242,
+        "weighted_io_ms": 18241,
+        "io_ticks_ms": 982,
+        "intervals": 35,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 10.79379144034961,
+        "median_interval_write_mib_s": 0.023430062025168775,
+        "max_interval_write_mib_s": 36.023282483093055,
+        "average_write_await_ms": 2.7610110488875437,
+        "weighted_average_queue": 0.26050052051721456
+      },
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": {
+        "seconds": 30.01062297821045,
+        "read_bytes": 0,
+        "write_bytes": 176128,
+        "read_ios": 0,
+        "write_ios": 22,
+        "read_ms": 0,
+        "write_ms": 19,
+        "weighted_io_ms": 19,
+        "io_ticks_ms": 2,
+        "intervals": 15,
+        "mean_read_mib_s": 0.0,
+        "mean_write_mib_s": 0.00559697644803827,
+        "median_interval_write_mib_s": 0.0,
+        "max_interval_write_mib_s": 0.08200116162592357,
+        "average_write_await_ms": 0.8636363636363636,
+        "weighted_average_queue": 0.0006331091498432127
+      },
+      "r5-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": {
+        "seconds": 192.06770968437195,
+        "read_bytes": 368640,
+        "write_bytes": 20885704704,
+        "read_ios": 90,
+        "write_ios": 164957,
+        "read_ms": 840,
+        "write_ms": 2617216,
+        "weighted_io_ms": 2618055,
+        "io_ticks_ms": 151044,
+        "intervals": 96,
+        "mean_read_mib_s": 0.0018304091852697597,
+        "mean_write_mib_s": 103.70384584156203,
+        "median_interval_write_mib_s": 125.04804545186903,
+        "max_interval_write_mib_s": 145.94699140230415,
+        "average_write_await_ms": 15.86604994028747,
+        "weighted_average_queue": 13.630896126695596
+      }
+    },
+    "cpu_scope": "Per-container CPU counter deltas over available initial-sync phase samples. This includes some startup outside the V2 timer and omits boundary sample intervals. No CPU-frequency or pipeline-stall attribution.",
+    "cpu_by_run": {
+      "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 192.0897181034088,
+          "cpu_seconds": 72.927282,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 192.0897181034088,
+          "cpu_seconds": 42.96227,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.013983249664307,
+          "cpu_seconds": 25.378211,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.013983249664307,
+          "cpu_seconds": 21.124929,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 72.0310206413269,
+          "cpu_seconds": 24.134284,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 72.0310206413269,
+          "cpu_seconds": 45.656018,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.01443338394165,
+          "cpu_seconds": 26.100627,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.01443338394165,
+          "cpu_seconds": 21.857778,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 32.01701235771179,
+          "cpu_seconds": 27.036351,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 32.01701235771179,
+          "cpu_seconds": 22.685774,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 70.03081464767456,
+          "cpu_seconds": 24.232355,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 70.03081464767456,
+          "cpu_seconds": 44.041852,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.01470971107483,
+          "cpu_seconds": 26.817097,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.01470971107483,
+          "cpu_seconds": 22.426135,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 192.09176015853882,
+          "cpu_seconds": 76.051183,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 192.09176015853882,
+          "cpu_seconds": 42.91951,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 72.03144145011902,
+          "cpu_seconds": 24.307366,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 72.03144145011902,
+          "cpu_seconds": 44.840131,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014492750167847,
+          "cpu_seconds": 25.898473,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014492750167847,
+          "cpu_seconds": 21.651037,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 190.09021639823914,
+          "cpu_seconds": 75.395745,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 190.09021639823914,
+          "cpu_seconds": 41.633205,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014484167099,
+          "cpu_seconds": 26.645404,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014484167099,
+          "cpu_seconds": 21.72881,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014241933822632,
+          "cpu_seconds": 26.005004,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014241933822632,
+          "cpu_seconds": 21.744735,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 190.08904504776,
+          "cpu_seconds": 76.866923,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 190.08904504776,
+          "cpu_seconds": 42.089788,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014622926712036,
+          "cpu_seconds": 26.565424,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014622926712036,
+          "cpu_seconds": 22.344736,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 70.03053736686707,
+          "cpu_seconds": 24.303317,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 70.03053736686707,
+          "cpu_seconds": 43.898504,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 192.09115433692932,
+          "cpu_seconds": 74.918593,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 192.09115433692932,
+          "cpu_seconds": 42.634813,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014804363250732,
+          "cpu_seconds": 25.527806,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014804363250732,
+          "cpu_seconds": 21.242792,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 72.03211069107056,
+          "cpu_seconds": 24.212113,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 72.03211069107056,
+          "cpu_seconds": 45.71238,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 30.014682292938232,
+          "cpu_seconds": 25.60748,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 30.014682292938232,
+          "cpu_seconds": 21.165707,
+          "throttled_seconds": 0.0
+        }
+      ],
+      "r5-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": [
+        {
+          "cpuset": "8",
+          "observed_seconds": 192.08643341064453,
+          "cpu_seconds": 76.412106,
+          "throttled_seconds": 0.0
+        },
+        {
+          "cpuset": "13",
+          "observed_seconds": 192.08643341064453,
+          "cpu_seconds": 42.762065,
+          "throttled_seconds": 0.0
+        }
+      ]
+    }
+  },
+  "memory": {
+    "sampled_max_aggregate_cgroup_bytes": 75553091584,
+    "min_host_available_kib": 332836048,
+    "scope": "Whole attempt, including file cache, post-timing digest checks and GET. The 80g request was not enforced as a cgroup limit."
+  },
+  "dataset_digests_by_payload": {
+    "random": [
+      "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d"
+    ],
+    "repeated": [
+      "a6099fb726c405e5b9d6cb2e508c03fdb239d99e"
+    ]
+  },
+  "resolved_config": {
+    "save": "",
+    "appendonly": "no",
+    "rdbcompression": "yes",
+    "rdbchecksum": "yes",
+    "repl-diskless-sync": "yes",
+    "repl-diskless-sync-delay": "0",
+    "repl-diskless-load": "disabled or on-empty-db, as named in each cell",
+    "repl-rdb-channel": "no",
+    "maxmemory-policy": "noeviction"
+  },
+  "cells": {
+    "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled": {
+      "raw_seconds": [
+        187.7842757795006,
+        187.85222494788468,
+        187.9425452798605,
+        187.90282235853374,
+        187.88568302243948
+      ],
+      "mean_seconds": 187.8735102776438,
+      "median_seconds": 187.88568302243948,
+      "sample_sd_seconds": 0.05955893353402382,
+      "cv_percent": 0.031701613200289,
+      "min_seconds": 187.7842757795006,
+      "max_seconds": 187.9425452798605,
+      "range_percent_of_mean": 0.08424258434624368,
+      "all_attempts_sensitivity": {
+        "raw_seconds": [
+          187.80679235607386,
+          187.7842757795006,
+          187.85222494788468,
+          187.9425452798605,
+          187.90282235853374,
+          187.88568302243948
+        ],
+        "mean_seconds": 187.8623906240488,
+        "median_seconds": 187.86895398516208,
+        "sample_sd_seconds": 0.059830539253827,
+        "cv_percent": 0.03184806658484411,
+        "min_seconds": 187.7842757795006,
+        "max_seconds": 187.9425452798605,
+        "range_percent_of_mean": 0.08424757070009962
+      },
+      "errors": [],
+      "pass_gate": true
+    },
+    "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db": {
+      "raw_seconds": [
+        27.130805203691125,
+        27.1470397002995,
+        28.01051747240126,
+        26.994907585904002,
+        27.196554290130734
+      ],
+      "mean_seconds": 27.295964850485326,
+      "median_seconds": 27.1470397002995,
+      "sample_sd_seconds": 0.40637414867373034,
+      "cv_percent": 1.4887700467803942,
+      "min_seconds": 26.994907585904002,
+      "max_seconds": 28.01051747240126,
+      "range_percent_of_mean": 3.720732687268248,
+      "all_attempts_sensitivity": {
+        "raw_seconds": [
+          27.130805203691125,
+          27.1470397002995,
+          28.01051747240126,
+          26.994907585904002,
+          27.196554290130734
+        ],
+        "mean_seconds": 27.295964850485326,
+        "median_seconds": 27.1470397002995,
+        "sample_sd_seconds": 0.40637414867373034,
+        "cv_percent": 1.4887700467803942,
+        "min_seconds": 26.994907585904002,
+        "max_seconds": 28.01051747240126,
+        "range_percent_of_mean": 3.720732687268248
+      },
+      "errors": [],
+      "pass_gate": true
+    },
+    "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled": {
+      "raw_seconds": [
+        68.46390434913337,
+        68.54869888350368,
+        68.6349774505943,
+        68.65822015888989,
+        68.4802937284112
+      ],
+      "mean_seconds": 68.55721891410649,
+      "median_seconds": 68.54869888350368,
+      "sample_sd_seconds": 0.08795641619059628,
+      "cv_percent": 0.12829635971785047,
+      "min_seconds": 68.46390434913337,
+      "max_seconds": 68.65822015888989,
+      "range_percent_of_mean": 0.28343595734239235,
+      "all_attempts_sensitivity": {
+        "raw_seconds": [
+          68.46390434913337,
+          68.54869888350368,
+          68.6349774505943,
+          68.65822015888989,
+          68.4802937284112
+        ],
+        "mean_seconds": 68.55721891410649,
+        "median_seconds": 68.54869888350368,
+        "sample_sd_seconds": 0.08795641619059628,
+        "cv_percent": 0.12829635971785047,
+        "min_seconds": 68.46390434913337,
+        "max_seconds": 68.65822015888989,
+        "range_percent_of_mean": 0.28343595734239235
+      },
+      "errors": [],
+      "pass_gate": true
+    },
+    "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db": {
+      "raw_seconds": [
+        27.192637007683516,
+        27.243077624589205,
+        26.846711656078696,
+        27.094623494893312,
+        27.24607127159834
+      ],
+      "mean_seconds": 27.124624210968612,
+      "median_seconds": 27.192637007683516,
+      "sample_sd_seconds": 0.16698934949677616,
+      "cv_percent": 0.6156374672621244,
+      "min_seconds": 26.846711656078696,
+      "max_seconds": 27.24607127159834,
+      "range_percent_of_mean": 1.4723139108343866,
+      "all_attempts_sensitivity": {
+        "raw_seconds": [
+          27.192637007683516,
+          27.243077624589205,
+          26.846711656078696,
+          27.094623494893312,
+          27.24607127159834
+        ],
+        "mean_seconds": 27.124624210968612,
+        "median_seconds": 27.192637007683516,
+        "sample_sd_seconds": 0.16698934949677616,
+        "cv_percent": 0.6156374672621244,
+        "min_seconds": 26.846711656078696,
+        "max_seconds": 27.24607127159834,
+        "range_percent_of_mean": 1.4723139108343866
+      },
+      "errors": [],
+      "pass_gate": true
+    }
+  },
+  "attempts": [
+    {
+      "run_id": "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 0,
+      "status": "failed",
+      "sync_seconds": [
+        187.80679235607386
+      ],
+      "sample_timestamp_ms": 1789988918952,
+      "formal_cohort": false,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": true,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "repetition": 0,
+      "status": "pass",
+      "sync_seconds": [
+        27.130805203691125
+      ],
+      "sample_timestamp_ms": 1789989347226,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "repetition": 0,
+      "status": "pass",
+      "sync_seconds": [
+        68.46390434913337
+      ],
+      "sample_timestamp_ms": 1789989677564,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r0-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "repetition": 0,
+      "status": "pass",
+      "sync_seconds": [
+        27.192637007683516
+      ],
+      "sample_timestamp_ms": 1789989966699,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "repetition": 1,
+      "status": "pass",
+      "sync_seconds": [
+        27.1470397002995
+      ],
+      "sample_timestamp_ms": 1789990256156,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "repetition": 1,
+      "status": "pass",
+      "sync_seconds": [
+        68.54869888350368
+      ],
+      "sample_timestamp_ms": 1789990587618,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "repetition": 1,
+      "status": "pass",
+      "sync_seconds": [
+        27.243077624589205
+      ],
+      "sample_timestamp_ms": 1789990877071,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r1-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 1,
+      "status": "pass",
+      "sync_seconds": [
+        187.7842757795006
+      ],
+      "sample_timestamp_ms": 1789991326207,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "repetition": 2,
+      "status": "pass",
+      "sync_seconds": [
+        68.6349774505943
+      ],
+      "sample_timestamp_ms": 1789991648427,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "repetition": 2,
+      "status": "pass",
+      "sync_seconds": [
+        26.846711656078696
+      ],
+      "sample_timestamp_ms": 1789991930006,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 2,
+      "status": "pass",
+      "sync_seconds": [
+        187.85222494788468
+      ],
+      "sample_timestamp_ms": 1789992372091,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r2-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "repetition": 2,
+      "status": "pass",
+      "sync_seconds": [
+        28.01051747240126
+      ],
+      "sample_timestamp_ms": 1789992654792,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "repetition": 3,
+      "status": "pass",
+      "sync_seconds": [
+        27.094623494893312
+      ],
+      "sample_timestamp_ms": 1789992936012,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 3,
+      "status": "pass",
+      "sync_seconds": [
+        187.9425452798605
+      ],
+      "sample_timestamp_ms": 1789993378456,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "repetition": 3,
+      "status": "pass",
+      "sync_seconds": [
+        26.994907585904002
+      ],
+      "sample_timestamp_ms": 1789993660474,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r3-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "repetition": 3,
+      "status": "pass",
+      "sync_seconds": [
+        68.65822015888989
+      ],
+      "sample_timestamp_ms": 1789993983121,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 4,
+      "status": "pass",
+      "sync_seconds": [
+        187.90282235853374
+      ],
+      "sample_timestamp_ms": 1789994426281,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-on-empty-db",
+      "repetition": 4,
+      "status": "pass",
+      "sync_seconds": [
+        27.196554290130734
+      ],
+      "sample_timestamp_ms": 1789994707494,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-disabled",
+      "repetition": 4,
+      "status": "pass",
+      "sync_seconds": [
+        68.4802937284112
+      ],
+      "sample_timestamp_ms": 1789995030603,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r4-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-repeated-load-on-empty-db",
+      "repetition": 4,
+      "status": "pass",
+      "sync_seconds": [
+        27.24607127159834
+      ],
+      "sample_timestamp_ms": 1789995311816,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "replica_digest": "a6099fb726c405e5b9d6cb2e508c03fdb239d99e",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": null
+    },
+    {
+      "run_id": "r5-memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "test_name": "memtier_benchmark-20Mkeys-fullsync-raw-1KiB-random-load-disabled",
+      "repetition": 5,
+      "status": "pass",
+      "sync_seconds": [
+        187.88568302243948
+      ],
+      "sample_timestamp_ms": 1789995766781,
+      "formal_cohort": true,
+      "primary_keys": 20000000,
+      "replica_keys": 20000000,
+      "primary_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "replica_digest": "0ab1e8e5b6d65b922da9d004e2b9ec7b0991b20d",
+      "export_verified": true,
+      "post_export_observer_recovery": false,
+      "post_timing_timeout_override": {
+        "original": {
+          "16380": "60",
+          "16381": "60"
+        },
+        "temporary": 600
+      }
+    }
+  ],
+  "limitations": [
+    "Cached build metadata attributes the binary to the recorded commit; INFO reports git_sha1=0 and dirty=1 for the archive build.",
+    "Original first attempt failed in the observation code after successful export; exact original samples were independently recovered, without rerunning or replacing its timing.",
+    "The first random/disabled attempt is diagnostic because process sampling began after its sync. One extra attempt was predeclared for monitoring coverage. All six retained durations must pass the same CV budget.",
+    "Post-timing DEBUG DIGEST exceeded the ordinary replication timeout in the original 20 attempts. Digest equality does not establish later replication continuity. The additional attempt temporarily extends the timeout only after the timing ends.",
+    "Host process sampling found no competing benchmark activity; short-lived activity between snapshots cannot be ruled out.",
+    "The later GET workload is outside initial synchronization and does not support an initial-sync throughput, latency or profiling claim.",
+    "The 50 ms polling interval, INFO latency and loading-related reconnect gaps limit interpretation of small effects.",
+    "Stable EBS throughput can mask CPU or serialization changes. Local-NVMe and EBS must be qualified as separate storage strata. Supplementary physical I/O observation began late and is not available for the entire cohort."
+  ]
+}
