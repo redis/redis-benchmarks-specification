@@ -96,3 +96,24 @@ def test_multi_shard_sums_scalar_fields():
     )
 
     assert overall == {"stats_keyspace_hits": 15}
+
+
+def test_integers_only_drops_float_gauges_but_keeps_integers():
+    """The memory export historically carried every integer field and no float
+    (ratios and percentages were dropped by the old, broken filter); integers_only
+    preserves exactly that set when the filter itself is removed."""
+    conn = FakeConn(
+        {
+            "memory": {
+                "used_memory": 1024,
+                "used_memory_rss": 2048,
+                "mem_fragmentation_ratio": 1.37,
+                "used_memory_peak_perc": 88.5,
+                "allocator_frag_ratio": 1.1,
+            }
+        }
+    )
+
+    _, _, overall = collect_redis_metrics([conn], ["memory"], None, integers_only=True)
+
+    assert overall == {"memory_used_memory": 1024, "memory_used_memory_rss": 2048}

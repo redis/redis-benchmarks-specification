@@ -314,6 +314,7 @@ def collect_redis_metrics(
     redis_conns,
     sections=["memory", "cpu", "commandstats", "latencystats"],
     section_filter=None,
+    integers_only=False,
 ):
     start_time = dt.datetime.utcnow()
     start_time_ms = int((start_time - dt.datetime(1970, 1, 1)).total_seconds() * 1000)
@@ -322,6 +323,8 @@ def collect_redis_metrics(
     multi_shard = False
     if len(redis_conns) > 1:
         multi_shard = True
+    # integers_only drops top-level float fields (ratios, percentages, ...).
+    scalar_types = (int,) if integers_only else (int, float)
     for conn_n, conn in enumerate(redis_conns):
         conn_res = {}
         for section in sections:
@@ -340,7 +343,7 @@ def collect_redis_metrics(
                 # which parses as `(collect and float) or (int)`, so any integer
                 # value bypassed `collect` entirely. Every INFO counter is an
                 # integer, so `section_filter` only ever constrained floats.
-                if collect and type(v) in (int, float):
+                if collect and type(v) in scalar_types:
                     if k not in overall[section]:
                         overall[section][k] = 0
                     overall[section][k] += v
@@ -540,15 +543,18 @@ def exporter_datasink_common(
         ) = collect_redis_metrics(
             redis_conns,
             ["memory"],
-            # Deliberately unfiltered. This call site used to pass a filter of
-            # ["used_memory", "used_memory_dataset"], but it never took effect:
-            # the filter was a no-op for integers (see collect_redis_metrics), so
-            # every integer-valued `memory` field has always been exported. Now
-            # that the filter works, applying it as written would silently drop
-            # series that already exist (used_memory_rss, used_memory_peak, ...).
-            # Keeping it unfiltered preserves what we export today; narrowing it
-            # is a separate decision.
+            # Deliberately unfiltered, integers only. This call site used to pass a
+            # filter of ["used_memory", "used_memory_dataset"], but it never took
+            # effect: it was a no-op for integers (see collect_redis_metrics), so
+            # every integer-valued `memory` field has always been exported, while
+            # every float (mem_fragmentation_ratio, used_memory_peak_perc, ...) was
+            # dropped. Applying the filter as written would silently drop series
+            # that already exist (used_memory_rss, used_memory_peak, ...), and
+            # omitting it would add the float gauges as new series;
+            # integers_only=True preserves exactly what we export today. Narrowing
+            # it is a separate decision.
             None,
+            integers_only=True,
         )
         print(overall_end_time_metrics)
         export_redis_metrics(
