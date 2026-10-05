@@ -1,3 +1,4 @@
+from pathlib import Path
 from redis_benchmarks_specification.__common__.builder_schema import (
     commit_schema_to_stream,
 )
@@ -56,7 +57,11 @@ def flow_1_and_2_api_builder_checks(
     different_build_specs = ["{}.yml".format(build_spec_name)]
     previous_id = ">"
     previous_id, new_builds_count, _ = builder_process_stream(
-        builders_folder, conn, different_build_specs, previous_id
+        builders_folder,
+        conn,
+        different_build_specs,
+        previous_id,
+        builder_datadir=str(Path.home()),
     )
     assert new_builds_count == 1
     return build_spec_name, reply_fields

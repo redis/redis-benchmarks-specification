@@ -807,9 +807,15 @@ def test_every_add_argument_module_is_covered_by_one_guard_or_the_other():
     }
     subprocess_covered = {"__spec__/args.py"}
     scan_only = {"__builder__/builder.py", "__api__/api.py"}
-    assert with_arguments == introspected | subprocess_covered | scan_only, (
+    # Shared registrars: not parser factories themselves, so nothing here can be
+    # introspected directly -- but every flag they add reaches a parser that is,
+    # because the args.py modules above call them. The source scan covers them
+    # unconditionally.
+    shared_registrars = {"__common__/datadir.py"}
+    covered = introspected | subprocess_covered | scan_only | shared_registrars
+    assert with_arguments == covered, (
         "a module gained or lost add_argument; assign it to a guard: "
-        f"{with_arguments ^ (introspected | subprocess_covered | scan_only)}"
+        f"{with_arguments ^ covered}"
     )
 
 

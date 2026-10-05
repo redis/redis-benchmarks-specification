@@ -51,6 +51,13 @@ from redis_benchmarks_specification.__common__.package import (
     populate_with_poetry_data,
     get_version_string,
 )
+from redis_benchmarks_specification.__common__.datadir import (
+    DatadirError,
+    add_datadir_arguments,
+    datadir_is_explicit,
+    private_run_root,
+    resolve_datadir,
+)
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
@@ -192,6 +199,7 @@ def main():
         action="store_true",
         help="Skip automatically clearing pending messages and resetting consumer group position on startup. By default, pending messages are cleared and consumer group is reset to latest position to skip old work and recover from crashes.",
     )
+    add_datadir_arguments(parser, holds_server_data=False)
     args = parser.parse_args()
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
@@ -209,6 +217,23 @@ def main():
             level=LOG_LEVEL,
             datefmt=LOG_DATEFMT,
         )
+
+    # Resolved before ANY stream mutation. A bad --datadir must abort while the
+    # process is still inert: the consumer-group reset below ACKs pending
+    # messages and skips to the stream tail, so validating after it would
+    # discard the fleet's queued work on every supervisor restart.
+    try:
+        datadir = resolve_datadir(args)
+        # The private 0700 parent is interposed ONLY for an explicitly requested
+        # datadir. $HOME is already 0700 and already worked, so defaulting
+        # deployments keep byte-identical behaviour and gain no new startup
+        # failure mode.
+        builder_datadir = (
+            private_run_root(datadir) if datadir_is_explicit(args) else datadir
+        )
+    except DatadirError as e:
+        logging.error(str(e))
+        exit(1)
     logging.info(get_version_string(project_name, project_version))
     builders_folder = os.path.abspath(args.setups_folder + "/builders")
     logging.info("Using package dir {} for inner file paths".format(builders_folder))
@@ -273,6 +298,7 @@ def main():
 
     if args.github_token is not None:
         logging.info("detected a github token. will update as much as possible!!! =)")
+
     previous_id = args.consumer_start_id
     while True:
         try:
@@ -286,6 +312,7 @@ def main():
                 args.github_token,
                 builder_group,
                 builder_id,
+                builder_datadir,
             )
         except Exception as e:
             logging.error(f"Builder stream processing error: {e}")
@@ -332,7 +359,16 @@ def builder_process_stream(
     github_token=None,
     builder_group=None,
     builder_id=None,
+    builder_datadir=None,
 ):
+    if builder_datadir is None:
+        # No silent fallback to the home directory: that is the exact behaviour
+        # --datadir exists to remove, and a caller reaching here has skipped
+        # resolve_datadir() entirely.
+        raise DatadirError(
+            "builder_process_stream requires builder_datadir; call "
+            "resolve_datadir(args) and pass the result."
+        )
     new_builds_count = 0
     auto_approve_github_comments = True
     build_stream_fields_arr = []
@@ -365,7 +401,6 @@ def builder_process_stream(
         # Docker host can exceed 60s for an ordinary, fast call, so a longer
         # client-wide default avoids spurious ReadTimeout failures under load.
         docker_client = docker.from_env(timeout=300)
-        from pathlib import Path
 
         build_request_arch = None
         if b"arch" in testDetails:
@@ -410,7 +445,7 @@ def builder_process_stream(
             )
             build_request_arch = arch
 
-        home = str(Path.home())
+        home = builder_datadir
         if b"git_hash" in testDetails:
             git_hash = testDetails[b"git_hash"]
             logging.info("Received commit hash specifier {}.".format(git_hash))

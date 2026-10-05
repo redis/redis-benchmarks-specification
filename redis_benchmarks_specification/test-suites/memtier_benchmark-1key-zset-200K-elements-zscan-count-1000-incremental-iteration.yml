@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-200K-elements-zscan-count-1000-incremental-iteration
+description: 'Runs memtier_benchmark, for a keyspace length of 1 SORTED SET key. The SORTED SET
+  contains 200K elements and we iterate over it with ZSCAN COUNT 1000: each full walk is ~200
+  cursor round-trips of ~1000 members each, so this measures the reply-construction-dominated
+  cost of a complete ZSCAN traversal of a large sorted set -- the full-walk companion of
+  memtier_benchmark-1key-zset-200K-elements-zscan-count-1000, which re-issues cursor 0 and only
+  ever measures the first page. Every client follows the cursor returned by each reply (memtier --scan-incremental-iteration, which requires --pipeline 1) until the server returns cursor 0, then starts a new walk, so the measurement covers whole traversals rather than the first page only; memtier reports the initial `ZSCAN 0` requests and the `ZSCAN <cursor>` continuations as separate rows and the Totals row (the exported Ops/sec) covers both. Needs a memtier build with ZSCAN cursor iteration (redis/memtier_benchmark#539 or later). Members are short (13B) alphanumeric strings;
+  every member has a constant score (0) -- a single `__key__` occurrence in the preload (score
+  is a literal, not a second `__key__`) so every id in the preload range is written exactly
+  once. Measures Ops/sec. Encoding: skiplist+hashtable (200,000 elements, exceeds
+  zset-max-listpack-entries 128).'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --key-prefix "" --command "ZADD zscan200k 0 zxxxxxx__key__"
+      --command-key-pattern P -n allkeys -c 1 -t 1 --hide-histogram --key-minimum 100000
+      --key-maximum 300000 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-200K-elements-short-alphanumeric
+  dataset_description: This dataset contains 1 sorted set key with 200,000 elements,
+    each member a 13-byte alphanumeric string and every score a constant 0.
+tested-groups:
+- sorted-set
+tested-commands:
+- zscan
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "ZSCAN zscan200k 0 COUNT 1000" --scan-incremental-iteration --pipeline 1
+    -c 50 -t 4 --hide-histogram --test-time 180
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 53

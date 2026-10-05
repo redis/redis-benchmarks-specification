@@ -1,0 +1,70 @@
+version: 0.4
+name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
+description: 'Measure one BGSAVE after preloading 12M RAW string keys with repeated 1024-byte
+
+  values. No concurrent writes, automatic saves, AOF or replicas are enabled.
+
+  RdbLastBgsaveTimeSec is Redis''s whole-second post-fork save duration through
+
+  parent completion handling. RdbLastForkUsec reports fork time separately.
+
+  Neither metric is client throughput, write-tail latency or durable fsync latency.
+
+
+  Use explicit selection and compare ALL_STATS.Totals.RdbLastBgsaveTimeSec
+
+  with lower-better semantics. Whole-second quantization makes this unsuitable
+
+  for small changes. Repeatability on each runner CPU/storage topology must be
+
+  qualified with independent repeated runs before using it as a regression gate.
+
+  The compressible payload is an extreme control, not representative user data.
+
+  Coordinator perf/topdown capture is disabled until collection can cover the save phase accurately.
+
+  '
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-policy: noeviction
+    rdbcompression: 'yes'
+    rdbchecksum: 'yes'
+    appendonly: 'no'
+  check:
+    keyspacelen: 12000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+    tool: memtier_benchmark
+    arguments: --data-size 1024 --ratio 1:0 -n allkeys --pipeline 50 --key-maximum 12000000 --key-pattern
+      P:P --key-minimum 1 --hide-histogram -t 8 -c 25
+  resources:
+    requests:
+      memory: 20g
+  dataset_name: 12Mkeys-string-1KiB-size
+  dataset_description: 12 million string keys with repeated 1024-byte values; exact DBSIZE is enforced.
+  wait_for_bgsave: true
+  skip_throughput_floor: true
+tested-commands:
+- bgsave
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+  tool: memtier_benchmark
+  arguments: --command "BGSAVE" -n 1 -c 1 -t 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+tested-groups:
+- server
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.RdbLastBgsaveTimeSec
+    - $."ALL STATS".Totals.RdbLastForkUsec
+priority: 50

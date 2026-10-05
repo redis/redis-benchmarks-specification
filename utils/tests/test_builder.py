@@ -84,7 +84,11 @@ def test_commit_schema_to_stream_then_build():
                 new_builds_count,
                 build_stream_fields_arr,
             ) = builder_process_stream(
-                builders_folder, conn, different_build_specs, previous_id
+                builders_folder,
+                conn,
+                different_build_specs,
+                previous_id,
+                builder_datadir=str(Path.home()),
             )
             assert new_builds_count == 1
             assert len(build_stream_fields_arr) == 1
@@ -133,7 +137,11 @@ def test_commit_schema_to_stream_then_build_historical_redis():
             different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
-                builders_folder, conn, different_build_specs, previous_id
+                builders_folder,
+                conn,
+                different_build_specs,
+                previous_id,
+                builder_datadir=str(Path.home()),
             )
             assert new_builds_count == 1
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
@@ -216,7 +224,11 @@ def test_cli_build():
             different_build_specs = ["gcc:15.2.0-amd64-debian-bookworm-default.yml"]
             previous_id = ">"
             previous_id, new_builds_count, _ = builder_process_stream(
-                builders_folder, conn, different_build_specs, previous_id
+                builders_folder,
+                conn,
+                different_build_specs,
+                previous_id,
+                builder_datadir=str(Path.home()),
             )
             assert new_builds_count == 1
             assert conn.exists(STREAM_KEYNAME_NEW_BUILD_EVENTS)
@@ -453,6 +465,7 @@ def test_xack_uses_caller_supplied_group_not_default():
             None,  # github_token
             custom_group,  # builder_group — the arch-specific group
             builder_id,
+            str(Path.home()),
         )
 
         # The arch-mismatch path skips the build and returns early with 0
