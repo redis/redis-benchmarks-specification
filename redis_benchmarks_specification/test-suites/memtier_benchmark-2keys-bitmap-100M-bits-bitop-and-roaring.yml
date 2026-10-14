@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-2keys-bitmap-100M-bits-bitop-and-roaring
+description: >
+  Roaring variant of memtier_benchmark-2keys-bitmap-100M-bits-bitop-and. The server runs with
+  bitmap-default-roaring yes, so the preload creates Roaring bitmaps (OBJECT ENCODING
+  bitmap-roaring) instead of plain strings, and the measured command runs against them.
+  Keyspace and client arguments match the string spec, so the two are directly comparable.
+  Needs a build with native compressed bitmaps.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    bitmap-default-roaring: 'yes'
+  check:
+    keyspacelen: 2
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --hide-histogram
+      --command "SETBIT src1 __key__ 1" --command-key-pattern R --key-maximum 100000000 --key-minimum 1 --key-prefix ""
+      --command "SETBIT src2 __key__ 1" --command-key-pattern R --key-maximum 100000000 --key-minimum 1 --key-prefix ""
+      -n 50000 -c 50 -t 2 --pipeline 50 --distinct-client-seed
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 2keys-bitmap-100M-bits-2pct-density-roaring
+  dataset_description: Same keyspace as 2keys-bitmap-100M-bits-2pct-density, created with bitmap-default-roaring yes so every key is a Roaring bitmap.
+tested-commands:
+- bitop
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "BITOP AND dest src1 src2"
+    --command-key-pattern R
+    --key-prefix ""
+    --hide-histogram
+    --test-time 120
+    -c 1
+    -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

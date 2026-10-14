@@ -1,0 +1,43 @@
+version: 0.4
+name: memtier_benchmark-1key-100M-bits-bitmap-bitpos-roaring
+description: >
+  Roaring variant of memtier_benchmark-1key-100M-bits-bitmap-bitpos. The server runs with
+  bitmap-default-roaring yes, so the preload creates Roaring bitmaps (OBJECT ENCODING
+  bitmap-roaring) instead of plain strings, and the measured command runs against them.
+  Keyspace and client arguments match the string spec, so the two are directly comparable.
+  Needs a build with native compressed bitmaps.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    bitmap-default-roaring: 'yes'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"SETBIT" "users" "100000000" "0"'
+  - '"SETBIT" "users" "31" "1"'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-bitmap-100Mbits-bitpos-target31-roaring
+  dataset_description: Same keyspace as 1key-bitmap-100Mbits-bitpos-target31, created with bitmap-default-roaring yes so every key is a Roaring bitmap.
+tested-commands:
+- bitpos
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "BITPOS users 1" -c 50 -t 2 --pipeline 10 --hide-histogram
+    --test-time 120
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 19

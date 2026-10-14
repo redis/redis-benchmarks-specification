@@ -1,0 +1,46 @@
+version: 0.4
+name: memtier_benchmark-4Mkeys-bitmap-setbit-grow-pipeline-10-roaring
+description: >
+  Roaring variant of memtier_benchmark-4Mkeys-bitmap-setbit-grow-pipeline-10. The server runs
+  with bitmap-default-roaring yes, so the preload creates Roaring bitmaps (OBJECT ENCODING
+  bitmap-roaring) instead of plain strings, and the measured command runs against them.
+  Keyspace and client arguments match the string spec, so the two are directly comparable.
+  Needs a build with native compressed bitmaps.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    bitmap-default-roaring: 'yes'
+  check:
+    keyspacelen: 4000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram --key-minimum 1 --key-maximum 4000000 -n 40000
+      --command "SETBIT __key__ 0 1" --command-key-pattern "P" --pipeline 50 -c 50
+      -t 2
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+  dataset_name: 4Mkeys-bitmap-8bits-growable-roaring
+  dataset_description: Same keyspace as 4Mkeys-bitmap-8bits-growable, created with bitmap-default-roaring yes so every key is a Roaring bitmap.
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command "SETBIT __key__ 511 1" --command-key-pattern "P"
+    --key-minimum 1 --key-maximum 4000000 -n 40000 -c 50 -t 2 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 105
