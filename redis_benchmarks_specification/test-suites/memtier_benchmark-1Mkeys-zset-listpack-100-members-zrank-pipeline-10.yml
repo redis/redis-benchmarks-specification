@@ -1,0 +1,44 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-zset-listpack-100-members-zrank-pipeline-10
+description: 'Runs memtier_benchmark, for a keyspace length of 1M SORTED SET keys, each containing
+  100 string members (user:1001 .. user:1100, scores 1..100, listpack encoded, below
+  zset-max-listpack-entries 128). After pre-loading, issues ZRANK on a random key (distinct seed
+  per client) for one of 5 members at ranks 9/29/49/69/89, so on average 50 listpack members are
+  compared per call. Pipeline 10, 4 threads x 50 connections. Many-keys counterpart of
+  memtier_benchmark-1key-zset-listpack-zrank-100-elements-pipeline-10: each ZRANK also pays the
+  keyspace lookup and a cache miss on a cold listpack, and members are strings, so the
+  string-compare path of the listpack scan is exercised instead of the integer one.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1000000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command "ZADD __key__ 1 user:1001 2 user:1002 3 user:1003 4 user:1004 5 user:1005 6 user:1006 7 user:1007 8 user:1008 9 user:1009 10 user:1010 11 user:1011 12 user:1012 13 user:1013 14 user:1014 15 user:1015 16 user:1016 17 user:1017 18 user:1018 19 user:1019 20 user:1020 21 user:1021 22 user:1022 23 user:1023 24 user:1024 25 user:1025 26 user:1026 27 user:1027 28 user:1028 29 user:1029 30 user:1030 31 user:1031 32 user:1032 33 user:1033 34 user:1034 35 user:1035 36 user:1036 37 user:1037 38 user:1038 39 user:1039 40 user:1040 41 user:1041 42 user:1042 43 user:1043 44 user:1044 45 user:1045 46 user:1046 47 user:1047 48 user:1048 49 user:1049 50 user:1050 51 user:1051 52 user:1052 53 user:1053 54 user:1054 55 user:1055 56 user:1056 57 user:1057 58 user:1058 59 user:1059 60 user:1060 61 user:1061 62 user:1062 63 user:1063 64 user:1064 65 user:1065 66 user:1066 67 user:1067 68 user:1068 69 user:1069 70 user:1070 71 user:1071 72 user:1072 73 user:1073 74 user:1074 75 user:1075 76 user:1076 77 user:1077 78 user:1078 79 user:1079 80 user:1080 81 user:1081 82 user:1082 83 user:1083 84 user:1084 85 user:1085 86 user:1086 87 user:1087 88 user:1088 89 user:1089 90 user:1090 91 user:1091 92 user:1092 93 user:1093 94 user:1094 95 user:1095 96 user:1096 97 user:1097 98 user:1098 99 user:1099 100 user:1100" --command-key-pattern="P" --key-minimum=1 --key-maximum=1000000 -n 5000 -c 50 -t 4 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1Mkeys-zset-100-string-members-listpack
+  dataset_description: This dataset contains 1M sorted set keys (memtier-1 .. memtier-1000000),
+    each with 100 string members user:1001 .. user:1100 with integer scores 1..100, listpack encoded.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrank
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "ZRANK __key__ user:1010" --command-key-pattern="R" --command "ZRANK __key__ user:1030" --command-key-pattern="R" --command "ZRANK __key__ user:1050" --command-key-pattern="R" --command "ZRANK __key__ user:1070" --command-key-pattern="R" --command "ZRANK __key__ user:1090" --command-key-pattern="R" --distinct-client-seed --key-minimum=1 --key-maximum=1000000 --hide-histogram --test-time 180 --pipeline 10 -c 50 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 72
