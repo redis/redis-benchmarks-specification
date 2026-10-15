@@ -25,6 +25,7 @@ from redis_benchmarks_specification.__cli__.admin import (
     admin_status_command,
     admin_cancel_command,
     admin_summary_command,
+    admin_work_command,
     _format_idle,
     _format_age,
     _get_queue_progress,
@@ -899,3 +900,100 @@ def test_compare_comma_separated_deployment_auto_enable():
         "oss-standalone-04-io-threads",
         "oss-standalone-08-io-threads",
     ]
+
+
+def test_admin_work_command_survives_nil_lag_and_still_lists_the_backlog(capsys):
+    """Redis reports a consumer group's lag as nil once it can no longer
+    derive it -- deleting a single entry is enough -- and redis-py hands
+    that back as None. The work view must neither crash on it nor quietly
+    report an empty queue for a platform that has one, which is the single
+    thing this command exists to answer."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-nil-lag"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        added = []
+        try:
+            added = [conn.xadd(stream, {"f": str(i)}) for i in range(4)]
+            # Read one, so the group carries an entries-read count...
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+            # ...and then delete one it has not read. Redis can no longer
+            # reconcile entries-added - entries-read with what is actually
+            # in the stream, so it gives up and reports lag as nil, while
+            # added[2] and added[3] really are still waiting.
+            conn.xdel(stream, added[1])
+
+            def _name(g):
+                n = g.get("name", g.get(b"name", b""))
+                return n.decode() if isinstance(n, bytes) else n
+
+            assert any(
+                _name(g) == group_name and g.get("lag") is None
+                for g in conn.xinfo_groups(stream)
+            ), "precondition: the group must report a nil lag"
+
+            args = argparse.Namespace(platform=platform)
+            admin_work_command(conn, args)  # must not raise TypeError
+
+            out = capsys.readouterr().out
+            rows = [
+                line
+                for line in out.splitlines()
+                if platform in line
+                and ("PENDING" in line or "QUEUED" in line or "RUNNING" in line)
+            ]
+            # One row is the message already in the PEL; the other two are
+            # added[2] and added[3], which only appear if an unknown lag is
+            # read as "there may be work". Skipping them scores 1 here.
+            assert len(rows) == 3, (
+                "an undelivered entry was not listed; a group whose lag "
+                f"Redis cannot compute is the one most likely to be sitting "
+                f"on a backlog. rows={rows}"
+            )
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            for msg_id in added:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError:
+        pass
+
+
+def test_admin_runners_command_survives_nil_lag(capsys):
+    """The same nil lag reaches seven other call sites that print or add it.
+    admin_runners_command() does `c_pending + lag`, which is where the
+    TypeError actually lands for anyone running --admin-command runners."""
+    try:
+        conn = redis.StrictRedis(decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-nil-lag-runners"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        added = []
+        try:
+            added = [conn.xadd(stream, {"f": str(i)}) for i in range(4)]
+            # A consumer must exist or the group is skipped before the
+            # arithmetic is reached.
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+            conn.xdel(stream, added[1])
+
+            admin_runners_command(conn, argparse.Namespace(platform=platform))
+
+            out = capsys.readouterr().out
+            assert platform in out
+            assert "Queue depth:" in out
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            for msg_id in added:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError:
+        pass

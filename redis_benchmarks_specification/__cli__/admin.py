@@ -237,7 +237,7 @@ def admin_runners_command(conn, args):
                 group_name = group_name.decode()
             group_pending = group.get("pending", 0)
             group_consumers = group.get("consumers", 0)
-            lag = group.get("lag", 0)
+            lag = group.get("lag") or 0
 
             # Extract platform name
             prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
@@ -353,7 +353,7 @@ def admin_builders_command(conn, args):
             group_name = group_name.decode()
         group_pending = group.get("pending", 0)
         group_consumers = group.get("consumers", 0)
-        lag = group.get("lag", 0)
+        lag = group.get("lag") or 0
 
         if group_consumers == 0:
             continue
@@ -646,7 +646,7 @@ def admin_summary_command(conn, args):
             group_name = group.get("name", "")
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
-            lag = group.get("lag", 0)
+            lag = group.get("lag") or 0
             total_lag += lag
 
             grp_prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
@@ -992,7 +992,7 @@ def admin_skip_builders_command(conn, args):
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
             pending = group.get("pending", 0)
-            lag = group.get("lag", 0)
+            lag = group.get("lag") or 0
             consumers = group.get("consumers", 0)
             print(
                 f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
@@ -1016,7 +1016,7 @@ def admin_skip_builders_command(conn, args):
         matched = True
         caller = _get_caller_identity()
         group_pending = group.get("pending", 0)
-        lag = group.get("lag", 0)
+        lag = group.get("lag") or 0
 
         print(f"\nSkipping all work for builder group: {group_name}")
         print(f"  Requested by: {caller}")
@@ -1105,7 +1105,7 @@ def admin_reset_builders_command(conn, args):
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
             pending = group.get("pending", 0)
-            lag = group.get("lag", 0)
+            lag = group.get("lag") or 0
             consumers = group.get("consumers", 0)
             print(
                 f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
@@ -1130,7 +1130,7 @@ def admin_reset_builders_command(conn, args):
         caller = _get_caller_identity()
         pending_count = group.get("pending", 0)
         consumers_count = group.get("consumers", 0)
-        lag = group.get("lag", 0)
+        lag = group.get("lag") or 0
 
         print(f"\nResetting consumer group for builder: {group_name}")
         print(f"  Requested by: {caller}")
@@ -1191,7 +1191,12 @@ def admin_work_command(conn, args):
             group_name = group.get("name", "")
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
-            lag = group.get("lag", 0)
+            # Redis reports lag as nil whenever it cannot derive it -- for
+            # instance once the stream has been trimmed since the group was
+            # created. redis-py surfaces that as None, so a plain
+            # group.get("lag", 0) returns None rather than the intended
+            # default and every comparison below raises TypeError.
+            lag = group.get("lag")
             last_delivered = group.get("last-delivered-id", b"0-0")
             if isinstance(last_delivered, bytes):
                 last_delivered = last_delivered.decode()
@@ -1220,13 +1225,18 @@ def admin_work_command(conn, args):
                 }
 
             # Get lag messages (not yet delivered = waiting in queue for this runner)
-            if lag > 0 and last_delivered != "0-0":
+            # An unknown lag is treated as "there may be work", not as "there is
+            # none": reporting an empty queue for a platform that in fact has one
+            # is the failure mode this command exists to prevent.
+            if last_delivered != "0-0" and (lag is None or lag > 0):
                 # Read messages after the last delivered ID (these are the lag)
                 # Use exclusive range: (last_delivered to get messages AFTER it
                 lag_start = last_delivered
                 try:
                     lag_entries = conn.xrange(
-                        stream, min=f"({lag_start}", count=min(lag, 20)
+                        stream,
+                        min=f"({lag_start}",
+                        count=20 if lag is None else min(lag, 20),
                     )
                     for entry_id, entry_fields in lag_entries:
                         entry_id_str = (
