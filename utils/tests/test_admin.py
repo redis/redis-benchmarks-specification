@@ -225,7 +225,12 @@ def test_topology_filtering_regex():
 def test_generate_benchmark_stream_request_deployment_regexp():
     """Test that deployment_name_regexp is included/excluded correctly in stream fields."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         # Without deployment_name_regexp (default) - should NOT include field
@@ -261,7 +266,12 @@ def test_generate_benchmark_stream_request_deployment_regexp():
 def test_generate_benchmark_stream_request_override_deployment_regexp():
     """Test that override_deployment_regexp is included correctly in stream fields."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         # Without override_deployment_regexp (default) - should NOT include field
@@ -521,7 +531,12 @@ def test_queue_progress_total_no_double_count():
     So total should be pending + running + completed (not + failed).
     """
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         stream_id = "9999999999998-0"
@@ -618,7 +633,12 @@ def test_stream_deployment_name_regexp_roundtrip():
 def test_admin_cancel_command():
     """Test that cancel flushes pending tests for a stream."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         stream_id = "9999999999997-0"
@@ -681,7 +701,12 @@ def test_get_stale_pel_summary_flags_abandoned_message_when_idle():
     heartbeat reports idle/waiting -- the #519 fingerprint: a runner that
     looks perfectly healthy while it silently abandoned a message."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel"
@@ -724,7 +749,12 @@ def test_get_stale_pel_summary_ignores_pending_message_while_running():
     the entire duration of a benchmark run (a full suite can take many
     hours), so idle time alone is not a valid abandonment signal."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel-busy"
@@ -760,7 +790,12 @@ def test_get_stale_pel_summary_combines_both_arch_streams():
     streams (unusual, but not prevented by anything) must report the
     combined count and the oldest of the two ages, not just one arch's."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel-both-arch"
@@ -813,7 +848,12 @@ def test_get_stale_pel_summary_clean_when_no_group():
     """No consumer group at all for this platform must not raise -- e.g. a
     freshly-onboarded runner that has never claimed a message yet."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
         assert _get_stale_pel_summary(conn, "test-platform-never-seen", "waiting") == ""
     except redis.exceptions.ConnectionError:
@@ -909,7 +949,12 @@ def test_admin_work_command_survives_nil_lag_and_still_lists_the_backlog(capsys)
     report an empty queue for a platform that has one, which is the single
     thing this command exists to answer."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-nil-lag"
@@ -969,7 +1014,12 @@ def test_admin_runners_command_survives_nil_lag(capsys):
     admin_runners_command() does `c_pending + lag`, which is where the
     TypeError actually lands for anyone running --admin-command runners."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-nil-lag-runners"
