@@ -1,0 +1,54 @@
+version: 0.4
+name: memtier_benchmark-64keys-16MiB-bitmap-setbit-first-touch-strings-convert-on-first-write
+description: 'Measures the cost of the first write to a string bitmap. 64 keys of 16MiB random bytes (about 50%
+  set bits) are preloaded as plain strings with SET while bitmap-default-roaring is no. The measured run issues
+  exactly one ''SETBIT key 7 1'' per key on a single connection with no pipelining, so every request is a first
+  touch and latency is per command. This spec flips bitmap-default-roaring to yes after the preload, so the first
+  SETBIT on each key converts the string to a native Roaring bitmap (a synchronous O(string length) conversion inside
+  the command) and then performs the write. Compare it with its sibling strings-roaring-off spec: the difference
+  in throughput and in p50/p99 latency is the conversion cost. The SETBIT offset (7) is inside the first byte, so
+  the logical write is the same size for every string size and the difference between sizes is the conversion. Needs
+  a build with native compressed bitmaps.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    bitmap-default-roaring: 'no'
+  check:
+    keyspacelen: 64
+  dataset_name: 64keys-16MiB-bitmap-random-strings-first-touch
+  dataset_description: 64 keys holding 16MiB of random bytes each, loaded as plain strings, one SETBIT per key in
+    the measured run.
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --hide-histogram -R --data-size 16777216 --key-minimum 1 --key-maximum 64 -c 8 -t 1 --pipeline 1
+      -n 8 --command "SET __key__ __data__" --command-key-pattern "P"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 4g
+  init_commands:
+  - '"CONFIG" "SET" "bitmap-default-roaring" "yes"'
+tested-commands:
+- setbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --hide-histogram --pipeline 1 -c 1 -t 1 --key-minimum 1 --key-maximum 64 -n 64 --command "SETBIT __key__
+    7 1" --command-key-pattern "P"
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Setbits."Ops/sec"
+priority: 20
