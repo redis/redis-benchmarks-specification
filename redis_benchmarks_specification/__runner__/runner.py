@@ -43,6 +43,9 @@ from redisbench_admin.run.common import (
 )
 from redisbench_admin.run.metrics import extract_results_table
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
+from redis_benchmarks_specification.__common__.runner_capabilities import (
+    filter_specs_by_runner_capabilities,
+)
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
     get_defaults,
@@ -1462,6 +1465,9 @@ def process_self_contained_coordinator_stream(
                     logging.info("Removing temporary JSON file")
             shutil.rmtree(temporary_dir_client, ignore_errors=True)
             logging.info(f"Removing temporary client dir {temporary_dir_client}")
+
+    # This client-only runner cannot qualify the remote server's storage.
+    testsuite_spec_files = filter_specs_by_runner_capabilities(testsuite_spec_files)
 
     overall_result = True
     results_matrix = []

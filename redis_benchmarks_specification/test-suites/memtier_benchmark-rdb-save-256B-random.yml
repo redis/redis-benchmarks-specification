@@ -1,0 +1,62 @@
+version: 0.4
+required-runner-capabilities:
+- local-disk
+name: memtier_benchmark-rdb-save-256B-random
+description: One synchronous SAVE of 2000000 string keys with fixed 16-byte key names and
+  256-byte RAW values. Primary metric ALL_STATS.Totals.Latency in milliseconds, lower is better;
+  one request, one connection, pipeline 1. Random payload is an incompressible control. Compression
+  and checksum enabled; no expiry, AOF, replicas or concurrent writes. SAVE blocks the main
+  thread; this is serializer time, not BGSAVE fork pause or client tail latency. Use independent
+  triggers. The coordinator enforces exact counts, sampled-byte equality and one successful
+  command. Run on qualified disk runners; not a durable-fsync or cold-storage benchmark.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    appendonly: 'no'
+    rdbcompression: 'yes'
+    rdbchecksum: 'yes'
+    maxmemory-policy: noeviction
+    enable-debug-command: 'yes'
+  check:
+    keyspacelen: 2000000
+  skip_throughput_floor: true
+  low-throughput-benchmark: 'yes'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+    tool: memtier_benchmark
+    arguments: '--data-size 256 --ratio 1:0 -n allkeys --pipeline 50 --key-prefix rdbsize:
+      --key-minimum 10000000 --key-maximum 11999999 --key-pattern P:P --hide-histogram -t
+      4 -c 10 --random-data'
+  resources:
+    requests:
+      memory: 8g
+  rdb_checks:
+    operation: save
+    keyspacelen: 2000000
+    value_size: 256
+    sample_keys:
+    - rdbsize:10000000
+    - rdbsize:11000000
+    - rdbsize:11999999
+tested-commands:
+- save
+tested-groups:
+- server
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+  tool: memtier_benchmark
+  arguments: --command "SAVE" -n 1 -c 1 -t 1 --pipeline 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.Latency
+priority: 50
