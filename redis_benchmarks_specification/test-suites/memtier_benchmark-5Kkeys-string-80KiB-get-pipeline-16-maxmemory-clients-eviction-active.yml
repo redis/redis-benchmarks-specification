@@ -1,0 +1,89 @@
+version: 0.4
+name: memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-eviction-active
+description: |
+  Companion to
+  memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-enabled.
+  Identical workload; the only change is that maxmemory-clients is set BELOW the
+  working set instead of far above it, so that evictClients() actually runs.
+
+  Why both specs are needed. The two of them price two different halves of the
+  client-eviction machinery, and neither one can stand in for the other:
+
+  * The "-enabled" spec pins maxmemory-clients to 1gb, roughly 8x more headroom
+    than the workload can consume, so no client is ever evicted. That makes it
+    the right instrument for the per-pass accounting cost in
+    updateClientMemUsageAndBucket() -- the common path, where the limit is
+    nowhere in sight.
+
+  * It is the WRONG instrument for anything that lives inside evictClients().
+    That function's entire body sits under
+      while (stat_clients_type_memory[NORMAL] + [PUBSUB] >= client_eviction_limit)
+    so with 8x headroom the loop is never entered and work added there costs
+    exactly zero. A change confined to evictClients() would measure as free on
+    the "-enabled" spec no matter how expensive it actually is. This spec exists
+    so that result cannot be mistaken for evidence.
+
+  Shape. maxmemory-clients is 64mb against a working set of roughly 131MB (100
+  connections x pipeline 16 x 80KiB of referenced reply bytes), i.e. about half.
+  The intent is a steady trickle: the loop is entered, frees the largest clients,
+  drops back under the limit and exits, rather than either never running or
+  collapsing the workload in one cliff.
+
+  Metric of interest is the same as the companion spec: main-thread CPU time per
+  operation (cpu_used_cpu_user_main_thread / commandstats_cmdstat_get_calls).
+  Ops/sec is NOT the headline -- at 80KiB per reply on a single-cpu standalone
+  topology the run is bandwidth-bound well before it is command-bound.
+
+  READ evicted_clients ALONGSIDE THE CPU NUMBER, ALWAYS. Eviction is a real cost
+  in this shape and it is paid per evicted client, so a CPU-per-op difference
+  between two builds is only attributable to the accounting work if both builds
+  evicted a comparable number of clients. If evicted_clients differs materially
+  between the arms, the comparison is confounded and the CPU delta should not be
+  quoted. This is the one guard this spec cannot enforce for you.
+
+  The 80KiB value size, the 81910-not-81920 trim and the -R flag carry over from
+  the companion spec unchanged, for the same reasons: copy-avoidance only applies
+  to RAW string objects above a size threshold that moves with the io-thread
+  count (16KiB with none, 64KiB at 2-6, any size at 7+), and 81910 keeps sds's
+  9-byte sdshdr32 header plus NUL inside jemalloc's 81920 size class.
+
+  UNVERIFIED PARAMETER: the churn rate that 64mb actually produces has not been
+  measured -- it is reasoned from the arithmetic above, not observed. If a smoke
+  run shows the workload collapsing into reconnect churn rather than a trickle,
+  the limit is the knob to raise.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-clients: 64mb
+  check:
+    keyspacelen: 5000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 81910 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      5000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
+  resources:
+    requests:
+      memory: 4g
+  dataset_description: 5000 RAW string keys, each holding an 80KiB random value
+    (~410MB), large enough that every GET reply uses reply copy-avoidance.
+tested-groups:
+- string
+tested-commands:
+- get
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum=1 --key-maximum
+    5000 --test-time 120 --pipeline 16 -c 25 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 60
