@@ -134,6 +134,13 @@ def test_sweep_covers_value_sizes_and_routes_through_checks():
         size = check["value_size"]
         count = check["keyspacelen"]
         random = "--random-data" in db["preload_tool"]["arguments"]
+        payload = "random" if random else "repeated"
+        expected_name = f"memtier_benchmark-rdb-{check['operation']}-{size}B-{payload}"
+        assert spec["name"] == path.stem == expected_name
+        command = (
+            "SAVE" if check["operation"] == "save" else "DEBUG RELOAD NOSAVE NOFLUSH"
+        )
+        assert spec["clientconfig"]["arguments"].startswith(f'--command "{command}" ')
         cells.add((size, check["operation"], random))
         assert db["check"]["keyspacelen"] == count
         assert count % 40 == 0
