@@ -128,3 +128,54 @@ def test_legacy_client_runner_cannot_admit_disk_specs():
         )
     load.assert_not_called()
     docker.containers.run.assert_not_called()
+
+
+def test_polling_worker_preserves_startup_capability():
+    conn = MagicMock()
+    conn.xreadgroup.return_value = [
+        (b"stream", [(b"1234-0", {b"run_image": b"image"})])
+    ]
+    with patch.object(
+        coordinator,
+        "process_self_contained_coordinator_stream",
+        return_value=("1234-0", True, 0),
+    ) as process:
+        coordinator.self_contained_coordinator_blocking_read(
+            conn,
+            False,
+            MagicMock(),
+            "/tmp",
+            ">",
+            None,
+            DISK_SPECS,
+            {},
+            "disk-runner",
+            False,
+            [],
+            runner_capabilities="local-disk",
+        )
+    worker_args = process.call_args.args[-1]
+    assert worker_args.runner_capabilities == "local-disk"
+    assert (
+        filter_specs_by_runner_capabilities(DISK_SPECS, worker_args.runner_capabilities)
+        == DISK_SPECS
+    )
+
+
+def test_main_forwards_configured_capability_to_its_infinite_poll_loop():
+    # Guard the startup boundary without starting Docker, Redis or an infinite loop.
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(coordinator.main))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_poll_for_work_with_retry"
+    ]
+    assert len(calls) == 1
+    value = next(k.value for k in calls[0].keywords if k.arg == "runner_capabilities")
+    assert isinstance(value, ast.Attribute) and value.attr == "runner_capabilities"
+    assert isinstance(value.value, ast.Name) and value.value.id == "args"

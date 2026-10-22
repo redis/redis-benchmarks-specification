@@ -1020,6 +1020,7 @@ def main():
             default_baseline_branch=default_baseline_branch,
             default_metrics_str=default_metrics_str,
             explicit_only=explicit_only,
+            runner_capabilities=args.runner_capabilities,
         )
 
 
@@ -1145,6 +1146,7 @@ def self_contained_coordinator_blocking_read(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     explicit_only=False,
+    runner_capabilities="",
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -1204,6 +1206,7 @@ def self_contained_coordinator_blocking_read(
                 self.topology = ""
 
         args = Args()
+        args.runner_capabilities = runner_capabilities
 
         try:
             (
