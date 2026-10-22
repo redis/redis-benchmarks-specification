@@ -1,4 +1,6 @@
 version: 0.4
+required-runner-capabilities:
+- local-disk
 name: memtier_benchmark-12Mkeys-string-1KiB-bgsave-duration
 description: 'Measure one BGSAVE after preloading 12M RAW string keys with repeated 1024-byte
 

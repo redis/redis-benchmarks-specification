@@ -1,4 +1,6 @@
 version: 0.4
+required-runner-capabilities:
+- local-disk
 name: memtier_benchmark-rdb-load-256B-random
 description: One DEBUG RELOAD NOSAVE NOFLUSH into an empty database of 2000000 string keys
   with fixed 16-byte key names and 256-byte RAW values. Primary metric ALL_STATS.Totals.Latency

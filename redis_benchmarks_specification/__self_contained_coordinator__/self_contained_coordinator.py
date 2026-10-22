@@ -109,6 +109,9 @@ from redisbench_admin.run.common import (
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
+from redis_benchmarks_specification.__common__.runner_capabilities import (
+    filter_specs_by_runner_capabilities,
+)
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
     get_defaults,
@@ -213,6 +216,7 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
                         getattr(args, "exclusive_hardware", False)
                     ),
                     "explicit_only": str(getattr(args, "explicit_only", False)),
+                    "runner_capabilities": getattr(args, "runner_capabilities", ""),
                     # The resolved path, not the raw flag: the flag is empty
                     # for every runner that never set it, which is exactly when
                     # an operator needs to know where data is going.
@@ -1640,6 +1644,11 @@ def process_self_contained_coordinator_stream(
                     testsuite_spec_files,
                     command_groups_regexp,
                     command_regexp,
+                )
+
+                # Trigger selectors can narrow this set but cannot grant capabilities.
+                filtered_test_files = filter_specs_by_runner_capabilities(
+                    filtered_test_files, getattr(args, "runner_capabilities", "")
                 )
 
                 logging.info(

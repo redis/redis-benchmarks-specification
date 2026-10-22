@@ -81,3 +81,21 @@ with `memtier_benchmark-rdb-(save|load)-.*` or individual test names. The two
 BGSAVE controls are selected separately. Verify completed-test counts and fresh
 TimeSeries samples after each trigger; an acknowledged stream alone is not proof
 that any test ran.
+
+### Enforced local-disk runner restriction
+
+All 24 SAVE/load cases and both 12M-key BGSAVE controls declare
+`required-runner-capabilities: [local-disk]`. The coordinator filters these out
+before adding pending work unless its startup configuration includes
+`--runner-capabilities local-disk`. The default capability set is empty.
+Broad suites, exact test selection, and stream `target_platform` fields do not
+grant capabilities and cannot bypass this restriction. The legacy client-only
+runner always excludes these tests because it cannot qualify server storage.
+
+Enable this capability only on dedicated local-disk benchmark runners after
+verifying that their data directory is on local instance storage. Keep
+`--explicit-only`, the storage-specific platform identity, and the verified
+data directory. Do not enable it on general-purpose, profiler, or network-volume
+runners. Capability configuration describes an operator-qualified machine; it
+does not automatically detect disk locality. The runner heartbeat reports its
+configured capabilities for deployment verification.
