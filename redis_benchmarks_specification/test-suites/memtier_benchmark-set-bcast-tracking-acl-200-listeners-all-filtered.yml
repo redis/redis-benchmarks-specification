@@ -43,4 +43,9 @@ clientconfigs:
     requests:
       cpus: '4'
       memory: 1g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.TrackingListenersAttached
+    - $."ALL STATS".Totals.MemClientsNormalAtWindowEnd
 priority: 50
