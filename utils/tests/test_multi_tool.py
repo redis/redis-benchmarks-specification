@@ -844,6 +844,27 @@ def test_run_client_configs_does_not_count_other_tracking_clients(tmp_path, capl
     assert "50 tracking clients were connected before" in caplog.text
 
 
+def test_run_client_configs_aborts_when_the_end_read_fails(tmp_path):
+    """Once the baseline was read, a failed read at the end of the window must
+    not let the run through without its listener check."""
+    import redis
+
+    _write_memtier_output(tmp_path)
+    bg, fg, docker_client = _bg_and_fg(listeners=2)
+    conn = _tracking_conn(_info(0), redis.exceptions.ConnectionError("gone"))
+
+    with pytest.raises(RuntimeError, match="Could not read the tracking listeners"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+            redis_conns=[conn],
+        )
+
+    bg.remove.assert_called_with(force=True)
+
+
 def test_run_client_configs_skips_count_when_server_lacks_tracking_clients(tmp_path):
     payload = _write_memtier_output(tmp_path)
     bg, fg, docker_client = _bg_and_fg(listeners=2)

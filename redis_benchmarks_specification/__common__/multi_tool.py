@@ -887,6 +887,14 @@ def run_client_configs(
             f"aborting."
         )
 
+    # The baseline was read, so the server reports tracking clients: an end read
+    # that fails leaves the run unverified, which is what the check is for.
+    if listener_baseline is not None and listener_end is None:
+        raise RuntimeError(
+            "Could not read the tracking listeners at the end of the measured "
+            "window; aborting."
+        )
+
     attached_listeners = None
     if listener_end is not None:
         attached_listeners = (
