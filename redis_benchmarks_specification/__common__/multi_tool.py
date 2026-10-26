@@ -19,6 +19,7 @@ import os
 import re
 from dataclasses import dataclass, field
 import tempfile
+import time
 from typing import List, Optional
 
 import docker
@@ -28,6 +29,18 @@ from redis_benchmarks_specification.__common__.spec import (
     extract_client_container_images,
     extract_client_tools,
 )
+
+# bcast-listener prints a JSON line carrying this message once every listener is
+# attached and tracking. Measuring clients start only after it: started next to a
+# running writer, the helper attaches part of its listeners and then stalls, so the
+# 100- and 1000-listener suites both measured ~50 (#584).
+BACKGROUND_READY_MARKER = "listeners are ready"
+BACKGROUND_READY_POLL_SECONDS = 0.2
+
+# Keys added to the measured client's "ALL STATS".Totals for runs with background
+# helpers; the bcast-tracking specs export them next to Ops/sec.
+TRACKING_LISTENERS_ATTACHED = "TrackingListenersAttached"
+MEM_CLIENTS_NORMAL_AT_WINDOW_END = "MemClientsNormalAtWindowEnd"
 
 
 @dataclass
@@ -50,6 +63,7 @@ class MultiToolResult:
     results: list  # per-client {client_index, stdout, config, tool, image}
     memtier_output_filename: Optional[str]  # basename of the measured client's JSON
     background_failures: list = field(default_factory=list)
+    attached_listeners: Optional[int] = None  # helpers' tracking clients at the end
 
 
 def remove_started_containers(containers):
@@ -177,6 +191,114 @@ def stop_background_helper(container_info):
                 f"Background helper {client_index} cleanup error: {cleanup_error}"
             )
     return failure
+
+
+def parse_background_ready(logs):
+    """Return a background helper's ready line as a dict, or ``None`` if the
+    helper has not printed it yet.
+
+    bcast-listener writes one flat JSON object per line (``status`` plus the
+    response fields); the ready one carries :data:`BACKGROUND_READY_MARKER` in
+    ``message`` and the attached ``listener_count``.
+    """
+    for line in logs.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            response = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(response, dict) and BACKGROUND_READY_MARKER in str(
+            response.get("message", "")
+        ):
+            return response
+    return None
+
+
+def wait_for_background_ready(container_info, timeout):
+    """Block until a background helper has printed its ready line and return it
+    (see :func:`parse_background_ready`).
+
+    Raises ``RuntimeError`` as soon as the helper stops running before it is
+    ready (e.g. fred's handshake timeout ends the process), or once ``timeout``
+    seconds pass without the ready line.
+    """
+    container = container_info["container"]
+    client_index = container_info["client_index"]
+    client_tool = container_info["client_tool"]
+    started = time.monotonic()
+    while True:
+        logs = container.logs().decode("utf-8", errors="replace")
+        ready = parse_background_ready(logs)
+        if ready is not None:
+            if not isinstance(ready.get("listener_count"), int):
+                raise RuntimeError(
+                    f"Background helper {client_index} ({client_tool}) printed a "
+                    f"ready line without a listener count: {ready}"
+                )
+            logging.info(
+                f"Background helper {client_index} ({client_tool}) ready after "
+                f"{time.monotonic() - started:.1f}s with "
+                f"{ready.get('listener_count')} listeners"
+            )
+            return ready
+        container.reload()
+        status = container.status
+        if status not in ("created", "running"):
+            exit_code = container.attrs.get("State", {}).get("ExitCode")
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) logs:\n{logs}"
+            )
+            raise RuntimeError(
+                f"Background helper {client_index} ({client_tool}) stopped before "
+                f"it was ready (status={status}, exit_code={exit_code})"
+            )
+        if time.monotonic() - started >= timeout:
+            logging.error(
+                f"Background helper {client_index} ({client_tool}) logs:\n{logs}"
+            )
+            raise RuntimeError(
+                f"Background helper {client_index} ({client_tool}) was not ready "
+                f"after {timeout}s"
+            )
+        time.sleep(BACKGROUND_READY_POLL_SECONDS)
+
+
+def read_listener_state(redis_conns):
+    """Read ``tracking_clients`` and ``mem_clients_normal`` from ``INFO``, summed
+    over the distinct servers behind ``redis_conns``: in cluster mode the runner
+    keeps one connection per slot range, so a node can appear more than once.
+
+    Returns ``None`` when a server does not report ``tracking_clients`` or
+    cannot be queried, so the attached-listener check is skipped rather than
+    failing a run on a server that does not expose it. ``mem_clients_normal``
+    is ``None`` when a server does not report it.
+    """
+    state = {"tracking_clients": 0, "mem_clients_normal": 0}
+    seen = set()
+    for redis_conn in redis_conns:
+        try:
+            info = redis_conn.info()
+        except Exception as e:
+            logging.warning(f"Could not read INFO: {e}")
+            return None
+        if info.get("tracking_clients") is None:
+            logging.warning(
+                "The server does not report tracking_clients in INFO; "
+                "skipping the attached-listener check"
+            )
+            return None
+        run_id = info.get("run_id")
+        if run_id is not None and run_id in seen:
+            continue
+        seen.add(run_id)
+        state["tracking_clients"] += int(info["tracking_clients"])
+        if info.get("mem_clients_normal") is None:
+            state["mem_clients_normal"] = None
+        elif state["mem_clients_normal"] is not None:
+            state["mem_clients_normal"] += int(info["mem_clients_normal"])
+    return state
 
 
 def prepare_client_run_specs(
@@ -486,11 +608,23 @@ def run_client_configs(
     timeout_buffer=60,
     on_container_started=None,
     raise_on_nonzero=True,
+    redis_conns=None,
+    background_ready_timeout=120,
 ):
     """Launch every :class:`ClientRunSpec` detached, wait for the FOREGROUND
     (measuring) clients, stop BACKGROUND helpers in a ``finally`` (no leak),
     force-remove all, raise if a background helper exited early, then aggregate
     JSON (memtier is the measured base; pubsub/vector merge on top).
+
+    BACKGROUND helpers are started first, and each must print its ready line
+    within ``background_ready_timeout`` seconds (:func:`wait_for_background_ready`)
+    before anything else starts. When ``redis_conns`` is given, ``INFO`` is read
+    before the helpers start and again after the measuring clients finish, while
+    the helpers still run (:func:`read_listener_state`). Fewer new tracking
+    clients than the helpers reported ready fails the run, like a helper that
+    exited early; otherwise the count and ``mem_clients_normal`` are added to the
+    measured client's ``"ALL STATS".Totals`` as ``TrackingListenersAttached`` and
+    ``MemClientsNormalAtWindowEnd``, for the specs that export them.
 
     ``on_container_started(container, spec)`` is an optional caller hook (e.g.
     the coordinator's profiler attach). ``inject_user`` adds ``user=uid:gid``
@@ -500,6 +634,20 @@ def run_client_configs(
     containers = []
     results = []
 
+    # Tracking clients already on the server (a shared server under the
+    # standalone runner) are not the helpers' listeners.
+    listener_baseline = (
+        read_listener_state(redis_conns)
+        if redis_conns and any(s.is_background for s in run_specs)
+        else None
+    )
+    if listener_baseline is not None and listener_baseline["tracking_clients"]:
+        logging.warning(
+            f"{listener_baseline['tracking_clients']} tracking clients were "
+            f"connected before the background helpers started; they are not "
+            f"counted as listeners, but they still receive invalidations"
+        )
+
     # Pin each client container to a DISJOINT slice of the client cpuset so a
     # measuring client (memtier) and a background helper (e.g. bcast-listener) do
     # not contend for the same cores. Falls back to the shared cpuset when a clean
@@ -508,8 +656,13 @@ def run_client_configs(
     if cpuset_partition:
         logging.info("multi_tool: cpuset split per client -> %s", cpuset_partition)
 
-    # Start all containers simultaneously (detached)
-    for spec in run_specs:
+    # Start all containers detached, background helpers first: each helper is
+    # waited on until it reports ready, so the measuring clients never run
+    # against a partially attached helper.
+    launch_order = [s for s in run_specs if s.is_background] + [
+        s for s in run_specs if not s.is_background
+    ]
+    for spec in launch_order:
         client_index = spec.client_index
         client_tool = spec.client_tool
         client_image = spec.client_image
@@ -601,7 +754,12 @@ def run_client_configs(
             if on_container_started is not None:
                 on_container_started(container, spec)
 
-        except Exception as e:
+            if spec.is_background:
+                containers[-1]["ready"] = wait_for_background_ready(
+                    containers[-1], background_ready_timeout
+                )
+
+        except BaseException as e:
             error_msg = f"Error starting client {client_index}: {e}"
             logging.error(error_msg)
             logging.error(f"Image: {client_image}, Tool: {client_tool}")
@@ -610,7 +768,11 @@ def run_client_configs(
             # started in this loop -- especially long-lived background helpers
             # (bcast-listener) that would otherwise keep tracking connections
             # open until manual cleanup. Force-remove everything started so far.
+            # That includes an interrupt (Ctrl-C) during a helper's readiness
+            # wait, which is re-raised as is.
             remove_started_containers(containers)
+            if not isinstance(e, Exception):
+                raise
             # Fail fast on container startup errors
             raise RuntimeError(f"Failed to start client {client_index}: {e}")
 
@@ -621,6 +783,9 @@ def run_client_configs(
     # whole run); they are stopped once the measuring clients are done.
     foreground = [c for c in containers if not c.get("is_background")]
     background = [c for c in containers if c.get("is_background")]
+    expected_listeners = (
+        sum(c["ready"]["listener_count"] for c in background) if background else None
+    )
     logging.info(
         f"Waiting for {len(foreground)} foreground container(s) to complete "
         f"({len(background)} background helper(s) running)..."
@@ -630,6 +795,7 @@ def run_client_configs(
     # listeners were not active for the full measured window -> the result is
     # invalid. Tracked here and raised after cleanup.
     background_failures = []
+    listener_end = None
 
     try:
         for container_info in foreground:
@@ -692,6 +858,11 @@ def run_client_configs(
                         f"Client {client_index} cleanup error: {cleanup_error}"
                     )
 
+        # The measuring clients are done and the helpers still run: this is the
+        # end of the measured window, the moment to count attached listeners.
+        if listener_baseline is not None:
+            listener_end = read_listener_state(redis_conns)
+
     finally:
         # ALWAYS stop + remove background helpers, even if a measuring client
         # raised above, so listener containers never leak. Also detect helpers
@@ -715,6 +886,31 @@ def run_client_configs(
             f"Tracking listeners were not active for the full measured window; "
             f"aborting."
         )
+
+    # The baseline was read, so the server reports tracking clients: an end read
+    # that fails leaves the run unverified, which is what the check is for.
+    if listener_baseline is not None and listener_end is None:
+        raise RuntimeError(
+            "Could not read the tracking listeners at the end of the measured "
+            "window; aborting."
+        )
+
+    attached_listeners = None
+    if listener_end is not None:
+        attached_listeners = (
+            listener_end["tracking_clients"] - listener_baseline["tracking_clients"]
+        )
+        logging.info(
+            f"{attached_listeners} tracking listeners attached at the end of the "
+            f"measured window ({expected_listeners} expected), "
+            f"mem_clients_normal={listener_end['mem_clients_normal']}"
+        )
+        if attached_listeners < expected_listeners:
+            raise RuntimeError(
+                f"Only {attached_listeners} of {expected_listeners} tracking "
+                f"listeners were attached at the end of the measured window; "
+                f"aborting."
+            )
 
     logging.info(f"Successfully completed {len(foreground)} measuring client(s)")
 
@@ -804,6 +1000,27 @@ def run_client_configs(
                     f"{json_filepath}"
                 )
 
+        # Record the listener state with the measured client's results, as the
+        # coordinator does for its replication sync metrics: the specs that list
+        # these paths in their exporter get them next to Ops/sec. The file is
+        # rewritten because the coordinator reads the measured client's JSON
+        # from disk. It is replaced rather than written into: without an injected
+        # user the client container created it as root.
+        if memtier_json is not None and attached_listeners is not None:
+            totals = memtier_json.setdefault("ALL STATS", {}).setdefault("Totals", {})
+            totals[TRACKING_LISTENERS_ATTACHED] = attached_listeners
+            if listener_end["mem_clients_normal"] is not None:
+                totals[MEM_CLIENTS_NORMAL_AT_WINDOW_END] = listener_end[
+                    "mem_clients_normal"
+                ]
+            fd, rewritten = tempfile.mkstemp(dir=temporary_dir_client, suffix=".json")
+            with os.fdopen(fd, "w") as f:
+                json.dump(memtier_json, f, indent=2)
+            os.chmod(rewritten, 0o644)
+            os.replace(
+                rewritten, os.path.join(temporary_dir_client, memtier_output_filename)
+            )
+
         # Merge JSON outputs from all tools
         if memtier_json and pubsub_json and vector_json:
             # Use memtier as base and add other metrics
@@ -868,4 +1085,5 @@ def run_client_configs(
         results=results,
         memtier_output_filename=memtier_output_filename,
         background_failures=background_failures,
+        attached_listeners=attached_listeners,
     )
