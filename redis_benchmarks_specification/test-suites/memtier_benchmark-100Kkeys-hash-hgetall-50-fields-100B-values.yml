@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-100Kkeys-hash-hgetall-50-fields-100B-values
-description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading HASHes in which
-  the value has a data size of 10 Bytes. After pre-loading the data it issues HGETALL command.
+description: 'Runs memtier_benchmark, for a keyspace length of 100K keys pre-loading HASHes of
+  50 fields in which each value has a data size of 100 Bytes. After pre-loading the data it issues HGETALL command.
   Encoding: hashtable (50 fields x 100B values, exceeds hash-max-listpack-value 64).
   Series note: the client was resized from 4 memtier threads x 50 connections (cpus: ''4'') to -t 16 -c 13 (208 connections, cpus: ''16'') on 2026-10-28, because at 4 threads memtier saturated parsing the large HGETALL replies before the server did (#611). Ops/sec datapoints recorded before 2026-10-28 came from that client-bound layout and should not be compared directly with later ones.'
 dbconfig:
