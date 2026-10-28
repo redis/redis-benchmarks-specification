@@ -4,7 +4,11 @@ description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loadi
   the value has a data size of 10 Bytes. After pre-loading the data it issues HGETALL command.
   Encoding: listpack (50 fields x 10B values, below hash-max-listpack-entries 128 and
   hash-max-listpack-value 64).
-  Series note: the client was resized from 4 memtier threads x 50 connections (cpus: ''4'') to -t 16 -c 13 (208 connections, cpus: ''16'') on 2026-10-28, because at 4 threads memtier saturated parsing the large HGETALL replies before the server did (#611). Ops/sec datapoints recorded before 2026-10-28 came from that client-bound layout and should not be compared directly with later ones.'
+  Series note: on 2026-10-28 the client moved from -c 50 -t 4, cpus: ''4'', to
+  -t 16 -c 13, cpus: ''16'' (#611). Connections go from 200 to 208 (+4%); command, pipeline and
+  preload are unchanged. Ops/sec and latency recorded before 2026-10-28 came from a different
+  load-generator layout and should not be compared directly with later points. At 4 threads memtier used 4.0 of its 4 cores while the server used under one core, so the
+  client was the bottleneck (#611).'
 dbconfig:
   dataset_name: 1Mkeys-hash-50-fields-10B-size
   configuration-parameters:

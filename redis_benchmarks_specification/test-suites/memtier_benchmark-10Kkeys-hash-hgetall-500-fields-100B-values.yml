@@ -3,7 +3,11 @@ name: memtier_benchmark-10Kkeys-hash-hgetall-500-fields-100B-values
 description: 'Runs memtier_benchmark for 10K hash keys with 500 fields of 100B each (hashtable
   encoding). Issues HGETALL command. Encoding: hashtable (500 fields x 100B values, exceeds both
   hash-max-listpack-entries 128 and hash-max-listpack-value 64).
-  Series note: the client was resized from 4 memtier threads x 50 connections (cpus: ''4'') to -t 16 -c 13 (208 connections, cpus: ''16'') on 2026-10-28, because at 4 threads memtier saturated parsing the large HGETALL replies before the server did (#611). Ops/sec datapoints recorded before 2026-10-28 came from that client-bound layout and should not be compared directly with later ones.'
+  Series note: on 2026-10-28 the client moved from -c 50 -t 4, cpus: ''4'', to
+  -t 16 -c 13, cpus: ''16'' (#611). Connections go from 200 to 208 (+4%); command, pipeline and
+  preload are unchanged. Ops/sec and latency recorded before 2026-10-28 came from a different
+  load-generator layout and should not be compared directly with later points. At 4 threads memtier used about 3.1 of its 4 cores while the server was the bottleneck; the resize
+  leaves the client headroom (#611).'
 dbconfig:
   configuration-parameters:
     save: '""'
