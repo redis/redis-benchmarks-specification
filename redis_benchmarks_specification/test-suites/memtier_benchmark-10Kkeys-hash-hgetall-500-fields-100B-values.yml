@@ -2,7 +2,8 @@ version: 0.4
 name: memtier_benchmark-10Kkeys-hash-hgetall-500-fields-100B-values
 description: 'Runs memtier_benchmark for 10K hash keys with 500 fields of 100B each (hashtable
   encoding). Issues HGETALL command. Encoding: hashtable (500 fields x 100B values, exceeds both
-  hash-max-listpack-entries 128 and hash-max-listpack-value 64).'
+  hash-max-listpack-entries 128 and hash-max-listpack-value 64).
+  Series note: the client was resized from 4 memtier threads x 50 connections (cpus: ''4'') to -t 16 -c 13 (208 connections, cpus: ''16'') on 2026-10-28, because at 4 threads memtier saturated parsing the large HGETALL replies before the server did (#611). Ops/sec datapoints recorded before 2026-10-28 came from that client-bound layout and should not be compared directly with later ones.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -33,9 +34,9 @@ clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
   arguments: '--distinct-client-seed --command "HGETALL __key__" --command-key-pattern="R"
-    --key-minimum=1 --key-maximum 10000 --test-time 120 -c 50 -t 4 --hide-histogram'
+    --key-minimum=1 --key-maximum 10000 --test-time 120 -c 13 -t 16 --hide-histogram'
   resources:
     requests:
-      cpus: '4'
+      cpus: '16'
       memory: 4g
 priority: 96

@@ -3,7 +3,8 @@ name: memtier_benchmark-1Mkeys-hash-hget-hgetall-hkeys-hvals-with-100B-values
 description: 'Runs memtier_benchmark, for a keyspace length of 1M keys pre-loading HASHes in which
   the value has a data size of 100 Bytes. After pre-loading the data it issues HGETALL, HGET, HKEYS,
   and HVALS commands. Encoding: hashtable (5 fields x 100B values, exceeds hash-max-listpack-value
-  64).'
+  64).
+  Series note: the client was resized from 4 memtier threads x 50 connections (cpus: ''4'') to -t 16 -c 13 (208 connections, cpus: ''16'') on 2026-10-28, because at 4 threads memtier saturated parsing the large HGETALL replies before the server did (#611). Ops/sec datapoints recorded before 2026-10-28 came from that client-bound layout and should not be compared directly with later ones.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -41,9 +42,9 @@ clientconfig:
   arguments: '"--data-size" "100" --command "HGETALL __key__" --command-key-pattern="R"
     --command "HKEYS __key__" --command-key-pattern="R" --command "HVALS __key__"
     --command-key-pattern="R" --command "HGET __key__ field1" --command-key-pattern="R"
-    --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 50 -t 4 --hide-histogram'
+    --key-minimum=1 --key-maximum 1000000 --test-time 180 -c 13 -t 16 --hide-histogram'
   resources:
     requests:
-      cpus: '4'
+      cpus: '16'
       memory: 2g
 priority: 96
