@@ -1,6 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1key-hash-1K-fields-hgetall
-description: 'Encoding: hashtable (1,000 fields, exceeds hash-max-listpack-entries 128).'
+description: 'Encoding: hashtable (1,000 fields, exceeds hash-max-listpack-entries 128).
+  Series note: on 2026-10-28 the client moved from memtier''s defaults (4 threads x 50 connections, set
+  implicitly), cpus: ''4'', to
+  -t 16 -c 13, cpus: ''16'' (#611). Connections go from 200 to 208 (+4%); command, pipeline and
+  preload are unchanged. Ops/sec and latency recorded before 2026-10-28 came from a different
+  load-generator layout and should not be compared directly with later points. This spec was not measured; it was resized with the rest of the #611 family, where comparable
+  large-reply HGETALL specs were client-bound at 4 threads.'
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -276,9 +282,9 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: --command="HGETALL hash:1000"  --hide-histogram --test-time 180
+  arguments: --command="HGETALL hash:1000"  --hide-histogram --test-time 180 -t 16 -c 13
   resources:
     requests:
-      cpus: '4'
+      cpus: '16'
       memory: 2g
 priority: 23
