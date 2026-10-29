@@ -1,0 +1,91 @@
+version: 0.4
+name: memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-enabled
+description: |
+  Exercises the client-eviction memory-accounting path in clientsCron, which no
+  other spec in this repo reaches today.
+
+  Encoding: RAW string (5000 keys x 80KiB random values, ~410MB dataset). Values
+  are far above the 44-byte embstr threshold, so every value is a RAW sds object
+  and every GET reply is eligible for reply copy-avoidance.
+
+  Metric of interest: main-thread CPU time per operation
+  (cpu_used_cpu_user_main_thread / commandstats_cmdstat_get_calls). Ops/sec is
+  NOT the headline here and should not be read as one -- at 80KiB per reply on a
+  single-cpu standalone topology the run is bandwidth/write-bound well before it
+  is command-bound, so throughput is a poor instrument for a change that costs
+  main-thread CPU in cron. Read the cpu INFO series instead. The slow drain is
+  deliberate rather than a flaw: it is what keeps reply blocks queued.
+
+  Why this workload moves that metric. Two conditions have to hold at once
+  before clientsCron does any of this work, and both are set here on purpose:
+
+  1. maxmemory-clients must be non-zero. updateClientMemUsageAndBucket() returns
+     immediately when clientEvictionAllowed() is false, and that is false
+     whenever maxmemory-clients is 0 -- which is the default and which every
+     other spec in this repo leaves alone. It is pinned to 1gb here. That is
+     ~8x the most this workload can accumulate (100 connections x pipeline 16 x
+     80KiB is ~131MB of referenced reply bytes), so the limit is never
+     approached and no client is ever evicted. The subject is the per-cron-pass
+     accounting cost on the common path where nothing is being evicted, not
+     eviction itself.
+
+  2. Clients must hold replies that reference keyspace objects
+     (reply_bytes_shared > 0, BULK_STR_REF). Copy-avoidance only applies to RAW
+     string objects, to CLIENT_TYPE_NORMAL clients, and above a size threshold
+     that depends on the io-thread count: 16KiB with no io threads, 64KiB at
+     2-6 io threads, and any size at 7 or more. The 80KiB value size clears all
+     three, so this spec creates the condition on the default single-threaded
+     oss-standalone topology and would still create it if the deployment were
+     overridden onto an io-threads topology.
+
+  Value size is 81910 bytes, not a round 81920 (80KiB): sds's 9-byte sdshdr32
+  header plus the NUL terminator would otherwise push an 81920-byte payload one
+  byte past jemalloc's 81920 size class and round the allocation up to 98304
+  (96KiB). Trimming 10 bytes keeps it in the 81920 bin, and 81910 is still
+  comfortably above the 65536 copy-avoidance threshold. (Same reasoning as
+  memtier_benchmark-1400keys-load-string-with-128KiB-values-randomdata-debug-reload,
+  which trims 131072 to 131062 for the 131072 bin.)
+
+  pipeline 16 across 100 connections is what makes the reply lists long enough
+  to be worth walking: the cost of the scan this spec is meant to price is
+  proportional to the number of queued reply blocks per client, not to the
+  value size, so the queue depth is the load-bearing knob.
+
+  -R is set because the values are large: without it the payload would be
+  compressible and the dataset footprint would not be the ~410MB it claims.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-clients: 1gb
+  check:
+    keyspacelen: 5000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 81910 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      5000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
+  resources:
+    requests:
+      memory: 4g
+  dataset_description: 5000 RAW string keys, each holding an 80KiB random value
+    (~410MB), large enough that every GET reply uses reply copy-avoidance.
+tested-groups:
+- string
+tested-commands:
+- get
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum=1 --key-maximum
+    5000 --test-time 120 --pipeline 16 -c 25 -t 4 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 60
