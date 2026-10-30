@@ -1,0 +1,75 @@
+version: 0.4
+name: memtier_benchmark-2keys-zset-4M-elements-50pct-overlap-zintercard
+description: 'Runs memtier_benchmark issuing ZINTERCARD (no LIMIT) over 2 sorted sets of 4,000,000
+  elements each that share 50% of their members: big:1 = m:1..m:4000000 (3-9 byte members) and big:2
+  = m:2000001..m:6000000 (9 byte members), so the reply is always 2000000. Each call walks all 4M
+  members of one input and looks each one up in the other. The dataset is ~230 MB of used_memory on
+  unstable (btree; ~540 MB on 8.10.x), larger than the last-level cache of typical server CPUs, so
+  most lookups into the probed input go to memory. This is the out-of-cache counterpart of the
+  500-element suites. Whichever input is iterated, the hits form one contiguous run in iteration
+  order: the hit/miss sequence is trivially regular, so the suite mostly measures memory traffic.
+  LIMIT is deliberately not used: it would stop every call at the same leading members and keep the
+  touched part of both inputs cache-resident. A call is very long (millions of lookups), so the load
+  is 1 thread x 1 client at pipeline 1, as in the 2M-element ZUNIONSTORE suite, and
+  low-throughput-benchmark opts it out of the minimum throughput floor. The preload checks both
+  cardinalities; on a mismatch it returns an error reply, which the runner logs; it does not abort
+  the run. Encoding: skiplist through 8.10.x, btree (OBJ_ENCODING_BTREE) from 8.12 (4,000,000
+  elements, above zset-max-listpack-entries 128). Metric of interest: Ops/sec as the durable trend
+  metric (with one connection it is just the inverse of per-call latency), plus usec_per_call for
+  zintercard when analyzing a run; commandstats-based usec_per_call is not retained long-term.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2
+  low-throughput-benchmark: 'yes'
+  resources:
+    requests:
+      memory: 2g
+  init_lua: |
+    -- big:1 = m:1..m:4000000, big:2 = m:2000001..m:6000000 (score = index), so the
+    -- intersection is exactly 2,000,000 members (50% of each input). ZADD in
+    -- batches of 500 members. If either key did not reach 4,000,000 the script
+    -- returns an error reply, which the runner logs; it does not abort the run.
+    local function load(key, from, to)
+      local args = {}
+      for i = from, to do
+        args[#args + 1] = i
+        args[#args + 1] = 'm:' .. i
+        if #args == 1000 then
+          redis.call('ZADD', key, unpack(args))
+          args = {}
+        end
+      end
+      if #args > 0 then redis.call('ZADD', key, unpack(args)) end
+    end
+    load('big:1', 1, 4000000)
+    load('big:2', 2000001, 6000000)
+    local c1 = redis.call('ZCARD', 'big:1')
+    local c2 = redis.call('ZCARD', 'big:2')
+    if c1 ~= 4000000 or c2 ~= 4000000 then
+      return redis.error_reply('preload failed: ZCARD big:1=' .. c1 .. ' big:2=' .. c2 .. ', expected 4000000 each')
+    end
+    return c1 + c2
+  dataset_name: 2keys-sorted-set-4M-elements-50pct-overlap
+  dataset_description: big:1 = m:1..m:4000000 and big:2 = m:2000001..m:6000000; intersection =
+    2,000,000.
+tested-commands:
+- zintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINTERCARD 2 big:1 big:2"  --hide-histogram --test-time 180 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+tested-groups:
+- sorted-set
+priority: 50
