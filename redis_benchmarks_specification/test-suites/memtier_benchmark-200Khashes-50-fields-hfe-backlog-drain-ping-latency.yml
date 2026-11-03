@@ -1,0 +1,160 @@
+version: 0.4
+name: memtier_benchmark-200Khashes-50-fields-hfe-backlog-drain-ping-latency
+description: |-
+  Measures client-visible PING tail latency (the metric of interest: p99.9, with
+  p50/p99/p99.99 secondary) while the server drains a synchronized backlog of 10,000,000
+  expired HASH fields. The 200,000 hashes are forced onto the HASHTABLE encoding
+  (`hash-max-listpack-entries 0`, 50 x 10B fields each), so hash-field expiration uses the
+  hashtable/ebuckets active-expire path rather than listpackex.
+
+  Why a synchronized cohort rather than a TTL spread: the subject here is the active
+  sub-expiry CYCLE, not the per-call cost of an expiry command, and specifically the cycle's
+  behaviour when the pending-field backlog at a cron tick far exceeds the per-cycle field
+  quota. memtier's `--expiry-range` only applies to its own native SET path, so an HFE TTL
+  can only come from literal command text; the backlog is instead established by an
+  `init_lua` pass that gives every field the SAME absolute expiration instant after preload,
+  which is the shape the suite had no coverage for. A TTL-spread trickle is deliberately NOT
+  what this spec measures.
+
+  Timing. The cohort comes due 120 s after the init script starts, and the probe runs for
+  180 s, so the drain begins while the probe is already running no matter how long the
+  preload, the init pass and client container startup take (the init_lua comment below
+  explains why that matters and what the 1 ms-TTL version got wrong). The window therefore
+  contains an idle stretch before the due instant and the drain after it; the reported
+  percentiles are over the whole window, so p99.9 is diluted by the idle portion and reads
+  the CYCLE LENGTH rather than the drain duration -- which is the quantity in question.
+  p99.99 is the sharper read on an arm whose drain is short.
+
+  Load model is open-loop on purpose: 1,000 offered ops/sec of PING (4 connections x
+  `--rate-limiting=250`, `--pipeline 1`), far below saturation. PING is used so the probe
+  itself does no keyspace work and cannot lazily expire any of the backlog -- it measures
+  only main-thread availability. Because Redis is single-threaded, any active-expire cycle
+  that overruns delays every in-flight request, so the probe's tail is a direct read of the
+  longest cycle. A closed-loop probe would under-sample the stall (only the in-flight
+  requests would be delayed); the fixed arrival rate makes the number of delayed samples
+  proportional to the stall duration instead.
+
+  `Ops/sec` is exported as a sanity metric only: it should sit at the offered 1,000 ops/sec,
+  and a shortfall means the drain delayed even the offered load.
+
+  Reading the pair: the two files are identical except for the database count, and the
+  difference between their tails isolates the effect of that count on cycle length. One
+  caveat belongs with the result -- if BOTH arms come back flat, that is not evidence the
+  cycle is independent of the database count; it is first of all a sign the backlog was
+  never established. Confirm the init receipt in the run log before reading a null result
+  as a null result.
+
+  This is the default `databases 16` arm.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    appendonly: 'no'
+    # Force HASHTABLE encoding for every hash regardless of field count, so the
+    # 50-field hashes exercise the hashtable/ebuckets HFE path, not listpackex.
+    hash-max-listpack-entries: '0'
+    # The init_lua backlog pass below is a long single script; keep the server from
+    # replying BUSY to the harness health-check while it runs. Raised above the 120 s
+    # cohort offset so a slow preload cannot trip it.
+    busy-reply-threshold: '300000'
+  check:
+    # Valid because the cohort is not due until 120 s after the init pass starts: nothing
+    # has been reclaimed when this check runs, so DBSIZE is still exactly the preload count.
+    keyspacelen: 200000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix ""
+      --data-size 10
+      --command "HSET hfe:__key__ f1 __data__ f2 __data__ f3 __data__ f4 __data__ f5 __data__ f6 __data__ f7 __data__ f8 __data__ f9 __data__ f10 __data__ f11 __data__ f12 __data__ f13 __data__ f14 __data__ f15 __data__ f16 __data__ f17 __data__ f18 __data__ f19 __data__ f20 __data__ f21 __data__ f22 __data__ f23 __data__ f24 __data__ f25 __data__ f26 __data__ f27 __data__ f28 __data__ f29 __data__ f30 __data__ f31 __data__ f32 __data__ f33 __data__ f34 __data__ f35 __data__ f36 __data__ f37 __data__ f38 __data__ f39 __data__ f40 __data__ f41 __data__ f42 __data__ f43 __data__ f44 __data__ f45 __data__ f46 __data__ f47 __data__ f48 __data__ f49 __data__ f50 __data__"
+      --command-key-pattern="P"
+      --key-minimum=1
+      --key-maximum=200001
+      -n 200000
+      -c 1 -t 1
+      --hide-histogram
+      --pipeline 50
+  # Applies the cohort TTL as an ABSOLUTE instant 120 s after the script starts, rather
+  # than a 1 ms relative TTL. Two independent failure modes motivated the change (see the
+  # review discussion on this PR):
+  #
+  #   1. Drain-before-probe. The measured window does not open when this script returns --
+  #      the harness still has to run the memory/keyspace checks and create and start the
+  #      memtier client container. With a 1 ms TTL the backlog came due inside that gap, and
+  #      a fast arm can finish draining before the first PING is ever sent: the reporter of
+  #      redis/redis#16131 measured the full 10M-field drain completing in ~4 s at
+  #      `databases 256`. Both arms would then have reported an idle server, the tails would
+  #      have matched, and the pair would have read as "cycle length does not depend on the
+  #      database count" -- the exact false negative this spec exists to avoid. `Ops/sec`
+  #      would not have caught it, because an idle server also serves the full offered rate.
+  #      Anchoring the due instant to a wall clock makes the start of the drain independent
+  #      of how long the preload, this script, and container startup actually take.
+  #
+  #   2. The post-init keyspace check. `dbconfig.check.keyspacelen` is evaluated AFTER this
+  #      script runs on the standalone runner path. With a 1 ms TTL, fields start being
+  #      reclaimed immediately and hashes are deleted as their last field goes, so DBSIZE
+  #      falls below 200000 and an exact-match check fails for reasons that have nothing to
+  #      do with the preload. With the TTL 120 s out, nothing has expired when the check
+  #      runs and the check is meaningful again.
+  #
+  # If the script itself were to overrun the 120 s offset the cohort would come due while it
+  # is still executing; active expiry cannot run during a script, so the backlog would simply
+  # fire on the first cron tick afterwards. That is the old behaviour -- the offset degrades
+  # gracefully rather than breaking the spec.
+  #
+  # The return value is a receipt: `execute_init_commands()` logs it as "Lua script result"
+  # but swallows any exception, so a script that fails leaves a TTL-less dataset that still
+  # benchmarks cleanly. Checking this line in the run log is what distinguishes "no stall
+  # because the fix works" from "no stall because the backlog was never created".
+  init_lua: |-
+    local t = redis.call('TIME')
+    local due_ms = (tonumber(t[1]) + 120) * 1000
+    for k=1,200000 do
+    redis.call('HPEXPIREAT','hfe:'..k,due_ms,'FIELDS',50,'f1','f2','f3','f4','f5','f6','f7','f8','f9','f10','f11','f12','f13','f14','f15','f16','f17','f18','f19','f20','f21','f22','f23','f24','f25','f26','f27','f28','f29','f30','f31','f32','f33','f34','f35','f36','f37','f38','f39','f40','f41','f42','f43','f44','f45','f46','f47','f48','f49','f50')
+    end
+    local probe = redis.call('HPTTL','hfe:1','FIELDS',1,'f1')
+    return 'hashes=200000 due_ms='..due_ms..' sample_hpttl_ms='..tostring(probe[1])
+  resources:
+    requests:
+      memory: 6g
+  dataset_name: 200Khashes-50-fields-10B-hashtable-hfe
+  dataset_description: 200,000 hashes of 50 10-byte fields each (10,000,000 fields total),
+    HASHTABLE-encoded, with one shared absolute hash-field expiration instant applied to
+    every field after preload.
+# tested-commands/groups reflect the measured client (the PING probe). The HSET
+# preload and the HPEXPIREAT init pass only establish the state being drained.
+tested-commands:
+- ping
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    --command "PING"
+    -c 4 -t 1
+    --rate-limiting=250
+    --pipeline 1
+    --test-time 180
+    --print-percentiles=50,99,99.9,99.99
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Percentile Latencies"."p50.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.00"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.90"
+    - $."ALL STATS".Totals."Percentile Latencies"."p99.99"
+priority: 100
