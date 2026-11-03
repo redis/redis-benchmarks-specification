@@ -1,0 +1,38 @@
+# dataset_name 1key-zset-600K-elements-integer-10B-size: the dataset load is shared verbatim by every spec
+# that uses this dataset.
+version: 0.4
+name: memtier_benchmark-1key-zset-600K-elements-zrangestore-129-elements-rev
+description: 'Runs ZRANGESTORE zset1 zset 0 128 REV: stores the 129 highest-ranked members in reverse rank order (129 results). Per call the server resolves the range, stores the result into the destination and frees the previous destination synchronously (lazyfree-lazy-server-del at its default, no). Metric of interest: server-side usec_per_call of the measured command (INFO commandstats, reset by the harness before the dataset load; the load calls neither ZRANDMEMBER nor ZRANGESTORE); client Ops/sec is secondary. Dataset: 1 sorted set zset: 600,000 members, the strings ''1'' to ''600000'' (1-6 bytes), each scored by its own value. Encoding: btree on unstable, skiplist on 8.10.x and older (above zset-max-listpack-entries 128). Load: 1 x 1 connection, pipeline 1, 120 s. Read-only on the source, so no keyspace drain; the destination key is not counted by keyspacelen.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: -n allkeys "--data-size" "10" --key-prefix "" "--command" "ZADD zset __key__ __key__" "--command-key-pattern" "P" "-c" "1" "-t" "1" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "600001" --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-600K-elements-integer-10B-size
+  dataset_description: 'This dataset contains 1 sorted set key with 600,000 elements, each with an integer score and a data size of 10 bytes.'
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangestore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANGESTORE zset1 zset 0 128 REV" --hide-histogram --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 12
