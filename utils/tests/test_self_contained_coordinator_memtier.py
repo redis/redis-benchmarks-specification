@@ -1571,3 +1571,110 @@ def test_self_contained_coordinator_dockerhub_cluster():
 
     except redis.exceptions.ConnectionError:
         pass
+
+
+def test_self_contained_coordinator_dockerhub_bcast_listeners(monkeypatch):
+    """A multi-tool suite runs only once the bcast-listener helper is ready, and
+    the listeners attached at the end of the measured window are exported."""
+    try:
+        if run_coordinator_tests_dockerhub():
+            monkeypatch.setenv("BENCHMARK_MULTITOOL_ENABLED", "1")
+            db_port = int(os.getenv("DATASINK_PORT", "6379"))
+            conn = redis.StrictRedis(port=db_port)
+            conn.ping()
+            conn.flushall()
+
+            id = "dockerhub"
+            redis_version = "7.4.0"
+            run_image = f"redis:{redis_version}"
+            build_arch = "amd64"
+            testDetails = {}
+            build_os = "test_build_os"
+            build_stream_fields, result = generate_benchmark_stream_request(
+                id,
+                conn,
+                run_image,
+                build_arch,
+                testDetails,
+                build_os,
+                git_version=redis_version,
+            )
+            build_stream_fields["mnt_point"] = ""
+            if result is True:
+                arch_specific_stream = get_arch_specific_stream_name(build_arch)
+                conn.xadd(arch_specific_stream, build_stream_fields)
+
+            running_platform = "fco-ThinkPad-T490"
+            build_runners_consumer_group_create(
+                conn, running_platform, arch=build_arch, id="0"
+            )
+            datasink_conn = redis.StrictRedis(port=db_port)
+            docker_client = docker.from_env()
+            home = str(Path.home())
+            topologies_map = get_topologies(
+                "./redis_benchmarks_specification/setups/topologies/topologies.yml"
+            )
+            testsuite_spec_files = [
+                "./utils/tests/test_data/test-suites/test-memtier-bcast-dockerhub.yml"
+            ]
+            defaults_filename = "./utils/tests/test_data/test-suites/defaults.yml"
+            (
+                _,
+                _,
+                default_metrics,
+                _,
+                _,
+                _,
+            ) = get_defaults(defaults_filename)
+
+            (
+                result,
+                _,
+                number_processed_streams,
+                num_process_test_suites,
+            ) = self_contained_coordinator_blocking_read(
+                conn,
+                True,
+                docker_client,
+                home,
+                ">",
+                datasink_conn,
+                testsuite_spec_files,
+                topologies_map,
+                running_platform,
+                False,
+                [],
+                "",
+                0,
+                6399,
+                1,
+                False,
+                5,
+                default_metrics,
+                "amd64",
+                None,
+                0,
+                10000,
+                "unstable",
+                "",
+                True,
+                False,
+            )
+
+            assert result == True
+            assert number_processed_streams == 1
+            assert num_process_test_suites == 1
+            rts = datasink_conn.ts()
+            attached_keys = datasink_conn.keys(
+                "*by.version*ALL_STATS.Totals.TrackingListenersAttached"
+            )
+            assert len(attached_keys) == 1
+            attached = rts.range(attached_keys[0], "-", "+")
+            assert [value for _, value in attached] == [100]
+            # Exported next to Ops/sec, at the same datapoint time.
+            ops_key = attached_keys[0].replace(b"TrackingListenersAttached", b"Ops/sec")
+            ops = rts.range(ops_key, "-", "+")
+            assert [ts for ts, _ in ops] == [ts for ts, _ in attached]
+
+    except redis.exceptions.ConnectionError:
+        pass

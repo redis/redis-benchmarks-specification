@@ -203,7 +203,17 @@ def _runner_args():
     return type("A", (), {"benchmark_local_install": False, "timeout_buffer": 1})()
 
 
-def _call_run_multiple(docker_client, tmp_path):
+# What bcast-listener prints once its listeners are attached (captured from
+# redis/bcast-tracking-bench:latest); the runner starts the measuring client
+# only after it.
+READY_LINE = (
+    b'{"status":"ok","acl_user_count":0,"listener_count":2,'
+    b'"message":"listeners are ready; press Ctrl-C to stop","mode":"manual",'
+    b'"startup_duration_ms":3.1,"tracking_prefix":"bench:"}'
+)
+
+
+def _call_run_multiple(docker_client, tmp_path, **kwargs):
     from redis_benchmarks_specification.__runner__.runner import run_multiple_clients
 
     return run_multiple_clients(
@@ -227,7 +237,39 @@ def _call_run_multiple(docker_client, tmp_path):
         1,
         "",
         _runner_args(),
+        **kwargs,
     )
+
+
+def test_run_multiple_clients_records_the_attached_listener_count(tmp_path):
+    """The runner hands its redis connections to the engine, and the listeners
+    attached at the end of the window come back in the aggregated results."""
+    import json
+
+    (tmp_path / "benchmark_output_0.json").write_text(
+        json.dumps({"ALL STATS": {"Totals": {"Ops/sec": 1.0}}})
+    )
+    fg = MagicMock()
+    fg.wait.return_value = {"StatusCode": 0}
+    fg.logs.return_value = b"{}"
+    bg = MagicMock()
+    bg.status = "running"
+    bg.logs.return_value = READY_LINE
+    docker_client = MagicMock()
+    docker_client.containers.run.side_effect = [bg, fg]
+    conn = MagicMock()
+    conn.info.side_effect = [
+        {"run_id": "node-1", "tracking_clients": 0, "mem_clients_normal": 0},
+        {"run_id": "node-1", "tracking_clients": 2, "mem_clients_normal": 4096},
+    ]
+
+    aggregated_stdout, _ = _call_run_multiple(
+        docker_client, tmp_path, redis_conns=[conn]
+    )
+
+    totals = json.loads(aggregated_stdout)["ALL STATS"]["Totals"]
+    assert totals["TrackingListenersAttached"] == 2
+    assert totals["MemClientsNormalAtWindowEnd"] == 4096
 
 
 def test_run_multiple_clients_aborts_when_background_helper_exited(tmp_path):
@@ -239,11 +281,12 @@ def test_run_multiple_clients_aborts_when_background_helper_exited(tmp_path):
     fg.wait.return_value = {"StatusCode": 0}
     fg.logs.return_value = b"{}"
     bg = MagicMock()
+    # Ready, then exited during the measured window.
     bg.status = "exited"
     bg.attrs = {"State": {"ExitCode": 1}}
-    bg.logs.return_value = b""
+    bg.logs.return_value = READY_LINE
     docker_client = MagicMock()
-    docker_client.containers.run.side_effect = [fg, bg]
+    docker_client.containers.run.side_effect = [bg, fg]  # helper starts first
 
     with pytest.raises(RuntimeError, match="Background helper"):
         _call_run_multiple(docker_client, tmp_path)
@@ -256,6 +299,8 @@ def test_run_multiple_clients_cleans_up_on_midlaunch_failure(tmp_path):
     import pytest
 
     started = MagicMock()
+    started.status = "running"
+    started.logs.return_value = READY_LINE
     docker_client = MagicMock()
     docker_client.containers.run.side_effect = [started, Exception("pull failed")]
 

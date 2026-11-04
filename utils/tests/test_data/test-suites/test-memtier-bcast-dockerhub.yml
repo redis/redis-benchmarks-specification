@@ -1,0 +1,44 @@
+version: 0.4
+name: memtier_benchmark-set-bcast-tracking-100-listeners
+description: Multi-tool clientconfigs suite for the coordinator tests. A memtier SET
+  writer on 'bench:' runs next to the bcast-listener helper holding 100 RESP3
+  CLIENT TRACKING BCAST listeners on the same prefix.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfigs:
+- run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --test-time 180 -d 16 --key-prefix "bench:" --key-minimum 1 --key-maximum
+    1000 --command "SET __key__ __data__" --command-key-pattern="R" --pipeline 1
+    -c 2 -t 1 --hide-histogram
+  resources:
+    requests:
+      cpus: "1"
+      memory: 1g
+- run_image: redis/bcast-tracking-bench:latest
+  tool: bcast-listener
+  arguments: "--listener-count 100 --tracking-prefix bench:"
+  resources:
+    requests:
+      cpus: "1"
+      memory: 1g
+tested-groups:
+- string
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.TrackingListenersAttached
+    - $."ALL STATS".Totals.MemClientsNormalAtWindowEnd
+priority: 17
