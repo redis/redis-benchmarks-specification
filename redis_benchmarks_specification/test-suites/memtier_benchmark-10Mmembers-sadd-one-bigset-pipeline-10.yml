@@ -1,0 +1,37 @@
+version: 0.4
+name: memtier_benchmark-10Mmembers-sadd-one-bigset-pipeline-10
+description: |
+  Grows a single set (`bigset`) to 10M distinct members via pipelined SADD,
+  starting from an empty database. 100 connections (50 clients × 2 threads),
+  `-n 100000` requests per client → 10M total ops, each `SADD bigset <uniq>`.
+  The one-key workload concentrates all dict growth in the set's internal
+  hashtable (encoding promotes from listpack/intset to hashtable), exercising
+  single-dict rehash under pipelined insertion pressure — complements the
+  10Mkeys-string-set-grow-10B test (which spreads growth across the keyspace
+  dict) by exercising the per-set dict instead. Validates
+  `SCARD bigset == 10000000` at end (every pipelined command inserted a new member).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+tested-commands:
+- sadd
+tested-groups:
+- set
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--command" "SADD bigset __key__" "--command-key-pattern" "P" "--key-minimum" "1" "--key-maximum" "10000000" "-n" "100000" "-c" "50" "-t" "2" "--pipeline" "10" "--hide-histogram"'
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 50

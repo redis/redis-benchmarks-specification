@@ -1,0 +1,45 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-get-while-rehashing-pipeline-16
+description: |
+  Measures GET latency while the main dict is still mid-rehash.
+  Preload inserts 1M keys SET-grow-10B-pipeline-10 into an empty database;
+  with `activerehashing no` set in the server config, the background 1ms
+  rehash in `serverCron` cannot complete during the framework's inter-phase
+  pause, so the rehash state (`mem_overhead_db_hashtable_rehashing > 0`)
+  persists into the GET phase. Benchmark then runs 10s of GETs at
+  `--pipeline 16`, `--key-pattern R:R` — each GET still advances lazy
+  per-op rehash in the server loop (which is what we want to measure).
+  Isolates the dict-rehash tail-latency contribution on reads from the
+  settled-keyspace read case (where rehash has long since finished).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    activerehashing: 'no'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--pipeline" "10" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys"'
+  check:
+    keyspacelen: 1000000
+  resources:
+    requests:
+      memory: 1g
+tested-commands:
+- get
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--ratio" "0:1" "--key-pattern" "R:R" "--key-minimum" "1" "--key-maximum" "1000000" "-c" "5" "-t" "1" "--pipeline" "16" "--test-time" "10" "--hide-histogram"'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+priority: 50
