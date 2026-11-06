@@ -998,16 +998,43 @@ def test_runner_status_unparsable_heartbeat_timestamp_is_down():
     assert _runner_status(hb, c_pending=1, c_idle=1000) == "DOWN"
 
 
+def test_runner_status_missing_heartbeat_is_down_when_fleet_publishes():
+    """The heartbeat key carries HEARTBEAT_EXPIRE_SECS=120, so a runner that dies
+    does not go stale in place -- its key is removed and it vanishes from
+    _get_heartbeats() entirely. If the rest of the fleet is publishing, a platform
+    with no entry has stopped writing, which is DOWN.
+
+    Without this the age>HEARTBEAT_DOWN_SECS branch is almost unreachable, and a
+    runner that crashed minutes ago would read UNKNOWN for a whole day.
+    """
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=True)
+        == "DOWN"
+    )
+
+
 def test_runner_status_no_heartbeat_long_idle_is_down():
-    """A decommissioned runner keeps its last delivered message pending forever;
-    that pending message must not be read as proof of work."""
-    assert _runner_status(None, c_pending=1, c_idle=NO_HEARTBEAT_DOWN_MS + 1) == "DOWN"
+    """Fleet publishes nothing at all (every runner on an older build): fall back to
+    idle time. A decommissioned runner keeps its last delivered message pending
+    forever, so that pending message must not be read as proof of work."""
+    assert (
+        _runner_status(
+            None,
+            c_pending=1,
+            c_idle=NO_HEARTBEAT_DOWN_MS + 1,
+            heartbeats_published=False,
+        )
+        == "DOWN"
+    )
 
 
 def test_runner_status_no_heartbeat_recent_activity_is_unknown():
-    """No heartbeat and recent stream activity: we have no liveness evidence either
-    way, so say so rather than asserting WORKING or DOWN."""
-    assert _runner_status(None, c_pending=1, c_idle=1000) == "UNKNOWN"
+    """Fleet publishes nothing and this consumer read the stream recently: we have no
+    liveness evidence either way, so say so rather than asserting WORKING or DOWN."""
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=False)
+        == "UNKNOWN"
+    )
 
 
 # ---------------------------------------------------------------------------

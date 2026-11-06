@@ -176,26 +176,40 @@ def _get_heartbeats(conn):
     return heartbeats
 
 
-def _runner_status(heartbeat, c_pending, c_idle):
-    """Classify one runner as WORKING / IDLE / STUCK / DOWN.
+def _runner_status(heartbeat, c_pending, c_idle, heartbeats_published=True):
+    """Classify one runner as WORKING / IDLE / STUCK / DOWN / UNKNOWN.
 
     ``heartbeat`` is this platform's entry from :func:`_get_heartbeats` (or ``None``).
+    ``heartbeats_published`` says whether *any* runner on the fleet published a heartbeat.
 
-    STUCK is reserved for the one combination a healthy runner cannot produce: the
-    heartbeat says the process is idle/waiting while a message is still pending in its
-    PEL, i.e. a delivered message that was abandoned without an ACK
-    (redis/redis-benchmarks-specification#519). A runner whose heartbeat says "running"
-    is WORKING no matter how long its message has been pending -- a full suite legitimately
-    holds one message for many hours.
+    STUCK is reserved for the one combination a healthy runner cannot produce: the heartbeat
+    says the process is idle/waiting while a message is still pending in its PEL, i.e. a
+    delivered message that was abandoned without an ACK
+    (redis/redis-benchmarks-specification#519). A runner whose heartbeat says "running" is
+    WORKING no matter how long its message has been pending -- a full suite legitimately holds
+    one message for many hours, so an idle-time cutoff would flag every long benchmark.
 
-    With no heartbeat at all (runner too old to publish one, or process gone) there is no
-    liveness evidence either way, so we do not invent one: a consumer that has not touched
-    the stream in over a day is DOWN, anything more recent is UNKNOWN. In particular a
-    pending message is *not* read as proof of work -- a decommissioned runner keeps its
-    last delivered message pending forever.
+    **A missing heartbeat usually means the runner died, not that it is too old to publish
+    one.** The coordinator sets ``HEARTBEAT_EXPIRE_SECS = 120`` on the key, so a runner that
+    stops writing has its key removed about two minutes later and simply vanishes from
+    :func:`_get_heartbeats`. So when the fleet is publishing heartbeats at all, a platform with
+    no entry is DOWN. Only when *nothing* publishes one -- a fleet entirely on an older build --
+    do we fall back to the consumer's idle time, and even then a pending message is not read as
+    proof of work, since a decommissioned runner keeps its last message pending forever.
+
+    Known gap, deliberately not papered over: the heartbeat is written by a daemon thread, so a
+    runner whose main loop is wedged *inside* a benchmark keeps reporting "running" and stays
+    WORKING. Detecting that needs the per-job progress counter to stop advancing between two
+    observations; a fixed timeout here would only reintroduce the false positive on every
+    long-running legitimate benchmark that this function exists to remove.
     """
     if heartbeat is None:
-        return "DOWN" if c_idle > NO_HEARTBEAT_DOWN_MS else "UNKNOWN"
+        if heartbeats_published:
+            # Its key expired (runner stopped writing) or it never came up.
+            return "DOWN"
+        if c_idle > NO_HEARTBEAT_DOWN_MS:
+            return "DOWN"
+        return "UNKNOWN"
     age = heartbeat.get("age_secs")
     if age is None or age > HEARTBEAT_DOWN_SECS:
         return "DOWN"
@@ -371,7 +385,9 @@ def admin_runners_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = _runner_status(heartbeats.get(platform), c_pending, c_idle)
+                status = _runner_status(
+                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                )
 
                 idle_str = _format_idle(c_idle)
                 queue_depth = c_pending + lag
@@ -784,7 +800,9 @@ def admin_summary_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = _runner_status(heartbeats.get(platform), c_pending, c_idle)
+                status = _runner_status(
+                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                )
 
                 # Get active queue progress
                 active_info = ""
