@@ -1001,9 +1001,7 @@ def test_runner_status_unparsable_heartbeat_timestamp_is_down():
 def test_runner_status_no_heartbeat_long_idle_is_down():
     """A decommissioned runner keeps its last delivered message pending forever;
     that pending message must not be read as proof of work."""
-    assert (
-        _runner_status(None, c_pending=1, c_idle=NO_HEARTBEAT_DOWN_MS + 1) == "DOWN"
-    )
+    assert _runner_status(None, c_pending=1, c_idle=NO_HEARTBEAT_DOWN_MS + 1) == "DOWN"
 
 
 def test_runner_status_no_heartbeat_recent_activity_is_unknown():

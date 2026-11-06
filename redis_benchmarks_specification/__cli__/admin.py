@@ -375,9 +375,7 @@ def admin_runners_command(conn, args):
 
                 idle_str = _format_idle(c_idle)
                 queue_depth = c_pending + lag
-                queue_str = (
-                    str(queue_depth) if lag_known else f"{c_pending}+unknown"
-                )
+                queue_str = str(queue_depth) if lag_known else f"{c_pending}+unknown"
 
                 print(f"  {platform} ({arch})")
                 print(
