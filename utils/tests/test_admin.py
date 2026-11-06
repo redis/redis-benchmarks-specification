@@ -5,6 +5,7 @@
 #
 
 import argparse
+import datetime
 import re
 import tempfile
 import yaml
@@ -29,9 +30,15 @@ from redis_benchmarks_specification.__cli__.admin import (
     _format_age,
     _get_queue_progress,
     _get_stale_pel_summary,
+    _get_heartbeats,
+    _group_lag,
+    _format_lag,
+    _runner_status,
     _short_hash,
     _short_info,
     STALE_PEL_IDLE_MS,
+    HEARTBEAT_DOWN_SECS,
+    NO_HEARTBEAT_DOWN_MS,
 )
 from redis_benchmarks_specification.__builder__.builder import (
     generate_benchmark_stream_request,
@@ -899,3 +906,182 @@ def test_compare_comma_separated_deployment_auto_enable():
         "oss-standalone-04-io-threads",
         "oss-standalone-08-io-threads",
     ]
+
+
+# ---------------------------------------------------------------------------
+# XINFO GROUPS "lag" may be NULL -- see _group_lag(). These are pure functions,
+# so they run everywhere rather than being skipped when no Redis is reachable.
+# ---------------------------------------------------------------------------
+
+
+def test_group_lag_returns_known_value():
+    assert _group_lag({"lag": 42}) == (42, True)
+    assert _group_lag({"lag": 0}) == (0, True)
+
+
+def test_group_lag_handles_null_lag():
+    """Redis reports lag as NULL when it cannot be computed (entries at/below the
+    group's last-delivered-id were trimmed, or XSETID cleared entries-read).
+
+    The key is PRESENT with a value of None, so dict.get("lag", 0) does not help --
+    that was the actual crash: `c_pending + lag` and `total_lag += lag` raised
+    TypeError and took down `runners`, `summary` and `work` for the whole fleet
+    because of one decommissioned runner's legacy group.
+    """
+    assert _group_lag({"lag": None}) == (0, False)
+
+
+def test_group_lag_handles_missing_lag_key():
+    """Older servers omit the field entirely; that is also 'not known'."""
+    assert _group_lag({}) == (0, False)
+
+
+def test_group_lag_result_is_safe_in_arithmetic_and_comparison():
+    """Regression guard for the two expressions that actually crashed."""
+    lag, known = _group_lag({"lag": None})
+    assert 3 + lag == 3
+    assert not lag > 0
+    assert known is False
+
+
+def test_format_lag_distinguishes_zero_from_unknown():
+    """A non-computable lag must never render as '0': a group arbitrarily far
+    behind would otherwise read as perfectly caught up."""
+    assert _format_lag(0, True) == "0"
+    assert _format_lag(0, False) == "unknown"
+    assert _format_lag(7, True) == "7"
+
+
+# ---------------------------------------------------------------------------
+# Runner status classification -- _runner_status()
+# ---------------------------------------------------------------------------
+
+_LONG_IDLE_MS = 6 * 60 * 60 * 1000  # 6h: longer than any heartbeat-based cutoff
+
+
+def test_runner_status_busy_runner_is_working_not_stuck():
+    """The central fix: a runner mid-suite holds ONE message pending for the whole
+    run, so its consumer 'idle' grows with the length of the job. Classifying on
+    idle alone reported every legitimately busy runner as STUCK -- backwards, and
+    the direct cause of a 'six runners are stuck' misdiagnosis on a fleet whose
+    runners were simply executing 546-test suites.
+    """
+    hb = {"status": "running", "age_secs": 5, "current_test": "memtier-x"}
+    assert _runner_status(hb, c_pending=1, c_idle=_LONG_IDLE_MS) == "WORKING"
+
+
+def test_runner_status_idle_runner_with_no_pending_is_idle():
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=0, c_idle=_LONG_IDLE_MS) == "IDLE"
+
+
+def test_runner_status_abandoned_message_is_stuck():
+    """The #519 fingerprint: heartbeat says waiting while a message is still
+    pending -- a healthy runner always ACKs before flipping back to waiting."""
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=STALE_PEL_IDLE_MS + 1) == "STUCK"
+
+
+def test_runner_status_pending_within_grace_window_is_not_stuck():
+    """Absorbs the ack/status-flip race around a heartbeat write."""
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=STALE_PEL_IDLE_MS - 1) == "IDLE"
+
+
+def test_runner_status_stale_heartbeat_is_down():
+    hb = {"status": "running", "age_secs": HEARTBEAT_DOWN_SECS + 1, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=1000) == "DOWN"
+
+
+def test_runner_status_unparsable_heartbeat_timestamp_is_down():
+    hb = {"status": "running", "age_secs": None, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=1000) == "DOWN"
+
+
+def test_runner_status_missing_heartbeat_is_down_when_fleet_publishes():
+    """The heartbeat key carries HEARTBEAT_EXPIRE_SECS=120, so a runner that dies
+    does not go stale in place -- its key is removed and it vanishes from
+    _get_heartbeats() entirely. If the rest of the fleet is publishing, a platform
+    with no entry has stopped writing, which is DOWN.
+
+    Without this the age>HEARTBEAT_DOWN_SECS branch is almost unreachable, and a
+    runner that crashed minutes ago would read UNKNOWN for a whole day.
+    """
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=True)
+        == "DOWN"
+    )
+
+
+def test_runner_status_no_heartbeat_long_idle_is_down():
+    """Fleet publishes nothing at all (every runner on an older build): fall back to
+    idle time. A decommissioned runner keeps its last delivered message pending
+    forever, so that pending message must not be read as proof of work."""
+    assert (
+        _runner_status(
+            None,
+            c_pending=1,
+            c_idle=NO_HEARTBEAT_DOWN_MS + 1,
+            heartbeats_published=False,
+        )
+        == "DOWN"
+    )
+
+
+def test_runner_status_no_heartbeat_recent_activity_is_unknown():
+    """Fleet publishes nothing and this consumer read the stream recently: we have no
+    liveness evidence either way, so say so rather than asserting WORKING or DOWN."""
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=False)
+        == "UNKNOWN"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _get_heartbeats() -- Mock-backed, no live Redis needed
+# ---------------------------------------------------------------------------
+
+
+def test_get_heartbeats_parses_bytes_fields():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    conn.hgetall.return_value = {
+        b"platform": b"x86-aws-m7i.metal-24xl",
+        b"status": b"running",
+        b"timestamp": str(now).encode(),
+        b"current_test": b"memtier_benchmark-foo",
+    }
+    hbs = _get_heartbeats(conn)
+    assert "x86-aws-m7i.metal-24xl" in hbs
+    entry = hbs["x86-aws-m7i.metal-24xl"]
+    assert entry["status"] == "running"
+    assert entry["current_test"] == "memtier_benchmark-foo"
+    assert entry["age_secs"] is not None and entry["age_secs"] < 60
+
+
+def test_get_heartbeats_skips_entry_without_platform():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    conn.hgetall.return_value = {b"status": b"running"}
+    assert _get_heartbeats(conn) == {}
+
+
+def test_get_heartbeats_tolerates_bad_timestamp():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    conn.hgetall.return_value = {
+        b"platform": b"p1",
+        b"status": b"waiting",
+        b"timestamp": b"not-a-number",
+    }
+    hbs = _get_heartbeats(conn)
+    assert hbs["p1"]["age_secs"] is None
+    # and a heartbeat we cannot date must not be trusted as alive
+    assert _runner_status(hbs["p1"], c_pending=0, c_idle=0) == "DOWN"
+
+
+def test_get_heartbeats_returns_empty_when_no_keys():
+    conn = Mock()
+    conn.keys.return_value = []
+    assert _get_heartbeats(conn) == {}

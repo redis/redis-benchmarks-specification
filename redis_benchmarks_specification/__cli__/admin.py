@@ -92,6 +92,138 @@ def _format_idle(idle_ms):
     return f"{days:.1f}d"
 
 
+def _group_lag(group):
+    """Return ``(lag, known)`` for one ``XINFO GROUPS`` entry.
+
+    Redis reports ``lag`` as NULL when it cannot determine how many entries are still
+    undelivered to the group -- typically because entries at or below the group's
+    ``last-delivered-id`` were trimmed/deleted, or ``XSETID`` invalidated the group's
+    ``entries-read`` counter. Legacy groups left behind by a decommissioned runner reach
+    that state on their own once the stream rotates past them.
+
+    ``group.get("lag", 0)`` does **not** defend against this: the key is present with a
+    value of ``None``, so the default never applies and the ``None`` escapes into
+    arithmetic (``c_pending + lag``, ``total_lag += lag``) and comparisons (``lag > 0``),
+    raising ``TypeError`` and taking the whole admin command down -- one stale group was
+    enough to break ``runners``, ``summary`` and ``work`` for every platform.
+
+    Collapsing the unknown to a plain ``0`` would be worse than crashing: a group that is
+    arbitrarily far behind would render as perfectly caught up. Callers therefore get an
+    explicit ``known`` flag and should print ``_format_lag()`` instead of a bare number.
+    """
+    lag = group.get("lag")
+    if lag is None:
+        return 0, False
+    return lag, True
+
+
+def _format_lag(lag, lag_known):
+    """Render a lag value, distinguishing 'none outstanding' from 'not computable'."""
+    return str(lag) if lag_known else "unknown"
+
+
+HEARTBEAT_PREFIX = "ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:"
+
+# A heartbeat is written every 30s; treat anything older than 4 missed writes as "no
+# heartbeat". Matches the 2-minute cutoff admin_health_command already applies.
+HEARTBEAT_DOWN_SECS = 120
+
+# Without any heartbeat the only signal left is how long since the consumer read the
+# stream. A busy runner legitimately looks idle for the whole duration of its job, so this
+# cutoff is deliberately far beyond any single benchmark's runtime.
+NO_HEARTBEAT_DOWN_MS = 24 * 60 * 60 * 1000
+
+
+def _get_heartbeats(conn):
+    """Return {platform: {"status", "age_secs", "current_test"}} from the runner
+    heartbeat hashes, or {} when no runner publishes one.
+
+    Callers use this instead of the consumer group's ``idle`` field to decide whether a
+    runner is working. ``idle`` measures time since the consumer last *read from the
+    stream*, which for a busy runner is the time since it picked up the job it is still
+    executing -- so the longer a legitimate benchmark runs, the more "idle" its runner
+    looks. Classifying on that alone reports every runner mid-suite as STUCK, which is
+    exactly backwards; the heartbeat reflects actual process state.
+    """
+    heartbeats = {}
+    try:
+        keys = conn.keys(f"{HEARTBEAT_PREFIX}*")
+    except redis.exceptions.ResponseError:
+        return heartbeats
+    now_epoch = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    for key in keys:
+        try:
+            data = conn.hgetall(key)
+        except redis.exceptions.ResponseError:
+            continue
+        fields = {}
+        for k, v in data.items():
+            k_str = k.decode() if isinstance(k, bytes) else k
+            v_str = v.decode() if isinstance(v, bytes) else v
+            fields[k_str] = v_str
+        platform = fields.get("platform")
+        if not platform:
+            continue
+        try:
+            age_secs = now_epoch - int(fields.get("timestamp", "0"))
+        except ValueError:
+            age_secs = None
+        heartbeats[platform] = {
+            "status": fields.get("status", "?"),
+            "age_secs": age_secs,
+            "current_test": fields.get("current_test", ""),
+        }
+    return heartbeats
+
+
+def _runner_status(heartbeat, c_pending, c_idle, heartbeats_published=True):
+    """Classify one runner as WORKING / IDLE / STUCK / DOWN / UNKNOWN.
+
+    ``heartbeat`` is this platform's entry from :func:`_get_heartbeats` (or ``None``).
+    ``heartbeats_published`` says whether *any* runner on the fleet published a heartbeat.
+
+    STUCK is reserved for the one combination a healthy runner cannot produce: the heartbeat
+    says the process is idle/waiting while a message is still pending in its PEL, i.e. a
+    delivered message that was abandoned without an ACK
+    (redis/redis-benchmarks-specification#519). A runner whose heartbeat says "running" is
+    WORKING no matter how long its message has been pending -- a full suite legitimately holds
+    one message for many hours, so an idle-time cutoff would flag every long benchmark.
+
+    **A missing heartbeat usually means the runner died, not that it is too old to publish
+    one.** The coordinator sets ``HEARTBEAT_EXPIRE_SECS = 120`` on the key, so a runner that
+    stops writing has its key removed about two minutes later and simply vanishes from
+    :func:`_get_heartbeats`. So when the fleet is publishing heartbeats at all, a platform with
+    no entry is DOWN. Only when *nothing* publishes one -- a fleet entirely on an older build --
+    do we fall back to the consumer's idle time, and even then a pending message is not read as
+    proof of work, since a decommissioned runner keeps its last message pending forever.
+
+    Known gap, deliberately not papered over: the heartbeat is written by a daemon thread, so a
+    runner whose main loop is wedged *inside* a benchmark keeps reporting "running" and stays
+    WORKING. Detecting that needs the per-job progress counter to stop advancing between two
+    observations; a fixed timeout here would only reintroduce the false positive on every
+    long-running legitimate benchmark that this function exists to remove.
+    """
+    if heartbeat is None:
+        if heartbeats_published:
+            # Its key expired (runner stopped writing) or it never came up.
+            return "DOWN"
+        if c_idle > NO_HEARTBEAT_DOWN_MS:
+            return "DOWN"
+        return "UNKNOWN"
+    age = heartbeat.get("age_secs")
+    if age is None or age > HEARTBEAT_DOWN_SECS:
+        return "DOWN"
+    status = heartbeat.get("status", "?")
+    if status == "running":
+        return "WORKING"
+    if status in ("waiting", "idle"):
+        # Abandoned-message fingerprint; the grace window absorbs the ack/status-flip race.
+        if c_pending > 0 and c_idle > STALE_PEL_IDLE_MS:
+            return "STUCK"
+        return "IDLE"
+    return "WORKING" if c_pending > 0 else "IDLE"
+
+
 def _format_age(timestamp_ms):
     """Format a stream ID timestamp to age string."""
     try:
@@ -220,6 +352,8 @@ def admin_runners_command(conn, args):
     """List all runners with what they're processing, progress, and ETA."""
     print("\n=== RUNNERS ===\n")
 
+    heartbeats = _get_heartbeats(conn)
+
     for arch in ["amd64", "arm64"]:
         stream = get_arch_specific_stream_name(arch)
         try:
@@ -237,7 +371,7 @@ def admin_runners_command(conn, args):
                 group_name = group_name.decode()
             group_pending = group.get("pending", 0)
             group_consumers = group.get("consumers", 0)
-            lag = group.get("lag", 0)
+            lag, lag_known = _group_lag(group)
 
             # Extract platform name
             prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
@@ -251,18 +385,17 @@ def admin_runners_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = "IDLE"
-                if c_pending > 0:
-                    status = "WORKING"
-                if c_idle > 300000:
-                    status = "STALE" if c_pending == 0 else "STUCK"
+                status = _runner_status(
+                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                )
 
                 idle_str = _format_idle(c_idle)
                 queue_depth = c_pending + lag
+                queue_str = str(queue_depth) if lag_known else f"{c_pending}+unknown"
 
                 print(f"  {platform} ({arch})")
                 print(
-                    f"    Status: {status}  |  Last active: {idle_str} ago  |  Queue depth: {queue_depth} (pending: {c_pending}, lag: {lag})"
+                    f"    Status: {status}  |  Last active: {idle_str} ago  |  Queue depth: {queue_str} (pending: {c_pending}, lag: {_format_lag(lag, lag_known)})"
                 )
 
                 # Show what the runner is currently processing
@@ -326,6 +459,10 @@ def admin_runners_command(conn, args):
                                 print(f"      {info_str}")
                 elif lag > 0:
                     print(f"    {lag} benchmark streams waiting in queue")
+                elif not lag_known:
+                    print(
+                        "    queue depth not computable (group position trimmed out of the stream)"
+                    )
 
                 print()
 
@@ -353,7 +490,7 @@ def admin_builders_command(conn, args):
             group_name = group_name.decode()
         group_pending = group.get("pending", 0)
         group_consumers = group.get("consumers", 0)
-        lag = group.get("lag", 0)
+        lag, lag_known = _group_lag(group)
 
         if group_consumers == 0:
             continue
@@ -385,7 +522,7 @@ def admin_builders_command(conn, args):
             idle_str = _format_idle(c_idle)
             print(f"  {group_name}")
             print(
-                f"    Status: {status}  |  Last active: {idle_str} ago  |  Pending: {c_pending}  |  Queue: {lag}"
+                f"    Status: {status}  |  Last active: {idle_str} ago  |  Pending: {c_pending}  |  Queue: {_format_lag(lag, lag_known)}"
             )
 
             # Show recent pending work with commit info
@@ -633,6 +770,8 @@ def admin_summary_command(conn, args):
 
     runners = []
     total_lag = 0
+    lag_unknown_groups = 0
+    heartbeats = _get_heartbeats(conn)
 
     for arch in ["amd64", "arm64"]:
         stream = get_arch_specific_stream_name(arch)
@@ -646,8 +785,10 @@ def admin_summary_command(conn, args):
             group_name = group.get("name", "")
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
-            lag = group.get("lag", 0)
+            lag, lag_known = _group_lag(group)
             total_lag += lag
+            if not lag_known:
+                lag_unknown_groups += 1
 
             grp_prefix = f"{STREAM_GH_NEW_BUILD_RUNNERS_CG}-"
             if grp_prefix not in group_name:
@@ -659,11 +800,9 @@ def admin_summary_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = "IDLE"
-                if c_pending > 0:
-                    status = "WORKING"
-                if c_idle > 300000:
-                    status = "STALE" if c_pending == 0 else "STUCK"
+                status = _runner_status(
+                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                )
 
                 # Get active queue progress
                 active_info = ""
@@ -689,6 +828,7 @@ def admin_summary_command(conn, args):
                         "idle": c_idle,
                         "pending": c_pending,
                         "lag": lag,
+                        "lag_known": lag_known,
                         "active_info": active_info,
                     }
                 )
@@ -696,12 +836,19 @@ def admin_summary_command(conn, args):
     working = sum(1 for r in runners if r["status"] == "WORKING")
     idle = sum(1 for r in runners if r["status"] == "IDLE")
     stuck = sum(1 for r in runners if r["status"] == "STUCK")
-    stale = sum(1 for r in runners if r["status"] == "STALE")
+    down = sum(1 for r in runners if r["status"] == "DOWN")
+    unknown = sum(1 for r in runners if r["status"] == "UNKNOWN")
 
     print(
-        f"  Runners: {len(runners)} total  |  {working} working  |  {idle} idle  |  {stuck} stuck  |  {stale} stale"
+        f"  Runners: {len(runners)} total  |  {working} working  |  {idle} idle  |  {stuck} stuck  |  {down} down  |  {unknown} unknown"
     )
-    print(f"  Queue:   {total_lag} benchmark streams waiting")
+    queue_line = f"  Queue:   {total_lag} benchmark streams waiting"
+    if lag_unknown_groups:
+        queue_line += (
+            f"  (+{lag_unknown_groups} group(s) with a non-computable lag"
+            f" -- true total is higher)"
+        )
+    print(queue_line)
     print()
 
     # Table
@@ -992,10 +1139,10 @@ def admin_skip_builders_command(conn, args):
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
             pending = group.get("pending", 0)
-            lag = group.get("lag", 0)
+            lag, lag_known = _group_lag(group)
             consumers = group.get("consumers", 0)
             print(
-                f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
+                f"  {group_name}  (pending: {pending}, lag: {_format_lag(lag, lag_known)}, consumers: {consumers})"
             )
         print()
         print("Example:")
@@ -1016,12 +1163,14 @@ def admin_skip_builders_command(conn, args):
         matched = True
         caller = _get_caller_identity()
         group_pending = group.get("pending", 0)
-        lag = group.get("lag", 0)
+        lag, lag_known = _group_lag(group)
 
         print(f"\nSkipping all work for builder group: {group_name}")
         print(f"  Requested by: {caller}")
         print(f"  Stream: {stream}")
-        print(f"  Current state: {group_pending} pending, {lag} lag")
+        print(
+            f"  Current state: {group_pending} pending, {_format_lag(lag, lag_known)} lag"
+        )
 
         # 1. Get and ACK all pending messages
         pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 1000)
@@ -1105,10 +1254,10 @@ def admin_reset_builders_command(conn, args):
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
             pending = group.get("pending", 0)
-            lag = group.get("lag", 0)
+            lag, lag_known = _group_lag(group)
             consumers = group.get("consumers", 0)
             print(
-                f"  {group_name}  (pending: {pending}, lag: {lag}, consumers: {consumers})"
+                f"  {group_name}  (pending: {pending}, lag: {_format_lag(lag, lag_known)}, consumers: {consumers})"
             )
         print()
         print("Example:")
@@ -1130,13 +1279,13 @@ def admin_reset_builders_command(conn, args):
         caller = _get_caller_identity()
         pending_count = group.get("pending", 0)
         consumers_count = group.get("consumers", 0)
-        lag = group.get("lag", 0)
+        lag, lag_known = _group_lag(group)
 
         print(f"\nResetting consumer group for builder: {group_name}")
         print(f"  Requested by: {caller}")
         print(f"  Stream: {stream}")
         print(
-            f"  Current state: {consumers_count} consumers, {pending_count} pending, {lag} lag"
+            f"  Current state: {consumers_count} consumers, {pending_count} pending, {_format_lag(lag, lag_known)} lag"
         )
 
         # Destroy and recreate
@@ -1191,7 +1340,7 @@ def admin_work_command(conn, args):
             group_name = group.get("name", "")
             if isinstance(group_name, bytes):
                 group_name = group_name.decode()
-            lag = group.get("lag", 0)
+            lag, lag_known = _group_lag(group)
             last_delivered = group.get("last-delivered-id", b"0-0")
             if isinstance(last_delivered, bytes):
                 last_delivered = last_delivered.decode()
@@ -1219,14 +1368,19 @@ def admin_work_command(conn, args):
                     "idle": c_idle,
                 }
 
-            # Get lag messages (not yet delivered = waiting in queue for this runner)
-            if lag > 0 and last_delivered != "0-0":
+            # Get lag messages (not yet delivered = waiting in queue for this runner).
+            # When the server could not compute the lag we still look: an unknown lag means
+            # "cannot count", not "nothing queued", and the XRANGE below is the ground truth
+            # either way. Capped at the same 20 entries the known-lag path uses.
+            if (not lag_known or lag > 0) and last_delivered != "0-0":
                 # Read messages after the last delivered ID (these are the lag)
                 # Use exclusive range: (last_delivered to get messages AFTER it
                 lag_start = last_delivered
                 try:
                     lag_entries = conn.xrange(
-                        stream, min=f"({lag_start}", count=min(lag, 20)
+                        stream,
+                        min=f"({lag_start}",
+                        count=min(lag, 20) if lag_known else 20,
                     )
                     for entry_id, entry_fields in lag_entries:
                         entry_id_str = (
