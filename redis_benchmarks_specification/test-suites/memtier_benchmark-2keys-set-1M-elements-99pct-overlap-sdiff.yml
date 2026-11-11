@@ -1,0 +1,56 @@
+version: 0.4
+name: memtier_benchmark-2keys-set-1M-elements-99pct-overlap-sdiff
+description: 'SDIFF join with unmatched members. SDIFF of 2 hashtable-encoded sets
+  of 1M non-integer members each with ~99.9% overlap: set:a = m:0..m:999999, set:b
+  = m:1000..m:1000999. Difference a - b = 1000 members (m:0..m:999). Members are
+  non-integer strings (m:<i>) so both sets are hashtable, not intset. Encoding:
+  hashtable (1,000,000 elements, exceeds set-max-listpack-entries 128). Metric of
+  interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    lua-time-limit: '30000'
+  check:
+    keyspacelen: 2
+  resources:
+    requests:
+      memory: 2g
+  init_lua: |
+    -- Preload 2 sets × 1M non-integer members, 99.9% overlap, via batched SADD.
+    local batch = 500
+    -- set:a = m:0..m:999999
+    for b = 0, 999999, batch do
+      local args = {'set:a'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    -- set:b = m:1000..m:1000999
+    for b = 1000, 1000999, batch do
+      local args = {'set:b'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    return 1
+  dataset_name: 2keys-set-1M-elements-99pct-overlap-hashtable
+  dataset_description: 2 hashtable sets of 1M non-integer members shifted by 1000
+    (set:a=m:0..m:999999, set:b=m:1000..m:1000999). Set difference a - b = 1000
+    members (m:0..m:999).
+tested-commands:
+- sdiff
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SDIFF set:a set:b" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- set
+priority: 1
