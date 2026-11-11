@@ -1,0 +1,70 @@
+version: 0.4
+name: memtier_benchmark-3keys-set-300K-300K-1M-elements-sintercard
+description: 'Join of the two smaller sets, then batched lookups in a third. SINTERCARD
+  over 3 hashtable-encoded sets: set:a = m:0..m:299999 (300K), set:b =
+  m:150000..m:449999 (300K), set:c = m:150000..m:224999 ∪ c:0..c:924999 (1M total,
+  of which 75K m:-members overlap with the a∩b range m:150000..m:224999 the planner
+  obtains after joining set:a and set:b). Final intersection cardinality is 75000.
+  Members are non-integer strings (m:<i> / c:<i>) so every set is hashtable, not
+  intset. Encoding: hashtable (300K/300K/1M elements, exceed
+  set-max-listpack-entries 128). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    lua-time-limit: '30000'
+  check:
+    keyspacelen: 3
+  resources:
+    requests:
+      memory: 3g
+  init_lua: |
+    -- Preload 3 sets via batched SADD. All members non-integer.
+    local batch = 500
+    -- set:a = m:0..m:299999 (300K)
+    for b = 0, 299999, batch do
+      local args = {'set:a'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    -- set:b = m:150000..m:449999 (300K)
+    for b = 150000, 449999, batch do
+      local args = {'set:b'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    -- set:c first segment: m:150000..m:224999 (75K; the final-intersection members)
+    for b = 150000, 224999, batch do
+      local args = {'set:c'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    -- set:c second segment: c:0..c:924999 (925K noise members, no overlap)
+    for b = 0, 924999, batch do
+      local args = {'set:c'}
+      for j = 0, batch-1 do args[#args+1] = 'c:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    return 1
+  dataset_name: 3keys-set-300K-300K-1M-elements-hashtable
+  dataset_description: 3 hashtable sets. set:a=m:0..m:299999 (300K); set:b=m:150000..m:449999
+    (300K); set:c = m:150000..m:224999 (75K) + c:0..c:924999 (925K) = 1M total. Final
+    intersection cardinality is 75000.
+tested-commands:
+- sintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SINTERCARD 3 set:a set:b set:c" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 3g
+tested-groups:
+- set
+priority: 1
