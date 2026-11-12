@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-1key-set-listpack-128-sort-alpha-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single SET key with 128 short string members
+  in listpack encoding, measuring the throughput of `SORT ... ALPHA`. ALPHA
+  swaps the numeric comparator for `compareStringObjectsWithOrder()`
+  (`strcoll()`/`strcmp()`). The listpack-set element-materialization path goes
+  through the set-loop branch in `sortCommandGeneric()` via `setTypeNext()`.
+
+  String (not integer) members force listpack over intset. Issue #632 identifies
+  the listpack-set ALPHA SORT path as unmeasured today.
+
+  Encoding: listpack. 128 8-byte lowercase string members stay listpack-encoded
+  with `set-max-listpack-entries` raised to 256 (default 128 would be on the
+  boundary at 128 entries).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    set-max-listpack-entries: '256'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"SADD" "sort:set:lp:128:alpha" "kyjolenb" "phhquber" "cknosjkr" "usobuycp" "evagipju" "lulqkebs" "ypjqzxxf" "ztbvdplg" "opxnnkyk" "wjsvlqiq" "kifuvtbk" "vlirzhdw" "nspodgyh" "nsobpvbe" "refpaokf" "ypaauvoz" "xvcpqwqr" "doxaekuy" "llzqhafh" "dvrebkuh" "jvswvlvh" "knmutfgv" "vpfrguwg" "pqlnvhmv" "izbwcvbb" "miczlwia" "ectvbqka" "mtglmyie" "edxbwpis" "gaegmako" "tnfiahuz" "wvegapou" "wuwpmfem" "xjymbdkl" "vulcrvlm" "gmkcufuo" "tanbvhgz" "khupdfzm" "kapoqckq" "umvzbhpl" "bogaiiah" "aklrirba" "mfzcrmmi" "orrxkdyb" "akropttk" "ftlktlms" "mosdomgh" "rogqqxbi" "uvailgxt" "skxybgrm" "resadwxu" "lsthzhkt" "yctvkgsv" "quvjkynw" "akxyspbm" "buthpcae" "qiirbrau" "zvjqkebl" "oogtbekp" "bguhzddx" "dhacwwhg" "lcdhcxhd" "ucvezfqr" "gnwywtsz" "tgbuzjcj" "uodjjizy" "bihmnawn" "uavwcxnc" "vrudiosm" "jncrtwel" "jrrppqtu" "yhcwftmy" "kqgbeqwx" "lvymjyvy" "zjkkaikx" "uvvahpir" "kazgmxmq" "jhfkyswt" "ohexxztj" "gcoulppj" "maqteoyk" "sfktlich" "wsmjraym" "fqugvfcu" "zpwnelvb" "yevxdljn" "agrcyyhr" "fgoxqwzk" "myqngvrn" "pckjwtkz" "nlpgtjob" "vazomcil" "pyexvtxd" "judnyhrb" "rwtxafrk" "rvosqcqc" "htcwmlug" "gdkwaxij" "furgwzwg" "ivhxmivu" "nfrzasog" "xclawrry" "hbonpnpd" "ibcujahy" "wygsrgwl" "olsuleue" "vlwfpbdw" "rcahtnvr" "wawnwyvg" "weakjvqv" "xyjvnxhh" "cdoiphej" "dmrrsuwn" "lcsqwgne" "gvaxhklh" "lafyslga" "eclofryr" "wpfumgor" "yszenfcq" "mreljkod" "amddpasg" "ajaamvvi" "zmvjdrah" "qguxkalb" "ypqpigkc" "gvrlvxuf" "santwdsp" "kbnmzivi"'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-set-listpack-128-alpha
+  dataset_description: >-
+    1 SET key `sort:set:lp:128:alpha` with 128 deterministic 8-byte lowercase-letter string
+    members. Encoding is listpack (128 members, set-max-listpack-entries raised
+    to 256).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:set:lp:128:alpha ALPHA" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

@@ -1,0 +1,51 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-listpack-128-sort-alpha-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single SORTED SET key with 128 short string
+  members in listpack encoding, measuring the throughput of `SORT ... ALPHA`.
+  The listpack-zset loop in `sortCommandGeneric()` reads each member with
+  `lpGetValue()`; ALPHA uses `compareStringObjectsWithOrder()`
+  (`strcoll()`/`strcmp()`) as the comparator.
+
+  Companion to the numeric and `BY nosort` listpack-zset specs — same encoding,
+  different comparator, string members (so `strcoll()` actually runs on a
+  distinct byte pattern per element).
+
+  Encoding: listpack. 128 8-byte lowercase string members stay listpack-encoded
+  with `zset-max-listpack-entries` raised to 256. Scores are random doubles so
+  SORT ALPHA ignores them (comparing by member).
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    zset-max-listpack-entries: '256'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"ZADD" "sort:zset:lp:128:alpha" "0.105751" "kyjolenb" "0.639079" "phhquber" "0.203044" "cknosjkr" "0.62349" "usobuycp" "0.478644" "evagipju" "0.098677" "lulqkebs" "0.245716" "ypjqzxxf" "0.581073" "ztbvdplg" "0.884356" "opxnnkyk" "0.818183" "wjsvlqiq" "0.149744" "kifuvtbk" "0.81708" "vlirzhdw" "0.289895" "nspodgyh" "0.10895" "nsobpvbe" "0.578795" "refpaokf" "0.917335" "ypaauvoz" "0.329532" "xvcpqwqr" "0.352829" "doxaekuy" "0.425106" "llzqhafh" "0.739624" "dvrebkuh" "0.358037" "jvswvlvh" "0.25041" "knmutfgv" "0.716188" "vpfrguwg" "0.827623" "pqlnvhmv" "0.234853" "izbwcvbb" "0.835247" "miczlwia" "0.189804" "ectvbqka" "0.090044" "mtglmyie" "0.465109" "edxbwpis" "0.127602" "gaegmako" "0.681018" "tnfiahuz" "0.34395" "wvegapou" "0.46058" "wuwpmfem" "0.765315" "xjymbdkl" "0.440156" "vulcrvlm" "0.769316" "gmkcufuo" "0.707863" "tanbvhgz" "0.98493" "khupdfzm" "0.601164" "kapoqckq" "0.183489" "umvzbhpl" "0.61985" "bogaiiah" "0.444022" "aklrirba" "0.895683" "mfzcrmmi" "0.678708" "orrxkdyb" "0.866085" "akropttk" "0.320191" "ftlktlms" "0.101692" "mosdomgh" "0.429821" "rogqqxbi" "0.000209" "uvailgxt" "0.594676" "skxybgrm" "0.677481" "resadwxu" "0.459574" "lsthzhkt" "0.002003" "yctvkgsv" "0.057261" "quvjkynw" "0.105739" "akxyspbm" "0.72265" "buthpcae" "0.036754" "qiirbrau" "0.490978" "zvjqkebl" "0.846048" "oogtbekp" "0.287382" "bguhzddx" "0.446303" "dhacwwhg" "0.382126" "lcdhcxhd" "0.117911" "ucvezfqr" "0.224704" "gnwywtsz" "0.401044" "tgbuzjcj" "0.256318" "uodjjizy" "0.874583" "bihmnawn" "0.288051" "uavwcxnc" "0.856044" "vrudiosm" "0.697564" "jncrtwel" "0.460959" "jrrppqtu" "0.195092" "yhcwftmy" "0.021342" "kqgbeqwx" "0.21308" "lvymjyvy" "0.77175" "zjkkaikx" "0.342041" "uvvahpir" "0.205202" "kazgmxmq" "0.108684" "jhfkyswt" "0.55674" "ohexxztj" "0.188203" "gcoulppj" "0.982024" "maqteoyk" "0.346092" "sfktlich" "0.448725" "wsmjraym" "0.689878" "fqugvfcu" "0.791498" "zpwnelvb" "0.784419" "yevxdljn" "0.346495" "agrcyyhr" "0.045567" "fgoxqwzk" "0.281038" "myqngvrn" "0.793193" "pckjwtkz" "0.482905" "nlpgtjob" "0.506432" "vazomcil" "0.407574" "pyexvtxd" "0.35764" "judnyhrb" "0.77319" "rwtxafrk" "0.771932" "rvosqcqc" "0.359802" "htcwmlug" "0.136048" "gdkwaxij" "0.066146" "furgwzwg" "0.901621" "ivhxmivu" "0.596194" "nfrzasog" "0.343498" "xclawrry" "0.41616" "hbonpnpd" "0.422171" "ibcujahy" "0.708073" "wygsrgwl" "0.074662" "olsuleue" "0.448159" "vlwfpbdw" "0.298703" "rcahtnvr" "0.714864" "wawnwyvg" "0.186981" "weakjvqv" "0.051554" "xyjvnxhh" "0.033302" "cdoiphej" "0.21367" "dmrrsuwn" "0.443682" "lcsqwgne" "0.029888" "gvaxhklh" "0.60585" "lafyslga" "0.566036" "eclofryr" "0.353733" "wpfumgor" "0.390839" "yszenfcq" "0.622444" "mreljkod" "0.906426" "amddpasg" "0.679859" "ajaamvvi" "0.621085" "zmvjdrah" "0.165736" "qguxkalb" "0.61954" "ypqpigkc" "0.298698" "gvrlvxuf" "0.889533" "santwdsp" "0.507402" "kbnmzivi"'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-listpack-128-alpha
+  dataset_description: >-
+    1 SORTED SET key `sort:zset:lp:128:alpha` with 128 deterministic 8-byte lowercase-letter
+    string members and random double scores. Encoding is listpack
+    (zset-max-listpack-entries raised to 256).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:zset:lp:128:alpha ALPHA" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34

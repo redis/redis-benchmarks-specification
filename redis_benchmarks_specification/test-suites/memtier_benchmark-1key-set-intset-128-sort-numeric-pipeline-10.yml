@@ -1,0 +1,50 @@
+version: 0.4
+name: memtier_benchmark-1key-set-intset-128-sort-numeric-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single SET key with 128 integer members in
+  intset encoding, measuring the throughput of plain numeric `SORT`. The set-loop
+  branch in `sortCommandGeneric()` iterates members with `setTypeNext()` and
+  builds each `redisSortObject` from the stored integer value, parsing the score
+  directly instead of going through `sdsfromlonglong()` and `string2d()`.
+
+  Mirrors the listpack-zset numeric SORT baseline (128 int members) on an
+  intset source to isolate the set-loop branch from the listpack-zset-loop
+  branch. Issue #632 identifies the intset SORT path as unmeasured today.
+
+  Encoding: intset. 128 integer members stay intset-encoded under the default
+  `set-max-intset-entries` 512. Pipeline 10 keeps the vector build + numeric
+  compare as the dominant cost.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"SADD" "sort:set:intset:128" "220940" "827956" "529827" "215442" "401086" "858757" "769968" "929034" "261952" "633399" "121461" "927793" "797272" "255303" "456517" "371320" "184447" "832270" "497319" "569295" "217597" "242709" "517648" "451877" "458675" "26576" "544910" "319307" "96070" "553760" "721185" "904902" "903546" "261983" "702960" "124958" "357834" "764976" "880274" "954664" "986224" "567191" "17257" "114493" "652863" "343115" "890096" "198471" "432872" "394738" "310116" "52727" "57158" "432366" "785164" "926675" "659980" "689694" "291832" "179301" "451658" "70687" "212806" "691225" "689433" "586873" "890314" "821194" "81836" "353051" "629847" "434027" "275574" "241116" "295088" "230657" "752132" "940839" "682183" "135401" "665224" "953920" "4074" "130632" "583000" "563202" "253846" "634396" "495323" "481207" "498015" "944924" "684227" "44181" "450253" "728276" "731361" "149906" "901773" "834506" "294084" "681468" "114353" "587529" "68203" "441460" "135669" "492240" "135986" "247011" "912185" "711087" "695107" "499845" "760880" "181183" "927499" "554967" "150079" "745611" "105362" "81518" "570186" "706818" "152258" "902981" "25336" "260763"'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-set-intset-128
+  dataset_description: >-
+    1 SET key `sort:set:intset:128` with 128 integer members drawn without replacement from
+    1..1_000_000. Encoding is intset (128 members, below default
+    set-max-intset-entries 512).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:set:intset:128" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
