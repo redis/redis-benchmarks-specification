@@ -1,0 +1,58 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-listpack-128-int-sort-numeric-pipeline-10
+description: >-
+  Runs memtier_benchmark against a single SORTED SET key with 128 integer-encoded
+  members, measuring the throughput of plain numeric `SORT`. The listpack-zset loop
+  in `sortCommandGeneric()` walks the listpack entries, reads each member value
+  with `lpGetValue()`, builds a `redisSortObject` whose score is parsed from the
+  member, sorts with `sortCompare()` in numeric mode, and writes back a 128-element
+  bulk-string reply.
+
+  This is the listpack-zset counterpart to the existing
+  `1key-list-1K-elements-sort-numeric-pipeline-10` spec — the LIST path already
+  builds the sort-vector element directly from the stored value via
+  `listTypeGet()`, whereas the listpack-zset loop historically went through
+  `lpGetObject()` (temporary sds + `createObject()` wrap + `sdsfromlonglong()` +
+  `string2d()` round-trip for integer members). Issue #632 identifies this path as
+  unmeasured today.
+
+  Encoding: listpack. 128 integer members stay listpack-encoded with
+  `zset-max-listpack-entries` raised to 256 (default 128, which would be on the
+  boundary at 128 entries). Scores are integers 1..128 (shuffled) so the sort
+  order is non-trivial. Pipeline 10 keeps the vector build + numeric compare as
+  the dominant cost.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    zset-max-listpack-entries: '256'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - '"ZADD" "sort:zset:lp:128:int" "19" "220940" "53" "827956" "119" "529827" "4" "215442" "46" "401086" "8" "858757" "35" "769968" "37" "929034" "45" "261952" "32" "633399" "75" "121461" "23" "927793" "112" "797272" "16" "255303" "9" "456517" "13" "371320" "116" "184447" "62" "832270" "66" "497319" "83" "569295" "64" "217597" "89" "242709" "84" "517648" "52" "451877" "12" "458675" "85" "26576" "10" "544910" "122" "319307" "103" "96070" "82" "553760" "5" "721185" "11" "904902" "14" "903546" "27" "261983" "120" "702960" "92" "124958" "88" "357834" "108" "764976" "50" "880274" "24" "954664" "57" "986224" "48" "567191" "127" "17257" "67" "114493" "115" "652863" "54" "343115" "15" "890096" "98" "198471" "114" "432872" "59" "394738" "113" "310116" "6" "52727" "17" "57158" "77" "432366" "105" "785164" "22" "926675" "49" "659980" "126" "689694" "69" "291832" "21" "179301" "44" "451658" "51" "70687" "100" "212806" "93" "691225" "40" "689433" "63" "586873" "73" "890314" "39" "821194" "104" "81836" "76" "353051" "55" "629847" "80" "434027" "95" "275574" "86" "241116" "42" "295088" "30" "230657" "3" "752132" "110" "940839" "20" "682183" "117" "135401" "124" "665224" "128" "953920" "68" "4074" "26" "130632" "111" "583000" "36" "563202" "96" "253846" "28" "634396" "1" "495323" "33" "481207" "106" "498015" "118" "944924" "125" "684227" "60" "44181" "34" "450253" "29" "728276" "25" "731361" "38" "149906" "31" "901773" "78" "834506" "94" "294084" "90" "681468" "71" "114353" "102" "587529" "97" "68203" "74" "441460" "121" "135669" "41" "492240" "101" "135986" "99" "247011" "18" "912185" "91" "711087" "87" "695107" "58" "499845" "123" "760880" "107" "181183" "65" "927499" "56" "554967" "61" "150079" "81" "745611" "109" "105362" "79" "81518" "43" "570186" "7" "706818" "72" "152258" "70" "902981" "2" "25336" "47" "260763"'
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-listpack-128-int
+  dataset_description: >-
+    1 SORTED SET key `sort:zset:lp:128:int` with 128 integer-encoded members (integer scores
+    1..128 shuffled, integer members drawn without replacement from 1..1_000_000).
+    Encoding is listpack (128 members, zset-max-listpack-entries raised to 256).
+tested-groups:
+- generic
+tested-commands:
+- sort
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 10 --command="SORT sort:zset:lp:128:int" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 34
