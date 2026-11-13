@@ -19,7 +19,6 @@ dbconfig:
   dataset_name: sorts-is128
   dataset_description: 1 SET key, 128 integer members.
 tested-groups:
-- set
 - generic
 tested-commands:
 - sort_ro

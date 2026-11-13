@@ -20,7 +20,6 @@ dbconfig:
   dataset_name: sortz-lp128
   dataset_description: 1 ZSET key, 128 integer members, all score 1 (listpack order is lexicographic, so numeric order is shuffled).
 tested-groups:
-- sorted-set
 - generic
 tested-commands:
 - sort_ro

@@ -19,7 +19,6 @@ dbconfig:
   dataset_name: sorts-ht1000
   dataset_description: 1 SET key, 1000 integer members forced to hashtable.
 tested-groups:
-- set
 - generic
 tested-commands:
 - sort_ro
