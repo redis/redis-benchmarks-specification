@@ -1,0 +1,39 @@
+version: 0.4
+name: memtier_benchmark-1key-set-hashtable-1000-int-members-sort_ro-numeric-pipeline-16
+description: >-
+  SORT_RO on a hashtable set (1000 integer members forced to hashtable). Private spec written to confirm
+  the PR 16188 claim (SORT builds elements without a temporary sds). Same shape as the
+  PR author's redis-benchmark run: pipeline 16, 50 connections. Metric: Ops/sec.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --command="SADD sorts:ht1000 __key__" --command-key-pattern=P --key-minimum 1 --key-maximum 1000 -n 1000 --key-prefix "" --hide-histogram -t 1 -c 1 --pipeline 50
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: sorts-ht1000
+  dataset_description: 1 SET key, 1000 integer members forced to hashtable.
+tested-groups:
+- generic
+tested-commands:
+- sort_ro
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --pipeline 16 --command="SORT_RO sorts:ht1000" --hide-histogram --test-time 120 -c 25 -t 2
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 90
