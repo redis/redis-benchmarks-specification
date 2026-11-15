@@ -1,0 +1,60 @@
+version: 0.4
+name: memtier_benchmark-3keys-zset-100-128-listpack-500-elements-zintercard
+description: 'Runs memtier_benchmark issuing ZINTERCARD over 3 sorted sets with mixed encodings:
+  ''lpA'' holds 100 members m:1..m:100 and ''lpB'' holds 128 members m:1..m:128 (both listpack, lpB
+  exactly at zset-max-listpack-entries), and ''bt'' holds 500 members m:1..m:500. Inputs are sorted by
+  cardinality, so lpA is iterated, lpB (a listpack) is the second input and bt the third; overlap is
+  100% of lpA (3-5 byte members) and the reply is always the integer 100. The second input receives
+  a lookup for every candidate, later inputs only for survivors. Here every candidate is looked up
+  in lpB, so the call mostly scans the 128-member listpack linearly. A coverage point for a second
+  input that is a listpack, not a one-axis delta against another suite. It covers numkeys=3, between
+  the existing 2-key and 8-key suites. Encoding: lpA, lpB = listpack; bt = skiplist through 8.10.x,
+  btree (OBJ_ENCODING_BTREE) from 8.12. Load: memtier defaults (4 threads x 50 clients, pipeline 1),
+  the same as the existing ZINTER/ZINTERCARD suites so results line up with them. Unlike the
+  existing 2-key and 8-key ZINTERCARD suites, which preload 64 keys, this suite preloads only the 3
+  keys it queries. Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 3
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- lpA: 100 members m:1..m:100 (listpack). lpB: 128 members m:1..m:128
+    -- (at zset-max-listpack-entries, so listpack). bt: 500 members m:1..m:500.
+    -- Sorted by cardinality the inputs are lpA, lpB, bt, so lpA is iterated and
+    -- the second input probed is a listpack; intersection = 100.
+    for m = 1, 100 do
+      redis.call('ZADD', 'lpA', m, 'm:' .. m)
+    end
+    for m = 1, 128 do
+      redis.call('ZADD', 'lpB', m, 'm:' .. m)
+    end
+    for m = 1, 500 do
+      redis.call('ZADD', 'bt', m, 'm:' .. m)
+    end
+    return 1
+  dataset_name: 3keys-zset-100-128-listpack-500
+  dataset_description: lpA = listpack zset m:1..m:100; lpB = listpack zset m:1..m:128; bt = zset
+    m:1..m:500 (500 elements, above zset-max-listpack-entries). Intersection = 100.
+tested-commands:
+- zintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINTERCARD 3 lpA lpB bt LIMIT 0"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- sorted-set
+priority: 131

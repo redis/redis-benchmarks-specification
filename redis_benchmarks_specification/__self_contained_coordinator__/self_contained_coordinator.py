@@ -30,6 +30,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 from docker.models.containers import Container
+from redis_benchmarks_specification.__self_contained_coordinator__.rdb_checks import (
+    RdbChecks,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.post_processing import (
     post_process_vector_db,
 )
@@ -111,6 +114,9 @@ from redisbench_admin.run.common import (
 from redisbench_admin.run.grafana import generate_artifacts_table_grafana_redis
 
 from redisbench_admin.run.run import calculate_client_tool_duration_and_check
+from redis_benchmarks_specification.__common__.runner_capabilities import (
+    filter_specs_by_runner_capabilities,
+)
 from redisbench_admin.utils.benchmark_config import (
     get_final_benchmark_config,
     get_defaults,
@@ -215,6 +221,7 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
                         getattr(args, "exclusive_hardware", False)
                     ),
                     "explicit_only": str(getattr(args, "explicit_only", False)),
+                    "runner_capabilities": getattr(args, "runner_capabilities", ""),
                     # The resolved path, not the raw flag: the flag is empty
                     # for every runner that never set it, which is exactly when
                     # an operator needs to know where data is going.
@@ -1018,6 +1025,7 @@ def main():
             default_baseline_branch=default_baseline_branch,
             default_metrics_str=default_metrics_str,
             explicit_only=explicit_only,
+            runner_capabilities=args.runner_capabilities,
         )
 
 
@@ -1143,6 +1151,7 @@ def self_contained_coordinator_blocking_read(
     docker_keep_env=False,
     restore_build_artifacts_default=True,
     explicit_only=False,
+    runner_capabilities="",
 ):
     num_process_streams = 0
     num_process_test_suites = 0
@@ -1202,6 +1211,7 @@ def self_contained_coordinator_blocking_read(
                 self.topology = ""
 
         args = Args()
+        args.runner_capabilities = runner_capabilities
 
         try:
             (
@@ -1644,6 +1654,11 @@ def process_self_contained_coordinator_stream(
                     command_regexp,
                 )
 
+                # Trigger selectors can narrow this set but cannot grant capabilities.
+                filtered_test_files = filter_specs_by_runner_capabilities(
+                    filtered_test_files, getattr(args, "runner_capabilities", "")
+                )
+
                 logging.info(
                     f"Adding {len(filtered_test_files)} tests to pending test list"
                 )
@@ -1831,8 +1846,13 @@ def process_self_contained_coordinator_stream(
                         bgsave_wait_requested = benchmark_config.get(
                             "dbconfig", {}
                         ).get("wait_for_bgsave", False)
+                        rdb_checks_config = benchmark_config.get("dbconfig", {}).get(
+                            "rdb_checks"
+                        )
                         benchmark_profilers_enabled = (
-                            profilers_enabled and not bgsave_wait_requested
+                            profilers_enabled
+                            and not bgsave_wait_requested
+                            and rdb_checks_config is None
                         )
                         if bgsave_wait_requested:
                             logging.info(
@@ -2045,6 +2065,7 @@ def process_self_contained_coordinator_stream(
                             bgsave_metric_missing = False
                             bgsave_wait_enabled = False
                             bgsave_probe_conn = None
+                            rdb_checks = None
                             try:
                                 current_cpu_pos = cpuset_start_pos
                                 ceil_db_cpu_limit = extract_db_cpu_limit(
@@ -2378,6 +2399,15 @@ def process_self_contained_coordinator_stream(
                                         server_name=server_name,
                                     )
 
+                                if rdb_checks_config is not None:
+                                    rdb_checks = RdbChecks(
+                                        rdb_checks_config,
+                                        primary_conns,
+                                        setup_type,
+                                        override_test_time,
+                                    )
+                                    rdb_checks.prepare()
+
                                 # Bound unconditionally: the multi-tool clientconfigs
                                 # branch below falls through into this same shared tail
                                 # rather than continue-ing, but wait_for_bgsave isn't
@@ -2653,6 +2683,7 @@ def process_self_contained_coordinator_stream(
                                         _topdown_available
                                         and topdown_labels
                                         and not bgsave_wait_requested
+                                        and rdb_checks_config is None
                                     ):
                                         topdown_duration = 30  # default
                                         if test_time_match:
@@ -2910,6 +2941,11 @@ def process_self_contained_coordinator_stream(
                                         "output {}".format(client_container_stdout)
                                     )
 
+                                # Validation is outside client timing and before export.
+                                # A failure follows the normal exception/teardown path.
+                                if rdb_checks is not None:
+                                    rdb_checks.verify()
+
                                 # Wait for topdown-profiler if it was started
                                 if topdown_collector is not None:
                                     topdown_run_id = (
@@ -3053,7 +3089,10 @@ def process_self_contained_coordinator_stream(
                                         )
                                     )
                                     if not is_valid:
-                                        if bgsave_wait_enabled:
+                                        if (
+                                            bgsave_wait_enabled
+                                            or rdb_checks is not None
+                                        ):
                                             raise ValueError(validation_error)
                                         logging.error(
                                             f"Test {test_name} failed metric validation: {validation_error}"
@@ -3107,7 +3146,10 @@ def process_self_contained_coordinator_stream(
                                             )
                                         )
                                         if not is_valid:
-                                            if bgsave_wait_enabled:
+                                            if (
+                                                bgsave_wait_enabled
+                                                or rdb_checks is not None
+                                            ):
                                                 raise ValueError(validation_error)
                                             logging.error(
                                                 f"Test {test_name} failed metric validation: {validation_error}"
@@ -3243,6 +3285,8 @@ def process_self_contained_coordinator_stream(
                                             )
 
                                 except redis.exceptions.ConnectionError as e:
+                                    if rdb_checks is not None:
+                                        raise
                                     if bgsave_wait_enabled:
                                         bgsave_metric_missing = True
                                     logging.critical(
@@ -3337,7 +3381,11 @@ def process_self_contained_coordinator_stream(
                                         redis_container, "DB"
                                     )
 
-                                if bgsave_wait_enabled and not test_result:
+                                if (
+                                    bgsave_wait_enabled or rdb_checks is not None
+                                ) and not test_result:
+                                    # Failed synchronous RDB checks also retain logs,
+                                    # but must not retain large persistence artifacts.
                                     # bgsave_wait_enabled (not bgsave_metric_missing)
                                     # is the gate: bgsave_metric_missing only covers
                                     # "no BGSAVE confirmed", but a *confirmed* BGSAVE

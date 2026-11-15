@@ -1,0 +1,63 @@
+version: 0.4
+required-runner-capabilities:
+- local-disk
+name: memtier_benchmark-rdb-load-16B-random
+description: One DEBUG RELOAD NOSAVE NOFLUSH into an empty database of 5000000 string keys
+  with fixed 16-byte key names and 16-byte EMBSTR values. Primary metric ALL_STATS.Totals.Latency
+  in milliseconds, lower is better; one request, one connection, pipeline 1. Random payload
+  is an incompressible control. Compression and checksum enabled; no expiry, AOF, replicas
+  or concurrent writes. Load setup saves then synchronously flushes outside the timed request;
+  file is newly written, with no cold-cache claim. Use independent triggers. The coordinator
+  enforces exact counts, sampled-byte equality and one successful command. Run on qualified
+  disk runners; not a durable-fsync or cold-storage benchmark.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    appendonly: 'no'
+    rdbcompression: 'yes'
+    rdbchecksum: 'yes'
+    maxmemory-policy: noeviction
+    enable-debug-command: 'yes'
+  check:
+    keyspacelen: 5000000
+  skip_throughput_floor: true
+  low-throughput-benchmark: 'yes'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+    tool: memtier_benchmark
+    arguments: '--data-size 16 --ratio 1:0 -n allkeys --pipeline 50 --key-prefix rdbsize:
+      --key-minimum 10000000 --key-maximum 14999999 --key-pattern P:P --hide-histogram -t
+      4 -c 10 --random-data'
+  resources:
+    requests:
+      memory: 8g
+  rdb_checks:
+    operation: load
+    keyspacelen: 5000000
+    value_size: 16
+    sample_keys:
+    - rdbsize:10000000
+    - rdbsize:12500000
+    - rdbsize:14999999
+tested-commands:
+- debug
+tested-groups:
+- server
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark@sha256:356231d6b1baecaaa74d347f82f3c32b40f7da7f0b1dd5b1dab329c5d245f761
+  tool: memtier_benchmark
+  arguments: --command "DEBUG RELOAD NOSAVE NOFLUSH" -n 1 -c 1 -t 1 --pipeline 1 --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 1g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.Latency
+priority: 50
