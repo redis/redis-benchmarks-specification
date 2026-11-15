@@ -1,0 +1,57 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-1M-elements-36B-members-zmscore-16-members-pipeline-10
+description: 'Runs memtier_benchmark against 1 sorted set of 1,000,000 elements whose members are 36
+  bytes long (f47ac10b-58cc-4372-a567-0e02b followed by a 7-digit id 1000000..1999999, constant
+  score 1, loaded by the memtier preload), querying ZMSCORE with 16 independent uniformly random
+  existing members per call (the 16 __key__ tokens intentionally draw 16 ids). memtier only varies
+  the suffix after --key-prefix, so all members share a 29-byte prefix, unlike the UUID-shaped
+  members of the 36B ZINTERCARD suites, which share no common prefix. Long-member twin of
+  memtier_benchmark-1key-zset-1M-elements-zmscore-16-members-pipeline-10, at the same load and
+  command shape: the difference is member length (36 bytes instead of 1-7 byte integers). The
+  working set also roughly doubles (~26 to ~53 MB of used_memory on unstable, btree; ~61 to ~100 MB
+  on 8.10.x), which can exceed the last-level cache on some CPUs, so the delta against the
+  short-member twin also includes cache effects that differ by CPU. Load: 4 threads x 25 clients at
+  pipeline 10, so the server, not the client or the network round trip, bounds Ops/sec; the
+  pipeline-1, single-connection zmscore-16-members suite is round-trip bound and is not directly
+  comparable. Encoding: skiplist through 8.10.x, btree (OBJ_ENCODING_BTREE) from 8.12 (1,000,000
+  elements, above zset-max-listpack-entries 128). Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --pipeline 50 --command="ZADD lb 1 __key__" --command-key-pattern=P
+      --key-minimum 1000000 --key-maximum 1999999 --key-prefix "f47ac10b-58cc-4372-a567-0e02b"
+      -n 100000 --hide-histogram -t 10 -c 1
+  resources:
+    requests:
+      memory: 1g
+  dataset_name: 1key-zset-1M-elements-36B-members-const-score
+  dataset_description: 1 sorted set 'lb' with 1,000,000 members
+    'f47ac10b-58cc-4372-a567-0e02b'<1000000..1999999> (36 bytes each, a shared 29-byte prefix),
+    constant score 1.
+tested-groups:
+- sorted-set
+tested-commands:
+- zmscore
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZMSCORE lb __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__ __key__"
+    --key-minimum 1000000 --key-maximum 1999999 --command-key-pattern=R
+    --key-prefix "f47ac10b-58cc-4372-a567-0e02b" --hide-histogram --test-time 180 --pipeline 10
+    -c 25 -t 4
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+priority: 73

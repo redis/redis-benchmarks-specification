@@ -1,0 +1,65 @@
+# dataset_name 1key-zset-100K-elements-12B-members-distinct-scores: the dataset load is shared verbatim by every spec
+# that uses this dataset.
+version: 0.4
+name: memtier_benchmark-1key-zset-100K-elements-12B-members-distinct-scores-zrandmember-withscores-count-50K
+description: 'Runs ZRANDMEMBER zs:distinct:100K 50000 WITHSCORES on one sorted set. count/size = 50000/100000: a count above size/3 (and below size) takes the dense branch of ZRANDMEMBER, so this count is dense. Metric of interest: server-side usec_per_call of the measured command (INFO commandstats, reset by the harness before the dataset load; the load calls neither ZRANDMEMBER nor ZRANGESTORE); client Ops/sec is secondary. Dataset: 1 sorted set zs:distinct:100K: 100,000 members m:%010d (12 bytes each), distinct integer score i. Encoding: btree on unstable, skiplist on 8.10.x and older (above zset-max-listpack-entries 128). Load: 1 x 1 connection, pipeline 1, 120 s. Read-only, no keyspace drain.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- zs:distinct:100K: 100,000 members 'm:%010d' (exactly 12 bytes), score = i, so every score is distinct. Inserted in the fixed order i = (j*618033) mod 100000 + 1 for j = 0..99999 (618033 is coprime to 100000).
+    -- Deterministic (no RNG). ZADD in batches of 1000 args (500 members). Checks ZCARD, the
+    -- score layout and OBJECT ENCODING; on a mismatch it returns an error reply, otherwise
+    -- it returns ZCARD (the runner logs it as 'Lua script result: <N>', GATE rule 1).
+    local key = 'zs:distinct:100K'
+    local n = 100000
+    local args = {}
+    for j = 0, n - 1 do
+      local i = (j * 618033) % 100000 + 1
+      args[#args + 1] = i
+      args[#args + 1] = string.format('m:%010d', i)
+      if #args == 1000 then
+        redis.call('ZADD', key, unpack(args))
+        args = {}
+      end
+    end
+    if #args > 0 then redis.call('ZADD', key, unpack(args)) end
+    local card = redis.call('ZCARD', key)
+    local enc = redis.call('OBJECT', 'ENCODING', key)
+    if card ~= n or enc == 'listpack' or enc == 'ziplist' then
+      return redis.error_reply('preload failed: ZCARD=' .. card .. ' encoding=' .. enc)
+    end
+    local first = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+    local last = redis.call('ZRANGE', key, -1, -1, 'WITHSCORES')
+    local per = redis.call('ZCOUNT', key, 7, 7)
+    if tonumber(first[2]) ~= 1 or tonumber(last[2]) ~= 100000 or per ~= 1 then
+      return redis.error_reply('preload failed: min=' .. tostring(first[2]) .. ' max=' ..
+        tostring(last[2]) .. ' per-score=' .. per)
+    end
+    return card
+  dataset_name: 1key-zset-100K-elements-12B-members-distinct-scores
+  dataset_description: '1 sorted set zs:distinct:100K: 100,000 members m:%010d (12 bytes each), distinct integer score i.'
+tested-groups:
+- sorted-set
+tested-commands:
+- zrandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZRANDMEMBER zs:distinct:100K 50000 WITHSCORES" --hide-histogram --test-time 120 --pipeline 1 -c 1 -t 1
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 73
