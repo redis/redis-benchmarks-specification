@@ -179,6 +179,7 @@ _topdown_startup_labels = {}
 
 # Global variables for heartbeat
 _heartbeat_status = "idle"  # idle, running, waiting
+_idle_shutdown_state = "off"  # off, on, failed. Kept apart from the status above, which the polling loop rewrites on every pass.
 _heartbeat_current_stream = ""
 _heartbeat_current_test = ""
 HEARTBEAT_KEY_PREFIX = "ci.benchmarks.redis/ci/redis/redis:runner:heartbeat"
@@ -202,6 +203,7 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
                     "arch": arch,
                     "version": version,
                     "status": _heartbeat_status,
+                    "idle_shutdown": _idle_shutdown_state,
                     "current_stream": _heartbeat_current_stream,
                     "current_test": _heartbeat_current_test,
                     "timestamp": str(now_ts),
@@ -240,9 +242,13 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
     return t
 
 
+def _set_idle_shutdown_state(state):
+    global _idle_shutdown_state
+    _idle_shutdown_state = state
+
+
 def _report_idle_shutdown_failed(_error):
-    global _heartbeat_status
-    _heartbeat_status = "idle-shutdown-failed"
+    _set_idle_shutdown_state("failed")
 
 
 class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
@@ -993,6 +999,7 @@ def main():
         start_idle_shutdown_watchdog(
             IDLE_TRACKER, args.idle_shutdown, on_failure=_report_idle_shutdown_failed
         )
+        _set_idle_shutdown_state("on")
 
     explicit_only = args.explicit_only
     if explicit_only:

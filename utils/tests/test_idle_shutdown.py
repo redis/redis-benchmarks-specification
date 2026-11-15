@@ -1,3 +1,5 @@
+import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +16,9 @@ from redis_benchmarks_specification.__self_contained_coordinator__.idle_shutdown
     idle_shutdown_due,
     shutdown_host,
     start_idle_shutdown_watchdog,
+)
+from redis_benchmarks_specification.__self_contained_coordinator__ import (
+    self_contained_coordinator as coordinator,
 )
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     self_contained_coordinator_blocking_read,
@@ -339,3 +344,36 @@ def test_runner_is_busy_while_the_job_runs():
     ):
         _blocking_read(_conn())
     assert seen == [0]
+
+
+def _heartbeat_fields():
+    conn = MagicMock()
+    coordinator._start_heartbeat(
+        conn, "plat", "amd64", "0.0.0", SimpleNamespace(), "/tmp"
+    )
+    deadline = time.time() + 5
+    while not conn.hset.called and time.time() < deadline:
+        time.sleep(0.01)
+    return conn.hset.call_args.kwargs["mapping"]
+
+
+def test_heartbeat_reports_idle_shutdown_as_off_by_default(monkeypatch):
+    monkeypatch.setattr(coordinator, "_idle_shutdown_state", "off")
+    assert _heartbeat_fields()["idle_shutdown"] == "off"
+
+
+def test_heartbeat_reports_idle_shutdown_as_on_once_enabled(monkeypatch):
+    monkeypatch.setattr(coordinator, "_idle_shutdown_state", "off")
+    coordinator._set_idle_shutdown_state("on")
+    assert _heartbeat_fields()["idle_shutdown"] == "on"
+
+
+def test_failed_idle_shutdown_stays_visible_after_the_polling_loop_runs(monkeypatch):
+    monkeypatch.setattr(coordinator, "_idle_shutdown_state", "on")
+    coordinator._report_idle_shutdown_failed(RuntimeError("no permission"))
+    with patch(
+        f"{COORDINATOR}.process_self_contained_coordinator_stream",
+        return_value=("1787194724560-0", False, 0),
+    ):
+        _blocking_read(_conn())  # rewrites the heartbeat status to waiting/running
+    assert _heartbeat_fields()["idle_shutdown"] == "failed"
