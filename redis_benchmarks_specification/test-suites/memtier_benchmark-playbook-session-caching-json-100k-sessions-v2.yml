@@ -18,6 +18,10 @@ description: |
   documents, depending on the generated user ID width. These sizes come from the
   literal JSON payloads.
 
+  Preload and write documents have different field sets and timestamp types.
+  As sessions are overwritten, reads shift from the preload shape to the write
+  shape; the mix depends on which sessions have been written during the run.
+
   This v2 series replaces memtier_benchmark-session-caching-json-100k-sessions,
   whose measured writes contained invalid JSON. Keep its historical results
   separate: failed writes and successful document replacements are different
