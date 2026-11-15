@@ -270,10 +270,9 @@ def read_listener_state(redis_conns):
     over the distinct servers behind ``redis_conns``: in cluster mode the runner
     keeps one connection per slot range, so a node can appear more than once.
 
-    Returns ``None`` when a server does not report ``tracking_clients`` or
-    cannot be queried, so the attached-listener check is skipped rather than
-    failing a run on a server that does not expose it. ``mem_clients_normal``
-    is ``None`` when a server does not report it.
+    Returns ``None`` when a server does not report ``tracking_clients``.
+    Query failures abort the run: they cannot establish that the server lacks
+    the metric. ``mem_clients_normal`` is ``None`` when it is not reported.
     """
     state = {"tracking_clients": 0, "mem_clients_normal": 0}
     seen = set()
@@ -281,8 +280,7 @@ def read_listener_state(redis_conns):
         try:
             info = redis_conn.info()
         except Exception as e:
-            logging.warning(f"Could not read INFO: {e}")
-            return None
+            raise RuntimeError("Could not read the tracking listeners from INFO") from e
         if info.get("tracking_clients") is None:
             logging.warning(
                 "The server does not report tracking_clients in INFO; "

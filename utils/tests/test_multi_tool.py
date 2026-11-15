@@ -844,6 +844,25 @@ def test_run_client_configs_does_not_count_other_tracking_clients(tmp_path, capl
     assert "50 tracking clients were connected before" in caplog.text
 
 
+def test_run_client_configs_aborts_before_launch_when_baseline_read_fails(tmp_path):
+    import redis
+
+    bg, fg, docker_client = _bg_and_fg(listeners=2)
+    conn = _tracking_conn(redis.exceptions.ConnectionError("unreachable"))
+
+    with pytest.raises(RuntimeError, match="Could not read the tracking listeners"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+            redis_conns=[conn],
+        )
+
+    docker_client.containers.run.assert_not_called()
+    assert not list(tmp_path.glob("*.json"))
+
+
 def test_run_client_configs_aborts_when_the_end_read_fails(tmp_path):
     """Once the baseline was read, a failed read at the end of the window must
     not let the run through without its listener check."""
