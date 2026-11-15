@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-session-caching-json-100k-sessions
+name: memtier_benchmark-playbook-session-caching-json-100k-sessions-v2
 description: |
   Measures Ops/sec for a read-heavy RedisJSON session workload over 100,000
   preloaded JSON document keys (session:1 through session:100000). RedisJSON
@@ -8,13 +8,20 @@ description: |
   10 writes, using 200 connections, pipeline 1 and a 120-second measured phase.
 
   Zipfian key selection skews popularity toward a small subset of sessions.
+  Distinct deterministic client seeds avoid identical key sequences across the
+  200 connections while keeping the workload reproducible between runs.
   Report throughput for this loaded client population; sampled response-latency
   percentiles describe the same load. The workload does not isolate individual
   JSON field operations.
 
   The preload submits 447-byte JSON documents. Measured writes submit 402-407-byte
   documents, depending on the generated user ID width. These sizes come from the
-  literal JSON payloads; --data-size-range does not resize them.
+  literal JSON payloads.
+
+  This v2 series replaces memtier_benchmark-session-caching-json-100k-sessions,
+  whose measured writes contained invalid JSON. Keep its historical results
+  separate: failed writes and successful document replacements are different
+  workloads and are not valid before/after performance baselines.
 
   Memtier expands only the first __key__ in each command argument. The write
   payload therefore has one quoted userId placeholder and constant numeric
@@ -59,7 +66,7 @@ clientconfig:
     --key-prefix ""
     --key-minimum 1
     --key-maximum 100000
-    --data-size-range=400-600
+    --distinct-client-seed
     --pipeline=1
     --print-percentiles=50,90,95,99
     --run-count=1
