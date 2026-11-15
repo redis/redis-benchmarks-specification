@@ -50,7 +50,7 @@ def test_finished_job_that_started_a_test_restarts_the_idle_clock():
     clock = FakeClock()
     tracker = IdleTracker(clock=clock)
     tracker.start_work()
-    tracker.note_work()
+    tracker.note_test_started()
     clock.now += 3600
     tracker.end_work()
     clock.now += 60
@@ -71,7 +71,7 @@ def test_a_test_started_in_an_earlier_job_does_not_restart_the_clock_again():
     clock = FakeClock()
     tracker = IdleTracker(clock=clock)
     tracker.start_work()
-    tracker.note_work()
+    tracker.note_test_started()
     tracker.end_work()
     clock.now += 600
     tracker.start_work()
@@ -245,7 +245,7 @@ def _processor(tracker, clock, elapsed, started_a_test, result):
     def run(*_args, **_kwargs):
         clock.now += elapsed
         if started_a_test:
-            tracker.note_work()
+            tracker.note_test_started()
         return result
 
     return run
@@ -299,7 +299,7 @@ def test_job_that_raises_after_starting_a_test_counts_and_is_never_left_busy():
     tracker = IdleTracker(clock=clock)
 
     def run(*_args, **_kwargs):
-        tracker.note_work()
+        tracker.note_test_started()
         clock.now += 3600
         raise RuntimeError("boom")
 

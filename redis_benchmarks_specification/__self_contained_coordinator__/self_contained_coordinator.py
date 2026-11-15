@@ -1806,7 +1806,6 @@ def process_self_contained_coordinator_stream(
                         github_event_conn.lpush(stream_test_list_running, test_name)
                         # Update heartbeat with current test
                         _heartbeat_current_test = test_name
-                        IDLE_TRACKER.note_work()
                         github_event_conn.expire(
                             stream_test_list_running, REDIS_BINS_EXPIRE_SECS
                         )
@@ -1850,6 +1849,7 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
+                        IDLE_TRACKER.note_test_started()
                         # Normalize these opt-ins once for guards, validation and export.
                         for flag in ("wait_for_bgsave", "skip_throughput_floor"):
                             if flag in benchmark_config.get("dbconfig", {}):

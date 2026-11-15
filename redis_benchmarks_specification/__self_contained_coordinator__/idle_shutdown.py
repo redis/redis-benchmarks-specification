@@ -26,7 +26,7 @@ class IdleTracker:
         self._started_a_test = False
         self._last_activity = clock()
 
-    def mark_activity(self):
+    def restart_clock(self):
         with self._lock:
             self._last_activity = self._clock()
 
@@ -35,8 +35,8 @@ class IdleTracker:
             self._busy = True
             self._started_a_test = False
 
-    def note_work(self):
-        """Called when a test starts running for this runner."""
+    def note_test_started(self):
+        """Called when a test is about to run on this runner, after the build-variant check."""
         with self._lock:
             self._started_a_test = True
 
@@ -56,8 +56,8 @@ class IdleTracker:
 IDLE_TRACKER = IdleTracker()
 
 
-def shutdown_host(command=None):
-    cmd = list(command or SHUTDOWN_COMMAND)
+def shutdown_host():
+    cmd = list(SHUTDOWN_COMMAND)
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         cmd = ["sudo", "-n"] + cmd
     logging.warning("Idle shutdown: running {}".format(" ".join(cmd)))
@@ -82,7 +82,7 @@ def start_idle_shutdown_watchdog(
     not retried: it would fail the same way every check. on_failure(error) lets
     the caller surface that state, so a runner that cannot stop is not silent.
     """
-    tracker.mark_activity()
+    tracker.restart_clock()
 
     def _watchdog_loop():
         while True:
