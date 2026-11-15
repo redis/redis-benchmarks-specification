@@ -1,0 +1,90 @@
+version: 0.4
+name: memtier_benchmark-playbook-session-caching-json-100k-sessions-v2
+description: |
+  Measures Ops/sec for a read-heavy RedisJSON session workload over 100,000
+  preloaded JSON document keys (session:1 through session:100000). RedisJSON
+  stores the values as module-managed JSON objects. JSON.GET returns the whole
+  document; JSON.SET replaces its root. The command weights are 90 reads to
+  10 writes, using 200 connections, pipeline 1 and a 120-second measured phase.
+
+  Zipfian key selection skews popularity toward a small subset of sessions.
+  Distinct deterministic client seeds avoid identical key sequences across the
+  200 connections while keeping the workload reproducible between runs.
+  Report throughput for this loaded client population; sampled response-latency
+  percentiles describe the same load. The workload does not isolate individual
+  JSON field operations.
+
+  The preload submits 447-byte JSON documents. Measured writes submit 402-407-byte
+  documents, depending on the generated user ID width. These sizes come from the
+  literal JSON payloads.
+
+  Preload and write documents have different field sets and timestamp types.
+  As sessions are overwritten, reads shift from the preload shape to the write
+  shape; the mix depends on which sessions have been written during the run.
+
+  This v2 series replaces memtier_benchmark-session-caching-json-100k-sessions,
+  whose measured writes contained invalid JSON. Keep its historical results
+  separate: failed writes and successful document replacements are different
+  workloads and are not valid before/after performance baselines.
+
+  Memtier expands only the first __key__ in each command argument. The write
+  payload therefore has one quoted userId placeholder and constant numeric
+  timestamps. The target session key and payload userId use independent draws;
+  the payload userId is not asserted to equal the target session ID.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100000
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix "" --command "JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-id\\\",\\\"organizationId\\\":\\\"org-id\\\",\\\"role\\\":\\\"member\\\",\\\"createdAt\\\":\\\"0\\\",\\\"lastAccessed\\\":\\\"0\\\",\\\"ipAddress\\\":\\\"192.168.1.1\\\",\\\"device\\\":\\\"device\\\",\\\"authMethod\\\":\\\"password\\\",\\\"status\\\":\\\"active\\\",\\\"metadata\\\":\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\"}\""
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=100001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50'
+
+tested-groups:
+- json
+
+tested-commands:
+- json.get
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 25 -t 8
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.GET session:__key__"
+    --command-key-pattern=Z
+    --command-ratio=90
+    --command="JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-__key__\\\",\\\"organizationId\\\":\\\"org-id\\\",\\\"role\\\":\\\"admin\\\",\\\"email\\\":\\\"user@example.com\\\",\\\"name\\\":\\\"User Name\\\",\\\"permissions\\\":[\\\"read\\\",\\\"write\\\"],\\\"lastActivity\\\":1700000000,\\\"ipAddress\\\":\\\"192.168.1.1\\\",\\\"userAgent\\\":\\\"Mozilla/5.0\\\",\\\"createdAt\\\":1700000000,\\\"metadata\\\":\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\"}\""
+    --command-key-pattern=Z
+    --command-ratio=10
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+
+priority: 150
