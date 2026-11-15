@@ -46,6 +46,12 @@ def create_self_contained_coordinator_args(project_name):
         default=MACHINE_CPU_COUNT,
         help="Specify how much of the available CPU resources the coordinator can use.",
     )
+    parser.add_argument(
+        "--runner-capabilities",
+        type=str,
+        default="",
+        help="Comma-separated capabilities qualified by the runner operator (for example local-disk). Trigger fields cannot grant them.",
+    )
     parser.add_argument("--redis_proc_start_port", type=int, default=6379)
     parser.add_argument("--cpuset_start_pos", type=int, default=0)
     parser.add_argument(

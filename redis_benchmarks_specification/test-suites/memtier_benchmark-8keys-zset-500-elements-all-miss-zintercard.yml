@@ -1,0 +1,59 @@
+version: 0.4
+name: memtier_benchmark-8keys-zset-500-elements-all-miss-zintercard
+description: 'Runs memtier_benchmark issuing ZINTERCARD over 8 sorted sets where the intersection is
+  empty and every candidate is rejected by the first lookup (all-miss). ov:1 holds 499 members
+  x:1..x:499 and is strictly the smallest input, so the server always iterates it; ov:2..ov:8 hold
+  500 members m:1..m:500, disjoint from ov:1 (0% overlap, 3-5 byte members). The reply is always the
+  integer 0. The second input receives a lookup for every candidate, later inputs only for
+  survivors. Because every candidate misses in the second input, the inputs past the second are
+  never probed: the call does 499 lookups into one 500-member input, whatever numkeys says. The
+  suite guards that stop-at-first-miss behavior: a change that probed every input would show most clearly
+  here. Encoding: skiplist through 8.10.x, btree (OBJ_ENCODING_BTREE) from 8.12 (499 and 500
+  elements, above zset-max-listpack-entries 128). Load: memtier defaults (4 threads x 50 clients,
+  pipeline 1), the same as the existing ZINTER/ZINTERCARD suites so results line up with them.
+  Unlike the existing 2-key and 8-key ZINTERCARD suites, which preload 64 keys, this suite preloads
+  only the 8 keys it queries. Metric of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 8
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- ov:1 is the smallest input (499 members x:1..x:499), so after the
+    -- by-cardinality sort it is always the iterated input. ov:2..ov:8 hold 500
+    -- members m:1..m:500 that share nothing with ov:1, so every member of ov:1
+    -- misses on its first probe (all-miss) and the reply is always 0.
+    for m = 1, 499 do
+      redis.call('ZADD', 'ov:1', m, 'x:' .. m)
+    end
+    for k = 2, 8 do
+      for m = 1, 500 do
+        redis.call('ZADD', 'ov:' .. k, m, 'm:' .. m)
+      end
+    end
+    return 1
+  dataset_name: 8keys-sorted-set-all-miss-first-input-disjoint
+  dataset_description: ov:1 = 499 members x:1..x:499; ov:2..ov:8 = 500 members m:1..m:500 each. ov:1
+    is disjoint from all others, so the 8-way intersection is empty.
+tested-commands:
+- zintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINTERCARD 8 ov:1 ov:2 ov:3 ov:4 ov:5 ov:6 ov:7 ov:8 LIMIT 0"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- sorted-set
+priority: 131

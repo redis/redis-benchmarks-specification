@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-2keys-zset-890-elements-zintercard
+description: 'Runs memtier_benchmark issuing ZINTERCARD over 2 sorted sets of 890 elements each.
+  Both keys hold the identical member set m:1..m:890 (100% overlap, 3-5 byte members), so the reply
+  is always the integer 890. Second size point for the 2-key 500-element ZINTERCARD suite, at 890 elements:
+  the only change in the queried keys is the set size. Encoding: skiplist through 8.10.x, btree
+  (OBJ_ENCODING_BTREE) from 8.12 (every input holds 890 elements, above zset-max-listpack-entries
+  128). Load: memtier defaults (4 threads x 50 clients, pipeline 1), the same as the existing
+  ZINTER/ZINTERCARD suites so results line up with them. Unlike the existing 2-key and 8-key
+  ZINTERCARD suites, which preload 64 keys, this suite preloads only the 2 keys it queries. Metric
+  of interest: Ops/sec.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 2
+  resources:
+    requests:
+      memory: 1g
+  init_lua: |
+    -- 2 sorted sets all holding the identical 890-member set m:1..m:890.
+    for k = 1, 2 do
+      for m = 1, 890 do
+        redis.call('ZADD', 'ov:' .. k, m, 'm:' .. m)
+      end
+    end
+    return 1
+  dataset_name: 2keys-sorted-set-890-elements-identical-members
+  dataset_description: 2 sorted sets ov:1..ov:2, each containing the identical 890 members
+    m:1..m:890 (score = index).
+tested-commands:
+- zintercard
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="ZINTERCARD 2 ov:1 ov:2 LIMIT 0"  --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- sorted-set
+priority: 131

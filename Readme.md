@@ -64,6 +64,9 @@ Current supported benchmark tools:
 - [SOON][redis-benchmark-go](https://github.com/filipecosta90/redis-benchmark-go)
 
 
+For disk runner setup, test selection, and measurement limits, see the
+[RDB save and load benchmark guide](docs/rdb-disk-benchmarks.md).
+
 ## Installation and Execution
 
 The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.

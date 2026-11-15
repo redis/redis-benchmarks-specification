@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redis-benchmarks-specification"
-version = "0.3.46"
+version = "0.3.50"
 description = "The Redis benchmarks specification describes the cross-language/tools requirements and expectations to foster performance and observability standards around redis related technologies. Members from both industry and academia, including organizations and individuals are encouraged to contribute."
 authors = ["filipecosta90 <filipecosta.90@gmail.com>","Redis Performance Group <performance@redis.com>"]
 readme = "Readme.md"
@@ -30,7 +30,6 @@ PyGithub = "^1.55"
 GitPython = "^3.1.20"
 semver = "^2.13.0"
 node-semver = "^0.8.1"
-typed-ast = "^1.5.0"
 oyaml = "^1.0"
 pandas = "^2.1.2"
 numpy = "^2.0.0"
