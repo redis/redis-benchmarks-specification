@@ -30,8 +30,8 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 10keys-bitmap-50B-strings-roaring-on
-  dataset_description: 10 string keys (key:1..key:10), each holding a 50-byte value (32-byte
-    AVX2 block + 18-byte scalar tail).
+  dataset_description: 10 string keys (key:1..key:10), each holding a 50-byte value (identical
+    fixed payloads, so the ten-way XOR produces zero bits).
 tested-commands:
 - bitop
 tested-groups:

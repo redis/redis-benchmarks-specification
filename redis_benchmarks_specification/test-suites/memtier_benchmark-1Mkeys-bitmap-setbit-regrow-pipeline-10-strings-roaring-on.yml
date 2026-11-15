@@ -24,11 +24,10 @@ dbconfig:
       cpus: '2'
       memory: 4g
   dataset_name: 1Mkeys-bitmap-512bits-random-regrow-roaring-on
-  dataset_description: This dataset contains 1M raw-encoded 64-byte values used as
-    bitmaps. Writing bit 8191 extends a value to 1KiB while rewriting it with a 64-byte
-    payload returns it to its original size, so a mixed workload keeps roughly half the
-    keyspace short and the allocation-growth path continuously exercised at bounded
-    memory.
+  dataset_description: >
+    One million RAW strings initially holding 64-byte random values. SETBIT converts selected
+    strings to Roaring bitmaps, while interleaved SET restores strings. The workload exercises
+    repeated representation changes; Roaring allocation size is not a fixed 1KiB.
 tested-commands:
 - setbit
 - set

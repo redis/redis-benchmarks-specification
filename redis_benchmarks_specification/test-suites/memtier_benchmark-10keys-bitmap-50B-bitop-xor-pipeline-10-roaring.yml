@@ -7,8 +7,10 @@ description: >
   them. The preload sets bit 399 on each of key:1..key:10, so each source spans 50 bytes like
   the string spec, and init_commands then set bit N on key:N so the sources differ (identical
   sources XOR to an empty result); with Roaring sources BITOP takes the native path and writes a Roaring
-  result. Keyspace and client arguments match the string spec, so the two are directly
-  comparable. Needs a build with native compressed bitmaps.
+  result with ten set bits. Compare this workload across builds. The dense sibling uses
+  ten identical payloads and produces zero bits, so it is not an equivalent-input encoding
+  comparison. Use the strings-roaring-on sibling for the original dense input with the
+  flag enabled. Metric of interest: Ops/sec. Needs a build with native compressed bitmaps.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -34,7 +36,7 @@ dbconfig:
     requests:
       memory: 1g
   dataset_name: 10keys-bitmap-50B-roaring
-  dataset_description: 10 Roaring bitmap keys (key:1..key:10), each with bit 399 set so the logical bitmap spans 50 bytes.
+  dataset_description: 10 Roaring bitmap keys (key:1..key:10), each with bits 399 and N set on key:N. The logical bitmap spans 50 bytes; XOR produces ten set bits.
 tested-commands:
 - bitop
 tested-groups:
