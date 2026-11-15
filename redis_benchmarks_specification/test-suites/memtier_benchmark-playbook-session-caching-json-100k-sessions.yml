@@ -1,36 +1,25 @@
 version: 0.4
 name: memtier_benchmark-session-caching-json-100k-sessions
 description: |
-  Runs memtier_benchmark to simulate a session caching workload for a SaaS application.
-  This benchmark focuses exclusively on JSON-based session storage, where each session
-  is stored as a Redis JSON document (`session:<id>`) with fields like user ID, timestamps, device info,
-  and metadata (total ~400–600B).
+  Measures Ops/sec for a read-heavy RedisJSON session workload over 100,000
+  preloaded JSON document keys (session:1 through session:100000). RedisJSON
+  stores the values as module-managed JSON objects. JSON.GET returns the whole
+  document; JSON.SET replaces its root. The command weights are 90 reads to
+  10 writes, using 200 connections, pipeline 1 and a 120-second measured phase.
 
-  The benchmark models a typical read-heavy cache usage pattern, with an approximate
-  **read:write ratio of 90:10**, reflecting session retrievals and infrequent updates.
+  Zipfian key selection skews popularity toward a small subset of sessions.
+  Report throughput for this loaded client population; sampled response-latency
+  percentiles describe the same load. The workload does not isolate individual
+  JSON field operations.
 
-  NOTE: memtier substitutes only the FIRST `__key__` in each command argument, so the write payload carries a
-  single `__key__` (in `userId`); extra placeholders stayed literal (`"lastActivity":__key__`), the document was
-  invalid JSON, and every benchmark write failed with `expected value at line 1 column 172`.
+  The preload submits 447-byte JSON documents. Measured writes submit 402-407-byte
+  documents, depending on the generated user ID width. These sizes come from the
+  literal JSON payloads; --data-size-range does not resize them.
 
-  Command groups:
-    - Session cache reads (`JSON.GET`): ~90%
-    - Session cache writes (`JSON.SET`): ~10%
-
-  To better approximate real-world access patterns, the benchmark uses a **Zipfian key distribution**
-  (`--command-key-pattern=Z`). This simulates **skewed access** where a small subset of sessions (hot keys)
-  receives a majority of reads — a common pattern in production workloads.
-
-  While Zipfian is technically a power-law distribution, it effectively mimics **Poisson-like behavior**
-  in large-scale systems, where access frequency is uneven but statistically predictable.
-  This access skew mirrors real-life scenarios such as:
-    - Frequently accessed or "sticky" user sessions
-    - Popular user accounts or active devices
-    - Hot caches for trending or recently used resources
-
-  Using Zipfian distribution allows this benchmark to capture **contention**, **cache pressure**, and
-  **read amplification** effects that occur in real SaaS applications under load.
-
+  Memtier expands only the first __key__ in each command argument. The write
+  payload therefore has one quoted userId placeholder and constant numeric
+  timestamps. The target session key and payload userId use independent draws;
+  the payload userId is not asserted to equal the target session ID.
 
 dbconfig:
   configuration-parameters:
