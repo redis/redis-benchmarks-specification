@@ -1,26 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-listpack-128-int-sort-numeric-pipeline-10
-description: >-
-  Runs memtier_benchmark against a single SORTED SET key with 128 integer-encoded
-  members, measuring the throughput of plain numeric `SORT`. The listpack-zset loop
-  in `sortCommandGeneric()` walks the listpack entries, reads each member value
-  with `lpGetValue()`, builds a `redisSortObject` whose score is parsed from the
-  member, sorts with `sortCompare()` in numeric mode, and writes back a 128-element
-  bulk-string reply.
-
-  This is the listpack-zset counterpart to the existing
-  `1key-list-1K-elements-sort-numeric-pipeline-10` spec — the LIST path already
-  builds the sort-vector element directly from the stored value via
-  `listTypeGet()`, whereas the listpack-zset loop historically went through
-  `lpGetObject()` (temporary sds + `createObject()` wrap + `sdsfromlonglong()` +
-  `string2d()` round-trip for integer members). Issue #632 identifies this path as
-  unmeasured today.
-
-  Encoding: listpack. 128 integer members stay listpack-encoded with
-  `zset-max-listpack-entries` raised to 256 (default 128, which would be on the
-  boundary at 128 entries). Scores are integers 1..128 (shuffled) so the sort
-  order is non-trivial. Pipeline 10 keeps the vector build + numeric compare as
-  the dominant cost.
+description: >
+  Measures numeric SORT throughput over one sorted set with 128 distinct
+  integer-string members and shuffled scores 1 through 128. Sorting uses member values and ignores their scores.
+  The load uses the default 200 connections with pipeline 10 and includes element loading, sorting and all 128 reply
+  members. Metric of interest: Ops/sec. The source starts as listpack with
+  zset-max-listpack-entries 256. Versions that convert sorted sets during SORT measure
+  the converted steady state; inspect source encoding when comparing versions.
 dbconfig:
   configuration-parameters:
     save: '""'

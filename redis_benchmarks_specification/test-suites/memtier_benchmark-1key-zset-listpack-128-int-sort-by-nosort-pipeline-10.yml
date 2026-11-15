@@ -1,19 +1,13 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-listpack-128-int-sort-by-nosort-pipeline-10
-description: >-
-  Runs memtier_benchmark against a single SORTED SET key with 128 integer-encoded
-  members, measuring the throughput of `SORT ... BY nosort`. With `BY nosort` the
-  sort step is skipped entirely — the benchmark isolates the listpack-zset
-  element-materialization cost of the vector-loading path (the `BY nosort` range
-  loop in `sortCommandGeneric()`), without the comparator cost.
-
-  Companion to `1key-zset-listpack-128-int-sort-numeric-pipeline-10`: the
-  delta between the two decomposes the end-to-end SORT cost into
-  materialization (this spec) vs. comparator + reply (the other). Issue #632
-  identifies the `BY nosort` path on a listpack zset source as unmeasured today.
-
-  Encoding: listpack. Same shape as the numeric-SORT spec with distinct key name
-  to keep workloads independent.
+description: >
+  Measures SORT BY nosort throughput over one sorted set with 128 distinct
+  integer-string members and shuffled scores 1 through 128. The load uses the default 200 connections with pipeline 10 and includes loading
+  and returning all members without sorting them. Metric of interest: Ops/sec. This is
+  a companion workload, not a component cost that can be subtracted from the numeric
+  SORT throughput. The source starts as listpack with zset-max-listpack-entries 256.
+  Versions that convert sorted sets during SORT measure the converted steady state;
+  inspect source encoding when comparing versions.
 dbconfig:
   configuration-parameters:
     save: '""'

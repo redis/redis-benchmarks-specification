@@ -1,19 +1,10 @@
 version: 0.4
 name: memtier_benchmark-1key-set-intset-128-sort-numeric-pipeline-10
-description: >-
-  Runs memtier_benchmark against a single SET key with 128 integer members in
-  intset encoding, measuring the throughput of plain numeric `SORT`. The set-loop
-  branch in `sortCommandGeneric()` iterates members with `setTypeNext()` and
-  builds each `redisSortObject` from the stored integer value, parsing the score
-  directly instead of going through `sdsfromlonglong()` and `string2d()`.
-
-  Mirrors the listpack-zset numeric SORT baseline (128 int members) on an
-  intset source to isolate the set-loop branch from the listpack-zset-loop
-  branch. Issue #632 identifies the intset SORT path as unmeasured today.
-
-  Encoding: intset. 128 integer members stay intset-encoded under the default
-  `set-max-intset-entries` 512. Pipeline 10 keeps the vector build + numeric
-  compare as the dominant cost.
+description: >
+  Measures numeric SORT throughput over one intset containing 128 distinct integers.
+  The load uses the default 200 connections with pipeline 10 and includes element loading, numeric sorting and the full
+  128-member reply. Metric of interest: Ops/sec. The command preserves the source set;
+  this workload does not assume a particular integer-order optimization.
 dbconfig:
   configuration-parameters:
     save: '""'

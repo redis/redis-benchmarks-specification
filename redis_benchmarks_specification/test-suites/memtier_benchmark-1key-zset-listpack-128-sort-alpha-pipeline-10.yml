@@ -1,19 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-listpack-128-sort-alpha-pipeline-10
-description: >-
-  Runs memtier_benchmark against a single SORTED SET key with 128 short string
-  members in listpack encoding, measuring the throughput of `SORT ... ALPHA`.
-  The listpack-zset loop in `sortCommandGeneric()` reads each member with
-  `lpGetValue()`; ALPHA uses `compareStringObjectsWithOrder()`
-  (`strcoll()`/`strcmp()`) as the comparator.
-
-  Companion to the numeric and `BY nosort` listpack-zset specs — same encoding,
-  different comparator, string members (so `strcoll()` actually runs on a
-  distinct byte pattern per element).
-
-  Encoding: listpack. 128 8-byte lowercase string members stay listpack-encoded
-  with `zset-max-listpack-entries` raised to 256. Scores are random doubles so
-  SORT ALPHA ignores them (comparing by member).
+description: >
+  Measures SORT ALPHA throughput over one sorted set with 128 eight-byte string members
+  and random scores. Sorting uses the member strings and ignores their scores. The load uses the default 200
+  connections with pipeline 10 and returns all 128 members. Metric of interest: Ops/sec.
+  The source starts as listpack with zset-max-listpack-entries 256. Versions that convert
+  sorted sets during SORT measure the converted steady state; inspect source encoding
+  when comparing versions.
 dbconfig:
   configuration-parameters:
     save: '""'

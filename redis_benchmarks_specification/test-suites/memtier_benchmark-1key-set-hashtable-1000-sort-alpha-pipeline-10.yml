@@ -1,18 +1,11 @@
 version: 0.4
 name: memtier_benchmark-1key-set-hashtable-1000-sort-alpha-pipeline-10
-description: >-
-  Runs memtier_benchmark against a single SET key with 1000 short string members
-  in hashtable encoding, measuring the throughput of `SORT ... ALPHA`. The set
-  is over `set-max-listpack-entries` (default 128) so storage is a dict; the
-  set-loop branch in `sortCommandGeneric()` iterates via `setTypeNext()`.
-
-  Different element count (1000) and encoding (hashtable) from the listpack-set
-  ALPHA baseline so the two together differentiate the listpack-set and
-  hashtable-set element-materialization paths exercised by issue #632 and
-  rewritten in the follow-up to redis/redis#15622.
-
-  Encoding: hashtable. 1000 8-byte lowercase string members exceed the default
-  set-max-listpack-entries 128, so encoding flips to hashtable automatically.
+description: >
+  Measures SORT ALPHA throughput over one hashtable set with 1,000 eight-byte string
+  members. The preload exceeds the configured compact-set entry limits. The load uses the default 200 connections
+  with pipeline 10 and includes element loading, string comparisons and the full 1,000-member
+  reply. Metric of interest: Ops/sec. The 128-member listpack case differs in both encoding
+  and cardinality, so their throughput ratio is not an encoding-only comparison.
 dbconfig:
   configuration-parameters:
     save: '""'
