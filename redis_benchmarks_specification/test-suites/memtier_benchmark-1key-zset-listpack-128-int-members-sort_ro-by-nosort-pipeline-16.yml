@@ -1,9 +1,12 @@
 version: 0.4
 name: memtier_benchmark-1key-zset-listpack-128-int-members-sort_ro-by-nosort-pipeline-16
-description: >-
-  SORT_RO on a listpack sorted set (128 integer members). Private spec written to confirm
-  the PR 16188 claim (SORT builds elements without a temporary sds). Same shape as the
-  PR author's redis-benchmark run: pipeline 16, 50 connections. Metric: Ops/sec.
+description: >
+  SORT_RO on a listpack sorted set (128 integer members). Metric of interest: Ops/sec with
+  pipeline 16 and 50 connections. Measures element loading, optional sorting, and reply
+  generation together. This complements the SORT pipeline-10 specs with a distinct command and
+  load configuration; do not subtract their rates to attribute individual costs. Redis
+  versions that convert the source zset on SORT_RO measure the converted encoding after the
+  first request; verify the steady-state encoding when comparing versions.
 dbconfig:
   configuration-parameters:
     save: '""'
