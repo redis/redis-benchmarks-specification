@@ -140,6 +140,10 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
+from redis_benchmarks_specification.__self_contained_coordinator__.idle_shutdown import (
+    IDLE_TRACKER,
+    start_idle_shutdown_watchdog,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.parca_agent import (
     check_parca_agent_available,
     update_parca_agent_labels,
@@ -175,6 +179,7 @@ _topdown_startup_labels = {}
 
 # Global variables for heartbeat
 _heartbeat_status = "idle"  # idle, running, waiting
+_idle_shutdown_state = "off"  # off, on, failed. Kept apart from the status above, which the polling loop rewrites on every pass.
 _heartbeat_current_stream = ""
 _heartbeat_current_test = ""
 HEARTBEAT_KEY_PREFIX = "ci.benchmarks.redis/ci/redis/redis:runner:heartbeat"
@@ -198,6 +203,7 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
                     "arch": arch,
                     "version": version,
                     "status": _heartbeat_status,
+                    "idle_shutdown": _idle_shutdown_state,
                     "current_stream": _heartbeat_current_stream,
                     "current_test": _heartbeat_current_test,
                     "timestamp": str(now_ts),
@@ -234,6 +240,15 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
         f"Heartbeat started: {HEARTBEAT_KEY_PREFIX}:{platform} every {HEARTBEAT_INTERVAL_SECS}s"
     )
     return t
+
+
+def _set_idle_shutdown_state(state):
+    global _idle_shutdown_state
+    _idle_shutdown_state = state
+
+
+def _report_idle_shutdown_failed(_error):
+    _set_idle_shutdown_state("failed")
 
 
 class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
@@ -980,6 +995,12 @@ def main():
         home,
     )
 
+    if args.idle_shutdown is not None:
+        start_idle_shutdown_watchdog(
+            IDLE_TRACKER, args.idle_shutdown, on_failure=_report_idle_shutdown_failed
+        )
+        _set_idle_shutdown_state("on")
+
     explicit_only = args.explicit_only
     if explicit_only:
         logging.info(
@@ -1208,6 +1229,7 @@ def self_contained_coordinator_blocking_read(
         args = Args()
         args.runner_capabilities = runner_capabilities
 
+        IDLE_TRACKER.start_work()
         try:
             (
                 stream_id,
@@ -1260,6 +1282,8 @@ def self_contained_coordinator_blocking_read(
             # way it would have after a normal ack.
             stream_id = _heartbeat_current_stream
             overall_result = False
+        finally:
+            IDLE_TRACKER.end_work()
 
         # Always acknowledge the ORIGINAL delivered message, even if it was
         # filtered out or the processor raised -- never ack `stream_id` here,
@@ -2002,6 +2026,9 @@ def process_self_contained_coordinator_stream(
                                 test_result = False
                                 overall_result = False
                                 continue
+
+                            # Skipped topologies are not activity; failed setup attempts are.
+                            IDLE_TRACKER.note_test_started()
 
                             # Update parca-agent labels if available
                             global _parca_agent_available, _parca_startup_labels
