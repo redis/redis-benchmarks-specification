@@ -1,0 +1,38 @@
+version: 0.4
+name: memtier_benchmark-stream-1M-entries-xreadgroup-count-1-1M-distinct-consumers
+description: "Many-consumer variant. Metric of interest: Ops/sec (XREADGROUP calls per second). Data: one stream (a rax of listpack nodes) with 1M entries and custom IDs 'N-0' (one per millisecond), plus an empty consumer group. Each XREADGROUP uses a consumer name that has not been seen before (the name is the memtier key, 1..1000000) and reads COUNT 1, so every call creates a consumer, allocates its PEL rax and inserts one PEL entry. --command-key-pattern P gives each of the 200 clients (50 clients x 4 threads) a disjoint 5000-key slice of 1..1000000, so every name is used exactly once and every call reads a distinct entry. Fixed work: 200 x 5000 = 1M calls consume all 1M entries, with no headroom and no empty reads. If you change the sizes, keep the key range divisible by clients x threads."
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "100" --command "XADD stream-key __key__-0 field __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=1000000 --key-prefix="" -n 1000000 -c 1 -t 1 --pipeline 100 --hide-histogram'
+  init_commands:
+    - XGROUP CREATE stream-key test-group 0 MKSTREAM
+  resources:
+    requests:
+      memory: 4g
+  dataset_name: 1M-stream-entries-custom-ids-with-consumer-group
+  dataset_description: This dataset contains 1 stream key with 1M entries inserted using monotonic custom IDs 'N-0', and an empty consumer group named 'test-group' (no consumers yet; the benchmark creates 1M).
+tested-commands:
+  - xreadgroup
+redis-topologies:
+  - oss-standalone
+build-variants:
+  - gcc:15.2.0-amd64-debian-bookworm-default
+  - gcc:15.2.0-arm64-debian-bookworm-default
+  - dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="XREADGROUP GROUP test-group __key__ COUNT 1 STREAMS stream-key >" --command-key-pattern="P" --key-minimum=1 --key-maximum=1000000 --key-prefix="" --hide-histogram -n 5000 -c 50 -t 4
+  resources:
+    requests:
+      cpus: "4"
+      memory: 2g
+tested-groups:
+  - stream
+priority: 150
