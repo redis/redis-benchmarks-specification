@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-bitmap-memory-clustered-string
 description: >-
-  Memory footprint of one bitmap key, stored as a plain string (bitmap-default-roaring no, the default). The key holds 20 clusters of 50,000 random bits, each inside a 100,000-bit window, spaced 6,000,000 bits apart (about 0.6% overall, 50% inside each cluster).
+  Memory footprint of one bitmap key, stored as a plain string (bitmap-default-roaring no, the default). The key holds 20 clusters of 50,000 random bit writes, each inside a 100,000-bit window, spaced 6,000,000 bits apart (about 0.6% of the full range and 39% inside each cluster; repeated writes do not set new bits).
   The metric of interest is used_memory at the end of the run (INFO memory), not Ops/sec.
   The key is created by SETBIT on a missing key with the flag off, so it is a raw string (OBJECT ENCODING raw). The client phase is a light random GETBIT loop that only keeps the
   server running while the runner collects memory metrics. Run the matching
@@ -20,7 +20,7 @@ dbconfig:
       cpus: '2'
       memory: 1g
   dataset_name: 1key-bitmap-memory-clustered-string
-  dataset_description: One bitmap key with 20 clusters of 50,000 random bits, each inside a 100,000-bit window, spaced 6,000,000 bits apart, stored as a raw string. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
+  dataset_description: One bitmap key with 20 clusters of 50,000 random bit writes, each inside a 100,000-bit window, spaced 6,000,000 bits apart, stored as a raw string. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
 tested-commands:
 - getbit
 tested-groups:

@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-bitmap-memory-sparse100k-string
 description: >-
-  Memory footprint of one bitmap key, stored as a plain string (bitmap-default-roaring no, the default). The key holds 100,000 random bits over a 134,217,728-bit range (16 MiB as a string) (about 0.07%).
+  Memory footprint of one bitmap key, stored as a plain string (bitmap-default-roaring no, the default). The key holds 100,000 random bit writes over a 134,217,728-bit range (16 MiB as a string) (about 0.07%).
   The metric of interest is used_memory at the end of the run (INFO memory), not Ops/sec.
   The key is created by SETBIT on a missing key with the flag off, so it is a raw string (OBJECT ENCODING raw). The client phase is a light random GETBIT loop that only keeps the
   server running while the runner collects memory metrics. Run the matching
@@ -20,7 +20,7 @@ dbconfig:
       cpus: '2'
       memory: 1g
   dataset_name: 1key-bitmap-memory-sparse100k-string
-  dataset_description: One bitmap key with 100,000 random bits over a 134,217,728-bit range (16 MiB as a string), stored as a raw string. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
+  dataset_description: One bitmap key with 100,000 random bit writes over a 134,217,728-bit range (16 MiB as a string), stored as a raw string. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
 tested-commands:
 - getbit
 tested-groups:

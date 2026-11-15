@@ -1,7 +1,7 @@
 version: 0.4
 name: memtier_benchmark-bitmap-memory-sparse1k-roaring
 description: >-
-  Memory footprint of one bitmap key, stored as a native Roaring bitmap (bitmap-default-roaring yes). The key holds 1,000 random bits over a 134,217,728-bit range (16 MiB as a string) (about 0.0007%).
+  Memory footprint of one bitmap key, stored as a native Roaring bitmap (bitmap-default-roaring yes). The key holds 1,000 random bit writes over a 134,217,728-bit range (16 MiB as a string) (about 0.0007%).
   The metric of interest is used_memory at the end of the run (INFO memory), not Ops/sec.
   The key is created by SETBIT on a missing key, so it is a Roaring bitmap (OBJECT ENCODING bitmap-roaring). The client phase is a light random GETBIT loop that only keeps the
   server running while the runner collects memory metrics. Run the matching
@@ -20,7 +20,7 @@ dbconfig:
       cpus: '2'
       memory: 1g
   dataset_name: 1key-bitmap-memory-sparse1k-roaring
-  dataset_description: One bitmap key with 1,000 random bits over a 134,217,728-bit range (16 MiB as a string), stored as a native Roaring bitmap. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
+  dataset_description: One bitmap key with 1,000 random bit writes over a 134,217,728-bit range (16 MiB as a string), stored as a native Roaring bitmap. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
 tested-commands:
 - getbit
 tested-groups:
