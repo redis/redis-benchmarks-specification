@@ -19,7 +19,9 @@ description: |
   70 bytes per session during startup; it does not cause unbounded document growth.
 
   Not modelled: search-index based session listing, TTL/EXPIRE on append, summarisation writes.
-  Key access is uniform random; real session skew is unknown. Event body size is an estimate.
+  Key access is uniform random with deterministic, distinct per-client random seeds,
+  so the 200 clients do not replay the same key sequence. Real session skew is unknown.
+  Event body size is an estimate.
   Metric of interest: client Ops/sec for the complete 80/20 command mix, counting each EVAL
   as one client operation. JSON values use the module document representation.
 
@@ -53,6 +55,9 @@ tested-groups:
 tested-commands:
 - json.get
 - eval
+- json.arrappend
+- json.set
+- json.arrtrim
 
 redis-topologies:
 - oss-standalone
@@ -67,6 +72,7 @@ clientconfig:
   tool: memtier_benchmark
   arguments: >
     -c 25 -t 8
+    --distinct-client-seed
     --key-prefix ""
     --key-minimum 1
     --key-maximum 100000
