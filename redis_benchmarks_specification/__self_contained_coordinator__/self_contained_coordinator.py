@@ -3,6 +3,11 @@ from redis_benchmarks_specification.__common__.env import parse_bool
 # Import warning suppression first
 from redis_benchmarks_specification.__common__.suppress_warnings import *
 
+from redis_benchmarks_specification.__common__.client_memory_metrics import (
+    snapshot_client_memory_metrics,
+    inject_client_memory_metrics,
+)
+
 import datetime
 import json
 import logging
@@ -2433,6 +2438,11 @@ def process_self_contained_coordinator_stream(
                                     # provide the locals the shared tail expects.
                                     profiler_name = None
                                     profilers_map = {}
+                                    client_memory_before = (
+                                        snapshot_client_memory_metrics(
+                                            benchmark_config, redis_conns
+                                        )
+                                    )
                                     benchmark_start_time = datetime.datetime.now()
                                     run_specs = prepare_client_run_specs(
                                         benchmark_config,
@@ -2462,6 +2472,11 @@ def process_self_contained_coordinator_stream(
                                         inject_user=False,
                                     )
                                     benchmark_end_time = datetime.datetime.now()
+                                    client_memory_after = (
+                                        snapshot_client_memory_metrics(
+                                            benchmark_config, redis_conns
+                                        )
+                                    )
                                     benchmark_duration_seconds = (
                                         calculate_client_tool_duration_and_check(
                                             benchmark_end_time, benchmark_start_time
@@ -2738,6 +2753,11 @@ def process_self_contained_coordinator_stream(
                                                 bgsave_metric_missing = True
 
                                     # run the benchmark
+                                    client_memory_before = (
+                                        snapshot_client_memory_metrics(
+                                            benchmark_config, redis_conns
+                                        )
+                                    )
                                     benchmark_start_time = datetime.datetime.now()
 
                                     # Calculate container timeout
@@ -2876,6 +2896,11 @@ def process_self_contained_coordinator_stream(
                                         raise e
 
                                     benchmark_end_time = datetime.datetime.now()
+                                    client_memory_after = (
+                                        snapshot_client_memory_metrics(
+                                            benchmark_config, redis_conns
+                                        )
+                                    )
                                     benchmark_duration_seconds = (
                                         calculate_client_tool_duration_and_check(
                                             benchmark_end_time, benchmark_start_time
@@ -3065,6 +3090,12 @@ def process_self_contained_coordinator_stream(
                                         "r",
                                     ) as json_file:
                                         results_dict = json.load(json_file)
+                                        inject_client_memory_metrics(
+                                            benchmark_config,
+                                            results_dict,
+                                            client_memory_before,
+                                            client_memory_after,
+                                        )
 
                                         # Validate benchmark metrics
                                         is_valid, validation_error = (

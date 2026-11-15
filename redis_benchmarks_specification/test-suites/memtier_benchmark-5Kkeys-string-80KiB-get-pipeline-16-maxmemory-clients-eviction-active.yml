@@ -1,60 +1,42 @@
 version: 0.4
 name: memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-eviction-active
 description: |
-  Companion to
-  memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-enabled.
-  Identical workload; the only change is that maxmemory-clients is set BELOW the
-  working set instead of far above it, so that evictClients() actually runs.
-
-  Why both specs are needed. The two of them price two different halves of the
-  client-eviction machinery, and neither one can stand in for the other:
-
-  * The "-enabled" spec pins maxmemory-clients to 1gb, roughly 8x more headroom
-    than the workload can consume, so no client is ever evicted. That makes it
-    the right instrument for the per-pass accounting cost in
-    updateClientMemUsageAndBucket() -- the common path, where the limit is
-    nowhere in sight.
-
-  * It is the WRONG instrument for anything that lives inside evictClients().
-    That function's entire body sits under
-      while (stat_clients_type_memory[NORMAL] + [PUBSUB] >= client_eviction_limit)
-    so with 8x headroom the loop is never entered and work added there costs
-    exactly zero. A change confined to evictClients() would measure as free on
-    the "-enabled" spec no matter how expensive it actually is. This spec exists
-    so that result cannot be mistaken for evidence.
-
-  Shape. maxmemory-clients is 64mb against a working set of roughly 131MB (100
-  connections x pipeline 16 x 80KiB of referenced reply bytes), i.e. about half.
-  The intent is a steady trickle: the loop is entered, frees the largest clients,
-  drops back under the limit and exits, rather than either never running or
-  collapsing the workload in one cliff.
-
-  Metric of interest is the same as the companion spec: main-thread CPU time per
-  operation (cpu_used_cpu_user_main_thread / commandstats_cmdstat_get_calls).
-  Ops/sec is NOT the headline -- at 80KiB per reply on a single-cpu standalone
-  topology the run is bandwidth-bound well before it is command-bound.
-
-  READ evicted_clients ALONGSIDE THE CPU NUMBER, ALWAYS. Eviction is a real cost
-  in this shape and it is paid per evicted client, so a CPU-per-op difference
-  between two builds is only attributable to the accounting work if both builds
-  evicted a comparable number of clients. If evicted_clients differs materially
-  between the arms, the comparison is confounded and the CPU delta should not be
-  quoted. This is the one guard this spec cannot enforce for you.
-
-  The 80KiB value size, the 81910-not-81920 trim and the -R flag carry over from
-  the companion spec unchanged, for the same reasons: copy-avoidance only applies
-  to RAW string objects above a size threshold that moves with the io-thread
-  count (16KiB with none, 64KiB at 2-6, any size at 7+), and 81910 keeps sds's
-  9-byte sdshdr32 header plus NUL inside jemalloc's 81920 size class.
-
-  UNVERIFIED PARAMETER: the churn rate that 64mb actually produces has not been
-  measured -- it is reasoned from the arithmetic above, not observed. If a smoke
-  run shows the workload collapsing into reconnect churn rather than a trickle,
-  the limit is the knob to raise.
+  Exercises client eviction under a bounded 120-second reconnecting GET load.
+  Requires a fresh coordinator-managed server; the standalone runner rejects
+  this spec before preload, because an earlier cap could evict its preload clients.
+  Preloads 5000 RAW strings of 81910 random bytes with eviction disabled, then
+  enables a 1mb client-memory cap. The cap targets client-owned query/reply
+  buffers and connection overhead, not the shared 80KiB payload references:
+  shared keyspace bytes are excluded from maxmemory-clients accounting.
+  The cap is a pilot parameter, not proof of eviction. A run is rejected unless
+  at least 100 clients are evicted during the measured client phase. Before
+  accepting this workload, a fleet pilot must verify eviction increments across
+  the window, ongoing GET progress, and bounded reconnect attempts.
+  The client reconnects on drops with at most 10000 consecutive failed reconnect attempts per connection and
+  constant backoff. Eviction churn and reconnect CPU are part of this workload;
+  it must not be presented as a pure memory-accounting or intrinsic GET cost.
+  Headline ClientPhaseUserCpuSecondsPerGet uses matching before/after deltas,
+  excluding preload. ClientPhaseEvictedClients and ClientPhaseGetCalls are
+  exported alongside it. Compare only arms with comparable eviction counts.
+  The control in the companion enabled spec disallows evictions; its different
+  reconnect policy means the pair is coverage, not an isolated cap-only A/B.
+client-memory-metrics:
+  coordinator-only: true
+  maxmemory-clients: 1048576
+  min-evicted-clients: 100
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.ClientPhaseUserCpuSeconds
+    - $."ALL STATS".Totals.ClientPhaseGetCalls
+    - $."ALL STATS".Totals.ClientPhaseUserCpuSecondsPerGet
+    - $."ALL STATS".Totals.ClientPhaseEvictedClients
 dbconfig:
   configuration-parameters:
     save: '""'
-    maxmemory-clients: 64mb
+    maxmemory-clients: 0
+  init_commands:
+  - '"CONFIG" "SET" "maxmemory-clients" "1mb"'
   check:
     keyspacelen: 5000
   preload_tool:
@@ -66,7 +48,8 @@ dbconfig:
     requests:
       memory: 4g
   dataset_description: 5000 RAW string keys, each holding an 80KiB random value
-    (~410MB), large enough that every GET reply uses reply copy-avoidance.
+    (~410MB). On supporting builds, queued replies can share these large values;
+    verify that path on the fleet before attributing CPU changes to it.
 tested-groups:
 - string
 tested-commands:
@@ -82,6 +65,7 @@ clientconfig:
   tool: memtier_benchmark
   arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum=1 --key-maximum
     5000 --test-time 120 --pipeline 16 -c 25 -t 4 --hide-histogram
+    --reconnect-on-error --max-reconnect-attempts 10000 --reconnect-backoff-factor 1
   resources:
     requests:
       cpus: '4'
