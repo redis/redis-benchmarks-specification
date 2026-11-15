@@ -21,7 +21,8 @@ class IdleTracker:
 
     def __init__(self, clock=time.monotonic):
         self._clock = clock
-        self._lock = threading.Lock()
+        self._lock = threading.Condition()
+        self._shutdown_claimed = False
         self._busy = False
         self._started_a_test = False
         self._last_activity = clock()
@@ -32,8 +33,27 @@ class IdleTracker:
 
     def start_work(self):
         with self._lock:
+            # A delivered message must remain pending once shutdown is committed.
+            while self._shutdown_claimed:
+                self._lock.wait()
             self._busy = True
             self._started_a_test = False
+
+    def claim_shutdown_if_due(self, idle_minutes):
+        with self._lock:
+            if (
+                self._busy
+                or self._shutdown_claimed
+                or self._clock() - self._last_activity < idle_minutes * 60
+            ):
+                return False
+            self._shutdown_claimed = True
+            return True
+
+    def cancel_shutdown(self):
+        with self._lock:
+            self._shutdown_claimed = False
+            self._lock.notify_all()
 
     def note_test_started(self):
         """Called when a test is about to run on this runner, after the build-variant check."""
@@ -87,7 +107,7 @@ def start_idle_shutdown_watchdog(
     def _watchdog_loop():
         while True:
             time.sleep(check_interval)
-            if not idle_shutdown_due(tracker, idle_minutes):
+            if not tracker.claim_shutdown_if_due(idle_minutes):
                 continue
             logging.warning(
                 "Idle for {:.0f}s (limit {} min): shutting the host down.".format(
@@ -97,6 +117,7 @@ def start_idle_shutdown_watchdog(
             try:
                 shutdown()
             except Exception as e:
+                tracker.cancel_shutdown()
                 logging.error(
                     "Idle shutdown failed: {}. Giving up; the runner stays up.".format(
                         e

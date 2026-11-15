@@ -1,4 +1,5 @@
 import time
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -104,6 +105,7 @@ def test_fractional_minutes_are_supported():
 def _tracker_idle_for(seconds):
     tracker = MagicMock()
     tracker.idle_seconds.return_value = seconds
+    tracker.claim_shutdown_if_due.side_effect = lambda minutes: seconds >= minutes * 60
     return tracker
 
 
@@ -208,7 +210,7 @@ def test_flag_value_overrides_the_default():
     assert args.idle_shutdown == 45
 
 
-@pytest.mark.parametrize("bad", ["0", "-5", "abc"])
+@pytest.mark.parametrize("bad", ["0", "-5", "abc", "nan", "inf", "-inf", "1e999"])
 def test_flag_rejects_non_positive_and_non_numeric_values(bad):
     with pytest.raises(SystemExit):
         create_self_contained_coordinator_args("test").parse_args(
@@ -377,3 +379,177 @@ def test_failed_idle_shutdown_stays_visible_after_the_polling_loop_runs(monkeypa
     ):
         _blocking_read(_conn())  # rewrites the heartbeat status to waiting/running
     assert _heartbeat_fields()["idle_shutdown"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "filter_kind", ["deployment", "override", "exact", "setup_failure"]
+)
+def test_processor_marks_activity_only_after_topology_acceptance(tmp_path, filter_kind):
+    from contextlib import ExitStack
+
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    clock.now += 600
+    spec = tmp_path / "one.yml"
+    spec.write_text(
+        "name: one\nbuild-variants: [test-build]\n"
+        "redis-topologies: [oss-standalone]\ndbconfig: {}\n"
+    )
+    fields = {b"run_image": b"image"}
+    if filter_kind == "deployment":
+        fields[b"deployment_name_regexp"] = b"^unavailable$"
+    elif filter_kind == "override":
+        fields[b"override_deployment_regexp"] = b"^unavailable$"
+    args = SimpleNamespace(
+        topology="unavailable" if filter_kind == "exact" else None,
+        runner_capabilities="",
+    )
+    conn = MagicMock()
+    conn.exists.return_value = False
+    docker_client = MagicMock()
+    build = (
+        "test-build",
+        {},
+        [],
+        "a" * 40,
+        "unstable",
+        None,
+        "image",
+        False,
+        None,
+        "amd64",
+    )
+    with ExitStack() as patches:
+        patches.enter_context(patch.object(coordinator, "IDLE_TRACKER", tracker))
+        patches.enter_context(
+            patch.object(coordinator, "_reset_queue_requested", False)
+        )
+        patches.enter_context(patch.object(coordinator, "_flush_timestamp", None))
+        patches.enter_context(patch.object(coordinator, "cleanup_system_processes"))
+        patches.enter_context(
+            patch.object(coordinator, "filter_test_files", return_value=[str(spec)])
+        )
+        patches.enter_context(
+            patch.object(
+                coordinator,
+                "filter_specs_by_runner_capabilities",
+                side_effect=lambda files, *_: files,
+            )
+        )
+        patches.enter_context(
+            patch.object(
+                coordinator, "extract_build_info_from_streamdata", return_value=build
+            )
+        )
+        # Fail before any containers can be launched, after topology acceptance.
+        setup = patches.enter_context(
+            patch.object(
+                coordinator,
+                "extract_db_cpu_limit",
+                side_effect=RuntimeError("setup failed"),
+            )
+        )
+        tracker.start_work()
+        coordinator.process_self_contained_coordinator_stream(
+            conn,
+            False,
+            docker_client,
+            str(tmp_path),
+            [[b"stream", [(b"1000-0", fields)]]],
+            None,
+            [str(spec)],
+            {},
+            "platform",
+            False,
+            [],
+            args=args,
+        )
+        tracker.end_work()
+    assert setup.call_count == (1 if filter_kind == "setup_failure" else 0)
+    assert tracker.idle_seconds() == (0 if filter_kind == "setup_failure" else 600)
+    docker_client.containers.run.assert_not_called()
+
+
+def test_shutdown_claim_and_job_admission_are_mutually_exclusive():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    clock.now += 900
+    assert tracker.claim_shutdown_if_due(15)
+    entered = threading.Event()
+    admitted = threading.Event()
+
+    def start_job():
+        entered.set()
+        tracker.start_work()
+        admitted.set()
+
+    worker = threading.Thread(target=start_job, daemon=True)
+    worker.start()
+    assert entered.wait(1)
+    assert not admitted.wait(0.05)
+    tracker.cancel_shutdown()
+    assert admitted.wait(1)
+    worker.join(1)
+    assert not tracker.claim_shutdown_if_due(15)
+    tracker.end_work()
+
+
+def test_failed_shutdown_reopens_admission_before_failure_callback():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    seen = []
+
+    def fail_shutdown():
+        raise RuntimeError("no permission")
+
+    def failure_callback(_error):
+        tracker.start_work()
+        seen.append("admitted")
+        tracker.end_work()
+
+    with patch.object(
+        tracker,
+        "restart_clock",
+        side_effect=lambda: setattr(clock, "now", clock.now + 900),
+    ):
+        thread = start_idle_shutdown_watchdog(
+            tracker,
+            15,
+            shutdown=fail_shutdown,
+            on_failure=failure_callback,
+            check_interval=0.01,
+        )
+        thread.join(1)
+    assert not thread.is_alive()
+    assert seen == ["admitted"]
+
+
+def test_pending_message_is_not_processed_or_acked_after_shutdown_claim():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    clock.now += 900
+    assert tracker.claim_shutdown_if_due(15)
+    conn = _conn()
+    blocked = threading.Event()
+    original_start = tracker.start_work
+
+    def start_work():
+        blocked.set()
+        original_start()
+
+    with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch.object(
+        tracker, "start_work", side_effect=start_work
+    ), patch(
+        f"{COORDINATOR}.process_self_contained_coordinator_stream",
+        return_value=("1787194724560-0", False, 0),
+    ) as process:
+        worker = threading.Thread(target=_blocking_read, args=(conn,), daemon=True)
+        worker.start()
+        assert blocked.wait(1)
+        process.assert_not_called()
+        conn.xack.assert_not_called()
+        tracker.cancel_shutdown()
+        worker.join(1)
+        assert not worker.is_alive()
+        process.assert_called_once()
+        conn.xack.assert_called_once()

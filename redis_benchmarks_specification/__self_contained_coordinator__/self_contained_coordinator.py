@@ -1856,7 +1856,6 @@ def process_self_contained_coordinator_stream(
                                         build_variant_name, build_variants
                                     )
                                 )
-                        IDLE_TRACKER.note_test_started()
                         # Normalize these opt-ins once for guards, validation and export.
                         for flag in ("wait_for_bgsave", "skip_throughput_floor"):
                             if flag in benchmark_config.get("dbconfig", {}):
@@ -2027,6 +2026,9 @@ def process_self_contained_coordinator_stream(
                                 test_result = False
                                 overall_result = False
                                 continue
+
+                            # Skipped topologies are not activity; failed setup attempts are.
+                            IDLE_TRACKER.note_test_started()
 
                             # Update parca-agent labels if available
                             global _parca_agent_available, _parca_startup_labels

@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
@@ -29,8 +30,8 @@ PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
 
 def _positive_minutes(value):
     minutes = float(value)
-    if minutes <= 0:
-        raise argparse.ArgumentTypeError("must be greater than 0")
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise argparse.ArgumentTypeError("must be finite and greater than 0")
     return minutes
 
 
