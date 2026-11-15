@@ -15,13 +15,15 @@ class IdleTracker:
     The event stream is shared: a runner is also handed entries that are not
     meant for it (other platforms, other priorities) and skips them. Receiving
     such an entry is not activity, otherwise a runner on a busy stream would
-    never look idle. Only an entry that actually ran benchmarks resets the clock.
+    never look idle. Only an entry that started a test resets the clock, and it
+    does so when the job ends, whether or not the tests passed.
     """
 
     def __init__(self, clock=time.monotonic):
         self._clock = clock
         self._lock = threading.Lock()
         self._busy = False
+        self._started_a_test = False
         self._last_activity = clock()
 
     def mark_activity(self):
@@ -31,11 +33,17 @@ class IdleTracker:
     def start_work(self):
         with self._lock:
             self._busy = True
+            self._started_a_test = False
 
-    def end_work(self, did_work):
+    def note_work(self):
+        """Called when a test starts running for this runner."""
+        with self._lock:
+            self._started_a_test = True
+
+    def end_work(self):
         with self._lock:
             self._busy = False
-            if did_work:
+            if self._started_a_test:
                 self._last_activity = self._clock()
 
     def idle_seconds(self):
@@ -65,12 +73,14 @@ def start_idle_shutdown_watchdog(
     idle_minutes,
     shutdown=shutdown_host,
     check_interval=IDLE_CHECK_INTERVAL_SECS,
+    on_failure=None,
 ):
     """Shut the host down once the runner has been idle for idle_minutes.
 
     The idle clock starts now, so a freshly started runner gets the full
     window to receive work. A failed shutdown (for example no permission) is
-    not retried: it would fail the same way every check.
+    not retried: it would fail the same way every check. on_failure(error) lets
+    the caller surface that state, so a runner that cannot stop is not silent.
     """
     tracker.mark_activity()
 
@@ -92,6 +102,8 @@ def start_idle_shutdown_watchdog(
                         e
                     )
                 )
+                if on_failure is not None:
+                    on_failure(e)
             return
 
     t = threading.Thread(target=_watchdog_loop, daemon=True, name="idle-shutdown")

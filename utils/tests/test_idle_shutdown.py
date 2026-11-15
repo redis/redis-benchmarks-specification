@@ -46,12 +46,13 @@ def test_busy_runner_is_never_idle_however_long_the_job_runs():
     assert not idle_shutdown_due(tracker, 15)
 
 
-def test_finished_job_that_ran_benchmarks_restarts_the_idle_clock():
+def test_finished_job_that_started_a_test_restarts_the_idle_clock():
     clock = FakeClock()
     tracker = IdleTracker(clock=clock)
     tracker.start_work()
+    tracker.note_work()
     clock.now += 3600
-    tracker.end_work(did_work=True)
+    tracker.end_work()
     clock.now += 60
     assert tracker.idle_seconds() == 60
 
@@ -61,7 +62,20 @@ def test_entry_that_ran_nothing_does_not_restart_the_idle_clock():
     tracker = IdleTracker(clock=clock)
     clock.now += 600
     tracker.start_work()
-    tracker.end_work(did_work=False)
+    tracker.end_work()
+    clock.now += 300
+    assert tracker.idle_seconds() == 900
+
+
+def test_a_test_started_in_an_earlier_job_does_not_restart_the_clock_again():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    tracker.start_work()
+    tracker.note_work()
+    tracker.end_work()
+    clock.now += 600
+    tracker.start_work()
+    tracker.end_work()
     clock.now += 300
     assert tracker.idle_seconds() == 900
 
@@ -139,6 +153,20 @@ def test_watchdog_gives_up_after_a_failed_shutdown():
     shutdown.assert_called_once_with()
 
 
+def test_failed_shutdown_is_reported_to_the_caller():
+    error = RuntimeError("no permission")
+    on_failure = MagicMock()
+    thread = start_idle_shutdown_watchdog(
+        _tracker_idle_for(20 * 60),
+        15,
+        shutdown=MagicMock(side_effect=error),
+        check_interval=0.01,
+        on_failure=on_failure,
+    )
+    thread.join(timeout=2)
+    on_failure.assert_called_once_with(error)
+
+
 def test_shutdown_host_runs_the_command_directly_as_root():
     with patch.object(idle_shutdown.os, "geteuid", return_value=0), patch.object(
         idle_shutdown.subprocess, "run"
@@ -213,16 +241,26 @@ def _conn():
     return conn
 
 
+def _processor(tracker, clock, elapsed, started_a_test, result):
+    def run(*_args, **_kwargs):
+        clock.now += elapsed
+        if started_a_test:
+            tracker.note_work()
+        return result
+
+    return run
+
+
 def test_skipped_entry_does_not_count_as_activity():
     clock = FakeClock()
     tracker = IdleTracker(clock=clock)
     clock.now += 600
     with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch(
         f"{COORDINATOR}.process_self_contained_coordinator_stream",
-        return_value=("1787194724560-0", False, 0),
+        side_effect=_processor(tracker, clock, 1, False, ("1787194724560-0", False, 0)),
     ):
         _blocking_read(_conn())
-    assert tracker.idle_seconds() == 600
+    assert tracker.idle_seconds() == 601
 
 
 def test_processed_entry_counts_as_activity():
@@ -231,23 +269,58 @@ def test_processed_entry_counts_as_activity():
     clock.now += 600
     with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch(
         f"{COORDINATOR}.process_self_contained_coordinator_stream",
-        return_value=("1787194724560-0", True, 4),
+        side_effect=_processor(tracker, clock, 60, True, ("1787194724560-0", True, 4)),
     ):
         _blocking_read(_conn())
     assert tracker.idle_seconds() == 0
 
 
-def test_failed_job_counts_as_activity_and_never_leaves_the_runner_busy():
+def test_job_whose_tests_all_fail_still_counts_as_activity():
+    # Per-test failures are caught inside the processor, which then returns
+    # normally with zero completed runs. The runner spent the time working, so
+    # the idle clock must restart when it finishes, not jump past the limit.
     clock = FakeClock()
     tracker = IdleTracker(clock=clock)
     clock.now += 600
     with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch(
         f"{COORDINATOR}.process_self_contained_coordinator_stream",
-        side_effect=RuntimeError("boom"),
+        side_effect=_processor(
+            tracker, clock, 2 * 3600, True, ("1787194724560-0", False, 0)
+        ),
+    ):
+        _blocking_read(_conn())
+    assert tracker.idle_seconds() == 0
+    clock.now += 60
+    assert not idle_shutdown_due(tracker, 15)
+
+
+def test_job_that_raises_after_starting_a_test_counts_and_is_never_left_busy():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+
+    def run(*_args, **_kwargs):
+        tracker.note_work()
+        clock.now += 3600
+        raise RuntimeError("boom")
+
+    with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch(
+        f"{COORDINATOR}.process_self_contained_coordinator_stream", side_effect=run
     ):
         _blocking_read(_conn())
     clock.now += 60
     assert tracker.idle_seconds() == 60
+
+
+def test_job_that_raises_before_starting_any_test_does_not_count():
+    clock = FakeClock()
+    tracker = IdleTracker(clock=clock)
+    clock.now += 600
+    with patch(f"{COORDINATOR}.IDLE_TRACKER", tracker), patch(
+        f"{COORDINATOR}.process_self_contained_coordinator_stream",
+        side_effect=RuntimeError("bad spec"),
+    ):
+        _blocking_read(_conn())
+    assert tracker.idle_seconds() == 600
 
 
 def test_runner_is_busy_while_the_job_runs():

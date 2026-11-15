@@ -240,6 +240,11 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
     return t
 
 
+def _report_idle_shutdown_failed(_error):
+    global _heartbeat_status
+    _heartbeat_status = "idle-shutdown-failed"
+
+
 class CoordinatorHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for coordinator endpoints"""
 
@@ -985,7 +990,9 @@ def main():
     )
 
     if args.idle_shutdown is not None:
-        start_idle_shutdown_watchdog(IDLE_TRACKER, args.idle_shutdown)
+        start_idle_shutdown_watchdog(
+            IDLE_TRACKER, args.idle_shutdown, on_failure=_report_idle_shutdown_failed
+        )
 
     explicit_only = args.explicit_only
     if explicit_only:
@@ -1216,9 +1223,6 @@ def self_contained_coordinator_blocking_read(
         args.runner_capabilities = runner_capabilities
 
         IDLE_TRACKER.start_work()
-        # A job that raised part-way may already have started containers, so it
-        # counts as activity; only an entry that ran nothing leaves the clock alone.
-        did_work = True
         try:
             (
                 stream_id,
@@ -1256,7 +1260,6 @@ def self_contained_coordinator_blocking_read(
             )
             num_process_streams = num_process_streams + 1
             num_process_test_suites = num_process_test_suites + total_test_suite_runs
-            did_work = total_test_suite_runs > 0
         except Exception as e:
             # Never let a single bad job wedge this consumer's PEL. Log and
             # fall through to the unconditional ack below on the *captured*
@@ -1273,7 +1276,7 @@ def self_contained_coordinator_blocking_read(
             stream_id = _heartbeat_current_stream
             overall_result = False
         finally:
-            IDLE_TRACKER.end_work(did_work)
+            IDLE_TRACKER.end_work()
 
         # Always acknowledge the ORIGINAL delivered message, even if it was
         # filtered out or the processor raised -- never ack `stream_id` here,
@@ -1803,6 +1806,7 @@ def process_self_contained_coordinator_stream(
                         github_event_conn.lpush(stream_test_list_running, test_name)
                         # Update heartbeat with current test
                         _heartbeat_current_test = test_name
+                        IDLE_TRACKER.note_work()
                         github_event_conn.expire(
                             stream_test_list_running, REDIS_BINS_EXPIRE_SECS
                         )
