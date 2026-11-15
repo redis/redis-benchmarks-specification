@@ -135,7 +135,7 @@ NO_HEARTBEAT_DOWN_MS = 24 * 60 * 60 * 1000
 
 
 def _get_heartbeats(conn):
-    """Return {platform: {"status", "age_secs", "current_test"}} from the runner
+    """Return {platform: {"status", "age_secs", "current_test", "consumer"}} from the runner
     heartbeat hashes, or {} when no runner publishes one.
 
     Callers use this instead of the consumer group's ``idle`` field to decide whether a
@@ -172,6 +172,7 @@ def _get_heartbeats(conn):
             "status": fields.get("status", "?"),
             "age_secs": age_secs,
             "current_test": fields.get("current_test", ""),
+            "consumer": fields.get("consumer", ""),
         }
     return heartbeats
 
@@ -222,6 +223,28 @@ def _runner_status(heartbeat, c_pending, c_idle, heartbeats_published=True):
             return "STUCK"
         return "IDLE"
     return "WORKING" if c_pending > 0 else "IDLE"
+
+
+def _consumer_status(heartbeat, consumer, consumer_count, heartbeats_published=True):
+    """Attribute a platform heartbeat only to the consumer that wrote it.
+
+    Older coordinators omit identity. That is unambiguous only when the group has
+    one consumer. Other consumers may be retired or concurrently alive; a shared
+    platform key cannot establish their state, so report UNKNOWN.
+    """
+    if heartbeat is not None:
+        name = consumer.get("name", "")
+        if isinstance(name, bytes):
+            name = name.decode()
+        owner = heartbeat.get("consumer", "")
+        if (owner and owner != name) or (not owner and consumer_count != 1):
+            return "UNKNOWN"
+    return _runner_status(
+        heartbeat,
+        consumer.get("pending", 0),
+        consumer.get("idle", 0),
+        heartbeats_published,
+    )
 
 
 def _format_age(timestamp_ms):
@@ -385,22 +408,27 @@ def admin_runners_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = _runner_status(
-                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                status = _consumer_status(
+                    heartbeats.get(platform), consumer, len(consumers), bool(heartbeats)
                 )
+                c_name = consumer.get("name", "")
+                if isinstance(c_name, bytes):
+                    c_name = c_name.decode()
 
                 idle_str = _format_idle(c_idle)
                 queue_depth = c_pending + lag
                 queue_str = str(queue_depth) if lag_known else f"{c_pending}+unknown"
 
-                print(f"  {platform} ({arch})")
+                print(f"  {platform} ({arch})  consumer: {c_name}")
                 print(
                     f"    Status: {status}  |  Last active: {idle_str} ago  |  Queue depth: {queue_str} (pending: {c_pending}, lag: {_format_lag(lag, lag_known)})"
                 )
 
                 # Show what the runner is currently processing
                 if c_pending > 0:
-                    pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 10)
+                    pending_msgs = conn.xpending_range(
+                        stream, group_name, "-", "+", 10, consumername=c_name
+                    )
                     for msg in pending_msgs:
                         msg_id = msg.get("message_id", b"")
                         if isinstance(msg_id, bytes):
@@ -800,14 +828,19 @@ def admin_summary_command(conn, args):
                 c_pending = consumer.get("pending", 0)
                 c_idle = consumer.get("idle", 0)
 
-                status = _runner_status(
-                    heartbeats.get(platform), c_pending, c_idle, bool(heartbeats)
+                status = _consumer_status(
+                    heartbeats.get(platform), consumer, len(consumers), bool(heartbeats)
                 )
+                c_name = consumer.get("name", "")
+                if isinstance(c_name, bytes):
+                    c_name = c_name.decode()
 
                 # Get active queue progress
                 active_info = ""
                 if c_pending > 0:
-                    pending_msgs = conn.xpending_range(stream, group_name, "-", "+", 1)
+                    pending_msgs = conn.xpending_range(
+                        stream, group_name, "-", "+", 1, consumername=c_name
+                    )
                     if pending_msgs:
                         msg_id = pending_msgs[0].get("message_id", b"")
                         if isinstance(msg_id, bytes):
@@ -823,6 +856,7 @@ def admin_summary_command(conn, args):
                 runners.append(
                     {
                         "platform": platform,
+                        "consumer": c_name,
                         "arch": arch,
                         "status": status,
                         "idle": c_idle,
@@ -840,24 +874,26 @@ def admin_summary_command(conn, args):
     unknown = sum(1 for r in runners if r["status"] == "UNKNOWN")
 
     print(
-        f"  Runners: {len(runners)} total  |  {working} working  |  {idle} idle  |  {stuck} stuck  |  {down} down  |  {unknown} unknown"
+        f"  Runner consumers: {len(runners)} total  |  {working} working  |  {idle} idle  |  {stuck} stuck  |  {down} down  |  {unknown} unknown"
     )
     queue_line = f"  Queue:   {total_lag} benchmark streams waiting"
     if lag_unknown_groups:
         queue_line += (
             f"  (+{lag_unknown_groups} group(s) with a non-computable lag"
-            f" -- true total is higher)"
+            f" -- true total may be higher)"
         )
     print(queue_line)
     print()
 
     # Table
-    print(f"  {'PLATFORM':<45} {'ARCH':<6} {'STATUS':<8} {'IDLE':<8} {'ACTIVE WORK'}")
+    print(
+        f"  {'PLATFORM':<45} {'ARCH':<6} {'STATUS':<8} {'IDLE':<8} {'CONSUMER / ACTIVE WORK'}"
+    )
     print(f"  {'-'*45} {'-'*6} {'-'*8} {'-'*8} {'-'*40}")
     for r in sorted(runners, key=lambda x: x["status"]):
         idle_str = _format_idle(r["idle"])
         print(
-            f"  {r['platform']:<45} {r['arch']:<6} {r['status']:<8} {idle_str:<8} {r['active_info']}"
+            f"  {r['platform']:<45} {r['arch']:<6} {r['status']:<8} {idle_str:<8} {r['consumer']}  {r['active_info']}"
         )
 
     # Builder status
