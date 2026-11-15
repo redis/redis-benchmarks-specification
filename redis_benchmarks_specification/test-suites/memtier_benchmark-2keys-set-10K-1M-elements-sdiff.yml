@@ -1,12 +1,11 @@
 version: 0.4
 name: memtier_benchmark-2keys-set-10K-1M-elements-sdiff
-description: 'Batched lookups in SDIFF with reply streamed as it goes. SDIFF with
-  set:small (10K members m:0..m:9999) as the primary and set:big (1M members
-  m:100..m:1000099) subtracted. Primary members not in the big set: m:0..m:99, so
-  the reply contains exactly 100 members and is streamed as the walk proceeds.
-  Members are non-integer strings (m:<i>) so both sets are hashtable, not intset.
-  Encoding: hashtable (10K and 1M elements, exceed set-max-listpack-entries 128).
-  Metric of interest: Ops/sec.'
+description: >
+  Measures SDIFF Ops/sec with two hashtable sets. set:small holds m:0..m:9999 (10K members);
+  set:big holds m:100..m:1000099 (1M members). The result contains exactly 100 members,
+  m:0..m:99. Non-integer member strings and these cardinalities select hashtable encoding. The
+  asymmetric inputs exercise full command behavior without assuming a particular lookup or
+  reply implementation.
 dbconfig:
   configuration-parameters:
     save: '""'

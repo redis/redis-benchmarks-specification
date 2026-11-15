@@ -1,11 +1,9 @@
 version: 0.4
 name: memtier_benchmark-2keys-set-1M-elements-50pct-overlap-sintercard
-description: 'Join on sets too big for the cache. SINTERCARD over 2 hashtable-encoded
-  sets of 1M non-integer members each with 50% overlap. set:a holds m:0..m:999999;
-  set:b holds m:500000..m:1499999; intersection cardinality is 500000. Members are
-  non-integer strings (m:<i>) so both sets are hashtable, not intset. Encoding:
-  hashtable (1,000,000 elements, exceeds set-max-listpack-entries 128). Metric of
-  interest: Ops/sec.'
+description: >
+  Measures SINTERCARD Ops/sec with two hashtable sets of 1M non-integer members each and 50%
+  overlap. set:a holds m:0..m:999999; set:b holds m:500000..m:1499999. The intersection
+  cardinality is 500000. Both sets exceed the listpack cardinality limit.
 dbconfig:
   configuration-parameters:
     save: '""'

@@ -1,13 +1,11 @@
 version: 0.4
 name: memtier_benchmark-3keys-set-300K-300K-1M-elements-sintercard
-description: 'Join of the two smaller sets, then batched lookups in a third. SINTERCARD
-  over 3 hashtable-encoded sets: set:a = m:0..m:299999 (300K), set:b =
-  m:150000..m:449999 (300K), set:c = m:150000..m:224999 ∪ c:0..c:924999 (1M total,
-  of which 75K m:-members overlap with the a∩b range m:150000..m:224999 the planner
-  obtains after joining set:a and set:b). Final intersection cardinality is 75000.
-  Members are non-integer strings (m:<i> / c:<i>) so every set is hashtable, not
-  intset. Encoding: hashtable (300K/300K/1M elements, exceed
-  set-max-listpack-entries 128). Metric of interest: Ops/sec.'
+description: >
+  Measures SINTERCARD Ops/sec with three hashtable sets. set:a holds m:0..m:299999 (300K);
+  set:b holds m:150000..m:449999 (300K). Their intersection is m:150000..m:299999 (150K).
+  set:c contains m:150000..m:224999 plus c:0..c:924999 (1M total), yielding a final
+  intersection of 75000. All members are non-integer strings and all sets exceed the listpack
+  cardinality limit.
 dbconfig:
   configuration-parameters:
     save: '""'

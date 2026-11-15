@@ -1,11 +1,9 @@
 version: 0.4
-name: memtier_benchmark-2keys-set-1M-elements-99pct-overlap-sdiff
-description: 'SDIFF join with unmatched members. SDIFF of 2 hashtable-encoded sets
-  of 1M non-integer members each with ~99.9% overlap: set:a = m:0..m:999999, set:b
-  = m:1000..m:1000999. Difference a - b = 1000 members (m:0..m:999). Members are
-  non-integer strings (m:<i>) so both sets are hashtable, not intset. Encoding:
-  hashtable (1,000,000 elements, exceeds set-max-listpack-entries 128). Metric of
-  interest: Ops/sec.'
+name: memtier_benchmark-2keys-set-1M-elements-99p9pct-overlap-sdiff
+description: >
+  Measures SDIFF Ops/sec with two hashtable sets of 1M non-integer members each and 99.9%
+  overlap. set:a holds m:0..m:999999; set:b holds m:1000..m:1000999. The difference contains
+  exactly 1000 members, m:0..m:999. Both sets exceed the listpack cardinality limit.
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -31,7 +29,7 @@ dbconfig:
       redis.call('SADD', unpack(args))
     end
     return 1
-  dataset_name: 2keys-set-1M-elements-99pct-overlap-hashtable
+  dataset_name: 2keys-set-1M-elements-99p9pct-overlap-hashtable
   dataset_description: 2 hashtable sets of 1M non-integer members shifted by 1000
     (set:a=m:0..m:999999, set:b=m:1000..m:1000999). Set difference a - b = 1000
     members (m:0..m:999).

@@ -1,12 +1,10 @@
 version: 0.4
 name: memtier_benchmark-2keys-set-10K-1M-elements-sintercard
-description: 'Batched lookups, no join path. SINTERCARD over 2 hashtable-encoded
-  sets: set:small holds m:0..m:9999 (10K members, fully contained in set:big);
-  set:big holds m:0..m:999999 (1M members). The second set is far larger than the
-  first, so the planner takes the batched-lookup path rather than joining. Intersection
-  cardinality is 10000. Members are non-integer strings (m:<i>) so both sets are
-  hashtable, not intset. Encoding: hashtable (10K and 1M elements, exceed
-  set-max-listpack-entries 128). Metric of interest: Ops/sec.'
+description: >
+  Measures SINTERCARD Ops/sec with two hashtable sets of different sizes. set:small holds
+  m:0..m:9999 (10K members), fully contained in set:big, m:0..m:999999 (1M members). The
+  intersection cardinality is 10000. Non-integer member strings and these cardinalities select
+  hashtable encoding.
 dbconfig:
   configuration-parameters:
     save: '""'
