@@ -1,21 +1,30 @@
 version: 0.4
 name: memtier_benchmark-10Mmembers-sadd-one-bigset-pipeline-10
-description: |
-  Grows a single set (`bigset`) to 10M distinct members via pipelined SADD,
-  starting from an empty database. 100 connections (50 clients × 2 threads),
-  `-n 100000` requests per client → 10M total ops, each `SADD bigset <uniq>`.
-  The one-key workload concentrates all dict growth in the set's internal
-  hashtable (encoding promotes from listpack/intset to hashtable), exercising
-  single-dict rehash under pipelined insertion pressure — complements the
-  10Mkeys-string-set-grow-10B test (which spreads growth across the keyspace
-  dict) by exercising the per-set dict instead. Validates
-  `SCARD bigset == 10000000` at end (every pipelined command inserted a new member).
+description: |-
+  Measures Ops/sec while growing one set (bigset) to 10M distinct members
+  from an empty database. The 100 connections send 100,000 SADD operations
+  each, using disjoint P ranges and pipeline 10. The default memtier- prefix
+  makes the members strings: the set starts as listpack and promotes to
+  hashtable. This concentrates growth and rehash in the set's own dictionary;
+  the measured throughput also includes ordinary SADD and allocation work.
+  Strict initialization requires an empty database. Postrun assertions require
+  exactly one key and SCARD bigset equal to 10,000,000 before results export.
 dbconfig:
   configuration-parameters:
     save: '""'
   resources:
     requests:
       memory: 2g
+  check:
+    keyspacelen: 0
+  init_commands:
+  - - EVAL
+    - assert(redis.call('DBSIZE') == 0, 'growth workload requires an empty database') return 1
+    - 0
+  postrun_lua: |-
+    assert(redis.call('DBSIZE') == 1, 'unexpected keys after SADD growth')
+    assert(redis.call('SCARD', 'bigset') == 10000000, 'incomplete SADD growth workload')
+    return 1
 tested-commands:
 - sadd
 tested-groups:
@@ -29,7 +38,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--command" "SADD bigset __key__" "--command-key-pattern" "P" "--key-minimum" "1" "--key-maximum" "10000000" "-n" "100000" "-c" "50" "-t" "2" "--pipeline" "10" "--hide-histogram"'
+  arguments: --command "SADD bigset __key__" "--command-key-pattern" "P" "--key-minimum" "1" "--key-maximum"
+    "10000000" "-n" "100000" "-c" "50" "-t" "2" "--pipeline" "10" "--hide-histogram"
   resources:
     requests:
       cpus: '4'

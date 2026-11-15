@@ -1,0 +1,49 @@
+version: 0.4
+name: memtier_benchmark-1Mkeys-string-get-post-growth-pipeline-16
+description: |-
+  Measures GET Ops/sec over a ten-second window following insertion of 1M
+  ten-byte EMBSTR strings. Background active rehashing is disabled; SETs during
+  preload and GETs during measurement can still advance per-command rehash.
+  The window includes any remaining growth transient and the settled-keyspace
+  phase. It neither guarantees rehash is present at the first GET nor isolates
+  rehash latency. Pipeline 16 and five connections target throughput; response
+  latencies include pipelined queueing. Postrun assertions require the keyspace
+  to retain exactly 1M keys. Use this as a post-growth GET workload, with a
+  separate state-aware experiment when isolated rehash cost is the objective.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    activerehashing: 'no'
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--pipeline"
+      "10" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys"'
+  check:
+    keyspacelen: 1000000
+  resources:
+    requests:
+      memory: 1g
+  postrun_lua: |-
+    assert(redis.call('DBSIZE') == 1000000, 'unexpected post-growth GET keyspace')
+    return 1
+tested-commands:
+- get
+tested-groups:
+- string
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '"--ratio" "0:1" "--key-pattern" "R:R" "--key-minimum" "1" "--key-maximum" "1000000" "-c"
+    "5" "-t" "1" "--pipeline" "16" "--test-time" "10" "--hide-histogram"'
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+priority: 50

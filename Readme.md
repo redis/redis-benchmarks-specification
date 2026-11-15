@@ -67,6 +67,36 @@ Current supported benchmark tools:
 For disk runner setup, test selection, and measurement limits, see the
 [RDB save and load benchmark guide](docs/rdb-disk-benchmarks.md).
 
+## Validate state before exporting a result
+
+A single-client memtier spec on `oss-standalone` can set `dbconfig.postrun_lua`
+to a Lua script, or a list of scripts, that must pass before any benchmark
+metrics are exported. Each script receives the measured start and finish times
+in milliseconds as `ARGV[1]` and `ARGV[2]`. Return integer `1` on success; use
+`assert` to reject a result whose dataset or required stimulus is missing.
+For example:
+
+```yaml
+dbconfig:
+  postrun_lua: |-
+    assert(redis.call('SCARD', 'bigset') == 10000000, 'incomplete preload')
+    return 1
+```
+
+The hook rejects missing or inconsistent runtime fields, interrupted/error runs,
+missing explicitly declared exporter metrics, server errors, and other return
+values. It supports one standalone server and one memtier client; multi-client,
+replicated/cluster, and memory-comparison-only runs are unsupported. Assertions
+run after the client completes and before export, so they must check the final
+state or a stored receipt rather than assume they ran during the measurement.
+When comparing a server timestamp to client runtime, both clocks must be
+synchronized (the self-contained runner uses containers on the same host).
+
+Required setup should use array-form `init_commands` with `EVAL`; unlike the
+legacy `init_lua` handler, Redis command errors in that path abort initialization.
+A successful setup receipt alone does not prove that a timed stimulus overlapped
+the client window; validate that relationship in the postrun assertion.
+
 ## Installation and Execution
 
 The Redis benchmarks specification and implementations is developed for Unix and is actively tested on it.

@@ -1,21 +1,29 @@
 version: 0.4
 name: memtier_benchmark-1Mkeys-string-set-grow-10B-pipeline-10
-description: |
-  1M-key SET insertion starting from an empty database, pipelined (`--pipeline 10`),
-  every command a fresh key (`--key-pattern P:P`, keyspace swept 1..1M). Smaller-scale
-  sibling of `10Mkeys-string-set-grow-10B-pipeline-10` — same growth-under-pipeline
-  shape at a scale that completes in seconds, used both as a short regression gate
-  for dict-rehash work and as the preload stage of the companion
-  `1Mkeys-string-get-while-rehashing-pipeline-16` benchmark.
-  Validates `DBSIZE == 1000000` at end (every pipelined command inserted a new key).
+description: |-
+  Measures Ops/sec for 1M SET insertions starting from an empty database.
+  Values are ten-byte EMBSTR strings. The 100 clients use disjoint P:P key
+  ranges and pipeline 10, with a fixed request count covering every key once.
+  Growing the keyspace exercises dictionary allocation and rehash alongside
+  normal SET work. Throughput covers the whole growth epoch; pipelined response
+  latency includes queueing and does not isolate rehash cost. Initialization
+  requires an empty database, and postrun_lua rejects the result unless DBSIZE
+  is exactly 1000000.
 dbconfig:
   configuration-parameters:
     save: '""'
   check:
-    keyspacelen: 1000000
+    keyspacelen: 0
   resources:
     requests:
       memory: 1g
+  init_commands:
+  - - EVAL
+    - assert(redis.call('DBSIZE') == 0, 'growth workload requires an empty database') return 1
+    - 0
+  postrun_lua: |-
+    assert(redis.call('DBSIZE') == 1000000, 'incomplete SET growth workload')
+    return 1
 tested-commands:
 - set
 tested-groups:
@@ -29,7 +37,8 @@ build-variants:
 clientconfig:
   run_image: redislabs/memtier_benchmark:edge
   tool: memtier_benchmark
-  arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--pipeline" "10" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys"'
+  arguments: '"--data-size" "10" "--ratio" "1:0" "--key-pattern" "P:P" "-c" "50" "-t" "2" "--pipeline"
+    "10" "--hide-histogram" "--key-minimum" "1" "--key-maximum" "1000000" "-n" "allkeys"'
   resources:
     requests:
       cpus: '4'
