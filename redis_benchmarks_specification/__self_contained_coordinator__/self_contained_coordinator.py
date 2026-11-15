@@ -140,6 +140,10 @@ from redis_benchmarks_specification.__self_contained_coordinator__.artifacts imp
 from redis_benchmarks_specification.__self_contained_coordinator__.build_info import (
     extract_build_info_from_streamdata,
 )
+from redis_benchmarks_specification.__self_contained_coordinator__.idle_shutdown import (
+    IDLE_TRACKER,
+    start_idle_shutdown_watchdog,
+)
 from redis_benchmarks_specification.__self_contained_coordinator__.parca_agent import (
     check_parca_agent_available,
     update_parca_agent_labels,
@@ -980,6 +984,9 @@ def main():
         home,
     )
 
+    if args.idle_shutdown is not None:
+        start_idle_shutdown_watchdog(IDLE_TRACKER, args.idle_shutdown)
+
     explicit_only = args.explicit_only
     if explicit_only:
         logging.info(
@@ -1208,6 +1215,10 @@ def self_contained_coordinator_blocking_read(
         args = Args()
         args.runner_capabilities = runner_capabilities
 
+        IDLE_TRACKER.start_work()
+        # A job that raised part-way may already have started containers, so it
+        # counts as activity; only an entry that ran nothing leaves the clock alone.
+        did_work = True
         try:
             (
                 stream_id,
@@ -1245,6 +1256,7 @@ def self_contained_coordinator_blocking_read(
             )
             num_process_streams = num_process_streams + 1
             num_process_test_suites = num_process_test_suites + total_test_suite_runs
+            did_work = total_test_suite_runs > 0
         except Exception as e:
             # Never let a single bad job wedge this consumer's PEL. Log and
             # fall through to the unconditional ack below on the *captured*
@@ -1260,6 +1272,8 @@ def self_contained_coordinator_blocking_read(
             # way it would have after a normal ack.
             stream_id = _heartbeat_current_stream
             overall_result = False
+        finally:
+            IDLE_TRACKER.end_work(did_work)
 
         # Always acknowledge the ORIGINAL delivered message, even if it was
         # filtered out or the processor raised -- never ack `stream_id` here,

@@ -398,6 +398,20 @@ Restarted supervisord
 redis-benchmarks-spec-sc-coordinator   RUNNING   pid 27842, uptime 0:00:00
 ```
 
+##### Shutting an idle runner down automatically
+
+On cloud runners that are only started when there is work to do, add `--idle-shutdown` to the coordinator command so the host shuts itself down once the queue has drained:
+
+```bash
+redis-benchmarks-spec-sc-coordinator --platform-name bicx02 ... --idle-shutdown 30
+```
+
+* The flag is off unless it is given. Its value is in minutes; without a value (`--idle-shutdown`) it uses 15.
+* The idle clock starts when the coordinator is ready, and restarts each time a stream entry actually runs benchmarks. A running job is never idle, however long it takes.
+* Stream entries that the runner skips (other platforms, other priority ranges) do not count as activity, so a runner on a busy shared stream still shuts down.
+* The host is shut down with `shutdown -h now` (through `sudo -n` when the coordinator does not run as root). If that fails, the error is logged and the runner stays up.
+* Work that arrives after the host has decided to shut down is lost: start the host again and re-send it.
+
 
 ## Development
 
