@@ -9,6 +9,10 @@ description: |
   The benchmark models a typical read-heavy cache usage pattern, with an approximate
   **read:write ratio of 90:10**, reflecting session retrievals and infrequent updates.
 
+  NOTE: memtier substitutes only the FIRST `__key__` in each command argument, so the write payload carries a
+  single `__key__` (in `userId`); extra placeholders stayed literal (`"lastActivity":__key__`), the document was
+  invalid JSON, and every benchmark write failed with `expected value at line 1 column 172`.
+
   Command groups:
     - Session cache reads (`JSON.GET`): ~90%
     - Session cache writes (`JSON.SET`): ~10%
@@ -74,7 +78,7 @@ clientconfig:
     --command="JSON.GET session:__key__"
     --command-key-pattern=Z
     --command-ratio=90
-    --command="JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-__key__\\\",\\\"organizationId\\\":\\\"org-__key__\\\",\\\"role\\\":\\\"admin\\\",\\\"email\\\":\\\"user__key__@example.com\\\",\\\"name\\\":\\\"User __key__\\\",\\\"permissions\\\":[\\\"read\\\",\\\"write\\\"],\\\"lastActivity\\\":__key__,\\\"ipAddress\\\":\\\"192.168.1.__key__\\\",\\\"userAgent\\\":\\\"Mozilla/5.0\\\",\\\"createdAt\\\":__key__}\""
+    --command="JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-__key__\\\",\\\"organizationId\\\":\\\"org-id\\\",\\\"role\\\":\\\"admin\\\",\\\"email\\\":\\\"user@example.com\\\",\\\"name\\\":\\\"User Name\\\",\\\"permissions\\\":[\\\"read\\\",\\\"write\\\"],\\\"lastActivity\\\":1700000000,\\\"ipAddress\\\":\\\"192.168.1.1\\\",\\\"userAgent\\\":\\\"Mozilla/5.0\\\",\\\"createdAt\\\":1700000000,\\\"metadata\\\":\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\"}\""
     --command-key-pattern=Z
     --command-ratio=10
     --hide-histogram
