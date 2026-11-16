@@ -288,9 +288,11 @@ def test_run_client_configs_aborts_when_background_helper_exited(tmp_path):
     fg.logs.return_value = b"{}"
     bg = MagicMock()
     # Ready, then exited during the measured window.
-    bg.status = "exited"
+    bg.status = "running"
     bg.attrs = {"State": {"ExitCode": 1}}
     bg.logs.return_value = _ready_line()
+    statuses = iter(["running", "exited"])
+    bg.reload.side_effect = lambda: setattr(bg, "status", next(statuses))
 
     docker_client = MagicMock()
     docker_client.containers.run.side_effect = [bg, fg]
@@ -305,6 +307,48 @@ def test_run_client_configs_aborts_when_background_helper_exited(tmp_path):
 
     # Even on abort the helper is cleaned up (no leak).
     bg.remove.assert_called_with(force=True)
+
+
+def test_run_client_configs_rejects_stale_ready_line_from_exited_helper(tmp_path):
+    bg, fg, docker_client = _bg_and_fg()
+    bg.status = "exited"
+    bg.attrs = {"State": {"ExitCode": 1}}
+
+    with pytest.raises(RuntimeError, match="stopped before it was ready"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+        )
+
+    assert docker_client.containers.run.call_count == 1
+    bg.remove.assert_called_once_with(force=True)
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("wait failed"), KeyboardInterrupt()])
+def test_run_client_configs_removes_remaining_foreground_on_failure(tmp_path, failure):
+    from unittest.mock import MagicMock
+
+    bg, fg, docker_client = _bg_and_fg()
+    other_fg = MagicMock()
+    fg.wait.side_effect = failure
+    docker_client.containers.run.side_effect = [bg, fg, other_fg]
+    other_spec = _memtier_spec()
+    other_spec.client_index = 2
+
+    with pytest.raises(type(failure)):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec(), other_spec],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+        )
+
+    fg.remove.assert_called_once_with(force=True)
+    other_fg.remove.assert_called_once_with(force=True)
+    other_fg.wait.assert_not_called()
+    bg.remove.assert_called_once_with(force=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -681,18 +725,41 @@ def test_run_client_configs_fails_fast_when_helper_dies_before_ready(tmp_path):
     bg.remove.assert_called_once_with(force=True)
 
 
-def test_run_client_configs_fails_on_a_ready_line_without_listener_count(tmp_path):
+@pytest.mark.parametrize("listener_count", [None, True, False, 0, -1, "2", 2.5])
+def test_run_client_configs_fails_on_invalid_ready_listener_count(
+    tmp_path, listener_count
+):
     from unittest.mock import MagicMock
 
     bg = MagicMock()
     bg.status = "running"
-    bg.logs.return_value = (
-        b'{"status":"ok","message":"listeners are ready; press Ctrl-C to stop"}'
-    )
+    bg.logs.return_value = json.dumps(
+        {
+            "status": "ok",
+            "message": "listeners are ready; press Ctrl-C to stop",
+            "listener_count": listener_count,
+        }
+    ).encode()
     docker_client = MagicMock()
     docker_client.containers.run.side_effect = [bg]
 
-    with pytest.raises(RuntimeError, match="without a listener count"):
+    with pytest.raises(RuntimeError, match="without a positive listener count"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+        )
+
+    assert docker_client.containers.run.call_count == 1
+    bg.remove.assert_called_once_with(force=True)
+
+
+def test_run_client_configs_rejects_unsuccessful_ready_line(tmp_path):
+    bg, fg, docker_client = _bg_and_fg()
+    bg.logs.return_value = _ready_line().replace(b'"status":"ok"', b'"status":"error"')
+
+    with pytest.raises(RuntimeError, match="unsuccessful ready line"):
         multi_tool.run_client_configs(
             docker_client,
             [_memtier_spec(), _bcast_spec()],
@@ -932,3 +999,73 @@ def test_read_listener_state_sums_distinct_servers():
         "tracking_clients": 1000,
         "mem_clients_normal": 30,
     }
+
+
+@pytest.mark.parametrize("run_id", [None, "", 123])
+@pytest.mark.parametrize("at_baseline", [True, False])
+def test_run_client_configs_rejects_missing_server_identity(
+    tmp_path, run_id, at_baseline
+):
+    payload = _write_memtier_output(tmp_path)
+    bg, fg, docker_client = _bg_and_fg()
+    infos = [_info(2, run_id=run_id)]
+    if not at_baseline:
+        infos.insert(0, _info(0))
+
+    with pytest.raises(RuntimeError, match="Could not identify the tracking server"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+            redis_conns=[_tracking_conn(*infos)],
+        )
+
+    if at_baseline:
+        docker_client.containers.run.assert_not_called()
+    else:
+        bg.remove.assert_called_once_with(force=True)
+    assert json.loads((tmp_path / "benchmark_output_0.json").read_text()) == payload
+
+
+@pytest.mark.parametrize("output", [None, "{broken json", "null", "[]"])
+def test_run_client_configs_aborts_when_listener_results_cannot_be_recorded(
+    tmp_path, output
+):
+    if output is not None:
+        (tmp_path / "benchmark_output_0.json").write_text(output)
+    bg, fg, docker_client = _bg_and_fg()
+
+    with pytest.raises(RuntimeError, match="Could not read the measured client's JSON"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+            redis_conns=[_tracking_conn(_info(0), _info(2))],
+        )
+
+    bg.remove.assert_called_once_with(force=True)
+
+
+def test_run_client_configs_cleans_up_if_listener_json_replace_fails(
+    tmp_path, monkeypatch
+):
+    from unittest.mock import Mock
+
+    payload = _write_memtier_output(tmp_path)
+    bg, fg, docker_client = _bg_and_fg()
+    monkeypatch.setattr(multi_tool.os, "replace", Mock(side_effect=OSError("read-only")))
+
+    with pytest.raises(OSError, match="read-only"):
+        multi_tool.run_client_configs(
+            docker_client,
+            [_memtier_spec(), _bcast_spec()],
+            cpuset_cpus="0",
+            temporary_dir_client=str(tmp_path),
+            redis_conns=[_tracking_conn(_info(0), _info(2))],
+        )
+
+    bg.remove.assert_called_once_with(force=True)
+    assert list(tmp_path.iterdir()) == [tmp_path / "benchmark_output_0.json"]
+    assert json.loads((tmp_path / "benchmark_output_0.json").read_text()) == payload

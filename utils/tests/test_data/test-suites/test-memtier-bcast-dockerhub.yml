@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-set-bcast-tracking-100-listeners
+name: memtier_benchmark-set-bcast-tracking-100-listeners-v2
 description: Multi-tool clientconfigs suite for the coordinator tests. A memtier SET
   writer on 'bench:' runs next to the bcast-listener helper holding 100 RESP3
   CLIENT TRACKING BCAST listeners on the same prefix.

@@ -231,18 +231,6 @@ def wait_for_background_ready(container_info, timeout):
     while True:
         logs = container.logs().decode("utf-8", errors="replace")
         ready = parse_background_ready(logs)
-        if ready is not None:
-            if not isinstance(ready.get("listener_count"), int):
-                raise RuntimeError(
-                    f"Background helper {client_index} ({client_tool}) printed a "
-                    f"ready line without a listener count: {ready}"
-                )
-            logging.info(
-                f"Background helper {client_index} ({client_tool}) ready after "
-                f"{time.monotonic() - started:.1f}s with "
-                f"{ready.get('listener_count')} listeners"
-            )
-            return ready
         container.reload()
         status = container.status
         if status not in ("created", "running"):
@@ -254,6 +242,24 @@ def wait_for_background_ready(container_info, timeout):
                 f"Background helper {client_index} ({client_tool}) stopped before "
                 f"it was ready (status={status}, exit_code={exit_code})"
             )
+        if ready is not None:
+            listener_count = ready.get("listener_count")
+            if type(listener_count) is not int or listener_count <= 0:
+                raise RuntimeError(
+                    f"Background helper {client_index} ({client_tool}) printed a "
+                    f"ready line without a positive listener count: {ready}"
+                )
+            if ready.get("status") != "ok":
+                raise RuntimeError(
+                    f"Background helper {client_index} ({client_tool}) printed an "
+                    f"unsuccessful ready line: {ready}"
+                )
+            logging.info(
+                f"Background helper {client_index} ({client_tool}) ready after "
+                f"{time.monotonic() - started:.1f}s with "
+                f"{ready.get('listener_count')} listeners"
+            )
+            return ready
         if time.monotonic() - started >= timeout:
             logging.error(
                 f"Background helper {client_index} ({client_tool}) logs:\n{logs}"
@@ -288,7 +294,11 @@ def read_listener_state(redis_conns):
             )
             return None
         run_id = info.get("run_id")
-        if run_id is not None and run_id in seen:
+        if not isinstance(run_id, str) or not run_id:
+            # Endpoint aliases cannot identify duplicate cluster slot-range
+            # connections reliably; counting them could hide lost listeners.
+            raise RuntimeError("Could not identify the tracking server from INFO run_id")
+        if run_id in seen:
             continue
         seen.add(run_id)
         state["tracking_clients"] += int(info["tracking_clients"])
@@ -794,6 +804,7 @@ def run_client_configs(
     # invalid. Tracked here and raised after cleanup.
     background_failures = []
     listener_end = None
+    pending_foreground = list(foreground)
 
     try:
         for container_info in foreground:
@@ -855,6 +866,8 @@ def run_client_configs(
                     logging.warning(
                         f"Client {client_index} cleanup error: {cleanup_error}"
                     )
+                finally:
+                    pending_foreground.remove(container_info)
 
         # The measuring clients are done and the helpers still run: this is the
         # end of the measured window, the moment to count attached listeners.
@@ -862,6 +875,7 @@ def run_client_configs(
             listener_end = read_listener_state(redis_conns)
 
     finally:
+        remove_started_containers(pending_foreground)
         # ALWAYS stop + remove background helpers, even if a measuring client
         # raised above, so listener containers never leak. Also detect helpers
         # that exited on their own before we stopped them (auth error, OOM,
@@ -1004,7 +1018,14 @@ def run_client_configs(
         # rewritten because the coordinator reads the measured client's JSON
         # from disk. It is replaced rather than written into: without an injected
         # user the client container created it as root.
-        if memtier_json is not None and attached_listeners is not None:
+        if attached_listeners is not None and any(
+            "memtier_benchmark" in r["tool"] for r in successful_results
+        ):
+            if not isinstance(memtier_json, dict):
+                raise RuntimeError(
+                    "Could not read the measured client's JSON to record "
+                    "the tracking listeners; aborting."
+                )
             totals = memtier_json.setdefault("ALL STATS", {}).setdefault("Totals", {})
             totals[TRACKING_LISTENERS_ATTACHED] = attached_listeners
             if listener_end["mem_clients_normal"] is not None:
@@ -1012,12 +1033,16 @@ def run_client_configs(
                     "mem_clients_normal"
                 ]
             fd, rewritten = tempfile.mkstemp(dir=temporary_dir_client, suffix=".json")
-            with os.fdopen(fd, "w") as f:
-                json.dump(memtier_json, f, indent=2)
-            os.chmod(rewritten, 0o644)
-            os.replace(
-                rewritten, os.path.join(temporary_dir_client, memtier_output_filename)
-            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(memtier_json, f, indent=2)
+                os.chmod(rewritten, 0o644)
+                os.replace(
+                    rewritten, os.path.join(temporary_dir_client, memtier_output_filename)
+                )
+            finally:
+                if os.path.exists(rewritten):
+                    os.unlink(rewritten)
 
         # Merge JSON outputs from all tools
         if memtier_json and pubsub_json and vector_json:
