@@ -303,6 +303,7 @@ CPU_STATS_SECTION_FILTER = {
         "keyspace_misses",
         "expired_keys",
         "evicted_keys",
+        "evicted_clients",
         "sync_full",
         "sync_partial_ok",
         "sync_partial_err",
