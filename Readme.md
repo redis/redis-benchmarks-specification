@@ -463,3 +463,24 @@ $ tox -- -vv --log-cli-level=INFO utils/tests/test_runner.py
 ## License
 
 redis-benchmarks-specification is distributed under the BSD3 license - see [LICENSE](LICENSE)
+
+
+### Client-phase CPU and eviction metrics
+
+A standalone memtier spec can opt into `client-memory-metrics`. The harness reads
+server counters immediately before starting the measured client and after it ends,
+then exports `ClientPhaseUserCpuSeconds`, `ClientPhaseGetCalls`,
+`ClientPhaseUserCpuSecondsPerGet`, and `ClientPhaseEvictedClients` under
+`ALL STATS.Totals`. Add those paths to the spec's exporter. These are client-phase
+costs including connection setup and background server work; they exclude preload
+CPU and are not intrinsic command execution latencies. Existing raw INFO metrics
+are unchanged.
+
+The options `min-evicted-clients` and `max-evicted-clients` reject runs outside the
+required eviction range. `maxmemory-clients` verifies the expected server setting
+in bytes. Missing counters, changed server identity, decreasing counters or zero
+GET progress reject the result before export. Only one server is supported.
+`coordinator-only: true` rejects standalone-runner execution before preload;
+use this for eviction workloads requiring a fresh server and a disabled preload
+cap. Spec startup settings apply on the coordinator; mutable runtime settings can
+be applied after preload through `dbconfig.init_commands`.
