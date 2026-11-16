@@ -200,6 +200,10 @@ def _start_heartbeat(conn, platform, arch, version, args, datadir=None):
                 now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 fields = {
                     "platform": platform,
+                    "consumer": "{}-self-contained-proc#{}".format(
+                        get_runners_consumer_group_name(platform),
+                        getattr(args, "consumer_pos", 1),
+                    ),
                     "arch": arch,
                     "version": version,
                     "status": _heartbeat_status,
