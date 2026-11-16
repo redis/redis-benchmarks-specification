@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-set-bcast-tracking-acl-200-listeners-all-filtered
+name: memtier_benchmark-set-bcast-tracking-acl-200-listeners-all-filtered-v2
 description: "CLIENT TRACKING BCAST send-time ACL-filtering benchmark (max-delta case).
   200 bcast-listener clients all authenticate as an ACL user permitted only 'bench:hot:*'
   (--acl-user-patterns 'bench:hot:*'), while the memtier writer SETs into 'bench:cold:*'.
@@ -9,7 +9,9 @@ description: "CLIENT TRACKING BCAST send-time ACL-filtering benchmark (max-delta
   without the filtering change. Encoding: EMBSTR (data-size 16 bytes, <= 44B embstr
   threshold). Requires a bcast-tracking-bench image with --acl-user-patterns support, and
   runs as a multi-tool clientconfigs suite; on the self-contained coordinator this
-  requires BENCHMARK_MULTITOOL_ENABLED=1."
+  requires BENCHMARK_MULTITOOL_ENABLED=1. Version 2 waits for all listeners before
+  writing and uses the helper with the allocator fix. Earlier series measured a
+  partial listener population and are not comparable."
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -43,4 +45,9 @@ clientconfigs:
     requests:
       cpus: '4'
       memory: 1g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.TrackingListenersAttached
+    - $."ALL STATS".Totals.MemClientsNormalAtWindowEnd
 priority: 50

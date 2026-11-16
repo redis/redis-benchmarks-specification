@@ -708,6 +708,7 @@ def run_multiple_clients(
     override_test_runs,
     unix_socket,
     args,
+    redis_conns=None,
 ):
     """
     Run multiple client configurations simultaneously and aggregate results.
@@ -749,6 +750,7 @@ def run_multiple_clients(
         timeout_buffer=getattr(
             args, "timeout_buffer", getattr(args, "container_timeout_buffer", 60)
         ),
+        redis_conns=redis_conns,
     )
 
     return res.aggregated_stdout, res.results
@@ -2747,6 +2749,7 @@ def process_self_contained_coordinator_stream(
                             override_test_runs,
                             unix_socket,
                             args,
+                            redis_conns=redis_conns,
                         )
                         logging.info(
                             f"Completed {len(client_results)} client configurations"
