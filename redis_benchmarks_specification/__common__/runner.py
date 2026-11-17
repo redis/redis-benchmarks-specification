@@ -6,6 +6,10 @@ import re
 import datetime as dt
 import redis
 
+from redis_benchmarks_specification.__common__.postrun_assertions import (
+    validate_postrun_lua,
+)
+
 from redis_benchmarks_specification.__common__.timeseries import (
     timeseries_test_sucess_flow,
     push_data_to_redistimeseries,
@@ -503,6 +507,7 @@ def exporter_datasink_common(
     collect_memory_metrics=True,
     collect_cpu_stats=True,
 ):
+    validate_postrun_lua(benchmark_config, redis_conns, results_dict)
     logging.info(
         f"Using datapoint_time_ms: {datapoint_time_ms}. git_hash={git_hash}, git_branch={git_branch}, git_version={git_version}. gh_org={tf_github_org}, gh_repo={tf_github_repo}"
     )
