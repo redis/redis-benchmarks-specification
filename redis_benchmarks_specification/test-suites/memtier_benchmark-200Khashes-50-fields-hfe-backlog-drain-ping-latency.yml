@@ -22,6 +22,10 @@ description: |-
   requires the due instant to fall strictly inside the client's actual Runtime
   start/finish timestamps and checks that active HFE work occurred. A missed
   window or failed setup rejects the run instead of exporting a healthy tail.
+  That check reads expired_subkeys_active where the server has it (8.6+) and
+  falls back to the combined expired_subkeys on 7.4-8.2, which carry the same
+  active-expire path but predate the split counter; the probe is PING only, so
+  nothing in the run can lazily expire the cohort and move the combined counter.
   The 180-second aggregate includes time before and after expiration; compare
   repeated runs and inspect the full latency distribution rather than treating
   a percentile as a direct measure of cycle length.
@@ -52,8 +56,14 @@ dbconfig:
     - |-
       local now = redis.call('TIME')
       local due = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) + 120000
-      local before = tonumber(string.match(redis.call('INFO', 'stats'), 'expired_subkeys_active:(%d+)'))
-      assert(before, 'expired_subkeys_active is required')
+      local info = redis.call('INFO', 'stats')
+      local stat = 'expired_subkeys_active'
+      local before = tonumber(string.match(info, 'expired_subkeys_active:(%d+)'))
+      if not before then
+        stat = 'expired_subkeys'
+        before = tonumber(string.match(info, 'expired_subkeys:(%d+)'))
+      end
+      assert(before, 'no expired_subkeys counter in INFO stats')
       assert(redis.call('DBSIZE') == 200000, 'expected 200000 preloaded hashes')
       local args = {due, 'FIELDS', 50}
       for f=1,50 do args[#args+1] = 'f'..f end
@@ -69,15 +79,15 @@ dbconfig:
       assert(applied == 10000000, 'incomplete expiration cohort')
       assert(redis.call('HPTTL', 'hfe:1', 'FIELDS', 1, 'f1')[1] > 0, 'cohort already expired')
       redis.call('HSET', '__benchmark:hfe:receipt', 'due_ms', due,
-        'active_before', before, 'fields', applied)
+        'active_before', before, 'fields', applied, 'active_stat', stat)
       return applied
     - 0
   postrun_lua: |-
-    local receipt = redis.call('HMGET', '__benchmark:hfe:receipt', 'due_ms', 'active_before', 'fields')
-    local due, before, fields = tonumber(receipt[1]), tonumber(receipt[2]), tonumber(receipt[3])
-    assert(due and before and fields == 10000000, 'missing or incomplete HFE receipt')
+    local receipt = redis.call('HMGET', '__benchmark:hfe:receipt', 'due_ms', 'active_before', 'fields', 'active_stat')
+    local due, before, fields, stat = tonumber(receipt[1]), tonumber(receipt[2]), tonumber(receipt[3]), receipt[4]
+    assert(due and before and fields == 10000000 and stat, 'missing or incomplete HFE receipt')
     assert(tonumber(ARGV[1]) < due and due < tonumber(ARGV[2]), 'expiration outside measured PING window')
-    local active = tonumber(string.match(redis.call('INFO', 'stats'), 'expired_subkeys_active:(%d+)'))
+    local active = tonumber(string.match(redis.call('INFO', 'stats'), stat .. ':(%d+)'))
     assert(active and active > before, 'no active hash-field expiration observed')
     return 1
 tested-commands:
