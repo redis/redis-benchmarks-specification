@@ -1,4 +1,8 @@
 # Import warning suppression first
+from redis_benchmarks_specification.__common__.log_rotation import (
+    add_log_rotation_args,
+    configure_logging,
+)
 from redis_benchmarks_specification.__common__.suppress_warnings import *
 
 import datetime
@@ -770,22 +774,7 @@ def main():
 
 
 def run_client_runner_logic(args, project_name, project_name_suffix, project_version):
-    if args.logname is not None:
-        print(f"Writting log to {args.logname}")
-        logging.basicConfig(
-            filename=args.logname,
-            filemode="a",
-            format=LOG_FORMAT,
-            datefmt=LOG_DATEFMT,
-            level=LOG_LEVEL,
-        )
-    else:
-        # logging settings
-        logging.basicConfig(
-            format=LOG_FORMAT,
-            level=LOG_LEVEL,
-            datefmt=LOG_DATEFMT,
-        )
+    configure_logging(args, LOG_FORMAT, LOG_DATEFMT, LOG_LEVEL)
     logging.info(get_version_string(project_name, project_version))
     testsuite_spec_files = extract_testsuites(args)
     datasink_conn = None

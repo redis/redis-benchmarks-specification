@@ -1,6 +1,9 @@
 import argparse
 import math
 import os
+from redis_benchmarks_specification.__common__.log_rotation import (
+    add_log_rotation_args,
+)
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
     SPECS_PATH_SETUPS,
@@ -74,6 +77,7 @@ def create_self_contained_coordinator_args(project_name):
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
+    add_log_rotation_args(parser)
     parser.add_argument(
         "--consumer-start-id",
         type=str,

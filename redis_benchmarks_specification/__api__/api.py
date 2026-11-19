@@ -6,6 +6,7 @@
 
 import logging
 import logging.handlers
+from redis_benchmarks_specification.__common__.log_rotation import build_log_handler
 from redis_benchmarks_specification import __version__
 import redis
 import argparse
@@ -59,9 +60,7 @@ def main():
     app = create_app(conn, GH_REDIS_SERVER_USER)
     if args.logname is not None:
         print("Writting log to {}".format(args.logname))
-        handler = logging.handlers.RotatingFileHandler(
-            args.logname, maxBytes=1024 * 1024
-        )
+        handler = build_log_handler(args.logname)
         logging.getLogger("werkzeug").setLevel(logging.DEBUG)
         logging.getLogger("werkzeug").addHandler(handler)
         app.logger.setLevel(LOG_LEVEL)
