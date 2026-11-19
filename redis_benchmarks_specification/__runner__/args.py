@@ -1,5 +1,8 @@
 import argparse
 
+from redis_benchmarks_specification.__common__.log_rotation import (
+    add_log_rotation_args,
+)
 from redis_benchmarks_specification.__common__.env import (
     ALLOWED_PROFILERS,
     DATASINK_RTS_AUTH,
@@ -65,6 +68,7 @@ def create_client_runner_args(project_name):
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
+    add_log_rotation_args(parser)
     parser.add_argument(
         "--test-suites-folder",
         type=str,

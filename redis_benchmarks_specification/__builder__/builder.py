@@ -13,6 +13,10 @@ import redis
 import os
 from zipfile import ZipFile, ZipInfo
 
+from redis_benchmarks_specification.__common__.log_rotation import (
+    add_log_rotation_args,
+    configure_logging,
+)
 from redis_benchmarks_specification.__builder__.schema import (
     get_build_config,
     get_build_config_metadata,
@@ -159,6 +163,7 @@ def main():
     parser.add_argument(
         "--logname", type=str, default=None, help="logname to write the logs to"
     )
+    add_log_rotation_args(parser)
     parser.add_argument(
         "--arch", type=str, default="amd64", help="arch to build artifacts"
     )
@@ -201,22 +206,7 @@ def main():
     )
     add_datadir_arguments(parser, holds_server_data=False)
     args = parser.parse_args()
-    if args.logname is not None:
-        print("Writting log to {}".format(args.logname))
-        logging.basicConfig(
-            filename=args.logname,
-            filemode="a",
-            format=LOG_FORMAT,
-            datefmt=LOG_DATEFMT,
-            level=LOG_LEVEL,
-        )
-    else:
-        # logging settings
-        logging.basicConfig(
-            format=LOG_FORMAT,
-            level=LOG_LEVEL,
-            datefmt=LOG_DATEFMT,
-        )
+    configure_logging(args, LOG_FORMAT, LOG_DATEFMT, LOG_LEVEL)
 
     # Resolved before ANY stream mutation. A bad --datadir must abort while the
     # process is still inert: the consumer-group reset below ACKs pending
