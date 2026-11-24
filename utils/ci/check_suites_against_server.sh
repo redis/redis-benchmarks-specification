@@ -8,7 +8,7 @@
 # run  : the server implements the tested commands; every matched suite must run, with zero error replies from
 #        the server (memtier reports `-ERR` replies on stderr but still exits 0, so the runner cannot see them).
 #
-# Requires docker, redis-cli (or the redis:7.2-alpine image, used as a fallback) and the runner on PATH
+# Requires docker, python3, redis-cli (or the redis:7.2-alpine image, used as a fallback) and the runner on PATH
 # (`redis-benchmarks-spec-client-runner`, e.g. via `poetry run`). Uses host networking.
 set -euo pipefail
 image=$1; mode=$2; regexp=$3; shift 3
@@ -27,7 +27,13 @@ for _ in $(seq 1 120); do cli ping 2>/dev/null | grep -q PONG && break; sleep 0.
 cli ping | grep -q PONG || { echo "server $image did not answer PING on port $port"; docker logs "$name" | tail -20; exit 1; }
 echo "server: $image, port $port, modules: $(cli module list 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
 
-expected=$(ls "$suites_dir" | grep -E "$regexp" | grep -c '\.yml$')
+# Same engine and semantics as the runner (Python re.search on the file name), so look-aheads work.
+expected=$(python3 - "$suites_dir" "$regexp" <<'PYEOF'
+import os, re, sys
+d, rx = sys.argv[1], re.compile(sys.argv[2])
+print(sum(1 for f in os.listdir(d) if f.endswith(".yml") and rx.search(f)))
+PYEOF
+)
 [ "$expected" -gt 0 ] || { echo "no suite in $suites_dir matches $regexp"; exit 1; }
 
 set +e
@@ -37,11 +43,12 @@ redis-benchmarks-spec-client-runner --db_server_host 127.0.0.1 --db_server_port 
 rc=$?
 set -e
 
-skipped=$(grep -c 'due to unsupported commands' "$log" || true)
-error_replies=$(grep -c 'handle error response' "$log" || true)
+# Only WARNING-level and printed lines are relied on: the runner's INFO lines are not always emitted.
+skipped=$(grep -c 'due to unsupported commands' "$log" || true)      # WARNING from the COMMAND gate
+completed=$(grep -c '^# Results for .* test-case' "$log" || true)   # printed once per test that ran to the end
+error_replies=$(grep -c 'handle error response' "$log" || true)     # memtier stderr, relayed in the container output
 tracebacks=$(grep -c 'Traceback' "$log" || true)
-preloads=$(grep -c 'Ensuring keyspace length requirement' "$log" || true)
-echo "runner exit=$rc matched_suites=$expected skipped_unsupported=$skipped preloads=$preloads error_replies=$error_replies tracebacks=$tracebacks"
+echo "runner exit=$rc matched_suites=$expected skipped_unsupported=$skipped completed=$completed error_replies=$error_replies tracebacks=$tracebacks"
 
 fail=0
 [ "$rc" -eq 0 ] || { echo "FAIL: runner exit code $rc"; fail=1; }
@@ -49,10 +56,10 @@ fail=0
 case $mode in
   skip)
     [ "$skipped" -eq "$expected" ] || { echo "FAIL: expected all $expected suites skipped as unsupported, got $skipped"; fail=1; }
-    [ "$preloads" -eq 0 ] || { echo "FAIL: $preloads preload(s) ran on a server that lacks the commands"; fail=1; } ;;
+    [ "$completed" -eq 0 ] || { echo "FAIL: $completed suite(s) ran on a server that lacks the commands"; fail=1; } ;;
   run)
     [ "$skipped" -eq 0 ] || { echo "FAIL: $skipped suite(s) skipped as unsupported on a server that should run them"; fail=1; }
-    [ "$preloads" -eq "$expected" ] || { echo "FAIL: expected $expected preloads, got $preloads"; fail=1; }
+    [ "$completed" -eq "$expected" ] || { echo "FAIL: expected $expected suites to run to completion, got $completed (an init-command canary or preload check aborted the rest)"; grep -E 'ResponseError|Exception|ERR ' "$log" | grep -v 'handle error response' | sort | uniq -c | sort -rn | head -5; fail=1; }
     [ "$error_replies" -eq 0 ] || { echo "FAIL: the server returned $error_replies error replies during the benchmarks"; grep -oE 'handle error response: .{0,80}' "$log" | sort | uniq -c | sort -rn | head -5; fail=1; } ;;
   *) echo "mode must be skip or run"; exit 2 ;;
 esac
