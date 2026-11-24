@@ -24,6 +24,8 @@ jobs:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Scoped to the 1Kkeys-json-10items suites: they request 4 client CPUs, which the hosted runner has. The
+    # session-caching JSON suite requests 8 and Docker refuses its cpuset on a 4-vCPU runner.
     strategy:
       fail-fast: false
       matrix:
@@ -31,22 +33,22 @@ jobs:
           - label: redis 6.2 (no modules) skips
             image: redis:6.2-alpine
             mode: skip
-            regexp: '.*-json-.*'
+            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
             args: redis-server --port 6399 --save ""
           - label: redis 7.2 (no modules) skips
             image: redis:7.2-alpine
             mode: skip
-            regexp: '.*-json-.*'
+            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
             args: redis-server --port 6399 --save ""
           - label: valkey 8.1 skips
             image: valkey/valkey:8.1-alpine
             mode: skip
-            regexp: '.*-json-.*'
+            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
             args: valkey-server --port 6399 --save ""
           - label: redis 8.2 (bundled RedisJSON) runs
             image: redis:8.2-alpine
             mode: run
-            regexp: '.*-json-.*'
+            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
             args: redis-server --port 6399 --save ""
           # Dragonfly implements JSON.* natively but v2.1.0 rejects JSONPath filter expressions with a syntax error,
           # so the filter suite is excluded here; every other JSON suite must run error-free. Pinned so a Dragonfly
@@ -54,7 +56,7 @@ jobs:
           - label: dragonfly v2.1.0 runs (filter suite excluded)
             image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.1.0
             mode: run
-            regexp: '.*-json-(?!.*filter).*'
+            regexp: 'memtier_benchmark-1Kkeys-json-10items-(?!get-filter).*'
             args: dragonfly --port 6399 --proactor_threads=2 --dbfilename ""
     steps:
     - uses: actions/checkout@v6
