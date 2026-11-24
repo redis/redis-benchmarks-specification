@@ -16,6 +16,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   compat:
     name: ${{ matrix.label }}
@@ -45,10 +48,11 @@ jobs:
             mode: run
             regexp: '.*-json-.*'
             args: redis-server --port 6399 --save ""
-          # Dragonfly implements JSON.* natively but (v2.1) rejects JSONPath filter expressions with a syntax error,
-          # so the filter suite is excluded here; every other JSON suite must run error-free.
-          - label: dragonfly runs (filter suite excluded)
-            image: docker.dragonflydb.io/dragonflydb/dragonfly
+          # Dragonfly implements JSON.* natively but v2.1.0 rejects JSONPath filter expressions with a syntax error,
+          # so the filter suite is excluded here; every other JSON suite must run error-free. Pinned so a Dragonfly
+          # release cannot change this job's outcome without a change in the repository.
+          - label: dragonfly v2.1.0 runs (filter suite excluded)
+            image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.1.0
             mode: run
             regexp: '.*-json-(?!.*filter).*'
             args: dragonfly --port 6399 --proactor_threads=2 --dbfilename ""

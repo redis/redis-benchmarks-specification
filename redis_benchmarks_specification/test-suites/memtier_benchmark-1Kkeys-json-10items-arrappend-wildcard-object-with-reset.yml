@@ -16,8 +16,8 @@ description: |
   Report throughput for this loaded client population (100 connections, 25 per thread x 4 threads,
   pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same
   load. Sizes come from the literal JSON payloads.
-  After the preload an init command issues the measured command shape once against doc:1 (a no-op
-  for the write suites); an error reply, for example from a server whose JSONPath dialect rejects
+  After the preload two init commands issue the measured append once against doc:1 and pop it again
+  (a net no-op); an error reply, for example from a server whose JSONPath dialect rejects
   the path, aborts the suite instead of reporting a throughput number for error replies. The suite
   needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the
   module, so only the dockerhub build variant is declared.
