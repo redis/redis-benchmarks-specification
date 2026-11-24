@@ -1,0 +1,90 @@
+name: JSON suites server compatibility
+
+# Fast integration check for the RedisJSON suites: the client runner must skip them cleanly on servers without the
+# module (OSS Redis, Valkey) and run them without error replies on servers that implement JSON.* (Redis 8 images bundle
+# RedisJSON; Dragonfly implements the commands natively). The runner's command-support check (COMMAND) does the
+# skipping; this job proves it before a suite reaches a server it cannot run on.
+
+on:
+  pull_request:
+    paths:
+      - 'redis_benchmarks_specification/test-suites/*json*'
+      - 'redis_benchmarks_specification/__runner__/**'
+      - 'utils/ci/check_suites_against_server.sh'
+      - '.github/workflows/json-suites-server-compat.yml'
+  push:
+    branches:
+      - main
+
+jobs:
+  compat:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: redis 6.2 (no modules) skips
+            image: redis:6.2-alpine
+            mode: skip
+            regexp: '.*-json-.*'
+            args: redis-server --port 6399 --save ""
+          - label: redis 7.2 (no modules) skips
+            image: redis:7.2-alpine
+            mode: skip
+            regexp: '.*-json-.*'
+            args: redis-server --port 6399 --save ""
+          - label: valkey 8.1 skips
+            image: valkey/valkey:8.1-alpine
+            mode: skip
+            regexp: '.*-json-.*'
+            args: valkey-server --port 6399 --save ""
+          - label: redis 8.2 (bundled RedisJSON) runs
+            image: redis:8.2-alpine
+            mode: run
+            regexp: '.*-json-.*'
+            args: redis-server --port 6399 --save ""
+          # Dragonfly implements JSON.* natively but (v2.1) rejects JSONPath filter expressions with a syntax error,
+          # so the filter suite is excluded here; every other JSON suite must run error-free.
+          - label: dragonfly runs (filter suite excluded)
+            image: docker.dragonflydb.io/dragonflydb/dragonfly
+            mode: run
+            regexp: '.*-json-(?!.*filter).*'
+            args: dragonfly --port 6399 --proactor_threads=2 --dbfilename ""
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.10'
+
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install the runner
+      run: |
+        poetry install
+
+    - name: Pull images
+      run: |
+        docker pull -q ${{ matrix.image }}
+        docker pull -q redislabs/memtier_benchmark:edge
+
+    - name: Run the JSON suites against ${{ matrix.image }}
+      env:
+        BENCHMARK_PR_DIFF_SCOPING: "0"
+        PORT: "6399"
+        TEST_TIME: "5"
+        LOG: runner.log
+      run: |
+        poetry run utils/ci/check_suites_against_server.sh "${{ matrix.image }}" ${{ matrix.mode }} '${{ matrix.regexp }}' ${{ matrix.args }}
+
+    - name: Upload runner log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: runner-log-${{ strategy.job-index }}
+        path: runner.log
