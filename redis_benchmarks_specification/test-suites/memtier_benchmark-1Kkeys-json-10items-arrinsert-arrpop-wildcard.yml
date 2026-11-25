@@ -21,12 +21,13 @@ description: |
   suite instead of reporting a throughput number for error replies. The suite needs a server with
   RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the module, so only the
   dockerhub build variant is declared.
+  The first init command checks that the last preloaded key (doc:1000) exists, an error reply if the
+  preload did not complete; there is no exact keyspace check, so the suite also runs on an endpoint
+  database that holds other suites' keys (no FLUSHALL needed between suites).
 
 dbconfig:
   configuration-parameters:
     save: '""'
-  check:
-    keyspacelen: 1000
   resources:
     requests:
       memory: 1g
@@ -37,6 +38,7 @@ dbconfig:
       --command-key-pattern="P" --key-minimum=1 --key-maximum=1001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50'
   init_commands:
+    - ["JSON.ARRLEN", "doc:1000", "$.items"]
     - ["JSON.ARRINSERT", "doc:1", "$.items[*].tags", "0", "\"inserted\""]
     - ["JSON.ARRPOP", "doc:1", "$.items[*].tags", "0"]
   dataset_name: 1Kkeys-json-10items-2875B

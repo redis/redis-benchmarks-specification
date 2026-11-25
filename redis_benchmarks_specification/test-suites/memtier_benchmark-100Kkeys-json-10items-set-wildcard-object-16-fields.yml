@@ -22,12 +22,13 @@ description: |
   the path, aborts the suite instead of reporting a throughput number for error replies. The suite
   needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the
   module, so only the dockerhub build variant is declared.
+  The first init command checks that the last preloaded key (doc:100000) exists, an error reply if the
+  preload did not complete; there is no exact keyspace check, so the suite also runs on an endpoint
+  database that holds other suites' keys (no FLUSHALL needed between suites).
 
 dbconfig:
   configuration-parameters:
     save: '""'
-  check:
-    keyspacelen: 100000
   resources:
     requests:
       memory: 2g
@@ -38,6 +39,7 @@ dbconfig:
       --command-key-pattern="P" --key-minimum=1 --key-maximum=100001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50'
   init_commands:
+    - ["JSON.ARRLEN", "doc:100000", "$.items"]
     - ["JSON.SET", "doc:1", "$.items[*].extra", "{}"]
   dataset_name: 100Kkeys-json-10items-2875B
   dataset_description: 100000 JSON documents (doc:1 .. doc:100000) of 2875 bytes, each an items array of 10 objects with 8 scalar fields, a 6-field attrs object, a 3-string tags array and two empty placeholder objects (extra, merged) for the write suites; the 100x keyspace of 1Kkeys-json-10items-2875B, so the working set is not cache resident.
