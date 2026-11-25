@@ -19761,6 +19761,41 @@
     "complexity": "O(1) when path is evaluated to a single value, O(N) when path is evaluated to multiple values, where N is the size of the key",
     "arguments": []
   },
+  "JSON.ARRINSERT": {
+    "summary": "Inserts the JSON scalar(s) value at the specified index in the array at path",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(N) when path is evaluated to a single value where N is the size of the array, O(N) when path is evaluated to multiple values, where N is the size of the key",
+    "arguments": []
+  },
+  "JSON.ARRLEN": {
+    "summary": "Returns the length of the array at path",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(1) where path is evaluated to a single value, O(N) where path is evaluated to multiple values, where N is the size of the key",
+    "arguments": []
+  },
+  "JSON.ARRPOP": {
+    "summary": "Removes and returns the element at the specified index in the array at path",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(N) when path is evaluated to a single value where N is the size of the array and the specified index is not the last element, O(1) when path is evaluated to a single value and the specified index is the last element, or O(N) when path is evaluated to multiple values, where N is the size of the key",
+    "arguments": []
+  },
+  "JSON.DEBUG": {
+    "summary": "Debugging container command",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "N/A",
+    "arguments": []
+  },
+  "JSON.DEL": {
+    "summary": "Deletes a value",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(N) when path is evaluated to a single value where N is the size of the deleted value, O(N) when path is evaluated to multiple values, where N is the size of the key",
+    "arguments": []
+  },
   "JSON.GET": {
     "summary": "Return the value at path in JSON serialized form",
     "since": "1.0.0",
@@ -19782,11 +19817,25 @@
     "complexity": "O(1) when path is evaluated to a single value, O(N) when path is evaluated to multiple values, where N is the size of the key",
     "arguments": []
   },
+  "JSON.OBJKEYS": {
+    "summary": "Returns the JSON keys of the object at path",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(N) when path is evaluated to a single value, where N is the number of keys in the object, O(N) when path is evaluated to multiple values, where N is the size of the key",
+    "arguments": []
+  },
   "JSON.SET": {
     "summary": "Sets or updates the JSON value at a path",
     "since": "1.0.0",
     "group": "json",
     "complexity": "O(M+N) where M is the original size and N is the new size",
+    "arguments": []
+  },
+  "JSON.STRAPPEND": {
+    "summary": "Appends a string to a JSON string value at path",
+    "since": "1.0.0",
+    "group": "json",
+    "complexity": "O(1) when path is evaluated to a single value, O(N) when path is evaluated to multiple values, where N is the size of the key",
     "arguments": []
   }
 }

@@ -1,0 +1,79 @@
+version: 0.4
+name: memtier_benchmark-100Kkeys-json-10items-get-multipath-5
+description: |
+  Measures Ops/sec for JSON.GET with five wildcard paths over a 10-item array
+  (`$.items[*].name $.items[*].qty $.items[*].price $.items[*].attrs.color $.items[*].attrs.size`):
+  about 70 object key lookups, five JSONPath compilations and 50 scalar serialisations per
+  command, so the per-command cost is dominated by path evaluation rather than by command
+  dispatch and reply framing, which single-path JSON.GET benchmarks measure.
+  Every document is an object with an `items` array of 10 objects; each item has 8 scalar fields,
+  a nested `attrs` object with 6 fields, a `tags` array of 3 strings and two empty placeholder
+  objects, `extra` and `merged`. `extra` exists because the wildcard JSON.SET suite replaces it and
+  RedisJSON creates new children only through static paths; `merged` is pre-created so every
+  JSON.MERGE does the same work from the first command. 2875 bytes per document, 100000 documents,
+  keys doc:1 .. doc:100000, uniform random key selection with distinct client seeds: the same
+  document and command as the 1Kkeys suite of the same name, over a 100x keyspace (about 290 MB of
+  JSON text) so the documents are not cache resident and the per-command cost includes the memory
+  traffic of a cold document, which the 1Kkeys suites hide.
+  Report throughput for this loaded client population (100 connections, 25 per thread x 4 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same
+  load. Sizes come from the literal JSON payloads.
+  After the preload an init command issues the measured command shape once against doc:1 (a no-op
+  for the write suites); an error reply, for example from a server whose JSONPath dialect rejects
+  the path, aborts the suite instead of reporting a throughput number for error replies. The suite
+  needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the
+  module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 100000
+  resources:
+    requests:
+      memory: 2g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: '--key-prefix "" --command "JSON.SET doc:__key__ $ \"{\\\"id\\\":\\\"doc\\\",\\\"version\\\":2,\\\"owner\\\":\\\"benchmark\\\",\\\"items\\\":[{\\\"id\\\":\\\"item-00\\\",\\\"name\\\":\\\"Item number 0\\\",\\\"qty\\\":1,\\\"price\\\":9.99,\\\"active\\\":true,\\\"sku\\\":\\\"SKU00000\\\",\\\"vendor\\\":\\\"vendor-0\\\",\\\"rating\\\":3.5,\\\"attrs\\\":{\\\"color\\\":\\\"red\\\",\\\"size\\\":\\\"S\\\",\\\"weight\\\":0.5,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-01\\\",\\\"name\\\":\\\"Item number 1\\\",\\\"qty\\\":2,\\\"price\\\":11.49,\\\"active\\\":false,\\\"sku\\\":\\\"SKU00001\\\",\\\"vendor\\\":\\\"vendor-1\\\",\\\"rating\\\":3.6,\\\"attrs\\\":{\\\"color\\\":\\\"green\\\",\\\"size\\\":\\\"M\\\",\\\"weight\\\":0.75,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-02\\\",\\\"name\\\":\\\"Item number 2\\\",\\\"qty\\\":3,\\\"price\\\":12.99,\\\"active\\\":true,\\\"sku\\\":\\\"SKU00002\\\",\\\"vendor\\\":\\\"vendor-2\\\",\\\"rating\\\":3.7,\\\"attrs\\\":{\\\"color\\\":\\\"blue\\\",\\\"size\\\":\\\"L\\\",\\\"weight\\\":1.0,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-03\\\",\\\"name\\\":\\\"Item number 3\\\",\\\"qty\\\":4,\\\"price\\\":14.49,\\\"active\\\":false,\\\"sku\\\":\\\"SKU00003\\\",\\\"vendor\\\":\\\"vendor-0\\\",\\\"rating\\\":3.8,\\\"attrs\\\":{\\\"color\\\":\\\"red\\\",\\\"size\\\":\\\"XL\\\",\\\"weight\\\":1.25,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-04\\\",\\\"name\\\":\\\"Item number 4\\\",\\\"qty\\\":5,\\\"price\\\":15.99,\\\"active\\\":true,\\\"sku\\\":\\\"SKU00004\\\",\\\"vendor\\\":\\\"vendor-1\\\",\\\"rating\\\":3.9,\\\"attrs\\\":{\\\"color\\\":\\\"green\\\",\\\"size\\\":\\\"S\\\",\\\"weight\\\":1.5,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-05\\\",\\\"name\\\":\\\"Item number 5\\\",\\\"qty\\\":6,\\\"price\\\":17.49,\\\"active\\\":false,\\\"sku\\\":\\\"SKU00005\\\",\\\"vendor\\\":\\\"vendor-2\\\",\\\"rating\\\":4.0,\\\"attrs\\\":{\\\"color\\\":\\\"blue\\\",\\\"size\\\":\\\"M\\\",\\\"weight\\\":1.75,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-06\\\",\\\"name\\\":\\\"Item number 6\\\",\\\"qty\\\":7,\\\"price\\\":18.99,\\\"active\\\":true,\\\"sku\\\":\\\"SKU00006\\\",\\\"vendor\\\":\\\"vendor-0\\\",\\\"rating\\\":4.1,\\\"attrs\\\":{\\\"color\\\":\\\"red\\\",\\\"size\\\":\\\"L\\\",\\\"weight\\\":2.0,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-07\\\",\\\"name\\\":\\\"Item number 7\\\",\\\"qty\\\":8,\\\"price\\\":20.49,\\\"active\\\":false,\\\"sku\\\":\\\"SKU00007\\\",\\\"vendor\\\":\\\"vendor-1\\\",\\\"rating\\\":4.2,\\\"attrs\\\":{\\\"color\\\":\\\"green\\\",\\\"size\\\":\\\"XL\\\",\\\"weight\\\":2.25,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-08\\\",\\\"name\\\":\\\"Item number 8\\\",\\\"qty\\\":9,\\\"price\\\":21.99,\\\"active\\\":true,\\\"sku\\\":\\\"SKU00008\\\",\\\"vendor\\\":\\\"vendor-2\\\",\\\"rating\\\":4.3,\\\"attrs\\\":{\\\"color\\\":\\\"blue\\\",\\\"size\\\":\\\"S\\\",\\\"weight\\\":2.5,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}},{\\\"id\\\":\\\"item-09\\\",\\\"name\\\":\\\"Item number 9\\\",\\\"qty\\\":10,\\\"price\\\":23.49,\\\"active\\\":false,\\\"sku\\\":\\\"SKU00009\\\",\\\"vendor\\\":\\\"vendor-0\\\",\\\"rating\\\":4.4,\\\"attrs\\\":{\\\"color\\\":\\\"red\\\",\\\"size\\\":\\\"M\\\",\\\"weight\\\":2.75,\\\"material\\\":\\\"cotton\\\",\\\"origin\\\":\\\"PT\\\",\\\"warranty\\\":\\\"2y\\\"},\\\"tags\\\":[\\\"new\\\",\\\"sale\\\",\\\"featured\\\"],\\\"extra\\\":{},\\\"merged\\\":{}}]}\""
+      --command-key-pattern="P" --key-minimum=1 --key-maximum=100001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50'
+  init_commands:
+    - ["JSON.GET", "doc:1", "$.items[*].name", "$.items[*].qty", "$.items[*].price", "$.items[*].attrs.color", "$.items[*].attrs.size"]
+  dataset_name: 100Kkeys-json-10items-2875B
+  dataset_description: 100000 JSON documents (doc:1 .. doc:100000) of 2875 bytes, each an items array of 10 objects with 8 scalar fields, a 6-field attrs object, a 3-string tags array and two empty placeholder objects (extra, merged) for the write suites; the 100x keyspace of 1Kkeys-json-10items-2875B, so the working set is not cache resident.
+
+tested-groups:
+- json
+
+tested-commands:
+- json.get
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 25 -t 4
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.GET doc:__key__ $.items[*].name $.items[*].qty $.items[*].price $.items[*].attrs.color $.items[*].attrs.size"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
