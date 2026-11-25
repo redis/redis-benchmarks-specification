@@ -48,6 +48,8 @@ tested-groups:
 
 tested-commands:
 - eval
+- json.arrlen
+- json.set
 
 redis-topologies:
 - oss-standalone

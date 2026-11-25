@@ -32,6 +32,8 @@ tested-groups:
 
 tested-commands:
 - eval
+- json.arrinsert
+- json.set
 
 redis-topologies:
 - oss-standalone

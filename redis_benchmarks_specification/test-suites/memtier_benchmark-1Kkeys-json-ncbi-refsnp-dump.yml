@@ -1034,6 +1034,7 @@ tested-groups:
 
 tested-commands:
 - dump
+- json.set
 
 redis-topologies:
 - oss-standalone
