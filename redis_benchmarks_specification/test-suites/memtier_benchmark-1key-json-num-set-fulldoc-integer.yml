@@ -1,0 +1,61 @@
+version: 0.4
+name: memtier_benchmark-1key-json-num-set-fulldoc-integer
+description: |
+  Measures Ops/sec for JSON.SET of an integer at the root of an existing integer document (constant
+  value).
+  num is the integer document of RedisJSON's performance.docs dataset.
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same load.
+  The client shape is the one of the RedisJSON spec (redis-benchmark -c 16 --threads 2 -P 1); memtier
+  replaces redis-benchmark so the rbs runner can drive it.
+  Port of RedisJSON tests/benchmarks/json_set_num_0.yml, whose dataset is an RDB file loaded by the
+  server. The document is loaded client-side by an init command (JSON.SET of the exact document text
+  at the root, so a rerun restores it), not from an RDB file, so the suite runs against an endpoint
+  where files cannot be placed; it carries no exact keyspace check, so it also runs on a database that
+  holds other suites' keys. The last init command issues the measured command once: an error reply,
+  for example from a server whose JSONPath dialect rejects the path or an endpoint that does not allow
+  the command, aborts the suite instead of reporting a throughput number for error replies.
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+    - ['JSON.SET', 'num', '$', '1']
+    - ['JSON.SET', 'num', '$', '0']
+
+tested-groups:
+- json
+
+tested-commands:
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.SET num $ 0"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

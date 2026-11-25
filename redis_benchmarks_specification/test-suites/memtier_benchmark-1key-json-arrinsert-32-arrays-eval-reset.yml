@@ -1,0 +1,60 @@
+version: 0.4
+name: memtier_benchmark-1key-json-arrinsert-32-arrays-eval-reset
+description: |
+  Measures Ops/sec for JSON.ARRINSERT of one integer at index 0 of every array matched by `$..y` (32
+  arrays of 16 integers, one per nested object): recursive descent over 32 objects and 32 inserts with
+  an element shift, after an in-script reset of the 1.6 KB document.
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same load.
+  The client shape is the one of the RedisJSON spec (redis-benchmark -c 16 --threads 2 -P 1); memtier
+  replaces redis-benchmark so the rbs runner can drive it.
+  Port of RedisJSON tests/benchmarks/json_arrinsert_multi_existing.yml. Each request is one EVAL that
+  first resets the key with JSON.SET of the whole document and then runs the insert, so state never
+  grows; throughput includes the Lua call overhead and the reset parse. The suite needs EVAL
+  (scripting) on the endpoint; JSON.ARRINSERT runs from the script. The init commands write the
+  document once and issue the measured EVAL once: an error reply aborts the suite. The RedisJSON spec
+  pins json-auto-create-deep-paths to no, the module default; the suite cannot set module
+  configuration and relies on that default.
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+    - ['EVAL', 'redis.call(''JSON.SET'',KEYS[1],''$'',ARGV[1]);return redis.call(''JSON.ARRINSERT'',KEYS[1],ARGV[2],ARGV[3],ARGV[4])', '1', 'arrinsert:bench', '{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"a0":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a1":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a2":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a3":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a4":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a5":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a6":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a7":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a8":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a9":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a10":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a11":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a12":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a13":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a14":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a15":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a16":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a17":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a18":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a19":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a20":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a21":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a22":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a23":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a24":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a25":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a26":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a27":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a28":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a29":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},"a30":{"y":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}}', '$..y', '0', '99']
+
+tested-groups:
+- scripting
+
+tested-commands:
+- eval
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="EVAL \"redis.call('JSON.SET',KEYS[1],'$',ARGV[1]);return redis.call('JSON.ARRINSERT',KEYS[1],ARGV[2],ARGV[3],ARGV[4])\" 1 arrinsert:bench \"{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],\\\"a0\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a1\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a2\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a3\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a4\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a5\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a6\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a7\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a8\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a9\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a10\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a11\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a12\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a13\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a14\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a15\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a16\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a17\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a18\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a19\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a20\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a21\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a22\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a23\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a24\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a25\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a26\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a27\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a28\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a29\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]},\\\"a30\\\":{\\\"y\\\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}}\" $..y 0 99"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
