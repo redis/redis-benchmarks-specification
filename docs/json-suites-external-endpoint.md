@@ -24,7 +24,10 @@ What makes them portable:
   dataset whatever earlier suites did to it. No JSON suite carries `check: keyspacelen` (the runner compares the
   endpoint's total key count, which fails as soon as another suite's keys are present); suites with a memtier
   preload check instead, as their first init command, that the last preloaded key exists. The suites therefore run
-  one after another on a shared database with or without `--flushall_on_every_test_start`.
+  one after another on a shared database with or without `--flushall_on_every_test_start`. That check is
+  `JSON.ARRINDEX <last key> <path> 0`: it errors only when the key is missing, on RedisJSON and valkey-json alike,
+  whatever the document's root type. `JSON.ARRLEN` and `JSON.OBJKEYS` would not do: valkey-json answers both with a
+  null for a missing key, so a preload that stopped short would go unnoticed there.
 * **Canary.** The last init command of every suite issues the measured command once; an error reply (a JSONPath
   the server rejects, a command the endpoint does not allow, a module configuration it lacks) aborts that suite
   instead of reporting a throughput number for error replies. The runner then continues with the next suite.

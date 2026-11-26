@@ -39,7 +39,7 @@ dbconfig:
       --command-key-pattern="P" --key-minimum=1 --key-maximum=50001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50'
   init_commands:
-    - ["JSON.ARRLEN", "doc:50000", "$.items"]
+    - ["JSON.ARRINDEX", "doc:50000", "$.items", "0"]
     - ["JSON.STRAPPEND", "doc:1", "$.items[*].name", "\"-x\""]
     - ["JSON.SET", "doc:1", "$.items[*].name", "\"Item\""]
   dataset_name: 50Kkeys-json-10items-2875B

@@ -42,7 +42,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=20001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'jsonsl-yelp:20000', '$']
+    - ['JSON.ARRINDEX', 'jsonsl-yelp:20000', '$', '0']
     - ['JSON.ARRAPPEND', 'jsonsl-yelp:1', '$.businesses[*].categories', '{"type": "Feature", "geometry": {"type": "Point", "coordinates": [26.2153, 60.34085, 417.0]}, "properties": {"temp": 3.6, "serial": "S0730589", "humidity": 64.6, "vel_h": 16.0, "uploader_callsign": "Lahti 24h raspberry", "time": 1617220020, "uploader": {"callsign": "Lahti 24h raspberry"}}}']
     - ['JSON.SET', 'jsonsl-yelp:1', '$.businesses[*].categories', '[]']
   dataset_name: 20Kkeys-jsonsl-yelp
