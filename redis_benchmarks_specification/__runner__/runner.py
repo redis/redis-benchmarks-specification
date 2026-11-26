@@ -1,6 +1,12 @@
 # Import warning suppression first
 from redis_benchmarks_specification.__common__.suppress_warnings import *
 
+from redis_benchmarks_specification.__common__.client_memory_metrics import (
+    snapshot_client_memory_metrics,
+    validate_client_memory_runner,
+    inject_client_memory_metrics,
+)
+
 import datetime
 import json
 import logging
@@ -2098,6 +2104,8 @@ def process_self_contained_coordinator_stream(
                             )
                             continue
 
+                    validate_client_memory_runner(benchmark_config)
+
                     if dry_run is True:
                         dry_run_count = dry_run_count + 1
                         dry_run_tests.append(test_name)
@@ -2724,6 +2732,9 @@ def process_self_contained_coordinator_stream(
                             remote_profiler = None
 
                     # run the benchmark
+                    client_memory_before = snapshot_client_memory_metrics(
+                        benchmark_config, redis_conns
+                    )
                     benchmark_start_time = datetime.datetime.now()
 
                     if is_multiple_clients:
@@ -2894,6 +2905,9 @@ def process_self_contained_coordinator_stream(
                                     )
 
                     benchmark_end_time = datetime.datetime.now()
+                    client_memory_after = snapshot_client_memory_metrics(
+                        benchmark_config, redis_conns
+                    )
                     benchmark_duration_seconds = (
                         calculate_client_tool_duration_and_check(
                             benchmark_end_time, benchmark_start_time
@@ -2971,6 +2985,12 @@ def process_self_contained_coordinator_stream(
                             "Using aggregated JSON results from multi-client execution"
                         )
                         results_dict = json.loads(client_container_stdout)
+                        inject_client_memory_metrics(
+                            benchmark_config,
+                            results_dict,
+                            client_memory_before,
+                            client_memory_after,
+                        )
 
                         # Validate benchmark metrics
                         is_valid, validation_error = validate_benchmark_metrics(
@@ -3063,6 +3083,12 @@ def process_self_contained_coordinator_stream(
                                 "r",
                             ) as json_file:
                                 results_dict = json.load(json_file)
+                                inject_client_memory_metrics(
+                                    benchmark_config,
+                                    results_dict,
+                                    client_memory_before,
+                                    client_memory_after,
+                                )
 
                         # Validate benchmark metrics
                         is_valid, validation_error = validate_benchmark_metrics(
