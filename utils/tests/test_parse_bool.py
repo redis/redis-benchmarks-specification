@@ -811,7 +811,7 @@ def test_every_add_argument_module_is_covered_by_one_guard_or_the_other():
     # introspected directly -- but every flag they add reaches a parser that is,
     # because the args.py modules above call them. The source scan covers them
     # unconditionally.
-    shared_registrars = {"__common__/datadir.py"}
+    shared_registrars = {"__common__/datadir.py", "__common__/log_rotation.py"}
     covered = introspected | subprocess_covered | scan_only | shared_registrars
     assert with_arguments == covered, (
         "a module gained or lost add_argument; assign it to a guard: "
