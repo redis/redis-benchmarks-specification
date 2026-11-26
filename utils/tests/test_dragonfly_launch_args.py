@@ -267,3 +267,26 @@ def test_init_commands_tolerated_for_dragonfly():
     """A failing/unsupported init command is tolerated for non-redis servers."""
     # Should NOT raise.
     execute_init_commands(_INIT_CFG, _RaisingConn(), server_name="dragonfly")
+
+
+def test_redis_numeric_config_values_become_text():
+    """YAML loads unquoted numbers as int (maxmemory: 268435456, maxmemory-clients: 0).
+
+    The coordinator " ".join-s this argv, which raised TypeError on a non-string value,
+    so the server never started for those specs.
+    """
+    cmd = generate_standalone_redis_server_args(
+        "/mnt/redis/redis-server",
+        6379,
+        "/mnt/redis/",
+        configuration_parameters={
+            "save": '""',
+            "maxmemory": 268435456,
+            "maxmemory-samples": 5,
+            "maxmemory-clients": 0,
+        },
+    )
+    assert all(isinstance(arg, str) for arg in cmd)
+    assert cmd[cmd.index("--maxmemory") + 1] == "268435456"
+    assert cmd[cmd.index("--maxmemory-clients") + 1] == "0"
+    " ".join(cmd)

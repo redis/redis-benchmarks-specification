@@ -547,10 +547,12 @@ def generate_standalone_redis_server_args(
     if configuration_parameters is not None:
         for parameter, parameter_value in configuration_parameters.items():
             if parameter not in added_params:
+                # YAML loads unquoted numbers (maxmemory: 268435456) as int;
+                # the argv is later " ".join-ed, so pass every value as text.
                 command.extend(
                     [
                         "--{}".format(parameter),
-                        parameter_value,
+                        str(parameter_value),
                     ]
                 )
     if redis_arguments != "":

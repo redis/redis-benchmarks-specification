@@ -1,0 +1,73 @@
+version: 0.4
+name: memtier_benchmark-5Kkeys-string-80KiB-get-pipeline-16-maxmemory-clients-eviction-active
+description: |
+  Exercises client eviction under a bounded 120-second reconnecting GET load.
+  Requires a fresh coordinator-managed server; the standalone runner rejects
+  this spec before preload, because an earlier cap could evict its preload clients.
+  Preloads 5000 RAW strings of 81910 random bytes with eviction disabled, then
+  enables a 1mb client-memory cap. The cap targets client-owned query/reply
+  buffers and connection overhead, not the shared 80KiB payload references:
+  shared keyspace bytes are excluded from maxmemory-clients accounting.
+  The cap is a pilot parameter, not proof of eviction. A run is rejected unless
+  at least 100 clients are evicted during the measured client phase. Before
+  accepting this workload, a fleet pilot must verify eviction increments across
+  the window, ongoing GET progress, and bounded reconnect attempts.
+  The client reconnects on drops with at most 10000 consecutive failed reconnect attempts per connection and
+  constant backoff. Eviction churn and reconnect CPU are part of this workload;
+  it must not be presented as a pure memory-accounting or intrinsic GET cost.
+  Headline ClientPhaseUserCpuSecondsPerGet uses matching before/after deltas,
+  excluding preload. ClientPhaseEvictedClients and ClientPhaseGetCalls are
+  exported alongside it. Compare only arms with comparable eviction counts.
+  The control in the companion enabled spec disallows evictions; its different
+  reconnect policy means the pair is coverage, not an isolated cap-only A/B.
+client-memory-metrics:
+  coordinator-only: true
+  maxmemory-clients: 1048576
+  min-evicted-clients: 100
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.ClientPhaseUserCpuSeconds
+    - $."ALL STATS".Totals.ClientPhaseGetCalls
+    - $."ALL STATS".Totals.ClientPhaseUserCpuSecondsPerGet
+    - $."ALL STATS".Totals.ClientPhaseEvictedClients
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    maxmemory-clients: '0'
+  init_commands:
+  - '"CONFIG" "SET" "maxmemory-clients" "1mb"'
+  check:
+    keyspacelen: 5000
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: --data-size 81910 -R --ratio 1:0 -n allkeys --pipeline 50 --key-maximum
+      5000 --key-pattern P:P --key-minimum 1 --hide-histogram -t 4 -c 10
+  resources:
+    requests:
+      memory: 4g
+  dataset_description: 5000 RAW string keys, each holding an 80KiB random value
+    (~410MB). On supporting builds, queued replies can share these large values;
+    verify that path on the fleet before attributing CPU changes to it.
+tested-groups:
+- string
+tested-commands:
+- get
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "GET __key__" --command-key-pattern="R" --key-minimum=1 --key-maximum
+    5000 --test-time 120 --pipeline 16 -c 25 -t 4 --hide-histogram
+    --reconnect-on-error --max-reconnect-attempts 10000 --reconnect-backoff-factor 1
+  resources:
+    requests:
+      cpus: '4'
+      memory: 4g
+priority: 60
