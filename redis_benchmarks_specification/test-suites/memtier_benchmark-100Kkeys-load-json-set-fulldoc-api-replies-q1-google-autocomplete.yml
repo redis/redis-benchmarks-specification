@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-100Kkeys-load-json-set-fulldoc-api-replies-q1-google-autocomplete
+description: |
+  Measures Ops/sec for JSON.SET of a 1,264-byte autocomplete API reply (four third-party product names
+  among its suggestion strings are replaced by neutral words of the same length, so the document has
+  the same structure and byte count as RedisJSON's file) at the root path `$` of a random key out of
+  100,000: the module parses the 1,264-byte document text into its JSON data structure and stores it,
+  dropping the previous document of that key.
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same load.
+  Writes go to keys json-load:1 .. json-load:100000; nothing is preloaded, so the measured phase
+  starts with creates and turns into overwrites (dropping the previous document) as the keyspace
+  fills, as in the RedisJSON spec. The suite has no keyspace check, so it runs with or without a
+  FLUSHALL before it. An init command writes the document once to json-load:1 first: an error reply (a
+  server that rejects the document or its size) aborts the suite.
+  Port of RedisJSON tests/benchmarks/json_set_fulldoc_api_replies_q1_google_autocomplete.yml
+  (redis-benchmark -c 16 --threads 2 -x <file>, the same document bytes).
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_commands:
+    - ['JSON.SET', 'json-load:1', '$', '[[["redis<b> windows</b>",0,[71,432]],["redis<b> pricing</b>",0,[71,432]],["redis<b> gui</b>",0,[71,432]],["redis<b> tutorial</b>",0,[71,432]],["redis<b> vs storage</b>",0,[71,432]],["redis<b> docker</b>",0,[71,432]],["redis<b> api</b>",0,[71,432]],["redis<b> database</b>",0,[71,432]],["<b>searchindexes</b>",0,[432,67]],["<b>storage</b>",0,[432,67]],["<b>docker</b>",0,[432,67]],["<b>relational</b>",0,[432,67]],["<b>What is </b>Redis<b> used for?</b>",0,[356,432],{"zl":90000}],["<b>Is </b>Redis<b> a NoSQL?</b>",0,[356,432],{"zl":90000}],["<b>Is </b>Redis<b> better than SQL?</b>",0,[356,432],{"zl":90000}],["redis labs",46,[199,465,456,432,67],{"zh":"Redis","zi":"","zl":90001,"zp":{"gs_ssp":"eJzj4tLP1TcorzQsMkxWYDRgdGDw4ipKTcksVshJTCoGAG1rB_Y"},"zs":"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTRyqAkisVvfLd_GoVYPYHHtPCX01Oscy-YFx2z5ZM&s=10"}],["github",46,[199,465,456,432,67],{"zh":"GitHub","zi":"","zl":90001,"zp":{"gs_ssp":"eJzj4tLP1TcoqiwoyE1XYDRgdGDwYkvPLMkoTQIAWC4HFA"},"zs":"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSxYYjycTM_De7js4OvK8fSwjrThaTSUxPeOjPVHdw&s=10"}]],{"ag":{"a":{"40015":["People also search for",1],"90000":["People also ask","",1],"90001":["People also search for",1,1]}},"q":"4Qy5sBqtugBSRPitU_VqXicETl8"}]']
+
+tested-groups:
+- json
+
+tested-commands:
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.SET json-load:__key__ $ \"[[[\\\"redis<b> windows</b>\\\",0,[71,432]],[\\\"redis<b> pricing</b>\\\",0,[71,432]],[\\\"redis<b> gui</b>\\\",0,[71,432]],[\\\"redis<b> tutorial</b>\\\",0,[71,432]],[\\\"redis<b> vs storage</b>\\\",0,[71,432]],[\\\"redis<b> docker</b>\\\",0,[71,432]],[\\\"redis<b> api</b>\\\",0,[71,432]],[\\\"redis<b> database</b>\\\",0,[71,432]],[\\\"<b>searchindexes</b>\\\",0,[432,67]],[\\\"<b>storage</b>\\\",0,[432,67]],[\\\"<b>docker</b>\\\",0,[432,67]],[\\\"<b>relational</b>\\\",0,[432,67]],[\\\"<b>What is </b>Redis<b> used for?</b>\\\",0,[356,432],{\\\"zl\\\":90000}],[\\\"<b>Is </b>Redis<b> a NoSQL?</b>\\\",0,[356,432],{\\\"zl\\\":90000}],[\\\"<b>Is </b>Redis<b> better than SQL?</b>\\\",0,[356,432],{\\\"zl\\\":90000}],[\\\"redis labs\\\",46,[199,465,456,432,67],{\\\"zh\\\":\\\"Redis\\\",\\\"zi\\\":\\\"\\\",\\\"zl\\\":90001,\\\"zp\\\":{\\\"gs_ssp\\\":\\\"eJzj4tLP1TcorzQsMkxWYDRgdGDw4ipKTcksVshJTCoGAG1rB_Y\\\"},\\\"zs\\\":\\\"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTRyqAkisVvfLd_GoVYPYHHtPCX01Oscy-YFx2z5ZM&s=10\\\"}],[\\\"github\\\",46,[199,465,456,432,67],{\\\"zh\\\":\\\"GitHub\\\",\\\"zi\\\":\\\"\\\",\\\"zl\\\":90001,\\\"zp\\\":{\\\"gs_ssp\\\":\\\"eJzj4tLP1TcoqiwoyE1XYDRgdGDwYkvPLMkoTQIAWC4HFA\\\"},\\\"zs\\\":\\\"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSxYYjycTM_De7js4OvK8fSwjrThaTSUxPeOjPVHdw&s=10\\\"}]],{\\\"ag\\\":{\\\"a\\\":{\\\"40015\\\":[\\\"People also search for\\\",1],\\\"90000\\\":[\\\"People also ask\\\",\\\"\\\",1],\\\"90001\\\":[\\\"People also search for\\\",1,1]}},\\\"q\\\":\\\"4Qy5sBqtugBSRPitU_VqXicETl8\\\"}]\""
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
