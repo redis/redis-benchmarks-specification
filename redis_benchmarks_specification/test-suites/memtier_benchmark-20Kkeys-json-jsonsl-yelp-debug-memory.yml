@@ -41,7 +41,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=20001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'jsonsl-yelp:20000', '$']
+    - ['JSON.ARRINDEX', 'jsonsl-yelp:20000', '$', '0']
     - ['JSON.DEBUG', 'MEMORY', 'jsonsl-yelp:1']
   dataset_name: 20Kkeys-jsonsl-yelp
   dataset_description: '20,000 copies of one JSON document of 38,034 bytes (jsonsl-yelp:1 .. jsonsl-yelp:20000); 26,703 bytes per key, about 534 MB, measured as used_memory growth on redis:8.2.11'

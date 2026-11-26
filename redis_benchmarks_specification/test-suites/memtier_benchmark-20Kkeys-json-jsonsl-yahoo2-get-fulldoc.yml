@@ -38,7 +38,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=20001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'jsonsl-yahoo2:20000', '$']
+    - ['JSON.ARRINDEX', 'jsonsl-yahoo2:20000', '$', '0']
     - ['JSON.GET', 'jsonsl-yahoo2:1', '$']
   dataset_name: 20Kkeys-jsonsl-yahoo2
   dataset_description: '20,000 copies of one JSON document of 18,251 bytes (jsonsl-yahoo2:1 .. jsonsl-yahoo2:20000); 12,278 bytes per key, about 246 MB, measured as used_memory growth on redis:8.2.11'
