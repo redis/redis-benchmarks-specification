@@ -31,12 +31,13 @@ description: |
   payload therefore has one quoted userId placeholder and constant numeric
   timestamps. The target session key and payload userId use independent draws;
   the payload userId is not asserted to equal the target session ID.
+  The first init command checks that the last preloaded key (session:100000) exists, an error reply if the
+  preload did not complete; there is no exact keyspace check, so the suite also runs on an endpoint
+  database that holds other suites' keys (no FLUSHALL needed between suites).
 
 dbconfig:
   configuration-parameters:
     save: '""'
-  check:
-    keyspacelen: 100000
   resources:
     requests:
       memory: 1g
@@ -46,6 +47,8 @@ dbconfig:
     arguments: '--key-prefix "" --command "JSON.SET session:__key__ $ \"{\\\"userId\\\":\\\"user-id\\\",\\\"organizationId\\\":\\\"org-id\\\",\\\"role\\\":\\\"member\\\",\\\"createdAt\\\":\\\"0\\\",\\\"lastAccessed\\\":\\\"0\\\",\\\"ipAddress\\\":\\\"192.168.1.1\\\",\\\"device\\\":\\\"device\\\",\\\"authMethod\\\":\\\"password\\\",\\\"status\\\":\\\"active\\\",\\\"metadata\\\":\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\"}\""
       --command-key-pattern="P" --key-minimum=1 --key-maximum=100001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50'
+  init_commands:
+    - ["JSON.OBJKEYS", "session:100000", "$"]
 
 tested-groups:
 - json

@@ -1,0 +1,72 @@
+version: 0.4
+name: memtier_benchmark-5Mkeys-hash-hset-2-fields-json-vs-hashes
+description: |
+  Measures Ops/sec for HSET of two 6-byte fields on a random key (`HSET key_hash field1 value1 field2
+  value2`), the hash baseline RedisJSON compares the two-field JSON.SET against. Keyspace: 5,000,000
+  keys, key_hash:1 .. key_hash:5000000, each holding the same hash, uniform random key selection with
+  distinct client seeds. Measured footprint on redis:8.2.11: 87 bytes per key, about 437 MB, larger
+  than the last-level cache of current server CPUs (up to about 100 MB per socket), so a command reads
+  data that is not cache resident, as on a production keyspace; the 1-key form of this suite measured
+  a cache-resident document. Report throughput for this loaded client population (16 connections, 8
+  per thread x 2 threads, pipeline 1, 120-second measured phase); sampled response-latency percentiles
+  describe the same load. The client shape is the one of the RedisJSON spec (redis-benchmark -c 16
+  --threads 2 -P 1); memtier replaces redis-benchmark so the rbs runner can drive it. Port of
+  RedisJSON tests/benchmarks/json_vs_hashes_hset_key_simple.yml; no dataset. After the load the init
+  commands check that key_hash:5000000 exists and issue the measured command once against key_hash:1:
+  an error reply aborts the suite. The suite needs no module.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix "" --command="HSET key_hash:__key__ field1 value1 field2 value2"
+      --command-key-pattern=P --key-minimum=1 --key-maximum=5000001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50
+  init_commands:
+    - ['RENAME', 'key_hash:5000000', 'key_hash:5000000']
+    - ['HSET', 'key_hash:1', 'field1', 'value1', 'field2', 'value2']
+  dataset_name: 5Mkeys-key-hash
+  dataset_description: '5,000,000 copies of one hash (key_hash:1 .. key_hash:5000000); 87 bytes per key, about 437 MB, measured as used_memory growth on redis:8.2.11'
+
+tested-groups:
+- hash
+
+tested-commands:
+- hset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 5000000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="HSET key_hash:__key__ field1 value1 field2 value2"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
