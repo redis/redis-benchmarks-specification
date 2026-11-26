@@ -5,6 +5,7 @@
 #
 
 import argparse
+import datetime
 import re
 import tempfile
 import yaml
@@ -12,6 +13,7 @@ import os
 from unittest.mock import Mock, patch
 
 import redis
+import pytest
 from redis_benchmarks_specification.__self_contained_coordinator__.self_contained_coordinator import (
     process_self_contained_coordinator_stream,
 )
@@ -25,10 +27,18 @@ from redis_benchmarks_specification.__cli__.admin import (
     admin_status_command,
     admin_cancel_command,
     admin_summary_command,
+    admin_work_command,
     _format_idle,
     _format_age,
     _get_queue_progress,
     _get_stale_pel_summary,
+    _get_heartbeats,
+    _group_lag,
+    _format_lag,
+    _runner_status,
+    _consumer_status,
+    HEARTBEAT_DOWN_SECS,
+    NO_HEARTBEAT_DOWN_MS,
     _short_hash,
     _short_info,
     STALE_PEL_IDLE_MS,
@@ -224,7 +234,12 @@ def test_topology_filtering_regex():
 def test_generate_benchmark_stream_request_deployment_regexp():
     """Test that deployment_name_regexp is included/excluded correctly in stream fields."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         # Without deployment_name_regexp (default) - should NOT include field
@@ -260,7 +275,12 @@ def test_generate_benchmark_stream_request_deployment_regexp():
 def test_generate_benchmark_stream_request_override_deployment_regexp():
     """Test that override_deployment_regexp is included correctly in stream fields."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         # Without override_deployment_regexp (default) - should NOT include field
@@ -520,7 +540,12 @@ def test_queue_progress_total_no_double_count():
     So total should be pending + running + completed (not + failed).
     """
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         stream_id = "9999999999998-0"
@@ -617,7 +642,12 @@ def test_stream_deployment_name_regexp_roundtrip():
 def test_admin_cancel_command():
     """Test that cancel flushes pending tests for a stream."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         stream_id = "9999999999997-0"
@@ -680,7 +710,12 @@ def test_get_stale_pel_summary_flags_abandoned_message_when_idle():
     heartbeat reports idle/waiting -- the #519 fingerprint: a runner that
     looks perfectly healthy while it silently abandoned a message."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel"
@@ -723,7 +758,12 @@ def test_get_stale_pel_summary_ignores_pending_message_while_running():
     the entire duration of a benchmark run (a full suite can take many
     hours), so idle time alone is not a valid abandonment signal."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel-busy"
@@ -759,7 +799,12 @@ def test_get_stale_pel_summary_combines_both_arch_streams():
     streams (unusual, but not prevented by anything) must report the
     combined count and the oldest of the two ages, not just one arch's."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
 
         platform = "test-platform-stale-pel-both-arch"
@@ -812,7 +857,12 @@ def test_get_stale_pel_summary_clean_when_no_group():
     """No consumer group at all for this platform must not raise -- e.g. a
     freshly-onboarded runner that has never claimed a message yet."""
     try:
-        conn = redis.StrictRedis(decode_responses=False)
+        # tox-docker publishes the container's 6379 on an ephemeral host port
+        # and exports it as DATASINK_PORT; without this the connection is
+        # refused in CI, the ConnectionError branch below swallows it, and the
+        # test reports "passed" having executed none of the code it names.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
         conn.ping()
         assert _get_stale_pel_summary(conn, "test-platform-never-seen", "waiting") == ""
     except redis.exceptions.ConnectionError:
@@ -898,4 +948,371 @@ def test_compare_comma_separated_deployment_auto_enable():
         "oss-standalone",
         "oss-standalone-04-io-threads",
         "oss-standalone-08-io-threads",
+    ]
+
+
+def test_admin_work_command_survives_nil_lag_and_still_lists_the_backlog(capsys):
+    """Redis reports a consumer group's lag as nil once it can no longer
+    derive it -- deleting a single entry is enough -- and redis-py hands
+    that back as None. The work view must neither crash on it nor quietly
+    report an empty queue for a platform that has one, which is the single
+    thing this command exists to answer."""
+    try:
+        # tox-docker exposes Redis on DATASINK_PORT, not necessarily 6379.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-nil-lag"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        added = []
+        try:
+            added = [conn.xadd(stream, {"f": str(i)}) for i in range(4)]
+            # Read one, so the group carries an entries-read count...
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+            # ...and then delete one it has not read. Redis can no longer
+            # reconcile entries-added - entries-read with what is actually
+            # in the stream, so it gives up and reports lag as nil, while
+            # added[2] and added[3] really are still waiting.
+            conn.xdel(stream, added[1])
+
+            def _name(g):
+                n = g.get("name", g.get(b"name", b""))
+                return n.decode() if isinstance(n, bytes) else n
+
+            assert any(
+                _name(g) == group_name and g.get("lag") is None
+                for g in conn.xinfo_groups(stream)
+            ), "precondition: the group must report a nil lag"
+
+            args = argparse.Namespace(platform=platform)
+            admin_work_command(conn, args)  # must not raise TypeError
+
+            out = capsys.readouterr().out
+            rows = [
+                line
+                for line in out.splitlines()
+                if platform in line
+                and ("PENDING" in line or "QUEUED" in line or "RUNNING" in line)
+            ]
+            # One row is the message already in the PEL; the other two are
+            # added[2] and added[3], which only appear if an unknown lag is
+            # read as "there may be work". Skipping them scores 1 here.
+            assert len(rows) == 3, (
+                "an undelivered entry was not listed; a group whose lag "
+                f"Redis cannot compute is the one most likely to be sitting "
+                f"on a backlog. rows={rows}"
+            )
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            for msg_id in added:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError as exc:
+        pytest.skip(f"Redis is unavailable: {exc}")
+
+
+def test_admin_runners_command_survives_nil_lag(capsys):
+    """The same nil lag reaches seven other call sites that print or add it.
+    admin_runners_command() does `c_pending + lag`, which is where the
+    TypeError actually lands for anyone running --admin-command runners."""
+    try:
+        # tox-docker exposes Redis on DATASINK_PORT, not necessarily 6379.
+        db_port = int(os.getenv("DATASINK_PORT", "6379"))
+        conn = redis.StrictRedis(port=db_port, decode_responses=False)
+        conn.ping()
+
+        platform = "test-platform-nil-lag-runners"
+        stream = get_arch_specific_stream_name("amd64")
+        group_name = get_runners_consumer_group_name(platform)
+        _reset_runner_group(conn, stream, group_name)
+
+        added = []
+        try:
+            added = [conn.xadd(stream, {"f": str(i)}) for i in range(4)]
+            # A consumer must exist or the group is skipped before the
+            # arithmetic is reached.
+            conn.xreadgroup(group_name, "consumer-1", {stream: ">"}, count=1)
+            conn.xdel(stream, added[1])
+
+            admin_runners_command(conn, argparse.Namespace(platform=platform))
+
+            out = capsys.readouterr().out
+            assert platform in out
+            assert "Queue depth:" in out
+            assert "lag: unknown" in out
+            admin_summary_command(conn, argparse.Namespace())
+            assert "non-computable lag" in capsys.readouterr().out
+        finally:
+            conn.xgroup_destroy(stream, group_name)
+            for msg_id in added:
+                conn.xdel(stream, msg_id)
+
+    except redis.exceptions.ConnectionError as exc:
+        pytest.skip(f"Redis is unavailable: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# XINFO GROUPS "lag" may be NULL -- see _group_lag(). These are pure functions,
+# so they run everywhere rather than being skipped when no Redis is reachable.
+# ---------------------------------------------------------------------------
+
+
+def test_group_lag_returns_known_value():
+    assert _group_lag({"lag": 42}) == (42, True)
+    assert _group_lag({"lag": 0}) == (0, True)
+
+
+def test_group_lag_handles_null_lag():
+    """Redis reports lag as NULL when it cannot be computed (entries at/below the
+    group's last-delivered-id were trimmed, or XSETID cleared entries-read).
+
+    The key is PRESENT with a value of None, so dict.get("lag", 0) does not help --
+    that was the actual crash: `c_pending + lag` and `total_lag += lag` raised
+    TypeError and took down `runners`, `summary` and `work` for the whole fleet
+    because of one decommissioned runner's legacy group.
+    """
+    assert _group_lag({"lag": None}) == (0, False)
+
+
+def test_group_lag_handles_missing_lag_key():
+    """Older servers omit the field entirely; that is also 'not known'."""
+    assert _group_lag({}) == (0, False)
+
+
+def test_group_lag_result_is_safe_in_arithmetic_and_comparison():
+    """Regression guard for the two expressions that actually crashed."""
+    lag, known = _group_lag({"lag": None})
+    assert 3 + lag == 3
+    assert not lag > 0
+    assert known is False
+
+
+def test_format_lag_distinguishes_zero_from_unknown():
+    """A non-computable lag must never render as '0': a group arbitrarily far
+    behind would otherwise read as perfectly caught up."""
+    assert _format_lag(0, True) == "0"
+    assert _format_lag(0, False) == "unknown"
+    assert _format_lag(7, True) == "7"
+
+
+# ---------------------------------------------------------------------------
+# Runner status classification -- _runner_status()
+# ---------------------------------------------------------------------------
+
+_LONG_IDLE_MS = 6 * 60 * 60 * 1000  # 6h: longer than any heartbeat-based cutoff
+
+
+def test_runner_status_busy_runner_is_working_not_stuck():
+    """The central fix: a runner mid-suite holds ONE message pending for the whole
+    run, so its consumer 'idle' grows with the length of the job. Classifying on
+    idle alone reported every legitimately busy runner as STUCK -- backwards, and
+    the direct cause of a 'six runners are stuck' misdiagnosis on a fleet whose
+    runners were simply executing 546-test suites.
+    """
+    hb = {"status": "running", "age_secs": 5, "current_test": "memtier-x"}
+    assert _runner_status(hb, c_pending=1, c_idle=_LONG_IDLE_MS) == "WORKING"
+
+
+def test_runner_status_idle_runner_with_no_pending_is_idle():
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=0, c_idle=_LONG_IDLE_MS) == "IDLE"
+
+
+def test_runner_status_abandoned_message_is_stuck():
+    """The #519 fingerprint: heartbeat says waiting while a message is still
+    pending -- a healthy runner always ACKs before flipping back to waiting."""
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=STALE_PEL_IDLE_MS + 1) == "STUCK"
+
+
+def test_runner_status_pending_within_grace_window_is_not_stuck():
+    """Absorbs the ack/status-flip race around a heartbeat write."""
+    hb = {"status": "waiting", "age_secs": 10, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=STALE_PEL_IDLE_MS - 1) == "IDLE"
+
+
+def test_runner_status_stale_heartbeat_is_down():
+    hb = {"status": "running", "age_secs": HEARTBEAT_DOWN_SECS + 1, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=1000) == "DOWN"
+
+
+def test_runner_status_unparsable_heartbeat_timestamp_is_down():
+    hb = {"status": "running", "age_secs": None, "current_test": ""}
+    assert _runner_status(hb, c_pending=1, c_idle=1000) == "DOWN"
+
+
+def test_runner_status_missing_heartbeat_is_down_when_fleet_publishes():
+    """The heartbeat key carries HEARTBEAT_EXPIRE_SECS=120, so a runner that dies
+    does not go stale in place -- its key is removed and it vanishes from
+    _get_heartbeats() entirely. If the rest of the fleet is publishing, a platform
+    with no entry has stopped writing, which is DOWN.
+
+    Without this the age>HEARTBEAT_DOWN_SECS branch is almost unreachable, and a
+    runner that crashed minutes ago would read UNKNOWN for a whole day.
+    """
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=True)
+        == "DOWN"
+    )
+
+
+def test_runner_status_no_heartbeat_long_idle_is_down():
+    """Fleet publishes nothing at all (every runner on an older build): fall back to
+    idle time. A decommissioned runner keeps its last delivered message pending
+    forever, so that pending message must not be read as proof of work."""
+    assert (
+        _runner_status(
+            None,
+            c_pending=1,
+            c_idle=NO_HEARTBEAT_DOWN_MS + 1,
+            heartbeats_published=False,
+        )
+        == "DOWN"
+    )
+
+
+def test_runner_status_no_heartbeat_recent_activity_is_unknown():
+    """Fleet publishes nothing and this consumer read the stream recently: we have no
+    liveness evidence either way, so say so rather than asserting WORKING or DOWN."""
+    assert (
+        _runner_status(None, c_pending=1, c_idle=1000, heartbeats_published=False)
+        == "UNKNOWN"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _get_heartbeats() -- Mock-backed, no live Redis needed
+# ---------------------------------------------------------------------------
+
+
+def test_get_heartbeats_parses_bytes_fields():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    conn.hgetall.return_value = {
+        b"platform": b"x86-aws-m7i.metal-24xl",
+        b"status": b"running",
+        b"timestamp": str(now).encode(),
+        b"current_test": b"memtier_benchmark-foo",
+        b"consumer": b"current",
+    }
+    hbs = _get_heartbeats(conn)
+    assert "x86-aws-m7i.metal-24xl" in hbs
+    entry = hbs["x86-aws-m7i.metal-24xl"]
+    assert entry["status"] == "running"
+    assert entry["consumer"] == "current"
+    assert entry["current_test"] == "memtier_benchmark-foo"
+    assert entry["age_secs"] is not None and entry["age_secs"] < 60
+
+
+def test_get_heartbeats_skips_entry_without_platform():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    conn.hgetall.return_value = {b"status": b"running"}
+    assert _get_heartbeats(conn) == {}
+
+
+def test_get_heartbeats_tolerates_bad_timestamp():
+    conn = Mock()
+    conn.keys.return_value = [b"ci.benchmarks.redis/ci/redis/redis:runner:heartbeat:p1"]
+    conn.hgetall.return_value = {
+        b"platform": b"p1",
+        b"status": b"waiting",
+        b"timestamp": b"not-a-number",
+    }
+    hbs = _get_heartbeats(conn)
+    assert hbs["p1"]["age_secs"] is None
+    # and a heartbeat we cannot date must not be trusted as alive
+    assert _runner_status(hbs["p1"], c_pending=0, c_idle=0) == "DOWN"
+
+
+def test_get_heartbeats_returns_empty_when_no_keys():
+    conn = Mock()
+    conn.keys.return_value = []
+    assert _get_heartbeats(conn) == {}
+
+
+def test_consumer_status_matches_identity_instead_of_platform():
+    hb = {"status": "running", "age_secs": 1, "consumer": "current"}
+    current = {"name": b"current", "pending": 1, "idle": _LONG_IDLE_MS}
+    retired = {"name": b"retired", "pending": 1, "idle": 7 * 86400000}
+    assert _consumer_status(hb, current, 2) == "WORKING"
+    assert _consumer_status(hb, retired, 2) == "UNKNOWN"
+    # A disappeared owner must not lend its heartbeat to the remaining consumer.
+    assert _consumer_status(hb, retired, 1) == "UNKNOWN"
+
+
+def test_consumer_status_legacy_heartbeat_requires_single_consumer():
+    hb = {"status": "running", "age_secs": 1}
+    consumer = {"name": "current", "pending": 1, "idle": _LONG_IDLE_MS}
+    assert _consumer_status(hb, consumer, 1) == "WORKING"
+    assert _consumer_status(hb, consumer, 2) == "UNKNOWN"
+    assert _consumer_status(None, consumer, 2) == "DOWN"
+    assert _consumer_status(None, consumer, 2, False) == "UNKNOWN"
+
+
+def test_heartbeat_publishes_stream_consumer_identity():
+    from redis_benchmarks_specification.__self_contained_coordinator__ import (
+        self_contained_coordinator as coordinator,
+    )
+
+    conn = Mock()
+    args = argparse.Namespace(consumer_pos=7)
+    with patch("threading.Thread") as thread:
+        coordinator._start_heartbeat(conn, "test-platform", "amd64", "test", args)
+        target = thread.call_args.kwargs["target"]
+        # Run one iteration synchronously, without leaving a heartbeat thread alive.
+        with patch.object(coordinator.time, "sleep", side_effect=StopIteration):
+            try:
+                target()
+            except StopIteration:
+                pass
+    fields = conn.hset.call_args.kwargs["mapping"]
+    assert fields["consumer"] == (
+        get_runners_consumer_group_name("test-platform") + "-self-contained-proc#7"
+    )
+
+
+def test_admin_consumer_views_do_not_reuse_another_consumers_heartbeat(capsys):
+    from redis_benchmarks_specification.__cli__ import admin
+
+    conn = Mock()
+    group = get_runners_consumer_group_name("test-platform")
+    stream = get_arch_specific_stream_name("amd64")
+    conn.xinfo_groups.side_effect = lambda name: (
+        [{"name": group, "lag": None, "pending": 2, "consumers": 2}]
+        if name == stream
+        else []
+    )
+    conn.xinfo_consumers.return_value = [
+        {"name": b"current", "idle": 1000, "pending": 1},
+        {"name": b"retired", "idle": 7 * 86400000, "pending": 1},
+    ]
+    conn.xpending_range.return_value = []
+    hb = {"test-platform": {"status": "running", "age_secs": 1, "consumer": "current"}}
+    with patch.object(admin, "_get_heartbeats", return_value=hb):
+        admin_runners_command(conn, argparse.Namespace())
+        out = capsys.readouterr().out
+        assert out.count("Status: WORKING") == 1
+        assert out.count("Status: UNKNOWN") == 1
+        assert "consumer: current" in out
+        assert "consumer: retired" in out
+        assert "lag: unknown" in out
+        admin_summary_command(conn, argparse.Namespace())
+        out = capsys.readouterr().out
+        assert "Runner consumers: 2 total" in out
+        assert "1 working" in out
+        assert "1 unknown" in out
+        assert "true total may be higher" in out
+    assert [
+        call.kwargs["consumername"] for call in conn.xpending_range.call_args_list
+    ] == [
+        "current",
+        "retired",
+        "current",
+        "retired",
     ]

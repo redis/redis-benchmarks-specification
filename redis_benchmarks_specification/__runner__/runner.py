@@ -3705,7 +3705,9 @@ def check_test_command_support(benchmark_config, supported_commands):
     unsupported_commands = []
 
     for cmd in tested_commands:
-        cmd_upper = cmd.upper()
+        # COMMAND lists container commands only (CLIENT, not CLIENT|LIST), so a
+        # subcommand written as "client|list" is checked by its container.
+        cmd_upper = str(cmd).split("|", 1)[0].upper()
         if cmd_upper not in supported_commands:
             unsupported_commands.append(cmd)
 
