@@ -34,7 +34,7 @@ exporter:
 dbconfig:
   configuration-parameters:
     save: '""'
-    maxmemory-clients: 0
+    maxmemory-clients: '0'
   init_commands:
   - '"CONFIG" "SET" "maxmemory-clients" "1mb"'
   check:
