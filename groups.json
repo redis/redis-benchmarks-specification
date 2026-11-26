@@ -32,7 +32,10 @@
     "display": "HyperLogLog"
   },
   "json": [
+    "JSON.ARRAPPEND",
     "JSON.GET",
+    "JSON.MERGE",
+    "JSON.NUMINCRBY",
     "JSON.SET"
   ],
   "list": {

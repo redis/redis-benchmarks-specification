@@ -1,0 +1,99 @@
+version: 0.4
+name: memtier_benchmark-playbook-agent-memory-session-events-100k-sessions
+description: |
+  Session-memory workload: one Redis JSON document per session (`session:<id>`) holding
+  owner/namespace placement fields, an append-only-style `$.events` array (20 events of roughly 370 bytes at preload),
+  a `$.summary` and an empty `$.properties` bag. Typical of agent-memory services that keep a conversation's
+  event log in a single JSON document and guard every mutation with an ownership check.
+
+  Command groups (80% reads is an assumption for a read-heavy memory service):
+    - Session read (80%): `JSON.GET` with 9 JSONPath arguments ($.session_id ... $.events, $.summary).
+    - Event append (20%): an owner-guarded append as ONE `EVAL` (single key): `JSON.GET $.owner_id`, three
+      guard field reads (`$.owner_id`, `$.root_owner_id`, `$.namespace_scope`), `JSON.ARRAPPEND $.events`,
+      `JSON.GET $.updated_at`, `JSON.SET $.updated_at`, then `JSON.ARRTRIM $.events` back to the last 20
+      events, with non-negative indexes computed from the ARRAPPEND reply (valkey-json empties the array on
+      negative ARRTRIM indexes, so `-20 -1` would not be portable).
+
+  The trim is a deliberate deviation from an append-only log: in a fixed-duration run an unbounded array grows
+  documents (and the 80% reads that return `$.events`) in proportion to throughput, so a faster build would
+  accumulate heavier reads and bias any A/B against it. The trim bounds every session at 20 events (about 8KiB serialized).
+  Replacing preload events with the fixed write event changes serialized size by at most
+  70 bytes per session during startup; it does not cause unbounded document growth.
+
+  Not modelled: search-index based session listing, TTL/EXPIRE on append, summarisation writes.
+  Key access is uniform random with deterministic, distinct per-client random seeds,
+  so the 200 clients do not replay the same key sequence. Real session skew is unknown.
+  Event body size is an estimate.
+  Metric of interest: client Ops/sec for the complete 80/20 command mix, counting each EVAL
+  as one client operation. JSON values use the module document representation.
+
+  Preload Lua derives session_id from its single key placeholder so the payload does not
+  advance the key iterator again. Server commandstats include the 100K preload EVAL
+  and JSON.SET calls; use the measured client statistics for the headline Ops/sec,
+  not lifetime command-counter ratios.
+
+dbconfig:
+  dataset_description: 100K sessions (session:1..100000), each one JSON document of about 8KiB with 20 events, a summary and an empty properties bag.
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix ""
+      --command='EVAL "local id=string.match(KEYS[1],\"^session:(%d+)$\"); assert(id,\"invalid session key\"); return redis.call(\"JSON.SET\",KEYS[1],\"$\",\"{\\\"session_id\\\":\\\"s-\"..id..\"\\\",\"..ARGV[1])" 1 session:__key__ "\"owner_id\":\"owner-1\",\"created_at\":1700000000000,\"updated_at\":1700000000020,\"namespace\":\"ns-1\",\"namespace_id\":\"nsid-1\",\"root_namespace_id\":\"rootns-1\",\"root_owner_id\":\"rootowner-1\",\"namespace_scope\":\"owner\",\"events\":[{\"event_id\":\"evt-0000\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000000,\"system_timestamp\":1700000000000,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0001\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000001,\"system_timestamp\":1700000000001,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0002\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000002,\"system_timestamp\":1700000000002,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0003\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000003,\"system_timestamp\":1700000000003,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0004\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000004,\"system_timestamp\":1700000000004,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0005\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000005,\"system_timestamp\":1700000000005,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0006\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000006,\"system_timestamp\":1700000000006,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0007\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000007,\"system_timestamp\":1700000000007,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0008\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000008,\"system_timestamp\":1700000000008,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0009\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000009,\"system_timestamp\":1700000000009,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0010\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000010,\"system_timestamp\":1700000000010,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0011\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000011,\"system_timestamp\":1700000000011,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0012\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000012,\"system_timestamp\":1700000000012,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0013\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000013,\"system_timestamp\":1700000000013,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0014\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000014,\"system_timestamp\":1700000000014,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0015\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000015,\"system_timestamp\":1700000000015,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0016\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000016,\"system_timestamp\":1700000000016,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0017\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000017,\"system_timestamp\":1700000000017,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0018\",\"actor_id\":\"user-0001\",\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000018,\"system_timestamp\":1700000000018,\"metadata\":{\"source\":\"agent\"}},{\"event_id\":\"evt-0019\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000019,\"system_timestamp\":1700000000019,\"metadata\":{\"source\":\"agent\"}}],\"summary\":{\"text\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\",\"summarized_up_to_event_id\":\"evt-0009\",\"created_at\":1700000000000,\"updated_at\":1700000000000,\"summarized_event_count\":10},\"properties\":{}}"'
+      --command-key-pattern=P --key-minimum=1 --key-maximum=100000 -n 100000
+      -c 1 -t 1 --hide-histogram --pipeline 50
+  init_commands:
+    # Canary: errors only if the preload did not reach the last session, so suites can share a database.
+    # ARRINDEX, not ARRLEN: valkey-json answers ARRLEN on a missing key with a null, not an error.
+    - ["JSON.ARRINDEX", "session:100000", "$.events", "0"]
+
+tested-groups:
+- json
+- scripting
+
+tested-commands:
+- json.get
+- eval
+- json.arrappend
+- json.set
+- json.arrtrim
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 25 -t 8
+    --distinct-client-seed
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command='JSON.GET session:__key__ $.session_id $.owner_id $.namespace $.namespace_id $.root_namespace_id $.root_owner_id $.namespace_scope $.events $.summary'
+    --command-key-pattern=R
+    --command-ratio=80
+    --command='EVAL "local owner=redis.call(\"JSON.GET\",KEYS[1],\"$.owner_id\") if not owner then return redis.error_reply(\"session gone\") end local function fv(p) local v=cjson.decode(redis.call(\"JSON.GET\",KEYS[1],p)) if #v==0 or v[1]==cjson.null then return \"\" end return v[1] end if fv(\"$.owner_id\")~=ARGV[1] or fv(\"$.root_owner_id\")~=ARGV[2] or fv(\"$.namespace_scope\")~=ARGV[3] then return redis.error_reply(\"session owner changed\") end local l=redis.call(\"JSON.ARRAPPEND\",KEYS[1],\"$.events\",ARGV[4]) local p=cjson.decode(redis.call(\"JSON.GET\",KEYS[1],\"$.updated_at\")) if #p==0 or tonumber(p[1])<=tonumber(ARGV[5]) then redis.call(\"JSON.SET\",KEYS[1],\"$.updated_at\",ARGV[5]) end if l[1]>20 then redis.call(\"JSON.ARRTRIM\",KEYS[1],\"$.events\",l[1]-20,l[1]-1) end return l[1]" 1 session:__key__ owner-1 rootowner-1 owner "{\"event_id\":\"evt-write\",\"actor_id\":\"user-0001\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"timestamp\":1700000000099,\"system_timestamp\":1700000000099,\"metadata\":{\"source\":\"agent\"}}" 1700000009999'
+    --command-key-pattern=R
+    --command-ratio=20
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+
+priority: 150

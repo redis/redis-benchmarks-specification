@@ -1,0 +1,61 @@
+version: 0.4
+name: memtier_benchmark-100Kkeys-load-json-set-fulldoc-pass-100
+description: |
+  Measures Ops/sec for JSON.SET of the 228-byte pass-100 document at the root path `$` of a random key
+  out of 100,000: the module parses the 228-byte document text into its JSON data structure and stores
+  it, dropping the previous document of that key.
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same load.
+  Writes go to keys json-load:1 .. json-load:100000; nothing is preloaded, so the measured phase
+  starts with creates and turns into overwrites (dropping the previous document) as the keyspace
+  fills, as in the RedisJSON spec. The suite has no keyspace check, so it runs with or without a
+  FLUSHALL before it. An init command writes the document once to json-load:1 first: an error reply (a
+  server that rejects the document or its size) aborts the suite.
+  Port of RedisJSON tests/benchmarks/json_set_fulldoc_pass_100_json.yml (redis-benchmark -c 16
+  --threads 2 -x <file>, the same document bytes).
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_commands:
+    - ['JSON.SET', 'json-load:1', '$', '{"sclr":0,"str":"b","sub_doc":{"sclr":10,"str":"c","arr":[1,2,3,{"sclr":20,"str":"d"}]},"array_of_docs":[-1,{"sclr":11,"str":"e","arr":[4,5,6,{"sclr":21,"str":"f"}]},{"sclr":12,"str":"g","arr":[7,8,9,{"sclr":22,"str":"h"}]},-2]}']
+
+tested-groups:
+- json
+
+tested-commands:
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.SET json-load:__key__ $ \"{\\\"sclr\\\":0,\\\"str\\\":\\\"b\\\",\\\"sub_doc\\\":{\\\"sclr\\\":10,\\\"str\\\":\\\"c\\\",\\\"arr\\\":[1,2,3,{\\\"sclr\\\":20,\\\"str\\\":\\\"d\\\"}]},\\\"array_of_docs\\\":[-1,{\\\"sclr\\\":11,\\\"str\\\":\\\"e\\\",\\\"arr\\\":[4,5,6,{\\\"sclr\\\":21,\\\"str\\\":\\\"f\\\"}]},{\\\"sclr\\\":12,\\\"str\\\":\\\"g\\\",\\\"arr\\\":[7,8,9,{\\\"sclr\\\":22,\\\"str\\\":\\\"h\\\"}]},-2]}\""
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

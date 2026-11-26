@@ -1,0 +1,79 @@
+version: 0.4
+name: memtier_benchmark-100Kkeys-json-json-parser-0000-get-fulldoc
+description: |
+  Measures Ops/sec for JSON.GET of the whole 2.7 KB document at `$`. Keyspace: 100,000 keys,
+  json-parser-0000:1 .. json-parser-0000:100000, each holding the same JSON document of 2,710 bytes,
+  uniform random key selection with distinct client seeds. Measured footprint on redis:8.2.11: 3,777
+  bytes per key, about 378 MB, larger than the last-level cache of current server CPUs (up to about
+  100 MB per socket), so a command reads data that is not cache resident, as on a production keyspace;
+  the 1-key form of this suite measured a cache-resident document. json-parser-0000 is the 2,711-byte
+  web-app configuration document of RedisJSON's performance.docs dataset (a servlet array of 5
+  objects). Report throughput for this loaded client population (16 connections, 8 per thread x 2
+  threads, pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the
+  same load. The client shape is the one of the RedisJSON spec (redis-benchmark -c 16 --threads 2 -P
+  1); memtier replaces redis-benchmark so the rbs runner can drive it. Port of RedisJSON
+  tests/benchmarks/json_get_fulldoc_json-parser-0000.yml, whose dataset is an RDB file loaded by the
+  server. The keyspace is written client-side by a memtier preload (JSON.SET of the exact document
+  text at the root of json-parser-0000:1 .. json-parser-0000:100000, pipeline 50, so a rerun restores
+  it), not from an RDB file, so the suite runs against an endpoint where files cannot be placed; it
+  carries no exact keyspace check, so it also runs on a database that holds other suites' keys. The
+  first init command checks that the last key (json-parser-0000:100000) exists, an error reply if the
+  load did not complete; the last issues the measured command once against json-parser-0000:1: an
+  error reply, for example from a server whose JSONPath dialect rejects the path or an endpoint that
+  does not allow the command, aborts the suite instead of reporting a throughput number for error
+  replies. The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds
+  do not ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix "" --command="JSON.SET json-parser-0000:__key__ $ \"{\\\"web-app\\\":{\\\"servlet\\\":[{\\\"servlet-name\\\":\\\"cofaxCDS\\\",\\\"servlet-class\\\":\\\"org.cofax.cds.CDSServlet\\\",\\\"init-param\\\":{\\\"configGlossary:installationAt\\\":\\\"Philadelphia, PA\\\",\\\"configGlossary:adminEmail\\\":\\\"ksm@pobox.com\\\",\\\"configGlossary:poweredBy\\\":\\\"Cofax\\\",\\\"configGlossary:poweredByIcon\\\":\\\"/images/cofax.gif\\\",\\\"configGlossary:staticPath\\\":\\\"/content/static\\\",\\\"templateProcessorClass\\\":\\\"org.cofax.WysiwygTemplate\\\",\\\"templateLoaderClass\\\":\\\"org.cofax.FilesTemplateLoader\\\",\\\"templatePath\\\":\\\"templates\\\",\\\"templateOverridePath\\\":\\\"\\\",\\\"defaultListTemplate\\\":\\\"listTemplate.htm\\\",\\\"defaultFileTemplate\\\":\\\"articleTemplate.htm\\\",\\\"useJSP\\\":false,\\\"jspListTemplate\\\":\\\"listTemplate.jsp\\\",\\\"jspFileTemplate\\\":\\\"articleTemplate.jsp\\\",\\\"cachePackageTagsTrack\\\":200,\\\"cachePackageTagsStore\\\":200,\\\"cachePackageTagsRefresh\\\":60,\\\"cacheTemplatesTrack\\\":100,\\\"cacheTemplatesStore\\\":50,\\\"cacheTemplatesRefresh\\\":15,\\\"cachePagesTrack\\\":200,\\\"cachePagesStore\\\":100,\\\"cachePagesRefresh\\\":10,\\\"cachePagesDirtyRead\\\":10,\\\"searchEngineListTemplate\\\":\\\"forSearchEnginesList.htm\\\",\\\"searchEngineFileTemplate\\\":\\\"forSearchEngines.htm\\\",\\\"searchEngineRobotsDb\\\":\\\"WEB-INF/robots.db\\\",\\\"useDataStore\\\":true,\\\"dataStoreClass\\\":\\\"org.cofax.SqlDataStore\\\",\\\"redirectionClass\\\":\\\"org.cofax.SqlRedirection\\\",\\\"dataStoreName\\\":\\\"cofax\\\",\\\"dataStoreDriver\\\":\\\"com.microsoft.jdbc.sqlserver.SQLServerDriver\\\",\\\"dataStoreUrl\\\":\\\"jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon\\\",\\\"dataStoreUser\\\":\\\"sa\\\",\\\"dataStorePassword\\\":\\\"dataStoreTestQuery\\\",\\\"dataStoreTestQuery\\\":\\\"SET NOCOUNT ON;select test='test';\\\",\\\"dataStoreLogFile\\\":\\\"/usr/local/tomcat/logs/datastore.log\\\",\\\"dataStoreInitConns\\\":10,\\\"dataStoreMaxConns\\\":100,\\\"dataStoreConnUsageLimit\\\":100,\\\"dataStoreLogLevel\\\":\\\"debug\\\",\\\"maxUrlLength\\\":500}},{\\\"servlet-name\\\":\\\"cofaxEmail\\\",\\\"servlet-class\\\":\\\"org.cofax.cds.EmailServlet\\\",\\\"init-param\\\":{\\\"mailHost\\\":\\\"mail1\\\",\\\"mailHostOverride\\\":\\\"mail2\\\"}},{\\\"servlet-name\\\":\\\"cofaxAdmin\\\",\\\"servlet-class\\\":\\\"org.cofax.cds.AdminServlet\\\"},{\\\"servlet-name\\\":\\\"fileServlet\\\",\\\"servlet-class\\\":\\\"org.cofax.cds.FileServlet\\\"},{\\\"servlet-name\\\":\\\"cofaxTools\\\",\\\"servlet-class\\\":\\\"org.cofax.cms.CofaxToolsServlet\\\",\\\"init-param\\\":{\\\"templatePath\\\":\\\"toolstemplates/\\\",\\\"log\\\":1,\\\"logLocation\\\":\\\"/usr/local/tomcat/logs/CofaxTools.log\\\",\\\"logMaxSize\\\":\\\"\\\",\\\"dataLog\\\":1,\\\"dataLogLocation\\\":\\\"/usr/local/tomcat/logs/dataLog.log\\\",\\\"dataLogMaxSize\\\":\\\"\\\",\\\"removePageCache\\\":\\\"/content/admin/remove?cache=pages&id=\\\",\\\"removeTemplateCache\\\":\\\"/content/admin/remove?cache=templates&id=\\\",\\\"fileTransferFolder\\\":\\\"/usr/local/tomcat/webapps/content/fileTransferFolder\\\",\\\"lookInContext\\\":1,\\\"adminGroupID\\\":4,\\\"betaServer\\\":true}}],\\\"servlet-mapping\\\":{\\\"cofaxCDS\\\":\\\"/\\\",\\\"cofaxEmail\\\":\\\"/cofaxutil/aemail/*\\\",\\\"cofaxAdmin\\\":\\\"/admin/*\\\",\\\"fileServlet\\\":\\\"/static/*\\\",\\\"cofaxTools\\\":\\\"/tools/*\\\"},\\\"taglib\\\":{\\\"taglib-uri\\\":\\\"cofax.tld\\\",\\\"taglib-location\\\":\\\"/WEB-INF/tlds/cofax.tld\\\"}}}\""
+      --command-key-pattern=P --key-minimum=1 --key-maximum=100001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50
+  init_commands:
+    - ['JSON.ARRLEN', 'json-parser-0000:100000', '$']
+    - ['JSON.GET', 'json-parser-0000:1', '$']
+  dataset_name: 100Kkeys-json-parser-0000
+  dataset_description: '100,000 copies of one JSON document of 2,710 bytes (json-parser-0000:1 .. json-parser-0000:100000); 3,777 bytes per key, about 378 MB, measured as used_memory growth on redis:8.2.11'
+
+tested-groups:
+- json
+
+tested-commands:
+- json.get
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 100000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.GET json-parser-0000:__key__ $"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

@@ -1,0 +1,41 @@
+version: 0.4
+name: memtier_benchmark-bitmap-memory-sparse1k-string
+description: >-
+  Memory footprint of one bitmap key, stored as a plain string (bitmap-default-roaring no, the default). The key holds 1,000 random bit writes over a 134,217,728-bit range (16 MiB as a string) (about 0.0007%).
+  The metric of interest is used_memory at the end of the run (INFO memory), not Ops/sec.
+  The key is created by SETBIT on a missing key with the flag off, so it is a raw string (OBJECT ENCODING raw). The client phase is a light random GETBIT loop that only keeps the
+  server running while the runner collects memory metrics. Run the matching
+  -string and -roaring specs on the same build and compare used_memory. Needs a build
+  with native compressed bitmaps.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    bitmap-default-roaring: 'no'
+  check:
+    keyspacelen: 1
+  init_commands:
+  - EVAL "math.randomseed(12345) for i=1,1000 do redis.call('SETBIT',KEYS[1],math.random(0,134217727),1) end return 'OK'" 1 users
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+  dataset_name: 1key-bitmap-memory-sparse1k-string
+  dataset_description: One bitmap key with 1,000 random bit writes over a 134,217,728-bit range (16 MiB as a string), stored as a raw string. The fill is deterministic (fixed Lua random seed), so the string and Roaring specs hold the same bits.
+tested-commands:
+- getbit
+tested-groups:
+- bitmap
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command "GETBIT users __key__" --key-maximum 134217727 --key-minimum 1 --key-prefix "" --command-key-pattern R --distinct-client-seed -c 5 -t 2 --hide-histogram --test-time 30
+  resources:
+    requests:
+      cpus: '2'
+      memory: 2g
+priority: 90
