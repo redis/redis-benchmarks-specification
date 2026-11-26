@@ -1,0 +1,59 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-128-elements-listpack-zrangebylex-all-elements-limit-10
+description: 'Runs memtier_benchmark against 1 SORTED SET key with 128 members, all with score 0, so lex ranges apply. Encoding: listpack (128 members, at the zset-max-listpack-entries limit; members are 10-byte strings). ZRANGEBYLEX over the whole set (- +) with LIMIT 0 10, so only the 10 members returned are checked. This is the low end of the bound-check cost. Metric of interest: Ops/sec. The command is read-only, so the set never changes during the run.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"ZADD" "zset:lex:128" "0" "member:000" "0" "member:001" "0" "member:002" "0"
+    "member:003" "0" "member:004" "0" "member:005" "0" "member:006" "0" "member:007" "0"
+    "member:008" "0" "member:009" "0" "member:010" "0" "member:011" "0" "member:012" "0"
+    "member:013" "0" "member:014" "0" "member:015" "0" "member:016" "0" "member:017" "0"
+    "member:018" "0" "member:019" "0" "member:020" "0" "member:021" "0" "member:022" "0"
+    "member:023" "0" "member:024" "0" "member:025" "0" "member:026" "0" "member:027" "0"
+    "member:028" "0" "member:029" "0" "member:030" "0" "member:031" "0" "member:032" "0"
+    "member:033" "0" "member:034" "0" "member:035" "0" "member:036" "0" "member:037" "0"
+    "member:038" "0" "member:039" "0" "member:040" "0" "member:041" "0" "member:042" "0"
+    "member:043" "0" "member:044" "0" "member:045" "0" "member:046" "0" "member:047" "0"
+    "member:048" "0" "member:049" "0" "member:050" "0" "member:051" "0" "member:052" "0"
+    "member:053" "0" "member:054" "0" "member:055" "0" "member:056" "0" "member:057" "0"
+    "member:058" "0" "member:059" "0" "member:060" "0" "member:061" "0" "member:062" "0"
+    "member:063" "0" "member:064" "0" "member:065" "0" "member:066" "0" "member:067" "0"
+    "member:068" "0" "member:069" "0" "member:070" "0" "member:071" "0" "member:072" "0"
+    "member:073" "0" "member:074" "0" "member:075" "0" "member:076" "0" "member:077" "0"
+    "member:078" "0" "member:079" "0" "member:080" "0" "member:081" "0" "member:082" "0"
+    "member:083" "0" "member:084" "0" "member:085" "0" "member:086" "0" "member:087" "0"
+    "member:088" "0" "member:089" "0" "member:090" "0" "member:091" "0" "member:092" "0"
+    "member:093" "0" "member:094" "0" "member:095" "0" "member:096" "0" "member:097" "0"
+    "member:098" "0" "member:099" "0" "member:100" "0" "member:101" "0" "member:102" "0"
+    "member:103" "0" "member:104" "0" "member:105" "0" "member:106" "0" "member:107" "0"
+    "member:108" "0" "member:109" "0" "member:110" "0" "member:111" "0" "member:112" "0"
+    "member:113" "0" "member:114" "0" "member:115" "0" "member:116" "0" "member:117" "0"
+    "member:118" "0" "member:119" "0" "member:120" "0" "member:121" "0" "member:122" "0"
+    "member:123" "0" "member:124" "0" "member:125" "0" "member:126" "0" "member:127"'
+  dataset_name: 1key-zset-128-elements-lex-strings
+  dataset_description: This dataset contains 1 sorted set key with 128 members, member:000 to member:127, all with score 0.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrangebylex
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "ZRANGEBYLEX zset:lex:128 - + LIMIT 0 10" --hide-histogram --test-time 120 -c 25 -t 8 --pipeline 16'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+priority: 1
