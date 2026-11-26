@@ -1,0 +1,56 @@
+version: 0.4
+name: memtier_benchmark-2keys-set-10K-1M-elements-sdiff
+description: >
+  Measures SDIFF Ops/sec with two hashtable sets. set:small holds m:0..m:9999 (10K members);
+  set:big holds m:100..m:1000099 (1M members). The result contains exactly 100 members,
+  m:0..m:99. Non-integer member strings and these cardinalities select hashtable encoding. The
+  asymmetric inputs exercise full command behavior without assuming a particular lookup or
+  reply implementation.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    lua-time-limit: '30000'
+  check:
+    keyspacelen: 2
+  resources:
+    requests:
+      memory: 2g
+  init_lua: |
+    -- Preload set:small (10K) and set:big (1M), both non-integer members, via batched SADD.
+    local batch = 500
+    -- set:small = m:0..m:9999
+    for b = 0, 9999, batch do
+      local args = {'set:small'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    -- set:big = m:100..m:1000099
+    for b = 100, 1000099, batch do
+      local args = {'set:big'}
+      for j = 0, batch-1 do args[#args+1] = 'm:' .. (b + j) end
+      redis.call('SADD', unpack(args))
+    end
+    return 1
+  dataset_name: 2keys-set-10K-1M-elements-offset-hashtable
+  dataset_description: 2 hashtable sets (set:small=10K members m:0..m:9999,
+    set:big=1M members m:100..m:1000099). Set difference small - big = 100 members
+    (m:0..m:99).
+tested-commands:
+- sdiff
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: --command="SDIFF set:small set:big" --hide-histogram --test-time 120
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+tested-groups:
+- set
+priority: 1
