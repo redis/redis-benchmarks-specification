@@ -1,5 +1,5 @@
 version: 0.4
-name: memtier_benchmark-set-bcast-tracking-1000-listeners
+name: memtier_benchmark-set-bcast-tracking-1000-listeners-v2
 description: "CLIENT TRACKING BCAST broadcast-fan-out benchmark with 1000 tracking
   listeners. The bcast-listener helper (redis/bcast-tracking-bench) registers 1000
   RESP3 broadcast-tracking clients, while a memtier writer issues SET into the
@@ -11,7 +11,9 @@ description: "CLIENT TRACKING BCAST broadcast-fan-out benchmark with 1000 tracki
   track all keys); it does NOT by itself demonstrate ACL send-time filtering
   (PR redis/redis#15122) -- that needs listeners authenticated as distinct ACL
   users with restrictive key patterns, while writing a large fraction of
-  non-permitted keys."
+  non-permitted keys. Version 2 waits for all listeners before writing and uses the
+  helper with the allocator fix. Earlier series measured a partial listener population
+  and are not comparable. Requires BENCHMARK_MULTITOOL_ENABLED=1 on the coordinator."
 dbconfig:
   configuration-parameters:
     save: '""'
@@ -45,4 +47,9 @@ clientconfigs:
     requests:
       cpus: '4'
       memory: 2g
+exporter:
+  redistimeseries:
+    metrics:
+    - $."ALL STATS".Totals.TrackingListenersAttached
+    - $."ALL STATS".Totals.MemClientsNormalAtWindowEnd
 priority: 50

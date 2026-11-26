@@ -56,7 +56,7 @@ DEFAULTS_YML = "./redis_benchmarks_specification/test-suites/defaults.yml"
 # background helper) — same shape the gated branch normalizes.
 MULTITOOL_SUITE_YML = (
     "./redis_benchmarks_specification/test-suites/"
-    "memtier_benchmark-set-bcast-tracking-100-listeners.yml"
+    "memtier_benchmark-set-bcast-tracking-100-listeners-v2.yml"
 )
 
 # A plain single-tool memtier suite — must keep flowing through the unchanged path.

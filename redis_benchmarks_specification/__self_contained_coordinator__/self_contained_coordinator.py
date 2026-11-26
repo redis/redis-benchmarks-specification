@@ -2551,6 +2551,7 @@ def process_self_contained_coordinator_stream(
                                         temporary_dir_client=temporary_dir_client,
                                         client_mnt_point=client_mnt_point,
                                         inject_user=False,
+                                        redis_conns=redis_conns,
                                     )
                                     benchmark_end_time = datetime.datetime.now()
                                     client_memory_after = (
