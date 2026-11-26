@@ -79,6 +79,8 @@ from redis_benchmarks_specification.__runner__.runner import (
     prepare_job_queue_bench_parameters,
     JOB_QUEUE_BENCH_TOOLS,
     validate_benchmark_metrics,
+    get_supported_redis_commands,
+    check_test_command_support,
 )
 from redis_benchmarks_specification.__common__.multi_tool import (
     make_client_output_dir,
@@ -1349,6 +1351,27 @@ def self_contained_coordinator_blocking_read(
 #     return None, benchmark_command_str
 
 
+class UnsupportedTestedCommands(Exception):
+    """The server does not implement one or more of a suite's tested-commands."""
+
+
+def ensure_tested_commands_supported(benchmark_config, conns, test_name):
+    """Raise UnsupportedTestedCommands when the server's COMMAND reply lacks one of
+    the suite's tested-commands (e.g. JSON.* on a build without the JSON module).
+
+    Same gate as the client runner. It fails open: when COMMAND is unavailable or
+    returns nothing, the suite runs as before.
+    """
+    supported_commands = get_supported_redis_commands(conns)
+    commands_supported, unsupported_commands = check_test_command_support(
+        benchmark_config, supported_commands
+    )
+    if not commands_supported:
+        raise UnsupportedTestedCommands(
+            f"Skipping test {test_name} due to unsupported commands: {unsupported_commands}"
+        )
+
+
 def process_self_contained_coordinator_stream(
     github_event_conn,
     datasink_push_results_redistimeseries,
@@ -2249,6 +2272,14 @@ def process_self_contained_coordinator_stream(
                                         # exhausted retries — raise the underlying error
                                         redis_conn.ping()
                                     primary_conns.append(redis_conn)
+
+                                # Skip a suite whose tested-commands this server does
+                                # not implement before any preload or init command
+                                # runs, as the client runner does. Raised rather than
+                                # continue-d so the tear-down below still runs.
+                                ensure_tested_commands_supported(
+                                    benchmark_config, primary_conns, test_name
+                                )
 
                                 # Allocate the client cpuset up front so that
                                 # preload can optionally run BEFORE the replica
@@ -3313,6 +3344,11 @@ def process_self_contained_coordinator_stream(
                                 test_result = not bgsave_metric_missing
                                 total_test_suite_runs = total_test_suite_runs + 1
 
+                            except UnsupportedTestedCommands as e:
+                                # Clean skip, like the topology filter: nothing was
+                                # run, so it is not a failure.
+                                logging.warning(str(e))
+                                test_result = True
                             except Exception as e:
                                 logging.critical(
                                     "Some unexpected exception was caught during local work. Failing test...."

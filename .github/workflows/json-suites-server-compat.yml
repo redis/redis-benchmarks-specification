@@ -2,7 +2,7 @@ name: JSON suites server compatibility
 
 # Fast integration check for the RedisJSON suites: the client runner must skip them cleanly on servers without the
 # module (OSS Redis, Valkey) and run them without error replies on servers that implement JSON.* (Redis 8 images bundle
-# RedisJSON; Dragonfly implements the commands natively). The runner's command-support check (COMMAND) does the
+# RedisJSON; valkey-bundle ships valkey-json; Dragonfly implements the commands natively). The runner's command-support check (COMMAND) does the
 # skipping; this job proves it before a suite reaches a server it cannot run on.
 
 on:
@@ -19,13 +19,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: json-compat-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compat:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Scoped to the 1Kkeys-json-10items suites: they request 4 client CPUs, which the hosted runner has. The
-    # session-caching JSON suite requests 8 and Docker refuses its cpuset on a 4-vCPU runner.
+    timeout-minutes: 25
+    # Servers that implement JSON.* run every JSON suite, split into five shards (regexps on the file name) that run
+    # as concurrent jobs: A the 10items suites, B the yelp suites, C yahoo2 / jsonsl-1 / json-parser-0000 / NCBI,
+    # D the other single-document suites, E the other load suites. The shards partition the JSON suites except the
+    # two auto-create suites (they need a module setting) and the session-caching playbook (it requests 8 client
+    # CPUs and Docker refuses its cpuset on a 4-vCPU runner). Servers without JSON.* check the skip path on shard A.
+    # valkey-bundle (valkey-json, the engine behind ElastiCache / Memorystore JSON) runs every shard as a required job.
     strategy:
       fail-fast: false
       matrix:
@@ -33,30 +41,75 @@ jobs:
           - label: redis 6.2 (no modules) skips
             image: redis:6.2-alpine
             mode: skip
-            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
+            regexp: 'memtier_benchmark-50Kkeys-json-10items-.*'
             args: redis-server --port 6399 --save ""
           - label: redis 7.2 (no modules) skips
             image: redis:7.2-alpine
             mode: skip
-            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
+            regexp: 'memtier_benchmark-50Kkeys-json-10items-.*'
             args: redis-server --port 6399 --save ""
-          - label: valkey 8.1 skips
+          - label: valkey 8.1 (no modules) skips
             image: valkey/valkey:8.1-alpine
             mode: skip
-            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
+            regexp: 'memtier_benchmark-50Kkeys-json-10items-.*'
             args: valkey-server --port 6399 --save ""
-          - label: redis 8.2 (bundled RedisJSON) runs
+          - label: redis 8.2 (bundled RedisJSON) runs, shard A 10items
             image: redis:8.2-alpine
             mode: run
-            regexp: 'memtier_benchmark-1Kkeys-json-10items-.*'
+            regexp: '/[^/]*-json-10items-[^/]*\.yml$'
             args: redis-server --port 6399 --save ""
+          - label: redis 8.2 (bundled RedisJSON) runs, shard B yelp
+            image: redis:8.2-alpine
+            mode: run
+            regexp: '/(?![^/]*auto-create)[^/]*-jsonsl-yelp[^/]*\.yml$'
+            args: redis-server --port 6399 --save ""
+          - label: redis 8.2 (bundled RedisJSON) runs, shard C yahoo2+jsonsl-1+parser+ncbi
+            image: redis:8.2-alpine
+            mode: run
+            regexp: '/[^/]*-json-(jsonsl-yahoo2|jsonsl-1|json-parser-0000|ncbi-refsnp)-[^/]*\.yml$'
+            args: redis-server --port 6399 --save ""
+          - label: redis 8.2 (bundled RedisJSON) runs, shard D single-doc
+            image: redis:8.2-alpine
+            mode: run
+            regexp: '/[^/]*-(json-(test|path-sonde|pass-100|num|key|homogeneous-float-arrays|arrinsert)-|hash-hset-2-fields-json-)[^/]*\.yml$'
+            args: redis-server --port 6399 --save ""
+          - label: redis 8.2 (bundled RedisJSON) runs, shard E load
+            image: redis:8.2-alpine
+            mode: run
+            regexp: '/(?![^/]*(auto-create|jsonsl-yelp))[^/]*-load-json-[^/]*\.yml$'
+            args: redis-server --port 6399 --save ""
+          - label: valkey-bundle 9.2.0 (valkey-json) runs, shard A 10items
+            image: valkey/valkey-bundle:9.2.0-alpine
+            mode: run
+            regexp: '/[^/]*-json-10items-[^/]*\.yml$'
+            args: valkey-server --port 6399 --save ""
+          - label: valkey-bundle 9.2.0 (valkey-json) runs, shard B yelp
+            image: valkey/valkey-bundle:9.2.0-alpine
+            mode: run
+            regexp: '/(?![^/]*auto-create)[^/]*-jsonsl-yelp[^/]*\.yml$'
+            args: valkey-server --port 6399 --save ""
+          - label: valkey-bundle 9.2.0 (valkey-json) runs, shard C yahoo2+jsonsl-1+parser+ncbi
+            image: valkey/valkey-bundle:9.2.0-alpine
+            mode: run
+            regexp: '/[^/]*-json-(jsonsl-yahoo2|jsonsl-1|json-parser-0000|ncbi-refsnp)-[^/]*\.yml$'
+            args: valkey-server --port 6399 --save ""
+          - label: valkey-bundle 9.2.0 (valkey-json) runs, shard D single-doc
+            image: valkey/valkey-bundle:9.2.0-alpine
+            mode: run
+            regexp: '/[^/]*-(json-(test|path-sonde|pass-100|num|key|homogeneous-float-arrays|arrinsert)-|hash-hset-2-fields-json-)[^/]*\.yml$'
+            args: valkey-server --port 6399 --save ""
+          - label: valkey-bundle 9.2.0 (valkey-json) runs, shard E load
+            image: valkey/valkey-bundle:9.2.0-alpine
+            mode: run
+            regexp: '/(?![^/]*(auto-create|jsonsl-yelp))[^/]*-load-json-[^/]*\.yml$'
+            args: valkey-server --port 6399 --save ""
           # Dragonfly implements JSON.* natively but v2.1.0 rejects JSONPath filter expressions with a syntax error,
           # so the filter suite is excluded here; every other JSON suite must run error-free. Pinned so a Dragonfly
           # release cannot change this job's outcome without a change in the repository.
-          - label: dragonfly v2.1.0 runs (filter suite excluded)
+          - label: dragonfly v2.1.0 runs (filter suite excluded), shard A 10items
             image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.1.0
             mode: run
-            regexp: 'memtier_benchmark-1Kkeys-json-10items-(?!get-filter).*'
+            regexp: 'memtier_benchmark-50Kkeys-json-10items-(?!get-filter).*'
             args: dragonfly --port 6399 --proactor_threads=2 --dbfilename ""
     steps:
     - uses: actions/checkout@v6

@@ -1,0 +1,78 @@
+version: 0.4
+name: memtier_benchmark-5Mkeys-json-num-nummultby
+description: |
+  Measures Ops/sec for JSON.NUMMULTBY by -1 of an integer root (the value flips sign, so it stays
+  bounded). Keyspace: 5,000,000 keys, num:1 .. num:5000000, each holding the same JSON document of 1
+  bytes, uniform random key selection with distinct client seeds. Measured footprint on redis:8.2.11:
+  71 bytes per key, about 356 MB, larger than the last-level cache of current server CPUs (up to about
+  100 MB per socket), so a command reads data that is not cache resident, as on a production keyspace;
+  the 1-key form of this suite measured a cache-resident document. num is the integer document of
+  RedisJSON's performance.docs dataset. Report throughput for this loaded client population (16
+  connections, 8 per thread x 2 threads, pipeline 1, 120-second measured phase); sampled
+  response-latency percentiles describe the same load. The client shape is the one of the RedisJSON
+  spec (redis-benchmark -c 16 --threads 2 -P 1); memtier replaces redis-benchmark so the rbs runner
+  can drive it. Port of RedisJSON tests/benchmarks/json_nummultby_num_2.yml, whose dataset is an RDB
+  file loaded by the server. The keyspace is written client-side by a memtier preload (JSON.SET of the
+  exact document text at the root of num:1 .. num:5000000, pipeline 50, so a rerun restores it), not
+  from an RDB file, so the suite runs against an endpoint where files cannot be placed; it carries no
+  exact keyspace check, so it also runs on a database that holds other suites' keys. The first init
+  command checks that the last key (num:5000000) exists, an error reply if the load did not complete;
+  the last issues the measured command once against num:1: an error reply, for example from a server
+  whose JSONPath dialect rejects the path or an endpoint that does not allow the command, aborts the
+  suite instead of reporting a throughput number for error replies. The suite needs a server with
+  RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the module, so only the
+  dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix "" --command="JSON.SET num:__key__ $ \"1\""
+      --command-key-pattern=P --key-minimum=1 --key-maximum=5000001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50
+  init_commands:
+    - ['JSON.ARRLEN', 'num:5000000', '$']
+    - ['JSON.NUMMULTBY', 'num:1', '$', '-1']
+  dataset_name: 5Mkeys-num
+  dataset_description: '5,000,000 copies of one JSON document of 1 bytes (num:1 .. num:5000000); 71 bytes per key, about 356 MB, measured as used_memory growth on redis:8.2.11'
+
+tested-groups:
+- json
+
+tested-commands:
+- json.nummultby
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 5000000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.NUMMULTBY num:__key__ $ -1"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
