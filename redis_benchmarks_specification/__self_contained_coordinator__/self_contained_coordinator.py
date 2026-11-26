@@ -1,6 +1,10 @@
 from redis_benchmarks_specification.__common__.env import parse_bool
 
 # Import warning suppression first
+from redis_benchmarks_specification.__common__.log_rotation import (
+    add_log_rotation_args,
+    configure_logging,
+)
 from redis_benchmarks_specification.__common__.suppress_warnings import *
 
 from redis_benchmarks_specification.__common__.client_memory_metrics import (
@@ -751,22 +755,7 @@ def main():
     args = parser.parse_args()
 
     # Configure logging first, before any logging calls
-    if args.logname is not None:
-        print("Writting log to {}".format(args.logname))
-        logging.basicConfig(
-            filename=args.logname,
-            filemode="a",
-            format=LOG_FORMAT,
-            datefmt=LOG_DATEFMT,
-            level=LOG_LEVEL,
-        )
-    else:
-        # logging settings
-        logging.basicConfig(
-            format=LOG_FORMAT,
-            level=LOG_LEVEL,
-            datefmt=LOG_DATEFMT,
-        )
+    configure_logging(args, LOG_FORMAT, LOG_DATEFMT, LOG_LEVEL)
 
     # Set global exclusive hardware flag
     _exclusive_hardware = args.exclusive_hardware

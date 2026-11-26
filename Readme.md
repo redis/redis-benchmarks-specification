@@ -422,6 +422,58 @@ autorestart = true
 startretries = 1
 ```
 
+##### Log rotation
+
+`--logname` writes through a size-based rotating handler, so the file can no longer grow without
+bound. By default the active file is rolled once it reaches 100 MiB, the rolled files are
+gzip-compressed (`<logname>.1.gz`, `<logname>.2.gz`, ...), and the five newest are kept. The same
+flags are accepted by `redis-benchmarks-spec-sc-coordinator`, `redis-benchmarks-spec-builder` and
+`redis-benchmarks-spec-client-runner`:
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--log-max-bytes` | `104857600` (100 MiB) | Roll the file over at this size. `0` disables rotation. |
+| `--log-backup-count` | `5` | Rolled files to keep; the oldest is deleted. Must be >= 1. |
+| `--no-log-compress` | off | Keep rolled files uncompressed. |
+
+With the defaults the log uses roughly 100 MiB plus a few tens of MiB of compressed backups.
+Compression runs inside the logging call at rollover time, so the daemon pauses briefly while a
+full file is compressed. Lower `--log-max-bytes` to make each pause shorter.
+
+On upgrade, an existing `--logname` file that is already larger than `--log-max-bytes` is not
+compressed: at startup it is renamed to `<logname>.pre-rotation-<UTC timestamp>` (instant, no
+extra disk) and left for you to archive or delete. If compressing a rolled file fails, for example
+because the disk is full, the file is kept uncompressed in its backup slot, so the backup count
+still bounds disk use.
+
+If you would rather let the system `logrotate` own the file, disable the built-in rotation with
+`--log-max-bytes 0` and add `/etc/logrotate.d/redis-benchmarks-spec`:
+
+```
+/var/opt/redis-benchmarks-spec-*.log {
+    daily
+    rotate 7
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+```
+
+`copytruncate` is required because the daemons keep the file open; without it they would keep
+writing to the rotated file. Do not enable both mechanisms on the same file.
+
+Disk can also fill from other places than the log. When a benchmark fails, the coordinator keeps
+the test's temporary directory (under the home directory of the user running it) for debugging
+and never removes it, so a runner that sees recurring failures accumulates them. Prune old ones
+periodically, for example with a daily cron entry:
+
+```bash
+find /root -maxdepth 1 -type d -name 'tmp*' -mtime +7 -exec rm -rf {} +
+```
+
 After editing the conf, you just need to reload and confirm that the benchmark runner is active:
 
 ```bash
