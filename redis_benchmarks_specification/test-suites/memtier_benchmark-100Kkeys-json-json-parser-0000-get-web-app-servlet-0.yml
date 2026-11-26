@@ -39,7 +39,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=100001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'json-parser-0000:100000', '$']
+    - ['JSON.ARRINDEX', 'json-parser-0000:100000', '$', '0']
     - ['JSON.GET', 'json-parser-0000:1', '$.["web-app"].servlet[0]']
   dataset_name: 100Kkeys-json-parser-0000
   dataset_description: '100,000 copies of one JSON document of 2,710 bytes (json-parser-0000:1 .. json-parser-0000:100000); 3,777 bytes per key, about 378 MB, measured as used_memory growth on redis:8.2.11'

@@ -38,7 +38,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=500001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'pass-100:500000', '$']
+    - ['JSON.ARRINDEX', 'pass-100:500000', '$', '0']
     - ['JSON.GET', 'pass-100:1', '$.sub_doc.sclr']
   dataset_name: 500Kkeys-pass-100
   dataset_description: '500,000 copies of one JSON document of 228 bytes (pass-100:1 .. pass-100:500000); 1,159 bytes per key, about 580 MB, measured as used_memory growth on redis:8.2.11'

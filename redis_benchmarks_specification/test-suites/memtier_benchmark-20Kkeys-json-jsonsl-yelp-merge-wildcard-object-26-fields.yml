@@ -41,7 +41,7 @@ dbconfig:
       --command-key-pattern=P --key-minimum=1 --key-maximum=20001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50
   init_commands:
-    - ['JSON.ARRLEN', 'jsonsl-yelp:20000', '$']
+    - ['JSON.ARRINDEX', 'jsonsl-yelp:20000', '$', '0']
     - ['JSON.MERGE', 'jsonsl-yelp:1', '$.businesses[*]', '{"merged":{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9,"j":10,"k":11,"l":12,"m":13,"n":14,"o":15,"p":16,"q":17,"r":18,"s":19,"t":20,"u":21,"v":22,"w":23,"x":24,"y":25,"z":26}}']
   dataset_name: 20Kkeys-jsonsl-yelp
   dataset_description: '20,000 copies of one JSON document of 38,034 bytes (jsonsl-yelp:1 .. jsonsl-yelp:20000); 26,703 bytes per key, about 534 MB, measured as used_memory growth on redis:8.2.11'

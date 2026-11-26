@@ -48,7 +48,7 @@ dbconfig:
       --command-key-pattern="P" --key-minimum=1 --key-maximum=100001 -n allkeys
       -c 1 -t 1 --hide-histogram --pipeline 50'
   init_commands:
-    - ["JSON.OBJKEYS", "session:100000", "$"]
+    - ["JSON.ARRINDEX", "session:100000", "$", "0"]
 
 tested-groups:
 - json
