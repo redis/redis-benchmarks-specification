@@ -2200,6 +2200,11 @@ def process_self_contained_coordinator_stream(
 
                     # For memory comparison mode, collect memory stats after preload and skip client benchmark
                     if memory_comparison_only:
+                        if "postrun_lua" in benchmark_config.get("dbconfig", {}):
+                            raise ValueError(
+                                "postrun_lua requires a measured client run; "
+                                "memory-comparison-only is unsupported"
+                            )
                         # Initialize timing variables for memory comparison mode
                         (
                             start_time,
