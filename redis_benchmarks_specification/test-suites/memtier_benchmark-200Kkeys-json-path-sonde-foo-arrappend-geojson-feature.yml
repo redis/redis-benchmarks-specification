@@ -1,0 +1,83 @@
+version: 0.4
+name: memtier_benchmark-200Kkeys-json-path-sonde-foo-arrappend-geojson-feature
+description: |
+  Measures Ops/sec for JSON.ARRAPPEND of a 260-byte GeoJSON feature (an object with nested objects and
+  an array of floats) onto `$.properties.coordinateProperties`: parse of the value and an append to
+  one array. Keyspace: 200,000 keys, path:sonde:foo:1 .. path:sonde:foo:200000, each holding the same
+  JSON document of 386 bytes, uniform random key selection with distinct client seeds. Measured
+  footprint on redis:8.2.11: 1,312 bytes per key, about 262 MB, larger than the last-level cache of
+  current server CPUs (up to about 100 MB per socket), so a command reads data that is not cache
+  resident, as on a production keyspace; the 1-key form of this suite measured a cache-resident
+  document. As in the RedisJSON spec the array grows for the whole run, so the run is bounded by a
+  request count (1,000,000 requests, about 300 MB of appended values at the end) instead of a measured
+  time; --override-memtier-test-time does not shorten it. path:sonde:foo is the 387-byte GeoJSON
+  feature of RedisJSON's gh295 dataset (a properties.coordinateProperties array of GeoJSON features).
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 1,000,000 requests); sampled response-latency percentiles describe the same load. The
+  client shape is the one of the RedisJSON spec (redis-benchmark -c 16 --threads 2 -P 1); memtier
+  replaces redis-benchmark so the rbs runner can drive it. Port of RedisJSON
+  tests/benchmarks/json_arrappend_geojson.yml, whose dataset is an RDB file loaded by the server. The
+  keyspace is written client-side by a memtier preload (JSON.SET of the exact document text at the
+  root of path:sonde:foo:1 .. path:sonde:foo:200000, pipeline 50, so a rerun restores it), not from an
+  RDB file, so the suite runs against an endpoint where files cannot be placed; it carries no exact
+  keyspace check, so it also runs on a database that holds other suites' keys. The first init command
+  checks that the last key (path:sonde:foo:200000) exists, an error reply if the load did not
+  complete; the last issues the measured command once against path:sonde:foo:1: an error reply, for
+  example from a server whose JSONPath dialect rejects the path or an endpoint that does not allow the
+  command, aborts the suite instead of reporting a throughput number for error replies. The suite
+  needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not ship the
+  module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 1g
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: >
+      --key-prefix "" --command="JSON.SET path:sonde:foo:__key__ $ \"{\\\"type\\\":\\\"Feature\\\",\\\"geometry\\\":{\\\"type\\\":\\\"LineString\\\",\\\"coordinates\\\":[[47,15,920]]},\\\"properties\\\":{\\\"coordinateProperties\\\":[{\\\"type\\\":\\\"Feature\\\",\\\"geometry\\\":{\\\"type\\\":\\\"Point\\\",\\\"coordinates\\\":[26.2153,60.34085,417.0]},\\\"properties\\\":{\\\"temp\\\":3.6,\\\"serial\\\":\\\"S0730589\\\",\\\"humidity\\\":64.6,\\\"vel_h\\\":16.0,\\\"uploader_callsign\\\":\\\"Lahti 24h raspberry\\\",\\\"time\\\":1617220020,\\\"uploader\\\":{\\\"callsign\\\":\\\"Lahti 24h raspberry\\\"}}}]}}\""
+      --command-key-pattern=P --key-minimum=1 --key-maximum=200001 -n allkeys
+      -c 1 -t 1 --hide-histogram --pipeline 50
+  init_commands:
+    - ['JSON.ARRLEN', 'path:sonde:foo:200000', '$']
+    - ['JSON.ARRAPPEND', 'path:sonde:foo:1', '$.properties.coordinateProperties', '{"type": "Feature", "geometry": {"type": "Point", "coordinates": [26.2153, 60.34085, 417.0]}, "properties": {"temp": 3.6, "serial": "S0730589", "humidity": 64.6, "vel_h": 16.0, "uploader_callsign": "Lahti 24h raspberry", "time": 1617220020, "uploader": {"callsign": "Lahti 24h raspberry"}}}']
+  dataset_name: 200Kkeys-path-sonde-foo
+  dataset_description: '200,000 copies of one JSON document of 386 bytes (path:sonde:foo:1 .. path:sonde:foo:200000); 1,312 bytes per key, about 262 MB, measured as used_memory growth on redis:8.2.11'
+
+tested-groups:
+- json
+
+tested-commands:
+- json.arrappend
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 200000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --requests=62500
+    --command="JSON.ARRAPPEND path:sonde:foo:__key__ $.properties.coordinateProperties \"{\\\"type\\\": \\\"Feature\\\", \\\"geometry\\\": {\\\"type\\\": \\\"Point\\\", \\\"coordinates\\\": [26.2153, 60.34085, 417.0]}, \\\"properties\\\": {\\\"temp\\\": 3.6, \\\"serial\\\": \\\"S0730589\\\", \\\"humidity\\\": 64.6, \\\"vel_h\\\": 16.0, \\\"uploader_callsign\\\": \\\"Lahti 24h raspberry\\\", \\\"time\\\": 1617220020, \\\"uploader\\\": {\\\"callsign\\\": \\\"Lahti 24h raspberry\\\"}}}\""
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
