@@ -26,6 +26,8 @@ import logging
 import logging.handlers
 import os
 import shutil
+import sys
+import time
 
 DEFAULT_LOG_MAX_BYTES = 100 * 1024 * 1024
 DEFAULT_LOG_BACKUP_COUNT = 5
@@ -81,10 +83,53 @@ def _gzip_rotator(source, dest):
     # Compress into a temporary name and rename, so a crash mid-compression never leaves a
     # truncated ".gz" that looks like a valid backup.
     tmp = dest + ".tmp"
-    with open(source, "rb") as f_in, gzip.open(tmp, "wb", compresslevel=6) as f_out:
-        shutil.copyfileobj(f_in, f_out)
-    os.replace(tmp, dest)
+    try:
+        with open(source, "rb") as f_in, gzip.open(tmp, "wb", compresslevel=6) as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.replace(tmp, dest)
+    except Exception as e:
+        # Typically ENOSPC. Drop the partial temp file, then still move the source into the
+        # backup slot uncompressed (a rename needs no free space). Raising instead would leave
+        # the full active file in place, so every later record would retry the rollover and
+        # write another temp file: the disk-filling failure this module exists to prevent.
+        # The slot keeps its ".gz" name so --log-backup-count still bounds it; zcat -f reads it.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        sys.stderr.write(
+            "log rotation: compressing {} failed ({}); kept it uncompressed as {}\n".format(
+                source, e, dest
+            )
+        )
+        os.replace(source, dest)
+        return
     os.remove(source)
+
+
+def _set_aside_oversized_log(logname, max_bytes):
+    """Move an existing log that is already over ``max_bytes`` out of the rotation.
+
+    A deployment upgrading from the unbounded handler can have a multi-GB ``--logname`` file.
+    RotatingFileHandler would gzip all of it on the first record, holding the handler lock
+    (stalling every logging thread) and needing free space for the compressed copy. Renaming it
+    aside is O(1) and needs no space; it is left for the operator to archive or delete.
+    """
+    try:
+        size = os.path.getsize(logname)
+    except OSError:
+        return None
+    if size <= max_bytes:
+        return None
+    aside = "{}.pre-rotation-{}".format(
+        logname, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    )
+    os.replace(logname, aside)
+    sys.stderr.write(
+        "log rotation: {} was {} bytes, over --log-max-bytes {}; moved it to {} "
+        "(not rotated or deleted)\n".format(logname, size, max_bytes, aside)
+    )
+    return aside
 
 
 def build_log_handler(
@@ -101,6 +146,7 @@ def build_log_handler(
         return logging.FileHandler(logname, mode="a")
     if backup_count < 1:
         raise ValueError("backup_count must be >= 1 when rotation is enabled")
+    _set_aside_oversized_log(logname, max_bytes)
     handler = logging.handlers.RotatingFileHandler(
         logname, mode="a", maxBytes=max_bytes, backupCount=backup_count
     )

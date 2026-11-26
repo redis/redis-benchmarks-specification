@@ -233,3 +233,48 @@ def test_every_daemon_exposes_the_flags(monkeypatch, capsys):
     out = capsys.readouterr().out
     for flag in ("--log-max-bytes", "--log-backup-count", "--no-log-compress"):
         assert flag in out
+
+
+def test_failed_compression_leaves_no_temp_file_and_stays_bounded(
+    tmp_path, logger, monkeypatch
+):
+    """ENOSPC while compressing must not leak the .tmp file or retry on every record."""
+    import redis_benchmarks_specification.__common__.log_rotation as lr
+
+    def no_space(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(lr.gzip, "open", no_space)
+    path = str(tmp_path / "coord.log")
+    logger.addHandler(build_log_handler(path, max_bytes=2000, backup_count=2))
+    _emit(logger, 200)
+    names = os.listdir(tmp_path)
+    assert not [n for n in names if n.endswith(".tmp")], names
+    assert sorted(names) == ["coord.log", "coord.log.1.gz", "coord.log.2.gz"]
+    # The backups are the uncompressed source moved into their slot, so disk stays bounded.
+    assert os.path.getsize(path) < 2000
+    assert sum(os.path.getsize(tmp_path / n) for n in names) < 3 * 2000 + 2000
+    with open(tmp_path / "coord.log.1.gz") as f:
+        assert LINE in f.read()
+
+
+def test_oversized_existing_log_is_set_aside_not_compressed(tmp_path, logger):
+    """An upgrade from the unbounded handler must not gzip a huge file under the lock."""
+    path = tmp_path / "coord.log"
+    path.write_text(LINE * 100 + "\n")  # ~10 KB, over the 2000-byte limit
+    logger.addHandler(build_log_handler(str(path), max_bytes=2000, backup_count=2))
+    aside = [n for n in os.listdir(tmp_path) if ".pre-rotation-" in n]
+    assert len(aside) == 1
+    assert os.path.getsize(tmp_path / aside[0]) > 2000
+    _emit(logger, 5)
+    assert not [n for n in os.listdir(tmp_path) if n.endswith(".gz")]
+    assert os.path.getsize(path) < 2000
+
+
+def test_existing_log_under_the_limit_is_appended_to(tmp_path, logger):
+    path = tmp_path / "coord.log"
+    path.write_text("earlier line\n")
+    logger.addHandler(build_log_handler(str(path), max_bytes=2000, backup_count=2))
+    _emit(logger, 1)
+    assert sorted(os.listdir(tmp_path)) == ["coord.log"]
+    assert path.read_text().startswith("earlier line\n")

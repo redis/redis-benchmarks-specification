@@ -410,6 +410,12 @@ With the defaults the log uses roughly 100 MiB plus a few tens of MiB of compres
 Compression runs inside the logging call at rollover time, so the daemon pauses briefly while a
 full file is compressed. Lower `--log-max-bytes` to make each pause shorter.
 
+On upgrade, an existing `--logname` file that is already larger than `--log-max-bytes` is not
+compressed: at startup it is renamed to `<logname>.pre-rotation-<UTC timestamp>` (instant, no
+extra disk) and left for you to archive or delete. If compressing a rolled file fails, for example
+because the disk is full, the file is kept uncompressed in its backup slot, so the backup count
+still bounds disk use.
+
 If you would rather let the system `logrotate` own the file, disable the built-in rotation with
 `--log-max-bytes 0` and add `/etc/logrotate.d/redis-benchmarks-spec`:
 
