@@ -297,7 +297,9 @@ def read_listener_state(redis_conns):
         if not isinstance(run_id, str) or not run_id:
             # Endpoint aliases cannot identify duplicate cluster slot-range
             # connections reliably; counting them could hide lost listeners.
-            raise RuntimeError("Could not identify the tracking server from INFO run_id")
+            raise RuntimeError(
+                "Could not identify the tracking server from INFO run_id"
+            )
         if run_id in seen:
             continue
         seen.add(run_id)
@@ -1038,7 +1040,8 @@ def run_client_configs(
                     json.dump(memtier_json, f, indent=2)
                 os.chmod(rewritten, 0o644)
                 os.replace(
-                    rewritten, os.path.join(temporary_dir_client, memtier_output_filename)
+                    rewritten,
+                    os.path.join(temporary_dir_client, memtier_output_filename),
                 )
             finally:
                 if os.path.exists(rewritten):

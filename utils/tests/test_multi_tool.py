@@ -1055,7 +1055,9 @@ def test_run_client_configs_cleans_up_if_listener_json_replace_fails(
 
     payload = _write_memtier_output(tmp_path)
     bg, fg, docker_client = _bg_and_fg()
-    monkeypatch.setattr(multi_tool.os, "replace", Mock(side_effect=OSError("read-only")))
+    monkeypatch.setattr(
+        multi_tool.os, "replace", Mock(side_effect=OSError("read-only"))
+    )
 
     with pytest.raises(OSError, match="read-only"):
         multi_tool.run_client_configs(
