@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 from redis_benchmarks_specification.__common__.env import (
     MACHINE_CPU_COUNT,
@@ -20,8 +21,18 @@ from redis_benchmarks_specification.__common__.env import (
     ALLOWED_PROFILERS,
 )
 from redis_benchmarks_specification.__common__.datadir import add_datadir_arguments
+from redis_benchmarks_specification.__self_contained_coordinator__.idle_shutdown import (
+    DEFAULT_IDLE_SHUTDOWN_MINUTES,
+)
 
 PERFORMANCE_GH_TOKEN = os.getenv("PERFORMANCE_GH_TOKEN", None)
+
+
+def _positive_minutes(value):
+    minutes = float(value)
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise argparse.ArgumentTypeError("must be finite and greater than 0")
+    return minutes
 
 
 def create_self_contained_coordinator_args(project_name):
@@ -222,6 +233,19 @@ def create_self_contained_coordinator_args(project_name):
         "target_platform field matching this runner's platform name. "
         "Untargeted entries (no target_platform field) are skipped. "
         "Useful for dedicated runners that should only run on-demand work.",
+    )
+    parser.add_argument(
+        "--idle-shutdown",
+        metavar="MINUTES",
+        type=_positive_minutes,
+        nargs="?",
+        const=DEFAULT_IDLE_SHUTDOWN_MINUTES,
+        default=None,
+        help="Shut the host down after the runner has gone this many minutes without running a benchmark. "
+        "Passing the flag without a value uses {} minutes. Disabled when the flag is not given. "
+        "Entries skipped for other platforms do not count as activity.".format(
+            DEFAULT_IDLE_SHUTDOWN_MINUTES
+        ),
     )
     add_datadir_arguments(parser)
     return parser
