@@ -1,0 +1,61 @@
+version: 0.4
+name: memtier_benchmark-500Kkeys-load-json-set-fulldoc-2-fields-object
+description: |
+  Measures Ops/sec for JSON.SET of a 37-byte two-field object at the root path `$` of a random key out
+  of 500,000: the module parses the 37-byte document text into its JSON data structure and stores it,
+  dropping the previous document of that key.
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 120-second measured phase); sampled response-latency percentiles describe the same load.
+  Writes go to keys json-load:1 .. json-load:500000; nothing is preloaded, so the measured phase
+  starts with creates and turns into overwrites (dropping the previous document) as the keyspace
+  fills, as in the RedisJSON spec. The suite has no keyspace check, so it runs with or without a
+  FLUSHALL before it. An init command writes the document once to json-load:1 first: an error reply (a
+  server that rejects the document or its size) aborts the suite.
+  Port of RedisJSON tests/benchmarks/json_vs_hashes_json.set_key_simple.yml (redis-benchmark -c 16
+  --threads 2 -x <file>, the same document bytes).
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_commands:
+    - ['JSON.SET', 'json-load:1', '$', '{"field1":"value1","field2":"value2"}']
+
+tested-groups:
+- json
+
+tested-commands:
+- json.set
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 500000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --test-time=120
+    --command="JSON.SET json-load:__key__ $ \"{\\\"field1\\\":\\\"value1\\\",\\\"field2\\\":\\\"value2\\\"}\""
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150

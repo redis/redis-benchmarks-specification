@@ -119,6 +119,9 @@ Use taskset when starting the redis-server to pin it to a particular cpu and get
 Option "--daemonize yes" given to server run command allows to run redis-server in background.<br />
 Option "--test X.yml" given to benchmark execution command allows to run particular test, where X - test name
 
+To run the JSON suites against an external (managed) endpoint, with TLS and a password and without server-side
+configuration, see [docs/json-suites-external-endpoint.md](docs/json-suites-external-endpoint.md).
+
 Full list of option can be taken with "-h" option:
 ```
 $ redis-benchmarks-spec-client-runner -h

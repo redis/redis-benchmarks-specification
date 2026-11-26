@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-1Bkeys-load-json-mset-auto-create-deep-paths
+description: |
+  Measures Ops/sec for JSON.MSET of two new keys, each with an integer at `$.a.b.c.d` created through
+  the auto-create path (root plus three object levels per key).
+  Report throughput for this loaded client population (16 connections, 8 per thread x 2 threads,
+  pipeline 1, 500,000 requests); sampled response-latency percentiles describe the same load. The
+  client shape is the one of the RedisJSON spec (redis-benchmark -c 16 --threads 2 -P 1); memtier
+  replaces redis-benchmark so the rbs runner can drive it.
+  Port of RedisJSON tests/benchmarks/json_mset_auto_create_deep_paths.yml (5,000,000 requests there).
+  The command creates missing object levels along a path on a new key, which RedisJSON does only when
+  the module configuration json-auto-create-deep-paths is yes (default no). The suite cannot set
+  module configuration: the endpoint operator must enable it, otherwise the init canary gets an error
+  reply and the suite aborts. Keys are drawn at random from 1,000,000,000, so almost every write
+  creates a key (one 4-level object chain); the run is bounded by a request count to bound memory
+  (each request adds a key), so --override-memtier-test-time does not shorten it. JSON.MSET writes two
+  keys per request, so the suite needs a standalone (non-cluster) endpoint.
+  The suite needs a server with RedisJSON (Redis 8 images bundle it); the gcc source builds do not
+  ship the module, so only the dockerhub build variant is declared.
+
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  resources:
+    requests:
+      memory: 2g
+  init_commands:
+    - ['JSON.MSET', 'auto-create:a:0', '$.a.b.c.d', '1', 'auto-create:b:0', '$.a.b.c.d', '2']
+
+tested-groups:
+- json
+
+tested-commands:
+- json.mset
+
+redis-topologies:
+- oss-standalone
+
+build-variants:
+- dockerhub
+
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: >
+    -c 8 -t 2
+    --key-prefix ""
+    --key-minimum 1
+    --key-maximum 1000000000
+    --distinct-client-seed
+    --pipeline=1
+    --print-percentiles=50,90,95,99
+    --run-count=1
+    --requests=31250
+    --command="JSON.MSET auto-create:a:__key__ $.a.b.c.d 1 auto-create:b:__key__ $.a.b.c.d 2"
+    --command-key-pattern=R
+    --hide-histogram
+  resources:
+    requests:
+      cpus: '4'
+      memory: 2g
+
+priority: 150
