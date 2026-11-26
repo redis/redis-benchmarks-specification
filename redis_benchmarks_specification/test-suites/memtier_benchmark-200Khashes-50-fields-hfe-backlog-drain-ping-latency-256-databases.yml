@@ -1,0 +1,118 @@
+version: 0.4
+name: memtier_benchmark-200Khashes-50-fields-hfe-backlog-drain-ping-latency-256-databases
+description: |-
+  Measures observed maximum PING response latency while a synchronized cohort of
+  10,000,000 HASH fields expires. The 200,000 hashes contain 50 ten-byte fields
+  and use HASHTABLE encoding (hash-max-listpack-entries 0), exercising the
+  ebuckets active-expire path rather than listpackex. The matching 16/256-database
+  pair keeps all data in DB 0 and varies only the configured database count.
+
+  The probe is closed-loop: four connections, pipeline 1, rate-capped at 250
+  requests/second each. During a stall at most four requests are in flight, so
+  missed scheduled arrivals are not sampled. Max Latency is the largest observed
+  client response latency, not an exact expiry-cycle duration or an open-loop
+  latency bound; network/scheduling delays also contribute. p50/p99/p99.9/p99.99
+  stay in the raw client JSON for inspection; only Max Latency and Ops/sec are
+  exported. These sampled percentiles can remain low during a
+  long isolated stall. Ops/sec is a load sanity metric, not a latency substitute.
+
+  Strict initialization verifies all 10M expiration updates and stores a receipt
+  in the extra __benchmark:hfe:receipt key. The cohort is due 120 seconds after
+  setup begins; slow setup can consume that budget. Before export, postrun_lua
+  requires the due instant to fall strictly inside the client's actual Runtime
+  start/finish timestamps and checks that active HFE work occurred. A missed
+  window or failed setup rejects the run instead of exporting a healthy tail.
+  That check reads expired_subkeys_active where the server has it (8.6+) and
+  falls back to the combined expired_subkeys on 7.4-8.2, which carry the same
+  active-expire path but predate the split counter; the probe is PING only, so
+  nothing in the run can lazily expire the cohort and move the combined counter.
+  The 180-second aggregate includes time before and after expiration; compare
+  repeated runs and inspect the full latency distribution rather than treating
+  a percentile as a direct measure of cycle length.
+
+  This arm configures 256 databases.
+dbconfig:
+  configuration-parameters:
+    save: '""'
+    appendonly: 'no'
+    hash-max-listpack-entries: '0'
+    busy-reply-threshold: '300000'
+    databases: '256'
+  check:
+    keyspacelen: 200001
+  preload_tool:
+    run_image: redislabs/memtier_benchmark:edge
+    tool: memtier_benchmark
+    arguments: |
+      --key-prefix "" --data-size 10 --command "HSET hfe:__key__ f1 __data__ f2 __data__ f3 __data__ f4 __data__ f5 __data__ f6 __data__ f7 __data__ f8 __data__ f9 __data__ f10 __data__ f11 __data__ f12 __data__ f13 __data__ f14 __data__ f15 __data__ f16 __data__ f17 __data__ f18 __data__ f19 __data__ f20 __data__ f21 __data__ f22 __data__ f23 __data__ f24 __data__ f25 __data__ f26 __data__ f27 __data__ f28 __data__ f29 __data__ f30 __data__ f31 __data__ f32 __data__ f33 __data__ f34 __data__ f35 __data__ f36 __data__ f37 __data__ f38 __data__ f39 __data__ f40 __data__ f41 __data__ f42 __data__ f43 __data__ f44 __data__ f45 __data__ f46 __data__ f47 __data__ f48 __data__ f49 __data__ f50 __data__" --command-key-pattern="P" --key-minimum=1 --key-maximum=200000 -n 200000 -c 1 -t 1 --hide-histogram --pipeline 50
+  resources:
+    requests:
+      memory: 6g
+  dataset_name: 200Khashes-50-fields-10B-hashtable-hfe
+  dataset_description: 200,000 HASHTABLE hashes with 50 ten-byte fields each, plus one initialization
+    receipt hash. All 10M data fields share a verified future absolute expiration.
+  init_commands:
+  - - EVAL
+    - |-
+      local now = redis.call('TIME')
+      local due = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) + 120000
+      local info = redis.call('INFO', 'stats')
+      local stat = 'expired_subkeys_active'
+      local before = tonumber(string.match(info, 'expired_subkeys_active:(%d+)'))
+      if not before then
+        stat = 'expired_subkeys'
+        before = tonumber(string.match(info, 'expired_subkeys:(%d+)'))
+      end
+      assert(before, 'no expired_subkeys counter in INFO stats')
+      assert(redis.call('DBSIZE') == 200000, 'expected 200000 preloaded hashes')
+      local args = {due, 'FIELDS', 50}
+      for f=1,50 do args[#args+1] = 'f'..f end
+      local applied = 0
+      for k=1,200000 do
+        local reply = redis.call('HPEXPIREAT', 'hfe:'..k, unpack(args))
+        assert(#reply == 50, 'missing HFE reply')
+        for f=1,50 do
+          assert(reply[f] == 1, 'field expiration was not applied')
+          applied = applied + 1
+        end
+      end
+      assert(applied == 10000000, 'incomplete expiration cohort')
+      assert(redis.call('HPTTL', 'hfe:1', 'FIELDS', 1, 'f1')[1] > 0, 'cohort already expired')
+      redis.call('HSET', '__benchmark:hfe:receipt', 'due_ms', due,
+        'active_before', before, 'fields', applied, 'active_stat', stat)
+      return applied
+    - 0
+  postrun_lua: |-
+    local receipt = redis.call('HMGET', '__benchmark:hfe:receipt', 'due_ms', 'active_before', 'fields', 'active_stat')
+    local due, before, fields, stat = tonumber(receipt[1]), tonumber(receipt[2]), tonumber(receipt[3]), receipt[4]
+    assert(due and before and fields == 10000000 and stat, 'missing or incomplete HFE receipt')
+    assert(tonumber(ARGV[1]) < due and due < tonumber(ARGV[2]), 'expiration outside measured PING window')
+    local active = tonumber(string.match(redis.call('INFO', 'stats'), stat .. ':(%d+)'))
+    assert(active and active > before, 'no active hash-field expiration observed')
+    return 1
+tested-commands:
+- ping
+tested-groups:
+- connection
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: |
+    --command "PING" -c 4 -t 1 --rate-limiting=250 --pipeline 1 --test-time 180 --print-percentiles=50,99,99.9,99.99 --hide-histogram
+  resources:
+    requests:
+      cpus: '2'
+      memory: 1g
+exporter:
+  redistimeseries:
+    timemetric: $."ALL STATS".Runtime."Start time"
+    metrics:
+    - $."ALL STATS".Totals."Ops/sec"
+    - $."ALL STATS".Totals."Max Latency"
+priority: 100
