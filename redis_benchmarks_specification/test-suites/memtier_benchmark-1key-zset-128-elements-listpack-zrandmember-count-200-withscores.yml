@@ -1,0 +1,63 @@
+version: 0.4
+name: memtier_benchmark-1key-zset-128-elements-listpack-zrandmember-count-200-withscores
+description: 'Runs memtier_benchmark against 1 SORTED SET key with 128 members. Encoding: listpack (128 members, at the zset-max-listpack-entries limit; members are 10-byte strings). ZRANDMEMBER with a positive count of 200 and WITHSCORES returns the whole set with scores. Metric of interest: Ops/sec. The command is read-only, so the set never changes during the run.'
+dbconfig:
+  configuration-parameters:
+    save: '""'
+  check:
+    keyspacelen: 1
+  resources:
+    requests:
+      memory: 1g
+  init_commands:
+  - '"ZADD" "zset:pop:128" "0" "member:000" "1" "member:001" "2" "member:002" "3"
+    "member:003" "4" "member:004" "5" "member:005" "6" "member:006" "7" "member:007" "8"
+    "member:008" "9" "member:009" "10" "member:010" "11" "member:011" "12" "member:012"
+    "13" "member:013" "14" "member:014" "15" "member:015" "16" "member:016" "17"
+    "member:017" "18" "member:018" "19" "member:019" "20" "member:020" "21" "member:021"
+    "22" "member:022" "23" "member:023" "24" "member:024" "25" "member:025" "26"
+    "member:026" "27" "member:027" "28" "member:028" "29" "member:029" "30" "member:030"
+    "31" "member:031" "32" "member:032" "33" "member:033" "34" "member:034" "35"
+    "member:035" "36" "member:036" "37" "member:037" "38" "member:038" "39" "member:039"
+    "40" "member:040" "41" "member:041" "42" "member:042" "43" "member:043" "44"
+    "member:044" "45" "member:045" "46" "member:046" "47" "member:047" "48" "member:048"
+    "49" "member:049" "50" "member:050" "51" "member:051" "52" "member:052" "53"
+    "member:053" "54" "member:054" "55" "member:055" "56" "member:056" "57" "member:057"
+    "58" "member:058" "59" "member:059" "60" "member:060" "61" "member:061" "62"
+    "member:062" "63" "member:063" "64" "member:064" "65" "member:065" "66" "member:066"
+    "67" "member:067" "68" "member:068" "69" "member:069" "70" "member:070" "71"
+    "member:071" "72" "member:072" "73" "member:073" "74" "member:074" "75" "member:075"
+    "76" "member:076" "77" "member:077" "78" "member:078" "79" "member:079" "80"
+    "member:080" "81" "member:081" "82" "member:082" "83" "member:083" "84" "member:084"
+    "85" "member:085" "86" "member:086" "87" "member:087" "88" "member:088" "89"
+    "member:089" "90" "member:090" "91" "member:091" "92" "member:092" "93" "member:093"
+    "94" "member:094" "95" "member:095" "96" "member:096" "97" "member:097" "98"
+    "member:098" "99" "member:099" "100" "member:100" "101" "member:101" "102"
+    "member:102" "103" "member:103" "104" "member:104" "105" "member:105" "106"
+    "member:106" "107" "member:107" "108" "member:108" "109" "member:109" "110"
+    "member:110" "111" "member:111" "112" "member:112" "113" "member:113" "114"
+    "member:114" "115" "member:115" "116" "member:116" "117" "member:117" "118"
+    "member:118" "119" "member:119" "120" "member:120" "121" "member:121" "122"
+    "member:122" "123" "member:123" "124" "member:124" "125" "member:125" "126"
+    "member:126" "127" "member:127"'
+  dataset_name: 1key-zset-128-elements-listpack-distinct-scores
+  dataset_description: This dataset contains 1 sorted set key with 128 members, member:000 to member:127, with scores 0 to 127.
+tested-groups:
+- sorted-set
+tested-commands:
+- zrandmember
+redis-topologies:
+- oss-standalone
+build-variants:
+- gcc:15.2.0-amd64-debian-bookworm-default
+- gcc:15.2.0-arm64-debian-bookworm-default
+- dockerhub
+clientconfig:
+  run_image: redislabs/memtier_benchmark:edge
+  tool: memtier_benchmark
+  arguments: '--command "ZRANDMEMBER zset:pop:128 200 WITHSCORES" --hide-histogram --test-time 120 -c 25 -t 8 --pipeline 16'
+  resources:
+    requests:
+      cpus: '8'
+      memory: 2g
+priority: 1
